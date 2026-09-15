@@ -20,7 +20,7 @@ Key words MUST / SHOULD / MAY follow RFC 2119. Priority: **P1** required for
 | FR-CFG-005 | Physical ports MUST be referenced by stable, user-given names mapped to board-specific interface names; swapping WAN/LAN ports MUST be a configuration change only. | P1 |
 | FR-CFG-006 | The configuration MAY be split across multiple files/modules; the flake MUST import them so that a single `nix build` produces the image. | P1 |
 | FR-CFG-007 | Users MAY set arbitrary NixOS options alongside `janus.*` options; Janus MUST NOT silently override them and SHOULD emit an assertion on known conflicts. | P2 |
-| FR-CFG-008 | The configuration source used to build an image MUST be embedded in the image (read-only) for provenance. | P2 |
+| FR-CFG-008 | The complete flake source tree used to build an image (`flake.nix`, `flake.lock`, `configuration.nix` and all imported modules, whether single-file or modular) MUST be embedded read-only in the image at `/etc/janus/source`, so the exact image can be rebuilt from the device alone. Sources outside the flake tree MUST produce an evaluation warning. Embedding MAY be disabled by the user. | P1 |
 | FR-CFG-009 | Configuration MUST be validated at evaluation time with assertions producing actionable messages (e.g. overlapping subnets, unknown port name, node referenced by a rule but not defined). | P1 |
 
 ## 2. Build and deployment (BLD)

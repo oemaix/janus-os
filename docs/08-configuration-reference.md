@@ -39,7 +39,7 @@ learning path: copy, edit values, build.
 | `ntp.via` | `direct\|tunnel` | `direct` | Path for NTP when a tunnel exists. |
 | `journal.persistent` | bool | `false` | Persist journal to state partition (capped). |
 | `journal.maxUse` | str | `"64M"` | |
-| `embedSource` | bool | `true` | Embed configuration source at `/etc/janus/source` (FR-CFG-008). |
+| `embedSource` | bool | `true` | Embed the whole flake source tree (`flake.nix`, `flake.lock`, all `.nix` modules) read-only at `/etc/janus/source` (FR-CFG-008). Disable only if the tree contains inline secrets you do not want readable on the device. |
 
 ## 2. `janus.hardware`
 
