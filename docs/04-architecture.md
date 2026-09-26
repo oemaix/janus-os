@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-09-15 |
+| Last updated | 2026-09-23 |
 
 ## 1. Architectural drivers
 
@@ -207,7 +207,10 @@ janus-os/
 | Concern | Choice | ADR |
 |---------|--------|-----|
 | Base OS | NixOS stable, flakes | 0001 |
-| Deployment model | Image-based, no on-device build | 0002 |
+| Deployment model | Image-based, no on-device Nix; hot overrides for day-to-day edits | 0002, 0017 |
+| Secrets | sops-nix + age | 0014 |
+| DNS policy | Inside the proxy engine, with a leak/poison check | 0019 |
+| User repo | Private config flake; do not fork the OS per user | 0018 |
 | Storage | One partition per FS, f2fs, ro root/store | 0003 |
 | Network stack | systemd-networkd + nftables (not NetworkManager) | 0004 |
 | Config surface | `janus.*` lowering to NixOS | 0005 |

@@ -13,4 +13,8 @@ change status (`Superseded by ADR-xxxx`). Template: `0000-template.md`.
 | [0006](0006-engine-abstraction-sing-box-default.md) | Engine-neutral proxy model; sing-box default, Xray optional | Accepted |
 | [0007](0007-ssh-key-only-management.md) | SSH public-key-only management, `janus` CLI, no GUI in 1.0 | Accepted |
 | [0008](0008-janet-for-matchers-and-tooling.md) | Janet for PEG matchers, node normalization and runtime rendering | Accepted |
-| 0009–0016 | See *13 — Roadmap §3* | Proposed |
+| [0014](0014-sops-nix-age.md) | sops-nix with age for credentials | Accepted |
+| [0017](0017-hot-overrides-no-onsite-rebuild.md) | Hot overrides; no Nix evaluation on the board | Accepted; refines 0002 |
+| [0018](0018-private-config-repo.md) | Private config repo, not a fork per user | Accepted |
+| [0019](0019-dns-inside-the-engine.md) | DNS policy inside the proxy engine | Accepted |
+| 0009–0013, 0015–0016 | See *13 — Roadmap §3* | Proposed |

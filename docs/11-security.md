@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-09-15 |
+| Last updated | 2026-09-23 |
 
 ## 1. Assets
 
@@ -69,20 +69,32 @@
 
 ### 4.3 Secrets
 
-Two supported styles; the reference example uses files.
+sops-nix with age is the default (ADR-0014). Ciphertext lives in the
+private config repo (`secrets.yaml`). The age private key lives only on
+the state partition and in the user's own backup. Boot-time activation
+decrypts into `/run/secrets` (tmpfs). The Nix store does not contain
+plaintext.
+
+| Secret | In sops | Notes |
+|--------|---------|-------|
+| PPPoE username and password | yes | Username is low sensitivity but paired with the password; keep both together. |
+| Wi-Fi passphrase | yes | SSID is not a secret; it is broadcast. |
+| Subscription URL | yes | The node list is volatile data; the URL usually embeds a token and is not. A hot override may replace the URL on the board (mode `0600`) until the user updates sops. |
+| Manual node credentials (UUID, password, REALITY keys) | yes | |
+| WireGuard private key, mesh auth key | yes | |
+| SSH host keys | no | Generated on first boot, stored under `/var/lib/janus/etc`. |
+| Age private key | no | On the state partition. Whoever has the SD card can read it and the ciphertext in the image. Disk encryption is not in scope (see §5). |
 
 | Style | Where the secret ends up | Use when |
 |-------|--------------------------|----------|
-| Inline (`password = "…"`) | world-readable `/nix/store` in the image and on the build host | throw-away/lab setups; documented warning at eval (`janus.security.allowInlineSecrets = true` required) |
-| File (`passwordFile = "/var/lib/janus/secrets/…"`) | state partition, `0600`, owned by the consuming service user | default |
+| sops-nix | ciphertext in git and in the store; plaintext in `/run/secrets` | default |
+| File (`janus secrets put`) | state partition, `0600` | a secret created on the board, or a hot-override passphrase |
+| Inline (`password = "…"`) | world-readable `/nix/store` | lab only; `janus.security.allowInlineSecrets = true` |
 
-Provisioning: `janus secrets put <name>` over SSH (reads stdin), or
-`janus deploy --secrets ./secrets/` from the build host. Secret files are
-part of `--preserve-state`. Subscription URLs contain tokens; they are
-treated as secrets and support `urlFile`.
-
-Future: sops-nix/agenix integration for users who want secrets in the flake
-(P3).
+agenix was rejected as the default: it solves the same problem with a
+narrower tool, and sops-nix is the one NixOS operators already have in a
+multi-host repo. A user MAY use agenix via plain NixOS options; Janus does
+not document two first-class paths.
 
 ### 4.4 Network
 

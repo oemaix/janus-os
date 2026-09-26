@@ -4,32 +4,89 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-09-15 |
+| Last updated | 2026-09-23 |
 
-## 1. The two kinds of change
+## 1. What maintenance is
 
-| Kind | Examples | How it takes effect | Where it lives |
-|------|----------|---------------------|----------------|
-| **Configuration** | swap WAN/LAN ports, add a LAN, change traffic mode, add a subscription or manual node, change grouping/rules, enable a service | Edit `configuration.nix` on the build host → rebuild → deploy (re-flash or closure push) → reboot | Nix store (read-only) |
-| **Data** | node lists fetched from subscriptions, Geo data, manual group selection, DHCP leases, statistics, secrets | Runtime refresh/reload, automatic on schedule or via `janus` CLI; no rebuild | State partition (`/var`) |
+A router is used by a person who will not rebuild an image to add a printer
+lease or to paste a new subscription URL, and who will also not accept a
+box that can be changed from the shell with nothing written down. Janus
+keeps both constraints by splitting work into three kinds.
 
-The requirement note asked whether *policy* changes (swap ports, add
-subscription, update nodes, update Geo data) should all go through
-`nixos-rebuild`. The answer this design gives: **definitions** are
-configuration (rebuild), **contents** are data (refresh). Adding a
-subscription URL is configuration; the nodes it yields are data. Swapping
-ports is configuration. Updating Geo data is data. This keeps the Board free
-of Nix evaluation while still letting relay lists stay fresh.
+| Kind | Examples | How it takes effect | Record |
+|------|----------|---------------------|--------|
+| **Maintenance action** | refresh subscriptions, refresh Geo data, select another node while one is dead, restart a WAN, `janus dns check` | CLI (or a later maintenance page). No rebuild. | journal + `janus status`; node selection persists until a rebuild changes that group's default |
+| **Hot override** | change an existing subscription URL, add a static lease, rotate a Wi-Fi passphrase | `janus override set`; a runtime renderer reloads the affected service | `/var/lib/janus/overrides.json` (passphrases in the secrets directory). `janus status` shows drift against the image |
+| **Configuration** | swap WAN/LAN ports, add a LAN or a subscription, change traffic mode, routing rules, firewall, board, engine | Edit the private config repo on the build host, commit, rebuild, deploy | git |
+
+The board does not run `nixos-rebuild`. Frequent edits are hot overrides
+exactly so that a rebuild is not the price of ordinary use. Structural
+edits stay in git so the project does not become an imperative router with
+a Nix build step nobody runs.
+
+### 1.1 Allowlist
+
+Overridable without a rebuild:
+
+* `proxy.subscriptions.<existing>.url`
+* `network.lans.<existing>.dhcp.staticLeases.<host>`
+* `network.wifi.<existing>.passphrase`
+
+Not overridable: new subscriptions, new LANs, port forwards, routing
+rules, groups, WAN mode, port assignment. Those change units, firewall,
+or identity of the router and go through a rebuild. If a requested key is
+not on the allowlist, the CLI refuses it and names the rebuild path.
+
+### 1.2 How a hot override gets back into git
+
+Best practice, in order:
+
+1. Change it on the router when that is where you are (`janus override set`).
+2. When you are next at the build host, `ssh router janus override export`
+   and commit the snippet into the private config repo (and into
+   `secrets.yaml` when the value is a secret).
+3. The next image matches the router; drift disappears.
+
+The export is the tracking mechanism. There is no silent sync and no
+requirement to commit before the router will use the new value. A user
+who never commits still has the override in `janus backup`. A user who
+commits has one history. Editing the same key in git and on the router
+without exporting is drift; `janus status` prints it rather than guessing
+which side wins. The running value is the override until the next deploy,
+which replaces overrides that the new image now contains.
+
+### 1.3 Circumvention is the unstable part
+
+Ordinary router state (link up, DHCP, NAT) is monitored like any other
+router: interface counters, WAN health, lease table.
+
+The tunnel needs its own signals because it fails more often than Ethernet:
+
+| Event | What the operator does | Kind |
+|-------|------------------------|------|
+| A node stops answering | `janus proxy select <group> <other>` (url-test also moves by itself) | maintenance action |
+| Geo data refresh failed | `janus proxy geodata refresh` | maintenance action |
+| Subscription fetch failed | `janus proxy refresh <name>` | maintenance action |
+| The vendor changed the subscription URL | `janus override set proxy.subscriptions.<name>.url <url>` | hot override |
+
+`janus status` shows the last success, the last error, and the selected
+node for each group. That is the maintenance surface for 1.0. A small web
+page that only calls these commands is a later option (FR-ACC-005); it
+does not replace the CLI and it does not edit `configuration.nix`.
 
 ## 2. Day-0: first deployment
 
 1. `nix flake init -t github:<org>/janus-os` on the build host.
 2. Edit `configuration.nix` (board, ports, WAN, LAN, SSH key,
-   subscriptions). Secrets referenced by `…File` paths are provisioned later.
+   subscriptions). Generate an age key and encrypt `secrets.yaml` to it
+   before the build.
 3. `nix build .#images.<host>`; flash `result/janus-<host>.img`.
 4. Boot; connect to LAN; `ssh root@192.168.10.1` (or the configured address).
-5. Provision secrets: `janus secrets put pppoe < pppoe.txt`; PPPoE WAN comes
-   up automatically when the file appears (`janus wan restart main`).
+5. The age key is generated on the build host before the first build, and
+   `secrets.yaml` is encrypted to it. After the first boot, install that
+   private key once: `janus secrets install-age-key` (paste). Services that
+   need secrets start when the key appears. A secret that will never live
+   in git can instead be loaded with `janus secrets put`.
 6. `janus status` — verify WAN, DNS, proxy health.
 
 Alternative for step 5: `janus deploy --secrets ./secrets/ <host>` from the
@@ -50,6 +107,8 @@ build host pushes all secret files before/after flashing.
 | Traffic counters | `janus traffic [iface] [--daily\|--monthly]` |
 | Live top talkers | `janus traffic top` (requires `scope = per-host`) |
 | DNS diagnostics | `janus dns query <name>`, `janus dns flush`, `janus dns stats` |
+| DNS leak / poison check | `janus dns check` |
+| Set a hot override | `janus override set <key> <value>`; `janus override diff`; `janus override export` |
 | Logs | `janus logs [unit] [-f]` (journalctl wrapper with Janus units) |
 | Firewall view | `janus fw list` (rendered nftables with zone annotations) |
 | Version/provenance | `janus version --components` (reads `/etc/janus/build.json`) |
@@ -98,8 +157,9 @@ Timers use `Persistent=true` so a missed run executes after boot, and
 
 ## 7. Backup and restore
 
-`janus backup > janus-state-$(date -I).tar.zst` archives secrets,
-subscription cache, Geo data, selection, leases and statistics.
+`janus backup > janus-state-$(date -I).tar.zst` archives the age key,
+secret files, hot overrides, subscription cache, Geo data, selection,
+leases and statistics.
 `janus restore < file` writes them back and reloads services. The
 configuration itself is in git on the build host — that plus this archive
 reproduces a router completely.

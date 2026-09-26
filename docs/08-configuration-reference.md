@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-09-15 |
+| Last updated | 2026-09-23 |
 
 This document defines the **shape and semantics** of the `janus.*` option
 tree. The final, exhaustive reference (every option with type, default,
@@ -25,8 +25,11 @@ learning path: copy, edit values, build.
 * References to other objects use typed prefixes where ambiguity is
   possible: `port:`, `vlan:`, `node:`, `group:`, `sub:`. Where the type is
   fixed by context (e.g. `lans.<n>.members`), plain names are accepted.
-* Secrets: any `password`/`key`/`passphrase` option has a sibling
-  `…File` option; set exactly one. See *11 — Security*.
+* Secrets: prefer sops-nix (`urlSecret`, `passwordSecret`, …) naming a
+  key in the user's `secrets.yaml`. A `…File` sibling remains for a file
+  created on the board with `janus secrets put`. Inline strings require
+  `janus.security.allowInlineSecrets`. Wi-Fi SSID is a normal string.
+  See *11 — Security*.
 * Durations: `"30m"`, `"6h"`, `"1d"`, or a 5-field cron expression.
 
 ## 1. `janus.system`
@@ -45,7 +48,7 @@ learning path: copy, edit values, build.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `board` | enum | — (required) | `rpi2` `rpi3` `rpi4` `nanopi-r4s` `le-potato` `visionfive2` `x86_64-test` |
+| `board` | enum | — (required) | `rpi-zero-2w` `rpi2` `rpi3` `rpi4` `nanopi-r4s` `le-potato` `visionfive2` `x86_64-test` |
 | `peripherals.<name>.class` | enum | — | `wifi` `nic` `wwan` `bluetooth` `hmi` |
 | `peripherals.<name>.match` | attrs | — | `usbVendorProduct = "0bda:8153"` or `usbPath`, `pciSlot`, `mac` |
 | `peripherals.<name>.wwan.mode` | enum | `auto` | `ecm` `ncm` `rndis` `qmi` `mbim` |
@@ -125,6 +128,7 @@ user defines `groups.Auto`.
 insecure, reality.{publicKey, shortId}}`, `transport.{type, path, host,
 serviceName}`, `tags` (list of strings, matchable). Protocol-specific:
 
+* `vmess.{uuid, security, alterId}` — `alterId` defaults to 0; new nodes should prefer VLESS
 * `vless.{uuid, flow}` — `flow = "xtls-rprx-vision"|null`
 * `trojan.{password|passwordFile}`
 * `shadowsocks.{method, password|passwordFile, plugin.{name, options}}`
@@ -168,7 +172,37 @@ resolvers `never`, encryption `prefer`, fake-IP `auto`, `ipv6Answers =
 | `ssh.rootPasswordFile` | path/null | `null` | Only meaningful with the above |
 | `cli.enable` | bool | `true` | `janus` CLI |
 
-## 11. Validation rules (assertions) — non-exhaustive
+## 11. Secrets and hot overrides
+
+Secrets in the user's private repo:
+
+```
+sops.defaultSopsFile = ./secrets.yaml;
+sops.age.keyFile = "/var/lib/janus/secrets/age.key";   # not in git; on the state partition
+janus.proxy.subscriptions.providerA.urlSecret = "sub-providerA";
+janus.network.wans.main.pppoe.passwordSecret = "pppoe";
+janus.network.wifi.home.passphraseSecret = "wifi-home";
+```
+
+The age key is created once, backed up by the user, and never committed.
+Decryption runs at boot into `/run/secrets` (tmpfs). The Nix store holds
+ciphertext only.
+
+Hot overrides are not Nix options. They are keys in
+`/var/lib/janus/overrides.json`, written by `janus override set` and read
+by the runtime renderers:
+
+| Key | Example |
+|-----|---------|
+| `proxy.subscriptions.<name>.url` | rotate a vendor URL without rebuilding |
+| `network.lans.<name>.dhcp.staticLeases.<host>` | add a lease |
+| `network.wifi.<name>.passphrase` | rotate a PSK; stored in the secrets directory, not in the JSON |
+
+Anything else is rejected. `janus override diff` shows drift. `janus
+override export` prints Nix (and, for secret keys, a reminder to update
+`secrets.yaml`) for the private config repo.
+
+## 12. Validation rules (assertions) — non-exhaustive
 
 * Every `uplink`/`members` entry resolves to a port, VLAN or peripheral.
 * No two LANs overlap in IPv4 subnet; no LAN overlaps a WAN static subnet.
@@ -183,3 +217,4 @@ resolvers `never`, encryption `prefer`, fake-IP `auto`, `ipv6Answers =
 * IPv6 `delegated` + traffic mode ≠ `direct` → warning unless IPv6
   interception is enabled.
 * `janus.hardware.board` is set and supports every declared peripheral class.
+* A `wwan` peripheral whose USB ID is not on the allowlist fails evaluation.

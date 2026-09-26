@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-09-15 |
+| Last updated | 2026-09-23 |
 
 Key words MUST / SHOULD / MAY follow RFC 2119. Priority: **P1** required for
 1.0, **P2** planned, **P3** desirable.
@@ -13,7 +13,7 @@ Key words MUST / SHOULD / MAY follow RFC 2119. Priority: **P1** required for
 
 | ID | Requirement | Prio |
 |----|-------------|------|
-| FR-CFG-001 | The system MUST be fully described by a NixOS configuration consumed by a Nix flake; no runtime configuration files outside the Nix store are authoritative, except *data* (see FR-OPS-003). | P1 |
+| FR-CFG-001 | The system shape MUST be described by a NixOS configuration consumed by a Nix flake. Runtime files outside the Nix store are authoritative only for *data* (FR-OPS-003) and *hot overrides* (FR-OPS-007). | P1 |
 | FR-CFG-002 | All Janus-specific options MUST live under the `janus.*` namespace and MUST use router vocabulary (WAN, LAN, VLAN, zone, node, group, rule). | P1 |
 | FR-CFG-003 | A user MUST be able to produce a working configuration by editing only values in the shipped example, without knowing the Nix language beyond literals, lists and attribute sets. | P1 |
 | FR-CFG-004 | Every `janus.*` option MUST have a description, a type and, where sensible, a default and an example; the reference document MUST be generated from module definitions. | P1 |
@@ -88,10 +88,10 @@ Key words MUST / SHOULD / MAY follow RFC 2119. Priority: **P1** required for
 
 | ID | Requirement | Prio |
 |----|-------------|------|
-| FR-PRX-001 | Supported outbound protocols MUST include: VLESS (with XTLS-RPRX-Vision and REALITY), Trojan, Shadowsocks (AEAD; with `simple-obfs` and `v2ray-plugin` where the engine supports them). | P1 |
+| FR-PRX-001 | Supported outbound protocols MUST include: VLESS (with XTLS-RPRX-Vision and REALITY), VMess, Trojan, Shadowsocks (AEAD; with `simple-obfs` and `v2ray-plugin` where the engine supports them). | P1 |
 | FR-PRX-002 | The engine MUST be selectable: `sing-box` (default) or `xray`. Features unsupported by the chosen engine MUST fail at evaluation with a message. | P1 |
 | FR-PRX-003 | Subscriptions MUST be declared with name, URL, refresh schedule (interval in minutes/hours or cron expression) and optional user-agent/headers. | P1 |
-| FR-PRX-004 | Supported subscription formats MUST include base64 share-link lists (`ss://`, `vless://`, `trojan://`), Clash/Clash.Meta YAML and sing-box JSON. | P1 |
+| FR-PRX-004 | Supported subscription formats MUST include base64 share-link lists (`ss://`, `vless://`, `vmess://`, `trojan://`), Clash/Clash.Meta YAML and sing-box JSON. | P1 |
 | FR-PRX-005 | The build MUST fetch each subscription on the build host and embed the snapshot in the image so the router is functional at first boot. | P1 |
 | FR-PRX-006 | At runtime, a scheduled job MUST refresh subscriptions (through the active tunnel when necessary), validate, atomically replace the cache and reload the engine. Failed refreshes MUST keep the previous data. | P1 |
 | FR-PRX-007 | Nodes originating from subscriptions MUST NOT be editable by the user; overrides are expressed as group/rule configuration. | P1 |
@@ -121,6 +121,9 @@ Key words MUST / SHOULD / MAY follow RFC 2119. Priority: **P1** required for
 | FR-DNS-006 | DNS pollution defenses MUST include: never sending foreign domains to domestic/carrier resolvers, ignoring answers from unexpected sources, and optional answer sanity checks (bogus IP list). | P1 |
 | FR-DNS-007 | Local overrides (hosts entries, per-domain forwarders) and static-lease hostnames MUST be supported. | P2 |
 | FR-DNS-008 | EDNS Client Subnet handling MUST be configurable to protect privacy while allowing CDN accuracy for domestic resolvers. | P3 |
+| FR-DNS-009 | DNS MUST be implemented by the selected proxy engine. A second DNS stack (mosdns, chinadns-ng, or a standalone forwarder that owns policy) MUST NOT be required. | P1 |
+| FR-DNS-010 | Fake-IP MUST be a user-facing choice: `auto` (default), `on`, or `off`, independent of which engine is selected. | P1 |
+| FR-DNS-011 | `janus dns check` MUST probe the live arrangement for leaks and poisoning: foreign name answered with a bogus or domestic-only address, domestic name failing closed, plaintext DNS bypass, unexpected AAAA on a proxied name. The command reports; it does not change policy. | P1 |
 
 ## 8. Monitoring (MON)
 
@@ -130,7 +133,8 @@ Key words MUST / SHOULD / MAY follow RFC 2119. Priority: **P1** required for
 | FR-MON-002 | The monitored interface set and scope (counters only, per-host accounting, flow export) MUST be configurable. | P1 |
 | FR-MON-003 | Flow export (IPFIX/NetFlow v9) to a collector SHOULD be supported. | P2 |
 | FR-MON-004 | A Prometheus-compatible metrics endpoint MAY be enabled on the management zone. | P3 |
-| FR-MON-005 | Proxy engine health (group latency, selected node) MUST be observable via SSH CLI. | P1 |
+| FR-MON-005 | Proxy engine health (group latency, selected node, last subscription refresh, last Geo refresh, and the error of a failed refresh) MUST be observable via the CLI. | P1 |
+| FR-MON-006 | A failed node, a failed refresh, and drift of hot overrides MUST be visible in `janus status` without reading logs. | P1 |
 
 ## 9. Remote access (RA)
 
@@ -148,7 +152,7 @@ Key words MUST / SHOULD / MAY follow RFC 2119. Priority: **P1** required for
 | FR-ACC-002 | Password authentication MUST be disabled by default; enabling it MUST require an explicit option and MUST NOT be possible without at least one key. | P1 |
 | FR-ACC-003 | SSH MUST listen on LAN and `mgmt` zones only by default. | P1 |
 | FR-ACC-004 | A `janus` CLI MUST exist on the router for status, group selection, data refresh and diagnostics. | P1 |
-| FR-ACC-005 | A GUI is out of scope for 1.0. | — |
+| FR-ACC-005 | A general configuration GUI is out of scope. A later maintenance page MAY expose status, maintenance actions, and the hot-override allowlist, and MUST NOT edit the rest of the configuration. | P3 |
 
 ## 11. Hardware (HW)
 
@@ -159,24 +163,29 @@ Key words MUST / SHOULD / MAY follow RFC 2119. Priority: **P1** required for
 | FR-HW-003 | `wwan` peripherals MUST support Ethernet-mode (ECM/RNDIS/NCM) and QMI/MBIM operation and MAY expose an AT control channel for status (signal, operator, SMS). | P2 |
 | FR-HW-004 | `hmi` peripherals MUST be able to display status pages (WAN state, IP, tunnel health) and MAY bind buttons to actions (e.g. cycle group, reboot). | P3 |
 | FR-HW-005 | Unsupported peripherals MUST be reported at evaluation with a pointer to the support matrix. | P2 |
+| FR-HW-006 | Redistributable closed-source firmware blobs required by a supported board or peripheral (Raspberry Pi wireless firmware, board boot firmware) MUST be allowed. Out-of-tree kernel drivers and device-specific mode-switch hacks MUST NOT be added to make an unlisted device work. | P1 |
+| FR-HW-007 | WWAN support MUST be an allowlist of known devices and modes. A dongle that needs an undocumented or fragile setup MUST be rejected with a pointer to the matrix rather than given a best-effort configuration. | P1 |
 
 ## 12. Operations (OPS)
 
 | ID | Requirement | Prio |
 |----|-------------|------|
-| FR-OPS-001 | The only way to change *configuration* MUST be rebuild-and-deploy from the build host. | P1 |
+| FR-OPS-001 | Structural configuration MUST change only by rebuild-and-deploy from the build host. The board MUST NOT evaluate Nix or run `nixos-rebuild`. | P1 |
 | FR-OPS-002 | Deployment methods MUST include full-image re-flash; SHOULD include remote closure deployment (`nixos-rebuild --target-host`) with the store temporarily remounted read-write by the deployment tool; MAY include A/B image slots. | P1/P2/P3 |
 | FR-OPS-003 | *Data* (subscription cache, Geo data, leases, statistics) MUST live on the state partition and MUST be refreshable at runtime without rebuild. | P1 |
 | FR-OPS-004 | The `janus` CLI MUST allow: `status`, `refresh subscriptions`, `refresh geodata`, `select <group> <node>`, `test <group>`, `wan restart <name>`, `logs`. | P1 |
 | FR-OPS-005 | Boot MUST succeed with an empty or corrupted state partition (re-initialize from embedded snapshots). | P1 |
 | FR-OPS-006 | A factory-reset action (wipe state partition) MUST be available via CLI and MAY be bound to an HMI button. | P2 |
+| FR-OPS-007 | Hot overrides MUST be limited to an allowlist: subscription URL of an existing subscription, static DHCP leases of an existing LAN, Wi-Fi passphrase of an existing AP. Adding a subscription, a LAN, a port forward, or a routing rule MUST NOT be a hot override. | P1 |
+| FR-OPS-008 | Hot overrides MUST be stored on the state partition, applied by a runtime renderer, included in backup, and reported as drift against the embedded configuration. `janus override export` MUST emit a snippet the user can commit into the private config repo. | P1 |
+| FR-OPS-009 | Maintenance actions (refresh, temporary node selection, WAN restart, DNS check) MUST be available from the CLI and MUST NOT require a rebuild. Temporary node selection MUST survive reboot and MUST be reset when a rebuild changes that group's `default`. | P1 |
 
 ## 13. Security (SEC)
 
 | ID | Requirement | Prio |
 |----|-------------|------|
 | FR-SEC-001 | No services other than SSH (and configured remote-access) MUST listen on WAN. | P1 |
-| FR-SEC-002 | Secrets (PPPoE password, node credentials, WireGuard keys) MUST be supported either inline (accepting they are world-readable in the store) or via a secrets file on the state partition referenced by path; the choice MUST be documented. | P1 |
+| FR-SEC-002 | Secrets MUST be managed with sops-nix and age (ADR-0014): PPPoE password, Wi-Fi passphrase, subscription URL, manual node credentials, WireGuard private key, remote-access auth key. Wi-Fi SSID and hostnames are not secrets. Plaintext in the Nix store MUST require `janus.security.allowInlineSecrets`. Secrets created only on the board MAY use `janus secrets put` instead of sops. | P1 |
 | FR-SEC-003 | The system MUST run with a read-only root and store, no setuid helpers beyond what NixOS requires, and systemd hardening on Janus services. | P1 |
 | FR-SEC-010 | IPv6 privacy controls (FR-NET-032/033) MUST be enabled by default. | P1 |
 | FR-SEC-011 | Outbound telemetry from any bundled component MUST be disabled. | P1 |

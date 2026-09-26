@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-09-15 |
+| Last updated | 2026-09-23 |
 
 ## 1. Terminology
 
@@ -28,6 +28,7 @@
 | **NanoPi R4S** | RK3399 · aarch64 | 2× 1 GbE (RTL8211E + RTL8111H/PCIe) | 1 | Reference router board. Mainline U-Boot at raw offset (sector 64); GPT. No Wi-Fi. |
 | **Raspberry Pi 4 / 400 / CM4** | BCM2711 · aarch64 | 1× 1 GbE (+ USB 3 NICs) | 1 | Firmware needs FAT boot partition with `config.txt`; boots via U-Boot or directly. On-board Wi-Fi (AP capable, 2.4/5 GHz). |
 | **Raspberry Pi 3 / 3+** | BCM2837 · aarch64 | 1× 100 MbE (USB 2 shared) | 2 | Low throughput; fine for tunnel-only use behind another router. |
+| **Raspberry Pi Zero 2 W** | BCM2710A1 · aarch64 | Wi-Fi 4 + Bluetooth, no Ethernet | 2 | 512 MiB RAM. Needs a USB Ethernet peripheral for a wired WAN or LAN. On-board Wi-Fi and Bluetooth need the redistributable closed Broadcom firmware, which Janus ships (FR-HW-006). Keep subscriptions small; this board is not a 500-node target. |
 | **Libre Computer Le Potato (AML-S905X-CC)** | S905X · aarch64 | 1× 100 MbE | 2 | Mainline U-Boot with FIP at raw offset; eMMC or SD. |
 | **StarFive VisionFive 2** | JH7110 · riscv64 | 2× 1 GbE | 3 | Needs recent kernel; SPL + U-Boot in dedicated GPT partitions (types `2E54B353…`, `BC13C2FF…`); no binary cache. |
 | **Raspberry Pi 2 (v1.1)** | BCM2836 · armv7l | 1× 100 MbE | 3 | 32-bit; no cache; RPi 2 v1.2 is BCM2837 and uses the `rpi3` profile. |
@@ -35,7 +36,7 @@
 
 Each board profile (`modules/boards/<board>.nix`) provides:
 
-* kernel package/config and device trees; required out-of-tree firmware;
+* kernel package/config and device trees; redistributable firmware, including closed blobs when the board does not work without them;
 * boot method and boot partition contents (FAT layout, `extlinux.conf`,
   U-Boot binaries, raw offsets `firmwareOffsetMiB`);
 * partition table type (GPT/MBR/hybrid);
@@ -70,10 +71,16 @@ plane (AT over USB serial, QMI, MBIM) is optional and used for status only
 | `mbim` | `cdc_mbim` | `wwan0` | `mbimcli` |
 
 The board-agnostic module handles mode switching (`usb_modeswitch` rules
-from an ID database plus per-peripheral overrides), link bring-up per mode,
-and health reporting into `/run/janus/wwan/<name>`. A WAN with `mode =
-"wwan"` references the peripheral; internally it becomes a `dhcp` WAN
-(Ethernet modes) or a QMI/MBIM-managed link.
+from the allowlist only), link bring-up per mode, and health reporting
+into `/run/janus/wwan/<name>`. A WAN with `mode = "wwan"` references the
+peripheral; internally it becomes a `dhcp` WAN (Ethernet modes) or a
+QMI/MBIM-managed link.
+
+Support is an allowlist (FR-HW-007). Many dongles implement several USB
+compositions and only one of them is reliable; some need vendor tools or
+a sequence that breaks on the next firmware. Those devices are out of
+scope. A USB ID that is not in §4.3 fails evaluation. Users do not get a
+generic "try AT commands until it connects" path.
 
 ### 4.3 Support matrix (initial)
 
@@ -104,6 +111,7 @@ users may add `hardware.firmware`/kernel modules via raw NixOS options.
 | NanoPi R4S | line rate 1 GbE | 300–500 Mbit/s | RK3399 crypto extensions help TLS |
 | RPi 4 | ~900 Mbit/s | 200–350 Mbit/s | USB NIC for 2nd port costs CPU |
 | RPi 3 | ~95 Mbit/s | 40–60 Mbit/s | USB 2 bus shared |
+| RPi Zero 2 W | ~90 Mbit/s via USB NIC | 30–50 Mbit/s | 512 MiB RAM; Wi-Fi AP and a tunnel together are the tight case |
 | VisionFive 2 | ~900 Mbit/s | untested | |
 | Le Potato | ~95 Mbit/s | 40–60 Mbit/s | |
 

@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-09-15 |
+| Last updated | 2026-09-23 |
 
 Terms are listed alphabetically. Where the requirement note used an informal
 or ambiguous word, the canonical term is given and the informal one is noted
@@ -35,6 +35,9 @@ namespace is `janus.proxy`.
 node lists, Geo data) without changing the system closure. Contrast with
 *Rebuild*.
 
+**Drift** — A hot override whose value differs from the configuration
+embedded in the running image. Drift is expected and must be visible.
+
 **Engine** — The proxy core executing tunnels on the Board: `sing-box`
 (default) or `xray`. Exactly one engine is active per system.
 
@@ -47,6 +50,11 @@ by *subscription* (implicit), by *matcher* (regex, glob, PEG over node
 names) or by *manual list*. A group has a *selection strategy* (e.g. manual,
 url-test, fallback, load-balance).
 
+**Hot override** — A value from a fixed allowlist (subscription URL, static
+DHCP lease, Wi-Fi passphrase) changed on the board, stored as declarative
+data on the state partition, and applied by a runtime renderer. It does not
+change the system closure. *Avoid:* calling this `nixos-rebuild`.
+
 **Image** — The complete, flashable disk image produced by the build: all
 partitions, boot firmware, populated file systems. The unit of deployment.
 
@@ -57,6 +65,10 @@ a full language is warranted.
 **LAN** — A downstream network segment served by the router (DHCP server,
 NAT source, firewall zone). Janus supports multiple LANs, each with its own
 bridge, subnet and policy.
+
+**Maintenance action** — A runtime operation that does not change
+configuration or hot overrides: refresh subscriptions, refresh Geo data,
+select a node temporarily, restart a WAN, run a DNS self-test.
 
 **Matcher** — A predicate over a Node's name (and optionally other
 attributes) that assigns it to a Group. Kinds: `regex`, `glob`, `peg`.

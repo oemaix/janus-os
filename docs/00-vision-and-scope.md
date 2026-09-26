@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-09-15 |
+| Last updated | 2026-09-23 |
 
 ## 1. Problem statement
 
@@ -33,8 +33,10 @@ environment) additionally need a router that:
 
 > A router you *build*, not *install*: one declarative configuration file
 > produces a complete, read-only, reproducible image for a small board. The
-> device runs it; it never compiles, downloads packages or mutates itself.
-> Changing the router means changing the file and rebuilding.
+> device runs it; it never compiles, downloads packages, or evaluates Nix.
+> Changing the shape of the system means changing the file and rebuilding.
+> A short allowlist of day-to-day values can be changed on the router, and
+> each such change is stored as an explicit override record.
 
 Janus OS treats the router like a compiled artifact. The build environment
 (with all its network reachability, compilers and caches) stays on the
@@ -49,14 +51,21 @@ developer's or user's workstation. The device only carries the results.
 | G3 | **Immutable, reproducible system.** The device carries no compiler or build tooling; a rebuild that would download or compile fails loudly. | `nix build` of the same flake revision yields an identical system closure. |
 | G4 | **First-class circumvention.** Subscriptions, manual nodes, grouping (regex, glob, PEG), policy routing and hardened split DNS are native configuration objects, backed by sing-box or Xray. | All listed protocols are configurable without leaving `configuration.nix`. |
 | G5 | **Slim and fast.** Only what a router needs. | Image size and boot time budgets defined in the SRS (NFR). |
-| G6 | **Multi-board.** Support for common ARM and RISC-V single-board computers and their USB peripherals (Wi-Fi, NIC, 4G/WWAN, Bluetooth, small HMI). | Each board listed in *10 — Hardware Support* boots and routes from a stock image. |
+| G6 | **Multi-board.** Support for common ARM and RISC-V single-board computers and their USB peripherals (Wi-Fi, NIC, 4G/WWAN, Bluetooth, small HMI), including boards that need redistributable closed firmware. | Each board listed in *10 — Hardware Support* boots and routes from a stock image. |
+| G7 | **Maintainable by a person, not only by a rebuild.** Frequent failures and small edits (a dead node, a failed refresh, a new static lease, a rotated subscription URL) are handled on the router. Structural edits still require a rebuild. | Every on-router change is either a maintenance action or a hot override that `janus status` can show. |
 
 ## 4. Non-goals (current scope)
 
-* A web GUI. SSH with public-key authentication is the only management
-  interface for now. A GUI is a possible future item (see *13 — Roadmap*).
-* On-device package installation or upgrades. Janus OS is not a package
-  manager host.
+* A general web GUI for editing the configuration. 1.0 management is SSH
+  and the `janus` CLI. A later page may expose status and the hot-override
+  allowlist only; it is not a second configuration system.
+* On-device package installation, Nix evaluation, or `nixos-rebuild` on the
+  board. Janus OS is not a package-manager host.
+* A hosted service that accepts a user's configuration and subscription
+  URLs and builds an image for them. A local wizard that writes
+  `configuration.nix` on the user's own machine is in scope later.
+* Per-user forks of this repository. Users keep a private config repo that
+  consumes Janus OS as a flake input.
 * Running arbitrary services (NAS, media, containers). Users may add plain
   NixOS options, but Janus does not define or test them.
 * Being a general NixOS distribution. Janus is a *profile* of NixOS with a
@@ -106,3 +115,23 @@ developer's or user's workstation. The device only carries the results.
   transitions, looking both inward (LAN) and outward (WAN).
 * **Board** — a supported single-board computer (see Glossary).
 * **Peripheral** — a supported add-on device such as a USB dongle or HAT.
+
+## 9. Project positioning
+
+Janus OS is a public project. The reference environments are censored
+networks, with mainland China first and Iran and Russia explicitly welcome.
+The repository itself stays free of credentials, subscription URLs, and
+vendor tokens.
+
+English is the canonical language of the repository and of this document
+suite. Translations of the user-facing README (Chinese, Russian, Persian)
+are produced at pre-release, not before; the English text remains the one
+that definitions and reviews follow. Chinese is included because it is the
+primary audience, even though an early note listed only English, Russian,
+and Persian.
+
+Publication hygiene is mirrors of the git repository (so one hosting
+account is not a single point of failure). A second GitHub account is not
+treated as protection: it does not separate a person from a project once
+browser, recovery mail, or commit metadata line up. This suite does not
+give legal advice about publishing the project.

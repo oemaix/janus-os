@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-09-15 |
+| Last updated | 2026-09-23 |
 
 ## 1. Scope
 
@@ -20,6 +20,7 @@ for one engine:
 | Capability | sing-box | Xray | Janus handling |
 |------------|----------|------|----------------|
 | VLESS + XTLS-RPRX-Vision | yes | yes | — |
+| VMess | yes | yes | included because subscription vendors still publish it; not the recommended protocol |
 | REALITY | yes | yes | — |
 | Trojan | yes | yes | — |
 | Shadowsocks AEAD (incl. 2022) | yes | yes (2022 partial) | assertion on unsupported cipher |
@@ -162,6 +163,12 @@ themselves when `via = "direct"`).
 
 ## 7. DNS policy
 
+DNS policy is rendered into the selected engine. mosdns and chinadns-ng are
+not used. Both are capable split-DNS daemons, and chinadns-ng is aimed
+directly at poisoning, but a second stack would keep its own domain lists
+and would not share the engine's fake-IP table or sniffing. Leak checks
+belong to a test command, not to a second resolver (ADR-0019).
+
 ### 7.1 Threats addressed
 
 | Threat | Countermeasure |
@@ -194,8 +201,20 @@ janus.dns = {
 };
 ```
 
-`fakeIp.enable = "auto"` means: on in `rule-based`/`proxy-all`, off in
-`direct`.
+`fakeIp.enable` is a real choice, not an internal detail:
+
+| Value | Meaning |
+|-------|---------|
+| `"auto"` | On in `rule-based` and `proxy-all`, off in `direct`. Default. |
+| `true` | Always fake-IP for proxied names, including when the user wants it under a custom mode later. |
+| `false` | Real addresses only. Remote names are resolved through the tunnel. Use this when an application breaks on the fake-IP range. |
+
+`janus dns check` compares a fixed probe list (a domestic name, a foreign
+name, a name that pollution commonly forges) against the policy: where the
+query was sent, whether the answer is in the bogus list, whether an AAAA
+leaked for a proxied name, and whether a LAN client can still reach a
+resolver other than the router. It prints a pass/fail per probe and does
+not rewrite `janus.dns`.
 
 ### 7.3 Resolution flow (rule-based mode)
 

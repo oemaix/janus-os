@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-09-15 |
+| Last updated | 2026-09-23 |
 
 ## 1. Personas
 
@@ -149,3 +149,29 @@ requirements it drives (see *03 — Requirements*).
   IPv4, and stable-privacy addressing is enforced. In `disabled` mode no IPv6
   reaches LAN hosts.
 * **Drives:** FR-NET-030..034, FR-SEC-010
+
+### UC-16 Vendor rotates the subscription URL
+
+* **Actor:** Mei
+* **Flow:** The vendor replaces the URL. On the router, `janus override set
+  proxy.subscriptions.providerA.url <new>`. The refresh runs with the new
+  URL. `janus status` shows drift. Later, on the laptop, `janus override
+  export` updates `secrets.yaml` and the next image has no drift.
+* **Drives:** FR-OPS-007, FR-OPS-008, FR-SEC-002
+
+### UC-17 Add a printer lease without rebuilding
+
+* **Actor:** Mei
+* **Flow:** `janus override set network.lans.home.dhcp.staticLeases.printer
+  '{"mac":"…","ip":"192.168.10.6"}'`. The DHCP renderer reloads. The lease
+  is in the override file and in the next backup.
+* **Drives:** FR-OPS-007, FR-OPS-008
+
+### UC-18 Check that DNS is not poisoned
+
+* **Actor:** Mei
+* **Flow:** `janus dns check` probes a domestic name, a foreign name, and a
+  name commonly forged by pollution. It reports where each query went and
+  whether the answer is usable. Mei switches `fakeIp.enable` only if an
+  application breaks, not as a debugging guess.
+* **Drives:** FR-DNS-010, FR-DNS-011

@@ -4,12 +4,14 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-09-15 |
+| Last updated | 2026-09-23 |
 
 ## 1. Principles
 
-1. The Board never builds. All evaluation, compilation, and fetching happens
-   on the build host (C-001, FR-BLD-003/004/007).
+1. The Board never builds and never evaluates Nix. All evaluation,
+   compilation, and package fetching happens on the build host
+   (C-001, FR-BLD-003/004/007, ADR-0017). Hot overrides are data, not a
+   rebuild.
 2. One command produces one flashable image (FR-BLD-001).
 3. Builds are reproducible except for explicitly impure inputs
    (subscription snapshots), which can be pinned (FR-BLD-006).
@@ -53,11 +55,28 @@ Splitting `configuration.nix` into several files is supported and
 recommended for large setups (FR-CFG-006); the template ships a single
 file for simplicity.
 
+This template is a **separate git repository** from Janus OS. The user
+clones nothing of the OS for day-to-day use; `nix flake init -t` creates
+their private repo, and `inputs.janus.url` pins a release. They do not
+fork Janus OS per router, and they do not keep one branch per device
+inside the OS repo. Flakes require that private repo to be a git checkout:
+edit `configuration.nix`, commit, then `nix build`. Uncommitted files are
+invisible to a flake. That git requirement is a reason to keep evaluation
+on the build host, where committing is a normal step, and not on the board.
+
+On-site `nixos-rebuild` was considered and rejected (ADR-0017). It would
+not rewrite the Nix store; it would add store paths. Doing that on the
+board would still require the Nix evaluator, a writable store, and the
+nixpkgs source (hundreds of megabytes) for evaluation, and a dirty tree
+would silently not apply. A Raspberry Pi Zero 2 W does not have the RAM
+for a NixOS evaluation. Parameter changes that humans actually make on the
+router go through hot overrides instead.
+
 ## 4. Target architectures and how they are built
 
 | Board | System | Binary cache | Default build strategy |
 |-------|--------|--------------|------------------------|
-| RPi 3/4, NanoPi R4S, Le Potato | `aarch64-linux` | cache.nixos.org | `boot.binfmt.emulatedSystems = ["aarch64-linux"]` on x86_64 host (transparent, slow for local builds but most packages come from cache) **or** native aarch64 builder **or** cross (`pkgsCross.aarch64-multiplatform`) |
+| RPi 3/4, RPi Zero 2 W, NanoPi R4S, Le Potato | `aarch64-linux` | cache.nixos.org | `boot.binfmt.emulatedSystems = ["aarch64-linux"]` on x86_64 host (transparent, slow for local builds but most packages come from cache) **or** native aarch64 builder **or** cross (`pkgsCross.aarch64-multiplatform`) |
 | RPi 2 (BCM2836) | `armv7l-linux` | none (community only) | cross-compilation required; expect long builds; Tier 3 |
 | VisionFive 2 | `riscv64-linux` | none | cross-compilation; Tier 3 |
 | Test target | `x86_64-linux` | yes | native; used for VM tests |
