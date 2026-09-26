@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-09-23 |
+| Last updated | 2026-09-26 |
 
 Key words MUST / SHOULD / MAY follow RFC 2119. Priority: **P1** required for
 1.0, **P2** planned, **P3** desirable.
@@ -22,6 +22,8 @@ Key words MUST / SHOULD / MAY follow RFC 2119. Priority: **P1** required for
 | FR-CFG-007 | Users MAY set arbitrary NixOS options alongside `janus.*` options; Janus MUST NOT silently override them and SHOULD emit an assertion on known conflicts. | P2 |
 | FR-CFG-008 | The complete flake source tree used to build an image (`flake.nix`, `flake.lock`, `configuration.nix` and all imported modules, whether single-file or modular) MUST be embedded read-only in the image at `/etc/janus/source`, so the exact image can be rebuilt from the device alone. Sources outside the flake tree MUST produce an evaluation warning. Embedding MAY be disabled by the user. | P1 |
 | FR-CFG-009 | Configuration MUST be validated at evaluation time with assertions producing actionable messages (e.g. overlapping subnets, unknown port name, node referenced by a rule but not defined). | P1 |
+| FR-CFG-010 | The user's config project MUST be a local git repository, because flakes ignore uncommitted files. A remote git host is recommended and MUST NOT be required to build an image. | P1 |
+| FR-CFG-011 | One private repo MUST be able to describe several routers (`nixosConfigurations.<host>`) and MUST be able to import shared modules (for example one subscription used by two routers). The entry file MUST be named `configuration.nix`. | P1 |
 
 ## 2. Build and deployment (BLD)
 
@@ -53,20 +55,20 @@ Key words MUST / SHOULD / MAY follow RFC 2119. Priority: **P1** required for
 |----|-------------|------|
 | FR-NET-001 | WAN addressing modes MUST include `static`, `dhcp`, `pppoe`. | P1 |
 | FR-NET-002 | WAN mode `wwan` (4G/5G peripheral) MUST be supported. | P2 |
-| FR-NET-003 | Multiple concurrent WANs MUST be supported, each with a role: `default`, `iptv`, `backup`, `custom`. | P1 |
+| FR-NET-003 | Multiple concurrent WANs MUST be supported, each with a role: `default`, `backup`, `custom`. Role `iptv` is specified and deferred until after 1.0. | P1 |
 | FR-NET-004 | DHCP client WANs MUST allow custom options (vendor class, client ID, requested options) for carrier IPTV. | P1 |
-| FR-NET-005 | WANs MUST be bindable to VLAN sub-interfaces of a physical port. | P1 |
+| FR-NET-005 | WANs MUST be bindable to VLAN sub-interfaces of a physical port. This is the same VLAN mechanism as FR-NET-014, not an IPTV-only mode. Implementation is deferred until after 1.0. | P2 |
 | FR-NET-006 | PPPoE MUST support username/password, MTU/MRU, LCP echo tuning and IPv6CP. | P1 |
 | FR-NET-007 | WAN health checks and failover between `default` and `backup` MUST be supported. | P2 |
 | FR-NET-010 | Multiple LANs MUST be supported; each LAN is a bridge of ports and/or VLAN sub-interfaces with its own IPv4 subnet. | P1 |
 | FR-NET-011 | Each LAN MUST offer a DHCPv4 server with range, lease time, DNS/gateway options and static leases (MAC → IP, optional hostname). | P1 |
 | FR-NET-012 | Static leases MUST also register in local DNS as `<hostname>.<lan-domain>`. | P2 |
 | FR-NET-013 | Bridging of Wi-Fi peripherals into a LAN (AP mode) MUST be supported where the peripheral supports AP mode. | P2 |
-| FR-NET-014 | 802.1Q VLANs MUST be supported on any Ethernet port, tagged and untagged. | P1 |
+| FR-NET-014 | 802.1Q VLANs MUST be supported on LAN ports in 1.0, tagged and untagged. | P1 |
 | FR-NET-015 | Source NAT (masquerade) from LANs to WANs MUST be enabled by default and be disableable per LAN/WAN pair. | P1 |
 | FR-NET-016 | Hairpin NAT (NAT reflection) SHOULD be supported for port forwards. | P2 |
 | FR-NET-017 | Port forwards (DNAT) MUST be declarable with protocol, external port/range, internal host/port, optional source restriction. | P1 |
-| FR-NET-020 | IGMP/MLD proxying between an IPTV WAN and selected LANs MUST be supported. | P2 |
+| FR-NET-020 | IGMP/MLD proxying between an IPTV WAN and selected LANs MUST be supported. Deferred until after 1.0, together with WAN VLAN and the `iptv` role. | P2 |
 | FR-NET-030 | IPv6 MUST be configurable per WAN: `disabled`, `dhcpv6-pd`, `slaac`, `static`, `passthrough` (PPPoE IPv6CP + PD). | P1 |
 | FR-NET-031 | IPv6 on LAN MUST be configurable: `disabled`, `ula-only`, `delegated` (prefix from PD), with RA and DHCPv6 options. | P1 |
 | FR-NET-032 | Stable-privacy (RFC 7217) and temporary addresses (RFC 8981) MUST be the default; EUI-64 MUST NOT be used by default. | P1 |
@@ -135,6 +137,7 @@ Key words MUST / SHOULD / MAY follow RFC 2119. Priority: **P1** required for
 | FR-MON-004 | A Prometheus-compatible metrics endpoint MAY be enabled on the management zone. | P3 |
 | FR-MON-005 | Proxy engine health (group latency, selected node, last subscription refresh, last Geo refresh, and the error of a failed refresh) MUST be observable via the CLI. | P1 |
 | FR-MON-006 | A failed node, a failed refresh, and drift of hot overrides MUST be visible in `janus status` without reading logs. | P1 |
+| FR-MON-007 | A connection audit log MUST be available as a configuration switch, default off. When the configuration includes it, `janus audit stop` MUST disable recording without a rebuild and `janus audit start` MUST be able to turn it back on. Records are connection metadata (5-tuple, bytes, times, domain or SNI when the router already sees it), never payloads. Retention MUST be bounded and storage MUST be on the state partition. Reading and analysing the log happens off the board. | P2 |
 
 ## 9. Remote access (RA)
 
@@ -165,6 +168,7 @@ Key words MUST / SHOULD / MAY follow RFC 2119. Priority: **P1** required for
 | FR-HW-005 | Unsupported peripherals MUST be reported at evaluation with a pointer to the support matrix. | P2 |
 | FR-HW-006 | Redistributable closed-source firmware blobs required by a supported board or peripheral (Raspberry Pi wireless firmware, board boot firmware) MUST be allowed. Out-of-tree kernel drivers and device-specific mode-switch hacks MUST NOT be added to make an unlisted device work. | P1 |
 | FR-HW-007 | WWAN support MUST be an allowlist of known devices and modes. A dongle that needs an undocumented or fragile setup MUST be rejected with a pointer to the matrix rather than given a best-effort configuration. | P1 |
+| FR-HW-008 | A `power` peripheral class MUST support a TI INA219 on I²C, including the known Pi Zero UPS profiles at address `0x40` (mcuzone) and `0x43` (Waveshare). Readings MUST be available to `janus status`. What the router does when the battery is low is undecided. | P2 |
 
 ## 12. Operations (OPS)
 
@@ -179,6 +183,8 @@ Key words MUST / SHOULD / MAY follow RFC 2119. Priority: **P1** required for
 | FR-OPS-007 | Hot overrides MUST be limited to an allowlist: subscription URL of an existing subscription, static DHCP leases of an existing LAN, Wi-Fi passphrase of an existing AP. Adding a subscription, a LAN, a port forward, or a routing rule MUST NOT be a hot override. | P1 |
 | FR-OPS-008 | Hot overrides MUST be stored on the state partition, applied by a runtime renderer, included in backup, and reported as drift against the embedded configuration. `janus override export` MUST emit a snippet the user can commit into the private config repo. | P1 |
 | FR-OPS-009 | Maintenance actions (refresh, temporary node selection, WAN restart, DNS check) MUST be available from the CLI and MUST NOT require a rebuild. Temporary node selection MUST survive reboot and MUST be reset when a rebuild changes that group's `default`. | P1 |
+| FR-OPS-010 | The board MUST NOT store credentials for the config repo's git remote, MUST NOT push hot overrides itself, and MUST NOT fetch that repo to apply it. Export runs on the build host over SSH. | P1 |
+| FR-OPS-011 | `janus backup` is not a copy of the declarative configuration. It MUST contain the age private key and hot overrides not yet exported. It SHOULD contain manual node selection and traffic statistics. Subscription cache, Geo cache, and logs MAY be included and MUST be recoverable without that archive by refresh or by a new boot. | P1 |
 
 ## 13. Security (SEC)
 
@@ -196,10 +202,10 @@ Key words MUST / SHOULD / MAY follow RFC 2119. Priority: **P1** required for
 |----|-------------|--------|
 | NFR-001 | Image size (compressed) | ≤ 400 MiB for Tier-1 boards |
 | NFR-002 | Boot to routing (power-on → first NAT'd packet) | ≤ 45 s on Raspberry Pi 4 |
-| NFR-003 | Idle RAM footprint | ≤ 256 MiB including engine with 500 nodes |
+| NFR-003 | Idle RAM footprint | ≤ 256 MiB including the engine with 500 nodes, on boards with at least 2 GiB RAM. Zero 2 W and Le Potato are not 500-node targets. |
 | NFR-004 | NAT throughput | Line rate for 1 GbE on NanoPi R4S; ≥ 900 Mbit/s on RPi 4 |
 | NFR-005 | Engine throughput (VLESS+Vision) | ≥ 300 Mbit/s on NanoPi R4S |
 | NFR-REL-001 | Power-loss robustness | 100 random power cuts without re-flash |
 | NFR-REL-002 | Subscription refresh failure tolerance | Router remains functional with last good data indefinitely |
 | NFR-006 | Documentation | Every option documented; every board in the matrix has a tested image |
-| NFR-007 | Supported architectures | aarch64-linux (Tier 1), armv7l-linux and riscv64-linux (Tier 2/3) |
+| NFR-007 | Supported architectures | aarch64-linux and x86_64-linux (Tier 1), armv7l-linux and riscv64-linux (Tier 2/3). Tier is the test obligation, not a promise that every Tier-1 board meets the R4S throughput numbers. |

@@ -59,8 +59,8 @@
     lan = { device = "eth1"; };
   };
 
-  # Carrier delivers IPTV on VLAN 85 of the WAN port.
-  janus.network.vlans.iptv = { port = "wan"; id = 85; };
+  # WAN VLAN and IPTV are specified but not part of 1.0. See docs/06 §3.
+  # janus.network.vlans.iptv = { port = "wan"; id = 85; };
 
   ############################################################################
   # WAN
@@ -79,13 +79,13 @@
       ipv6.mode = "passthrough";                           # IPv6CP + DHCPv6-PD on the PPPoE link
     };
 
-    # IPTV: DHCP with the vendor class the set-top box would send; no default route.
-    iptv = {
-      uplink = "iptv";
-      mode   = "dhcp";
-      role   = "iptv";
-      dhcp.vendorClass = "IPTV_RG";
-    };
+    # After 1.0: IPTV on a WAN VLAN, no default route.
+    # iptv = {
+    #   uplink = "iptv";
+    #   mode   = "dhcp";
+    #   role   = "iptv";
+    #   dhcp.vendorClass = "IPTV_RG";
+    # };
 
     /* Backup uplink through the 4G dongle declared above.
     lte = {
@@ -130,8 +130,8 @@
     */
   };
 
-  # Multicast for IPTV from the iptv WAN into the home LAN.
-  janus.network.igmpProxy = { enable = true; upstream = "iptv"; downstream = [ "home" ]; };
+  # After 1.0, with the iptv WAN above.
+  # janus.network.igmpProxy = { enable = true; upstream = "iptv"; downstream = [ "home" ]; };
 
   ############################################################################
   # Firewall

@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-09-23 |
+| Last updated | 2026-09-26 |
 
 ## 1. Assets
 
@@ -70,8 +70,11 @@
 ### 4.3 Secrets
 
 sops-nix with age is the default (ADR-0014). Ciphertext lives in the
-private config repo (`secrets.yaml`). The age private key lives only on
-the state partition and in the user's own backup. Boot-time activation
+private config repo (`secrets.yaml`). The age private key is generated on
+the build host. The user keeps it in a password manager and in
+`~/.config/janus/age.key` (mode `0600`, outside the config repo). A copy
+also lives on the state partition so the board can decrypt at boot. Other
+storage is allowed; the manual teaches this one. Boot-time activation
 decrypts into `/run/secrets` (tmpfs). The Nix store does not contain
 plaintext.
 

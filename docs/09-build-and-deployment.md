@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-09-23 |
+| Last updated | 2026-09-26 |
 
 ## 1. Principles
 
@@ -49,20 +49,43 @@
 }
 ```
 
+Several routers that share a subscription live in that same repo
+(ADR-0021):
+
+```nix
+nixosConfigurations = {
+  potato = janus.lib.mkRouter { modules = [ ./common/proxy.nix ./hosts/potato/configuration.nix ]; };
+  zero   = janus.lib.mkRouter { modules = [ ./common/proxy.nix ./hosts/zero/configuration.nix ]; };
+};
+```
+
+The file name is `configuration.nix`, including under `hosts/<name>/`.
+`janus-configuration.nix` and `janus_configuration.nix` are not used.
+Snake case is not the NixOS file convention, and a prefix does not help
+the flake find the module.
+
 `mkRouter` reads `janus.hardware.board` from the modules to pick the system
-(`aarch64-linux`, `armv7l-linux`, `riscv64-linux`) and the board profile.
-Splitting `configuration.nix` into several files is supported and
-recommended for large setups (FR-CFG-006); the template ships a single
-file for simplicity.
+(`aarch64-linux`, `x86_64-linux`, `armv7l-linux`, `riscv64-linux`) and the
+board profile. Splitting `configuration.nix` into several files is
+supported (FR-CFG-006, FR-CFG-011). The template ships a single file for
+one router.
 
 This template is a **separate git repository** from Janus OS. The user
 clones nothing of the OS for day-to-day use; `nix flake init -t` creates
 their private repo, and `inputs.janus.url` pins a release. They do not
 fork Janus OS per router, and they do not keep one branch per device
-inside the OS repo. Flakes require that private repo to be a git checkout:
-edit `configuration.nix`, commit, then `nix build`. Uncommitted files are
-invisible to a flake. That git requirement is a reason to keep evaluation
-on the build host, where committing is a normal step, and not on the board.
+inside the OS repo.
+
+A **local** git repository is mandatory (FR-CFG-010). Flakes skip
+uncommitted files, so the sequence is edit, commit, `nix build`. A
+**remote** (GitHub or otherwise) is how that repo survives a dead laptop.
+It is recommended and not required. Someone who cannot operate a remote
+host can still build. The user manual, not the router, is what teaches
+`git init`.
+
+The board never holds a credential for that remote, never pushes, and
+never pulls the repo to apply it (FR-OPS-010). Hot overrides are exported
+over SSH to the build host, then committed there.
 
 On-site `nixos-rebuild` was considered and rejected (ADR-0017). It would
 not rewrite the Nix store; it would add store paths. Doing that on the
@@ -79,7 +102,7 @@ router go through hot overrides instead.
 | RPi 3/4, RPi Zero 2 W, NanoPi R4S, Le Potato | `aarch64-linux` | cache.nixos.org | `boot.binfmt.emulatedSystems = ["aarch64-linux"]` on x86_64 host (transparent, slow for local builds but most packages come from cache) **or** native aarch64 builder **or** cross (`pkgsCross.aarch64-multiplatform`) |
 | RPi 2 (BCM2836) | `armv7l-linux` | none (community only) | cross-compilation required; expect long builds; Tier 3 |
 | VisionFive 2 | `riscv64-linux` | none | cross-compilation; Tier 3 |
-| Test target | `x86_64-linux` | yes | native; used for VM tests |
+| Yanyu STX-R19F and the test target | `x86_64-linux` | yes | native on the build host. The STX-R19F image boots with legacy GRUB, not UEFI. |
 
 `mkRouter` selects `crossSystem` when `janus.build.strategy = "cross"`,
 defaulting to `"emulated"` for aarch64 and `"cross"` for the others. Users

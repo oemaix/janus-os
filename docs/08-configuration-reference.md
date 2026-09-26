@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-09-23 |
+| Last updated | 2026-09-26 |
 
 This document defines the **shape and semantics** of the `janus.*` option
 tree. The final, exhaustive reference (every option with type, default,
@@ -48,8 +48,8 @@ learning path: copy, edit values, build.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `board` | enum | — (required) | `rpi-zero-2w` `rpi2` `rpi3` `rpi4` `nanopi-r4s` `le-potato` `visionfive2` `x86_64-test` |
-| `peripherals.<name>.class` | enum | — | `wifi` `nic` `wwan` `bluetooth` `hmi` |
+| `board` | enum | — (required) | `rpi-zero-2w` `rpi2` `rpi3` `rpi4` `nanopi-r4s` `le-potato` `visionfive2` `yanyu-stx-r19f` `x86_64-test` |
+| `peripherals.<name>.class` | enum | — | `wifi` `nic` `wwan` `bluetooth` `hmi` `power` |
 | `peripherals.<name>.match` | attrs | — | `usbVendorProduct = "0bda:8153"` or `usbPath`, `pciSlot`, `mac` |
 | `peripherals.<name>.wwan.mode` | enum | `auto` | `ecm` `ncm` `rndis` `qmi` `mbim` |
 | `peripherals.<name>.wwan.modeSwitch` | attrs | board/ID default | usb_modeswitch parameters |
@@ -151,6 +151,9 @@ resolvers `never`, encryption `prefer`, fake-IP `auto`, `ipv6Answers =
 | `history.retentionDays` | int | 90 | vnstat retention |
 | `flows.export.{collector, port, protocol}` | attrs | off | IPFIX/NetFlow v9 |
 | `prometheus.{enable, zones}` | attrs | off | node-exporter + engine metrics on `mgmt` |
+| `audit.enable` | bool | `false` | Include the connection audit log (FR-MON-007). Runtime start/stop does not change this. |
+| `audit.retention` | duration | `"7d"` | Cap on the state partition. |
+| `audit.interfaces` | list | proxied LANs | |
 
 ## 9. `janus.remoteAccess`
 

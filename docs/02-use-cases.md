@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-09-23 |
+| Last updated | 2026-09-26 |
 
 ## 1. Personas
 
@@ -37,12 +37,14 @@ requirements it drives (see *03 — Requirements*).
 ### UC-02 PPPoE data + DHCP IPTV on one uplink
 
 * **Actor:** Mei
+* **Release:** after 1.0 (WAN VLAN, `iptv` role, IGMP)
 * **Precondition:** Carrier delivers Internet via PPPoE on untagged/VLAN X
   and IPTV via DHCP with vendor-class option on VLAN Y.
 * **Flow:** Two WAN definitions on the same physical port with different
   VLAN tags; IPTV WAN is marked `role = "iptv"` and bound to a LAN or a set of
   LAN ports; IGMP proxy enabled between them; default route stays on PPPoE.
-* **Drives:** FR-NET-001..006, FR-NET-020
+  The VLAN model is general; IPTV is one use of it, not a separate feature.
+* **Drives:** FR-NET-005, FR-NET-020
 
 ### UC-03 Multiple LANs with different trust levels
 
@@ -175,3 +177,22 @@ requirements it drives (see *03 — Requirements*).
   whether the answer is usable. Mei switches `fakeIp.enable` only if an
   application breaks, not as a debugging guess.
 * **Drives:** FR-DNS-010, FR-DNS-011
+
+### UC-19 Several routers, one subscription
+
+* **Actor:** Jonas
+* **Flow:** One private git repo defines `potato` and `zero`. Both import
+  `common/proxy.nix`, which holds the shared subscription. Each host file
+  sets only the board, ports, and LAN. `git init` on the laptop is enough
+  to build; pushing the repo to a remote is how the laptop can be replaced.
+* **Drives:** FR-CFG-010, FR-CFG-011, ADR-0021
+
+### UC-20 Log a LAN device for a few days
+
+* **Actor:** Mei
+* **Precondition:** `janus.monitoring.audit.enable = true` in the image.
+* **Flow:** A device on the LAN may be reporting to a network the owner
+  wants to see. `janus audit start` records connection metadata. After a
+  few days, `janus audit stop` ends it without a rebuild. Mei copies the
+  log off the router and reads it elsewhere. Payloads are not recorded.
+* **Drives:** FR-MON-007

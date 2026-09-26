@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-09-23 |
+| Last updated | 2026-09-26 |
 
 ## 1. What maintenance is
 
@@ -157,18 +157,36 @@ Timers use `Persistent=true` so a missed run executes after boot, and
 
 ## 7. Backup and restore
 
-`janus backup > janus-state-$(date -I).tar.zst` archives the age key,
-secret files, hot overrides, subscription cache, Geo data, selection,
-leases and statistics.
-`janus restore < file` writes them back and reloads services. The
-configuration itself is in git on the build host — that plus this archive
-reproduces a router completely.
+The declarative configuration is the private git repo. Backup is not a
+second copy of that repo, and it is not how subscription URLs are saved.
+Those URLs return to the repo through `janus override export`.
+
+What is actually worth archiving is whatever a rebuild cannot recreate:
+
+| Item | In `janus backup` | Why |
+|------|-------------------|-----|
+| Age private key | required | Generated on the build host. Without it, `secrets.yaml` cannot be decrypted. The recommended copy is a password manager plus a `0600` file outside the repo, for example `~/.config/janus/age.key`. Other stores are allowed; this is the one the manual will teach. |
+| Hot overrides not yet exported | required | They are the only record until the next commit. |
+| Manual node selection, traffic statistics | included | Operational, not reconstructable from git. |
+| Subscription cache, Geo cache, logs | optional | A refresh or a new boot replaces them. Useful when the WAN is down and the cache is the last good data. |
+| DHCP dynamic leases | omitted | They come back from clients. Static leases are configuration or overrides. |
+| SSH host keys | optional | Restoring them avoids a host-key warning after a reflash. |
+
+`janus restore < file` writes the archive back and reloads services. The
+board does not back itself up to the git remote.
 
 ## 8. Monitoring integration
 
 * Local: `janus traffic`, `janus status`, HMI pages.
 * Remote (optional): IPFIX export to a collector in `mgmt`/LAN; Prometheus
   endpoint on `mgmt` zone; syslog forwarding via `journald` remote (P3).
+* Connection audit (FR-MON-007, after 1.0): `janus.monitoring.audit.enable`
+  includes it, default off. `janus audit start` and `janus audit stop`
+  pause it without a rebuild. `janus audit start` refuses when the
+  configuration did not include the feature. The log is metadata for the
+  owner (for example, checking whether a LAN device reports home to an
+  unexpected network). It is not a packet capture, and Janus does not
+  analyse it on the board.
 
 ## 9. Support bundle
 

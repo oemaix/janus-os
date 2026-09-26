@@ -17,4 +17,6 @@ change status (`Superseded by ADR-xxxx`). Template: `0000-template.md`.
 | [0017](0017-hot-overrides-no-onsite-rebuild.md) | Hot overrides; no Nix evaluation on the board | Accepted; refines 0002 |
 | [0018](0018-private-config-repo.md) | Private config repo, not a fork per user | Accepted |
 | [0019](0019-dns-inside-the-engine.md) | DNS policy inside the proxy engine | Accepted |
+| [0020](0020-keep-janet-not-go.md) | Keep Janet; do not move tooling into Go | Accepted |
+| [0021](0021-local-git-multi-host-config.md) | Local git mandatory; one repo, many routers | Accepted; refines 0018 |
 | 0009–0013, 0015–0016 | See *13 — Roadmap §3* | Proposed |

@@ -6,10 +6,17 @@ single-board computers. It is configured through a single, router-style
 and ships first-class support for censorship-circumvention tunnels with
 policy-based routing and hardened DNS.
 
-This directory is the authoritative definition of *what* Janus OS is and *how*
-it is built. Source code must follow these documents; when code and documents
-disagree, either the code is wrong or a document must be revised through an
-ADR.
+This directory is the definition suite: contributor, design, and
+implementation. Source code must follow these documents; when code and
+documents disagree, either the code is wrong or a document must be revised
+through an ADR.
+
+A separate user manual (first image, `git init`, day-2 commands) is not
+this directory. It is planned as `manual/` at pre-release, with
+`manual/llms.txt` pointing at `manual/ai.md` so an assistant reads the
+manual instead of inventing options. The text of that guide is undecided
+until the manual exists (U7). The command meanings are already fixed in
+*14 — CLI*.
 
 ## Document map
 
@@ -29,6 +36,7 @@ ADR.
 | 11 | [Security Model](11-security.md) | Threat model, access control, privacy controls | Developers, reviewers |
 | 12 | [Operations and Maintenance](12-operations.md) | Day-2 tasks: policy changes, data refresh, monitoring, recovery | Users, operators |
 | 13 | [Roadmap and Open Questions](13-roadmap-and-open-questions.md) | Phased delivery plan and unresolved decisions | Everyone |
+| 14 | [CLI specification](14-cli.md) | `janus` commands, including the hot-override allowlist | Developers, manual authors |
 | — | [Architecture Decision Records](adr/README.md) | Individual, dated decisions with rationale | Developers |
 | — | [Example configuration](examples/configuration.example.nix) | Complete, commented reference configuration | Users |
 

@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-09-15 |
+| Last updated | 2026-09-26 |
 
 ## 1. Substrate
 
@@ -39,7 +39,12 @@ LAN is editing two strings (FR-CFG-005). Peripherals of class `nic` and
 
 `janus.network.vlans.<name> = { port = "lan1"; id = 100; }` creates a
 `vlan` netdev `lan1.100`. VLANs are referenced like ports anywhere a link is
-expected (WAN uplink, LAN member).
+expected (WAN uplink, LAN member). The model is general: Janus does not
+special-case an IPTV VLAN.
+
+1.0 implements this on LAN ports. Attaching a VLAN to a WAN, the `iptv`
+role, and IGMP proxy stay in this document and are not part of the 1.0
+implementation (FR-NET-005, FR-NET-020).
 
 ## 4. WAN
 
