@@ -1,0 +1,6 @@
+#!/bin/sh
+# Human terminal entry. Cursor and VS Code launch this as the default
+# profile so the integrated terminal is zsh inside the flake dev shell.
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+cd "$root" || exit 1
+exec nix develop --command zsh

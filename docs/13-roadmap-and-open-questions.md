@@ -63,8 +63,8 @@
 * VisionFive 2, RPi 2 (Tier 3).
 * A/B image slots.
 * Maintenance page limited to status, maintenance actions, and hot overrides.
-* README translations (Chinese, Russian, Persian) at pre-release.
-* User manual (`manual/`) and, with it, `manual/llms.txt` and `manual/ai.md`.
+* Expand `manual/` (English, Russian, Persian). Chinese is not in that set yet.
+* The manual skeleton, `manual/llms.txt`, and `manual/ai.md` already exist.
 * Optional local configuration wizard, a front end for the build-host commands in *16*. No hosted build service.
 
 ## 2. Decisions
@@ -91,9 +91,10 @@
 | Q18 | DNS by the engine, mosdns, or chinadns-ng? Fake-IP as a user choice? | Engine only. Fake-IP is `auto` / `on` / `off`. `janus dns check` tests leaks and poisoning. | Decided (ADR-0019) |
 | Q19 | On-site `nixos-rebuild` for a new subscription URL? Does that rewrite the Nix store? Must config be a git repo users fork? | No on-site rebuild. The store is not rewritten; evaluation on the board is still the wrong trade. Users keep a private config repo that pins Janus OS. They do not fork the OS per device. | Decided (ADR-0017, ADR-0018) |
 | Q20 | Web UI or CLI for maintenance? | CLI in 1.0. A later page may only expose status, actions, and hot overrides. | Decided (FR-ACC-005) |
-| Q21 | Public repo, extra languages, a web page that builds images, a separate GitHub account? | Public repo. English canonical; zh/ru/fa READMEs at pre-release. Local wizard only, no hosted builder. A second account is not a safety measure; use mirrors. | Decided (*00* §9) |
+| Q21 | Public repo, extra languages, a web page that builds images, a separate GitHub account? | Public repo. Definition suite in English. User-facing text is English, then Russian, then Persian. Chinese is not in that set yet. Local wizard only, no hosted builder. A second account is not a safety measure; use mirrors. | Decided (*00* §9) |
 | Q22 | Is backup important on a declarative router? | Only what git cannot recreate. Age key and unexported overrides are required. Caches and logs are optional. Subscription URLs go back via export, not via backup. | Decided (FR-OPS-011) |
-| Q23 | Two document suites, a CLI spec, and `llms.txt`? | `docs/` is the definition suite. *14* specifies the CLI before code, including the override commands. `manual/` plus `llms.txt` / `ai.md` at pre-release. The guide text is U7. | Decided |
+| Q23 | Two document suites, a CLI spec, and `llms.txt`? | `docs/` is the definition suite. *14* and *16* specify the commands. `manual/` is the user-facing guide, with `llms.txt` pointing at `ai.md`. | Decided |
+| Q38 | Which license, and which user-facing languages now? | Apache-2.0. User-facing text is English, Russian, Persian, in that order. The definition suite stays English. | Decided (root `LICENSE`, *00* §9) |
 | Q24 | Which boards are Tier 1? | The owner's lab: Zero 2 W, Le Potato, NanoPi R4S, Yanyu STX-R19F, plus Raspberry Pi 4 from the original matrix. Tier is a test obligation, not one throughput number. | Decided (*10*) |
 | Q25 | Must the config repo be on a remote? One file or modules? Several routers? Which file name? Does the device push overrides? | Local git is mandatory, remote is not. One repo, many hosts, shared modules, file name `configuration.nix`. The device does not push or pull. | Decided (ADR-0021) |
 | Q26 | IPTV-only WAN VLAN, or a general VLAN, and when? | General VLAN model. 1.0 implements LAN VLANs only. WAN VLAN, the `iptv` role, and IGMP are after 1.0. | Decided (FR-NET-005, FR-NET-014, FR-NET-020) |
@@ -125,7 +126,6 @@ These stay open. Implementation does not invent an answer for them.
 | U1 | Which case label on the Yanyu STX-R19F is which PCI port? | CPU, RAM, legacy AMI BIOS, 32 GB SATA SSD, serial console, and the four `e1000e` PCI paths are known (*10* §3.1). The silkscreen was not walked port by port. `01:00.0` had no link; the other three were up at 1 Gbit/s. | Do not assign WAN to `nic1`. Record the map when each jack is plugged alone. |
 | U4 | Which INA219 current sign means the cell is discharging, on the mcuzone `0x40` board and the Waveshare `0x43` board? | The shutdown policy is decided. The shunt direction was not measured, and guessing it could power the router off while it is on mains. | Record the sign in the profile after one bench check. Until then the profile shows readings and does not arm shutdown. |
 | U5 | What is the CSR Bluetooth dongle for? | `0a12:0001` is confirmed on Le Potato. No router feature was named. | BlueZ stays off by default. The dongle remains on the allowlist. |
-| U7 | What does `manual/ai.md` tell an assistant? | The mechanism (`llms.txt` → `ai.md`) is decided. The sentences need a manual to point at. | Write it with the manual: follow *14* and the example config, do not invent options, do not suggest `nixos-rebuild` on the board. |
 | U8 | Does Raspberry Pi 4 stay Tier 1 if it is not in the owner's lab? | The original matrix made it release-blocking. The new lab list does not include it. | Leave it Tier 1 until the owner says it cannot be tested. |
 
 ## 4. Risks

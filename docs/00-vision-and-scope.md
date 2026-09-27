@@ -123,12 +123,10 @@ networks, with mainland China first and Iran and Russia explicitly welcome.
 The repository itself stays free of credentials, subscription URLs, and
 vendor tokens.
 
-English is the canonical language of the repository and of this document
-suite. Translations of the user-facing README (Chinese, Russian, Persian)
-are produced at pre-release, not before; the English text remains the one
-that definitions and reviews follow. Chinese is included because it is the
-primary audience, even though an early note listed only English, Russian,
-and Persian.
+English is the canonical language of this definition suite. User-facing
+text (`README.md` and `manual/`) is English, then Russian, then Persian.
+Chinese is not in that set yet. The English text is the one definitions
+and reviews follow.
 
 Publication hygiene is mirrors of the git repository (so one hosting
 account is not a single point of failure). A second GitHub account is not

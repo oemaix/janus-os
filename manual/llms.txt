@@ -1,0 +1,16 @@
+# Janus OS
+
+> Image-deployed NixOS router. The definition suite is English. The manual is English, then Russian, then Persian.
+
+## Start here
+
+- [Assistant guide](ai.md): how to answer questions about this project
+- [English manual](en/README.md): the user-facing guide
+- [Russian manual](ru/README.md)
+- [Persian manual](fa/README.md)
+
+## Do not invent
+
+- Router commands are specified in [docs/14-cli.md](../docs/14-cli.md)
+- Build-host commands are specified in [docs/16-build-host-cli.md](../docs/16-build-host-cli.md)
+- What the code actually contains is [docs/17-implementation-status.md](../docs/17-implementation-status.md)

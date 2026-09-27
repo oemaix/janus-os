@@ -1,0 +1,37 @@
+# Janus OS
+
+Janus OS is a router system based on NixOS. You build an image on one
+computer and flash it to a small board. The board does not build software
+and does not evaluate Nix.
+
+The project is public and licensed under the Apache License, Version 2.0.
+
+## What you can do today
+
+The manual and the definition documents are in this repository. The router
+image, `janus`, and `janus-build` are not implemented yet. A development
+shell exists for people working on the source: from the repository root,
+run `nix develop`. That shell is zsh when you open the terminal in Cursor
+or VS Code.
+
+## What the router is specified to do
+
+- Route between WAN and LAN, with a firewall.
+- Keep the root filesystem read-only, and keep mutable data on one state
+  partition.
+- Run a censorship-circumvention tunnel, with sing-box as the default
+  engine.
+- Be operated over SSH. Day-to-day changes that the specification allows
+  are maintenance actions and a short list of hot overrides. Structural
+  changes are a new image from the build machine.
+
+The command lists are [docs/14-cli.md](../../docs/14-cli.md) on the router
+and [docs/16-build-host-cli.md](../../docs/16-build-host-cli.md) on the
+build machine. Hardware, options, and the phased plan are in
+[docs/](../../docs/README.md).
+
+## Languages
+
+1. English, this file.
+2. [Russian](../ru/README.md).
+3. [Persian](../fa/README.md).

@@ -31,6 +31,7 @@
     packages.<system>      = { janus-cli; janus-tools; docs-options; image-builder; };
     checks.<system>        = { eval-*; render-golden-*; vm-x86_64-test; build-<board>; };
     overlays.default       = …;                        # pinned sing-box/xray if nixpkgs lags
+    devShells.<system>.default = …;                   # `nix develop`; see the root README
   };
 }
 ```

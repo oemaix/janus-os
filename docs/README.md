@@ -11,12 +11,11 @@ implementation. Source code must follow these documents; when code and
 documents disagree, either the code is wrong or a document must be revised
 through an ADR.
 
-A separate user manual (first image, `git init`, day-2 commands) is not
-this directory. It is planned as `manual/` at pre-release, with
-`manual/llms.txt` pointing at `manual/ai.md` so an assistant reads the
-manual instead of inventing options. The text of that guide is undecided
-until the manual exists (U7). Router commands are fixed in *14*.
-Build-host commands are fixed in *16*.
+User-facing text lives in the repository root `README.md` and in
+`manual/` (English, Russian, Persian, in that order). `manual/llms.txt`
+points at `manual/ai.md`. This directory stays the definition suite.
+What the code already contains, and what it does not, is *17*. Router
+commands are fixed in *14*. Build-host commands are fixed in *16*.
 
 ## Document map
 
@@ -39,6 +38,7 @@ Build-host commands are fixed in *16*.
 | 14 | [Router CLI](14-cli.md) | `janus` commands on the board, including the hot-override allowlist | Developers, manual authors |
 | 16 | [Build-host CLI](16-build-host-cli.md) | `janus-build`: the router life cycle on the build host | Developers, manual authors |
 | 15 | [Panel user interface](15-hmi-ui.md) | One interaction model for small and large panels, and for different keys | Developers |
+| 17 | [Implementation status](17-implementation-status.md) | What the skeleton contains, and what it deliberately does not | Developers |
 | — | [Architecture Decision Records](adr/README.md) | Individual, dated decisions with rationale | Developers |
 | — | [Example configuration](examples/configuration.example.nix) | Complete, commented reference configuration | Users |
 

@@ -1,4 +1,7 @@
 /tmp
 /.fresh
+/result
+.direnv
+
 /.vscode
 /.cursor
