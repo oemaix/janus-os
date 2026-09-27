@@ -15,8 +15,8 @@ A separate user manual (first image, `git init`, day-2 commands) is not
 this directory. It is planned as `manual/` at pre-release, with
 `manual/llms.txt` pointing at `manual/ai.md` so an assistant reads the
 manual instead of inventing options. The text of that guide is undecided
-until the manual exists (U7). The command meanings are already fixed in
-*14 — CLI*.
+until the manual exists (U7). Router commands are fixed in *14*.
+Build-host commands are fixed in *16*.
 
 ## Document map
 
@@ -36,7 +36,9 @@ until the manual exists (U7). The command meanings are already fixed in
 | 11 | [Security Model](11-security.md) | Threat model, access control, privacy controls | Developers, reviewers |
 | 12 | [Operations and Maintenance](12-operations.md) | Day-2 tasks: policy changes, data refresh, monitoring, recovery | Users, operators |
 | 13 | [Roadmap and Open Questions](13-roadmap-and-open-questions.md) | Phased delivery plan and unresolved decisions | Everyone |
-| 14 | [CLI specification](14-cli.md) | `janus` commands, including the hot-override allowlist | Developers, manual authors |
+| 14 | [Router CLI](14-cli.md) | `janus` commands on the board, including the hot-override allowlist | Developers, manual authors |
+| 16 | [Build-host CLI](16-build-host-cli.md) | `janus-build`: the router life cycle on the build host | Developers, manual authors |
+| 15 | [Panel user interface](15-hmi-ui.md) | One interaction model for small and large panels, and for different keys | Developers |
 | — | [Architecture Decision Records](adr/README.md) | Individual, dated decisions with rationale | Developers |
 | — | [Example configuration](examples/configuration.example.nix) | Complete, commented reference configuration | Users |
 
@@ -54,8 +56,4 @@ until the manual exists (U7). The command meanings are already fixed in
 * **Decisions.** Anything that changes an `Approved` document requires a new
   ADR in `adr/` that references the affected sections.
 
-## Source of truth
-
-The requirement note that seeded this suite is kept for provenance at
-`tmp/requirement notes/`. It is *not* normative; the documents in this
-directory are.
+These documents are the definition of Janus OS. Implementation follows them.

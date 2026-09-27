@@ -6,9 +6,8 @@
 | Version | 0.1.0 |
 | Last updated | 2026-09-23 |
 
-Terms are listed alphabetically. Where the requirement note used an informal
-or ambiguous word, the canonical term is given and the informal one is noted
-as *avoid*.
+Terms are listed alphabetically. Where an informal word is easy to confuse
+with the canonical one, the informal word is marked *avoid*.
 
 ---
 

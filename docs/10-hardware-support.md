@@ -11,8 +11,6 @@
 * **Board** — the single-board computer running Janus OS.
 * **Peripheral** — an add-on device attached to a Board.
 
-(These replace "device" and "add-on" from the requirement note.)
-
 ## 2. Support tiers
 
 | Tier | Meaning |
@@ -29,7 +27,7 @@
 | **Raspberry Pi 4 / 400 / CM4** | BCM2711 · aarch64 | 1× 1 GbE (+ USB 3 NICs) | 1 | Firmware needs FAT boot partition with `config.txt`; boots via U-Boot or directly. On-board Wi-Fi (AP capable, 2.4/5 GHz). Not in the owner's current lab list (U8). |
 | **Raspberry Pi 3 / 3+** | BCM2837 · aarch64 | 1× 100 MbE (USB 2 shared) | 2 | Low throughput; fine for tunnel-only use behind another router. |
 | **Raspberry Pi Zero 2 W** | BCM2710A1 · aarch64 | Wi-Fi 4 + Bluetooth, no Ethernet | 1 | Owner's lab. 512 MiB RAM. Needs a USB Ethernet peripheral for a wired WAN or LAN. On-board Wi-Fi and Bluetooth need the redistributable closed Broadcom firmware (FR-HW-006). Not a 500-node target. INA219 UPS overlay is part of this board's lab setup (FR-HW-008). |
-| **Libre Computer Le Potato (AML-S905X-CC)** | S905X · aarch64 | 1× 100 MbE | 1 | Owner's lab. Mainline U-Boot with FIP at raw offset; eMMC or SD. Lab peripherals: Fibocom NL668 (U2), RTL8188CUS (U3), CSR Bluetooth. |
+| **Libre Computer Le Potato (AML-S905X-CC)** | S905X · aarch64 | 1× 100 MbE | 1 | Owner's lab. Mainline U-Boot with FIP at raw offset; eMMC or SD. Lab peripherals: Fibocom NL668 as USB Ethernet (§4.2), RTL8188CUS as AP (§4.4), CSR Bluetooth. |
 | **StarFive VisionFive 2** | JH7110 · riscv64 | 2× 1 GbE | 3 | Needs recent kernel; SPL + U-Boot in dedicated GPT partitions (types `2E54B353…`, `BC13C2FF…`); no binary cache. |
 | **Raspberry Pi 2 (v1.1)** | BCM2836 · armv7l | 1× 100 MbE | 3 | 32-bit; no cache; RPi 2 v1.2 is BCM2837 and uses the `rpi3` profile. |
 | **Yanyu STX-R19F** (`yanyu-stx-r19f`) | Intel Celeron J1900 (Bay Trail-D) · x86_64 | 4× Intel 82583V GbE on PCIe, SATA SSD. No Wi-Fi, Bluetooth, or WWAN. | 1 | Lab reference x86 board. Legacy AMI BIOS, GRUB, 4 GiB RAM. Case-label map is U1. |
@@ -100,6 +98,18 @@ a sequence that breaks on the next firmware. Those devices are out of
 scope. A USB ID that is not in §4.3 fails evaluation. Users do not get a
 generic "try AT commands until it connects" path.
 
+The lab Fibocom NL668 enumerates as USB ID `05c6:90b6`, product string
+`Android`, and the kernel creates a normal Ethernet device
+(`enp…u…` / `enx…`). That is Ethernet mode (`ecm`, `ncm`, or `rndis`):
+the module does NAT and runs a DHCP server, and a WAN with `mode = "wwan"`
+is a DHCP client on that port. With the SIM and the antennas removed the
+lab unit still creates the Ethernet device and does not answer DHCP; with
+both fitted, it does. Janus does not send an APN in this composition; the
+module already has one. `05c6:90b6` is Qualcomm's generic Android-gadget
+ID, so the profile matches it only when the user declares that peripheral.
+The MAC and the interface name belong to one USB port on one board and
+are not part of the profile. QMI and MBIM are not how this unit attaches.
+
 ### 4.3 Support matrix (initial)
 
 | Peripheral | IDs | Class | Status |
@@ -110,8 +120,8 @@ generic "try AT commands until it connects" path.
 | MediaTek MT7612U (e.g. Alfa AWUS036ACM) | `0e8d:7612` | wifi (AP 2.4/5) | supported |
 | MediaTek MT7921AU | `0e8d:7961` | wifi (AP) | supported (recent kernel) |
 | Realtek RTL8812AU | `0bda:8812` | wifi | unsupported (out-of-tree driver) |
-| Realtek RTL8188CUS | `0bda:8176` | wifi | lab device on Le Potato; AP vs station undecided (U3). No out-of-tree driver. |
-| Fibocom NL668 | USB ID not yet recorded | wwan (LTE Cat.4) | lab device on Le Potato; mode undecided (U2) |
+| Realtek RTL8188CUS | `0bda:8176` | wifi (AP, 2.4 GHz HT20) | supported via in-tree `rtl8192cu` (§4.4) |
+| Fibocom NL668 (LTE Cat.4) | `05c6:90b6` (product string `Android`) | wwan, Ethernet mode | supported on Le Potato. Same USB ID as other Qualcomm gadgets; the user declares the peripheral. |
 | EigenComm, exposed as a NIC | `19d1:0001` | wwan (ethernet mode, LTE Cat.1) | supported on Zero 2 W |
 | mcuzone Pi Zero UPS (INA219) | I²C `0x40` | power | supported on Zero 2 W (FR-HW-008) |
 | Waveshare Pi Zero UPS (INA219) | I²C `0x43` | power | supported; owner's board is the `0x40` profile |
@@ -120,12 +130,87 @@ generic "try AT commands until it connects" path.
 | Quectel EC25 / EM12 (USB) | `2c7c:0125` / `2c7c:0512` | wwan (qmi) + AT | supported |
 | ZTE MF833 | `19d2:1405` | wwan (rndis) | supported |
 | Generic CSR BT 4.0 dongle | `0a12:0001` | bluetooth | supported; confirmed on Le Potato. Purpose undecided (U5). |
+| Waveshare 1.3" OLED HAT | 40-pin HAT, SH1106, 4-wire SPI | hmi | supported on Raspberry Pi boards (§4.6) |
 | SSD1306 128×64 I²C OLED | — | hmi | supported |
 | Waveshare 2.13" e-Paper HAT | — | hmi | supported |
 | ST7789 240×240 SPI LCD | — | hmi | planned |
 
 Peripherals not in the matrix produce an evaluation warning (FR-HW-005);
 users may add `hardware.firmware`/kernel modules via raw NixOS options.
+
+### 4.4 RTL8188CUS (`0bda:8176`)
+
+The chip is an RTL8192CU-family USB device, 2.4 GHz, one spatial stream.
+The lab runs it as an access point on OpenWrt today. That fact and
+"the USB ID is in the default kernel of NixOS, Ubuntu, and Debian" are
+both true, and they are not the same driver.
+
+| Driver | Where it comes from | AP |
+|--------|---------------------|----|
+| `rtl8192cu` (rtlwifi, mac80211) | In-tree. This is OpenWrt's `kmod-rtl8192cu`. | Yes, for years, with `hostapd` `nl80211`. This is the working lab setup. Reports exist of the driver stalling the machine while it initialises. |
+| `rtl8xxxu` | In-tree, and the driver those desktop distributions usually bind for this USB ID. The device appears with no DKMS package. | Not advertised before Linux 6.15. The flag `supports_ap` was merged for this family in February 2025 (`rtw-next`, pull 2025-02-10). The author measured about 4 Mbit/s TX against about 24 Mbit/s on `rtl8192cu`. |
+| Realtek vendor driver plus `hostapd` `rtl871xdrv` | Out of tree. | How people forced AP mode before `rtl8192cu`. Forbidden here (FR-HW-006). |
+
+Janus binds `0bda:8176` to `rtl8192cu` and does not let `rtl8xxxu` claim
+that ID, so the two drivers do not both attach. Firmware comes from
+`linux-firmware` (`rtlwifi/rtl8192cufw*.bin`), which is redistributable.
+`hostapd` uses `nl80211`. A build is acceptable only when `iw list` on
+that kernel shows `AP` for this phy. Expected use is a small 2.4 GHz
+network, not a fast AP. `rtl8xxxu` on Linux 6.15 or newer is the fallback
+if `rtl8192cu` cannot be made stable, and its TX rate is the reason it is
+not the default.
+
+### 4.5 Battery shutdown
+
+A `power` peripheral (the INA219 UPS boards) measures the cell. Janus shuts
+the router down while the cell can still hold the board up, instead of
+running it into a brown-out. The default is that early cutoff. Readings
+stay visible in `janus status` either way.
+
+| Rule | Default |
+|------|---------|
+| Armed | Yes, when the peripheral's profile records which current sign means discharge. |
+| While charging, or current near zero | Do not shut down. A low cell on mains power must not take the router down. |
+| No readings, or a failed sensor | Do not shut down. |
+| Warning | Bus voltage ≤ 3.60 V while discharging. Journal, and the HMI if present. |
+| Shutdown | ≤ 3.50 V for 60 s while discharging, then `systemctl poweroff`. |
+| Fast shutdown | ≤ 3.30 V for 10 s while discharging. |
+| Boot | If the cell is already discharging and below 3.55 V, power off before WAN and the proxy start. Software does not reboot to try again. |
+| Override | The user may raise a threshold or set `shutdown.enable = false`. Lowering a threshold past these defaults is rejected. |
+
+These voltages are for one Li-ion cell, which is what the mcuzone (`0x40`)
+and Waveshare (`0x43`) boards are. Which sign of the INA219 current means
+"discharging" is not in the captured data (U4). A profile that does not
+record it exposes the readings and does not arm shutdown.
+
+### 4.6 Waveshare 1.3" OLED HAT
+
+The panel is part of Janus, not a separate input project. The pages it
+shows and the actions it runs are Janus operations. A second repository
+would only move the same code behind another release pin. Split it out if
+some other system needs the same panel.
+
+The HAT is a 128×64 SH1106 panel. The factory link is 4-wire SPI (BCM 11
+clock, 10 data, 8 chip select, 24 data/command, 25 reset). I2C is a
+resistor option on the board and is not the profile default, so the HAT
+does not take the INA219 address. It uses the 40-pin header. The profile
+names BCM numbers and applies to Raspberry Pi boards, including the Zero
+2 W. Another board needs its own pin map.
+
+The behaviour is *15 — Panel User Interface*. This profile only binds the
+controls. Left and right move between pages. Up and down move the focused
+row. Press confirms. The three keys default to:
+
+| Key | BCM | Default |
+|-----|-----|---------|
+| KEY1 | 21 | Refresh subscriptions. |
+| KEY2 | 20 | Unbound. |
+| KEY3 | 16 | Reboot, only if held for at least 3 seconds. |
+
+Factory reset stays unbound unless the configuration sets it. The inputs
+are active-low and the profile enables pull-ups on BCM 6, 19, 5, 26, 13,
+21, 20, and 16. A user may replace a key's action. The user may not turn
+the joystick into a set of unrelated commands without leaving the profile.
 
 ## 5. Performance notes (guidance for NFR-004/005)
 

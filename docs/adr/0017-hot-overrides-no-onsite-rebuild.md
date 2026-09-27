@@ -26,7 +26,7 @@ The override allowlist is: the URL of an existing subscription, static
 leases of an existing LAN, and the passphrase of an existing Wi-Fi AP.
 Values live on the state partition, renderers apply them, and
 `janus status` shows drift against the embedded configuration.
-`janus override export` is how the change gets back into the private repo.
+`janus-build fleet pull` is how the change gets back into the private repo (*16*).
 Adding a subscription, a LAN, a firewall rule, or a port mapping is still
 a rebuild on the build host.
 

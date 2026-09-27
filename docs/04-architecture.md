@@ -76,7 +76,7 @@
 | Monitoring | nftables named counters; `vnstat` for history; optional `softflowd` (IPFIX); optional `prometheus-node-exporter` | Data under `/var/lib/janus/monitoring`. |
 | Remote access | WireGuard (kernel) ; optional Tailscale | Interfaces in `mgmt` zone. |
 | Management | OpenSSH; `janus` CLI (shell + Janet) | CLI is the operator UI. |
-| HMI | `janus-hmi` daemon | Renders status pages to framebuffer/e-ink; button events → actions. |
+| HMI | `janus-hmi` daemon | Renders the pages in *15* from the framebuffer size; control events map onto the capabilities in *15*. |
 
 ## 4. Data model (canonical)
 
@@ -199,8 +199,8 @@ janus-os/
   aware NTP; engine TLS start is gated on time sync when REALITY/TLS is used
   (with a bounded wait).
 * **Observability of the build:** every image embeds `/etc/janus/build.json`
-  (flake revision, nixpkgs revision, board, subscription snapshot hashes,
-  build date).
+  (flake revision, nixpkgs revision, `configRevision` of the private
+  repo, board, subscription snapshot hashes, build date).
 
 ## 8. Technology choices (summary, see ADRs)
 

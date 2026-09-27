@@ -1,14 +1,16 @@
-# 14 — `janus` Command-Line Specification
+# 14 — Router command-line specification
 
 | Field | Value |
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-09-26 |
+| Last updated | 2026-09-27 |
 
 This is the contract for the on-router `janus` command. Implementation
 follows this file. The user manual will later show the same commands with
-examples; it does not define them.
+examples; it does not define them. The build host uses a different
+program, `janus-build` (*16*). On the board, `janus deploy` and
+`janus fleet` exit `2` and name that program.
 
 ## 1. Invocation
 
@@ -57,7 +59,7 @@ Allowlist (FR-OPS-007). Nothing else is accepted.
 
 | Key | Command |
 |-----|---------|
-| `proxy.subscriptions.<name>.url` | `janus override set proxy.subscriptions.<name>.url <url>` |
+| `proxy.subscriptions.<name>.url` | `janus override set proxy.subscriptions.<name>.url <url>`, or with no `<url>` read stdin |
 | `network.lans.<name>.dhcp.staticLeases.<host>` | `janus override set network.lans.<name>.dhcp.staticLeases.<host> --mac <mac> --ip <ip>` |
 | `network.wifi.<name>.passphrase` | `janus override set network.wifi.<name>.passphrase` (reads stdin, writes the secrets directory, not the JSON) |
 
@@ -66,13 +68,15 @@ Creating a subscription, a LAN, or a Wi-Fi AP is a rebuild.
 
 | Command | Effect |
 |---------|--------|
-| `janus override show` | Effective values and which ones differ from the image |
+| `janus override show` | Current stored overrides, and which ones differ from the image. This is the set, not the history of edits. `--json` is what `janus-build fleet pull` reads. |
 | `janus override diff` | Drift only |
 | `janus override unset <key>` | Remove one override and reload |
-| `janus override export` | Print a Nix snippet, and for secret keys a reminder to update `secrets.yaml`. Does not push anywhere. |
 
 Applying a valid override reloads only the affected service (subscription
 refresh, DHCP, hostapd). A failed reload keeps the previous override.
+
+The board does not turn overrides into Nix. `janus-build fleet pull` on
+the build host does that (*16* §5).
 
 ## 4. Secrets
 
@@ -90,7 +94,7 @@ The age key is created on the build host (`age-keygen`), not by this command.
 | `janus audit start` | Start recording. Exit `2` if `janus.monitoring.audit.enable` is false. |
 | `janus audit stop` | Stop recording. Does not remove the configuration flag. |
 | `janus audit status` | Whether recording is on, path, size, oldest record |
-| `janus audit export` | Write the bounded metadata log to stdout |
+| `janus audit export` | Write the JSON Lines log to stdout |
 
 ## 6. Backup
 

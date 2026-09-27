@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-09-26 |
+| Last updated | 2026-09-27 |
 
 ## 1. Personas
 
@@ -185,7 +185,12 @@ requirements it drives (see *03 — Requirements*).
   `common/proxy.nix`, which holds the shared subscription. Each host file
   sets only the board, ports, and LAN. `git init` on the laptop is enough
   to build; pushing the repo to a remote is how the laptop can be replaced.
-* **Drives:** FR-CFG-010, FR-CFG-011, ADR-0021
+  When the vendor rotates the URL, Jonas edits that one secret, commits,
+  and runs `janus-build fleet apply`. Both reachable routers refresh. He does
+  not paste the URL into each router. An override made on one router
+  comes back with `janus-build fleet pull` on the laptop, which writes the
+  sops key and that host's `overrides.nix`.
+* **Drives:** FR-CFG-010, FR-CFG-011, FR-OPS-012, ADR-0021
 
 ### UC-20 Log a LAN device for a few days
 

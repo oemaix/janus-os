@@ -54,9 +54,14 @@ learning path: copy, edit values, build.
 | `peripherals.<name>.wwan.mode` | enum | `auto` | `ecm` `ncm` `rndis` `qmi` `mbim` |
 | `peripherals.<name>.wwan.modeSwitch` | attrs | board/ID default | usb_modeswitch parameters |
 | `peripherals.<name>.wwan.atPort` | str/null | auto | Serial device for AT commands (status only) |
-| `peripherals.<name>.hmi.driver` | enum | — | `ssd1306` `st7789` `waveshare-epd-2in13` … |
-| `peripherals.<name>.hmi.buttons` | attrs | `{}` | GPIO → action (`cycle-group`, `refresh`, `reboot`, `factory-reset`) |
+| `peripherals.<name>.hmi.profile` | enum | — | `waveshare-1.3-oled-hat` sets the SH1106 panel, SPI pins, and the key map in *10* §4.6. Behaviour is *15*. |
+| `peripherals.<name>.hmi.driver` | enum | from profile | `sh1106` `ssd1306` `st7789` `waveshare-epd-2in13` |
+| `peripherals.<name>.hmi.keys.<name>` | enum | profile default | Replace one key's action: `refresh`, `reboot-hold`, `factory-reset`, `unbound`. The joystick stays navigation. |
 | `peripherals.<name>.wifi.capabilities` | list | from db | `ap` `sta`; assertion if AP requested on non-AP chip |
+| `peripherals.<name>.power.shutdown.enable` | bool | `true` if the profile knows the discharge sign | Early cutoff while the cell is discharging (*10* §4.5). |
+| `peripherals.<name>.power.shutdown.warnVolts` | float | `3.60` | Must be ≥ the shutdown voltage. |
+| `peripherals.<name>.power.shutdown.volts` | float | `3.50` | Sustained 60 s. MUST NOT be set below 3.50. |
+| `peripherals.<name>.power.shutdown.criticalVolts` | float | `3.30` | Sustained 10 s. MUST NOT be set below 3.30. |
 
 ## 3. `janus.storage`
 
@@ -151,7 +156,7 @@ resolvers `never`, encryption `prefer`, fake-IP `auto`, `ipv6Answers =
 | `history.retentionDays` | int | 90 | vnstat retention |
 | `flows.export.{collector, port, protocol}` | attrs | off | IPFIX/NetFlow v9 |
 | `prometheus.{enable, zones}` | attrs | off | node-exporter + engine metrics on `mgmt` |
-| `audit.enable` | bool | `false` | Include the connection audit log (FR-MON-007). Runtime start/stop does not change this. |
+| `audit.enable` | bool | `false` | Include the connection audit log (FR-MON-007). One JSON object per line. Runtime start/stop does not change this. |
 | `audit.retention` | duration | `"7d"` | Cap on the state partition. |
 | `audit.interfaces` | list | proxied LANs | |
 
@@ -174,6 +179,7 @@ resolvers `never`, encryption `prefer`, fake-IP `auto`, `ipv6Answers =
 | `ssh.passwordAuthentication` | bool | `false` | Requires ≥1 key regardless |
 | `ssh.rootPasswordFile` | path/null | `null` | Only meaningful with the above |
 | `cli.enable` | bool | `true` | `janus` CLI |
+| `deploy.address` | str | the `nixosConfigurations` attribute name | SSH destination for `janus-build deploy` and `janus-build fleet apply`. |
 
 ## 11. Secrets and hot overrides
 
@@ -201,9 +207,9 @@ by the runtime renderers:
 | `network.lans.<name>.dhcp.staticLeases.<host>` | add a lease |
 | `network.wifi.<name>.passphrase` | rotate a PSK; stored in the secrets directory, not in the JSON |
 
-Anything else is rejected. `janus override diff` shows drift. `janus
-override export` prints Nix (and, for secret keys, a reminder to update
-`secrets.yaml`) for the private config repo.
+Anything else is rejected. `janus override diff` shows drift. The board
+does not emit Nix. `janus-build fleet pull` writes the
+current set into the sops keys and `hosts/<host>/overrides.nix` (*16* §4).
 
 ## 12. Validation rules (assertions) — non-exhaustive
 

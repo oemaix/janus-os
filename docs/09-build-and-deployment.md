@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-09-26 |
+| Last updated | 2026-09-27 |
 
 ## 1. Principles
 
@@ -54,13 +54,17 @@ Several routers that share a subscription live in that same repo
 
 ```nix
 nixosConfigurations = {
-  potato = janus.lib.mkRouter { modules = [ ./common/proxy.nix ./hosts/potato/configuration.nix ]; };
-  zero   = janus.lib.mkRouter { modules = [ ./common/proxy.nix ./hosts/zero/configuration.nix ]; };
+  potato = janus.lib.mkRouter { modules = [ ./common/proxy.nix ./hosts/potato/configuration.nix ./hosts/potato/overrides.nix ]; };
+  zero   = janus.lib.mkRouter { modules = [ ./common/proxy.nix ./hosts/zero/configuration.nix ./hosts/zero/overrides.nix ]; };
 };
 ```
 
-The file name is `configuration.nix`, including under `hosts/<name>/`.
-`janus-configuration.nix` and `janus_configuration.nix` are not used.
+`hosts/<name>/overrides.nix` is the only Nix file `janus-build fleet pull`
+writes. The template imports it. It holds static leases copied back from
+that router. Subscription URLs and Wi-Fi passphrases stay in
+`secrets.yaml`. The file name is `configuration.nix`, including under
+`hosts/<name>/`. `janus-configuration.nix` and
+`janus_configuration.nix` are not used.
 Snake case is not the NixOS file convention, and a prefix does not help
 the flake find the module.
 
@@ -140,7 +144,7 @@ The image builder is a Nix derivation (no root, no loop mounts) that:
 3. Writes GPT/MBR with labels and PARTUUIDs, installs raw U-Boot/SPL at the
    profile offsets, concatenates partitions.
 4. Emits `janus-<host>.img` plus `.img.zst`, `SHA256SUMS`,
-   `build.json` (provenance).
+   `build.json` (provenance, including `configRevision`).
 
 Alternative considered: `systemd-repart` / `image.repart`. It is the
 direction NixOS is moving, but f2fs population support is not established;
@@ -157,7 +161,7 @@ Multiple independent guards:
 * No compilers/`stdenv` in the closure: a check derivation asserts that
   `gcc`, `binutils`, `glibc.dev`, `cmake`, `meson` etc. are not in the
   runtime closure (`checks.no-build-tools`).
-* `janus deploy` (build-host tool) uses `--max-jobs 0` and `--substituters
+* `janus-build deploy` (build-host tool) uses `--max-jobs 0` and `--substituters
   ""` when pushing a closure, so any missing path is an error rather than a
   build/download attempt on the Board.
 
@@ -166,13 +170,13 @@ Multiple independent guards:
 ### 8.1 Full image re-flash (1.0, always available)
 
 Flash `janus-<host>.img` to SD/eMMC. State partition content on the media
-is lost unless the operator uses `janus deploy --preserve-state` which
+is lost unless the operator uses `janus-build deploy --preserve-state` which
 copies `/var/lib/janus/{etc,secrets,subscriptions,geodata}` back over SSH
 before flashing. Simple and always correct.
 
 ### 8.2 Remote closure deployment (P2)
 
-`janus deploy <host>` (a build-host program):
+`janus-build deploy <host>` (a build-host program):
 
 1. Build closure locally; verify no derivation needs building on target.
 2. `ssh` to router; remount `/nix` and `/boot` read-write for the session.
@@ -181,13 +185,27 @@ before flashing. Simple and always correct.
 4. Update boot entry and `/nix/var/nix/profiles/system`; remount read-only;
    `reboot`.
 5. Rollback: previous generation is kept in the boot menu for one boot
-   (`janus deploy --confirm` after successful boot marks it good; otherwise
+   (`janus-build deploy --confirm` after successful boot marks it good; otherwise
    the boot script falls back).
 
 Requires spare space on `JANUS_NIX` (`janus.storage.layout.partitions.
 JANUS_NIX.slack = "40%"`).
 
-### 8.3 A/B slots (P3)
+### 8.3 Hot overrides, without a new image (P2)
+
+`janus-build fleet apply` and `janus-build fleet pull` run on the build host. The
+contract is *16*. `fleet apply` pushes the committed projection
+(subscription URLs, existing Wi-Fi passphrases, static leases). A commit
+that also changes anything else is refused until the user passes
+`--only-overrides`, which still does not deploy those other changes.
+`fleet pull <host>` writes the router's current overrides back into the
+sops keys and `hosts/<host>/overrides.nix`.
+
+`build.json` includes `configRevision`, the git revision of the private
+repo that built the image. `fleet apply` uses it to see what `HEAD` would
+change beyond the projection.
+
+### 8.4 A/B slots (P3)
 
 Duplicate `ROOT`/`NIX` partitions with a boot-side toggle; enables atomic,
 power-safe upgrades over the tunnel. See *13 — Roadmap*.

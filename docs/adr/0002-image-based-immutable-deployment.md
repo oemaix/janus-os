@@ -8,9 +8,8 @@
 
 ## Context
 
-The requirement note states that the system is "almost static", must not
-include build environments, and that any rebuild needing downloads or
-compilation should fail. At the same time some things must change on the
+The system is almost static. It must not include build environments, and
+any rebuild that needs a download or a compilation must fail. At the same time some things must change on the
 device: relay-node lists from subscriptions, Geo data, and operator
 selections. `nixos-rebuild` on the device would require a writable store,
 the Nix daemon, evaluation time and, for any package change, a network

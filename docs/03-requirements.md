@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-09-26 |
+| Last updated | 2026-09-27 |
 
 Key words MUST / SHOULD / MAY follow RFC 2119. Priority: **P1** required for
 1.0, **P2** planned, **P3** desirable.
@@ -137,7 +137,7 @@ Key words MUST / SHOULD / MAY follow RFC 2119. Priority: **P1** required for
 | FR-MON-004 | A Prometheus-compatible metrics endpoint MAY be enabled on the management zone. | P3 |
 | FR-MON-005 | Proxy engine health (group latency, selected node, last subscription refresh, last Geo refresh, and the error of a failed refresh) MUST be observable via the CLI. | P1 |
 | FR-MON-006 | A failed node, a failed refresh, and drift of hot overrides MUST be visible in `janus status` without reading logs. | P1 |
-| FR-MON-007 | A connection audit log MUST be available as a configuration switch, default off. When the configuration includes it, `janus audit stop` MUST disable recording without a rebuild and `janus audit start` MUST be able to turn it back on. Records are connection metadata (5-tuple, bytes, times, domain or SNI when the router already sees it), never payloads. Retention MUST be bounded and storage MUST be on the state partition. Reading and analysing the log happens off the board. | P2 |
+| FR-MON-007 | A connection audit log MUST be available as a configuration switch, default off. When the configuration includes it, `janus audit stop` MUST disable recording without a rebuild and `janus audit start` MUST be able to turn it back on. Records are connection metadata (5-tuple, bytes, times, domain or SNI when the router already sees it), never payloads, one JSON object per line. Retention MUST be bounded and storage MUST be on the state partition. Reading and analysing the log happens off the board. | P2 |
 
 ## 9. Remote access (RA)
 
@@ -164,11 +164,11 @@ Key words MUST / SHOULD / MAY follow RFC 2119. Priority: **P1** required for
 | FR-HW-001 | Boards MUST be selected by a single option; a board profile MUST provide kernel, firmware, boot layout, default port mapping. | P1 |
 | FR-HW-002 | Peripherals MUST be declared by class (`wifi`, `nic`, `wwan`, `bluetooth`, `hmi`) and identified by USB/PCI ID or bus path. | P1 |
 | FR-HW-003 | `wwan` peripherals MUST support Ethernet-mode (ECM/RNDIS/NCM) and QMI/MBIM operation and MAY expose an AT control channel for status (signal, operator, SMS). | P2 |
-| FR-HW-004 | `hmi` peripherals MUST be able to display status pages (WAN state, IP, tunnel health) and MAY bind buttons to actions (e.g. cycle group, reboot). | P3 |
+| FR-HW-004 | `hmi` peripherals MUST display the pages in *15* and MUST map their controls onto the capabilities in *15*. A key MAY be bound to `refresh`, `reboot-hold`, or `factory-reset`. A missing control MUST hide the action that needed it, not a second interface. | P3 |
 | FR-HW-005 | Unsupported peripherals MUST be reported at evaluation with a pointer to the support matrix. | P2 |
 | FR-HW-006 | Redistributable closed-source firmware blobs required by a supported board or peripheral (Raspberry Pi wireless firmware, board boot firmware) MUST be allowed. Out-of-tree kernel drivers and device-specific mode-switch hacks MUST NOT be added to make an unlisted device work. | P1 |
 | FR-HW-007 | WWAN support MUST be an allowlist of known devices and modes. A dongle that needs an undocumented or fragile setup MUST be rejected with a pointer to the matrix rather than given a best-effort configuration. | P1 |
-| FR-HW-008 | A `power` peripheral class MUST support a TI INA219 on I²C, including the known Pi Zero UPS profiles at address `0x40` (mcuzone) and `0x43` (Waveshare). Readings MUST be available to `janus status`. What the router does when the battery is low is undecided. | P2 |
+| FR-HW-008 | A `power` peripheral class MUST support a TI INA219 on I²C, including the known Pi Zero UPS profiles at address `0x40` (mcuzone) and `0x43` (Waveshare). Readings MUST be available to `janus status`. When the profile records the discharge current sign, Janus MUST shut down on a sustained low cell while discharging, at the thresholds in *10* §4.5, and MUST NOT shut down while charging, when the sensor has failed, or because a threshold was set below those defaults. | P2 |
 
 ## 12. Operations (OPS)
 
@@ -181,10 +181,11 @@ Key words MUST / SHOULD / MAY follow RFC 2119. Priority: **P1** required for
 | FR-OPS-005 | Boot MUST succeed with an empty or corrupted state partition (re-initialize from embedded snapshots). | P1 |
 | FR-OPS-006 | A factory-reset action (wipe state partition) MUST be available via CLI and MAY be bound to an HMI button. | P2 |
 | FR-OPS-007 | Hot overrides MUST be limited to an allowlist: subscription URL of an existing subscription, static DHCP leases of an existing LAN, Wi-Fi passphrase of an existing AP. Adding a subscription, a LAN, a port forward, or a routing rule MUST NOT be a hot override. | P1 |
-| FR-OPS-008 | Hot overrides MUST be stored on the state partition, applied by a runtime renderer, included in backup, and reported as drift against the embedded configuration. `janus override export` MUST emit a snippet the user can commit into the private config repo. | P1 |
+| FR-OPS-008 | Hot overrides MUST be stored on the state partition, applied by a runtime renderer, included in backup, and reported as drift against the embedded configuration. The board MUST present the current set (`janus override show`) and MUST NOT emit Nix for it. `janus-build fleet pull` on the build host MUST write that set into the existing sops keys and into `hosts/<host>/overrides.nix`. | P1 |
 | FR-OPS-009 | Maintenance actions (refresh, temporary node selection, WAN restart, DNS check) MUST be available from the CLI and MUST NOT require a rebuild. Temporary node selection MUST survive reboot and MUST be reset when a rebuild changes that group's `default`. | P1 |
 | FR-OPS-010 | The board MUST NOT store credentials for the config repo's git remote, MUST NOT push hot overrides itself, and MUST NOT fetch that repo to apply it. Export runs on the build host over SSH. | P1 |
-| FR-OPS-011 | `janus backup` is not a copy of the declarative configuration. It MUST contain the age private key and hot overrides not yet exported. It SHOULD contain manual node selection and traffic statistics. Subscription cache, Geo cache, and logs MAY be included and MUST be recoverable without that archive by refresh or by a new boot. | P1 |
+| FR-OPS-011 | `janus backup` is not a copy of the declarative configuration. It MUST contain the age private key and hot overrides not yet pulled. It SHOULD contain manual node selection and traffic statistics. Subscription cache, Geo cache, and logs MAY be included and MUST be recoverable without that archive by refresh or by a new boot. | P1 |
+| FR-OPS-012 | `janus-build fleet apply` on the build host MUST push the committed hot-override projection (existing subscription URLs, existing Wi-Fi passphrases, static leases in `hosts/<name>/overrides.nix`) over SSH and refresh a subscription whose URL changed. If the repo since the running image contains any other change, the command MUST change nothing unless `--only-overrides` is given, and that flag MUST still apply only the projection. An unreachable host MUST be reported and left unchanged. The board MUST NOT fetch the repo, and one board MUST NOT distribute values to another. | P2 |
 
 ## 13. Security (SEC)
 

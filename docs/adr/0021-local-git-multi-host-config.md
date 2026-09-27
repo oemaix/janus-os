@@ -23,8 +23,8 @@ itself would push to the remote, or pull from it and apply the result.
    `configuration.nix`. `janus_configuration.nix` and
    `janus-configuration.nix` are not used.
 3. The board has no credential for that remote. It does not push overrides
-   and it does not fetch the repo. `janus override export` runs over SSH
-   from the build host; a person commits there.
+   and it does not fetch the repo. `janus-build fleet pull` runs on the
+   build host over SSH; a person commits there.
 
 ## Consequences
 
@@ -33,6 +33,9 @@ itself would push to the remote, or pull from it and apply the result.
 * Losing the laptop loses the repo unless a remote or another copy exists.
   That is the reason to recommend a remote, not a reason to require one.
 * Shared subscription URLs live in one sops file imported by each host.
+  Rotating that secret is one edit. `janus-build fleet apply` copies the
+  committed hot-override projection onto the reachable routers
+  (FR-OPS-012, *16*).
 
 ## Alternatives considered
 
