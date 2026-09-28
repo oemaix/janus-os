@@ -123,7 +123,7 @@ Implicit groups: every subscription is a group `sub:<name>` with strategy
 ## 5. Traffic mode and routing rules
 
 ```
-janus.proxy.mode = "direct" | "rule-based" | "proxy-all";
+janus.proxy.mode = "bypass" | "rule-based" | "proxy-all";
 janus.proxy.defaultTarget = "group:Auto";     # rule-based: no rule matched; proxy-all: everything
 janus.proxy.rules = [
   { match = { geosite = [ "private" "cn" ]; };            target = "direct"; }
@@ -141,8 +141,9 @@ Rule evaluation order is list order; the renderer emits engine rules in the
 same order. `direct` means "leave via the normal WAN routing (default
 route)". `block` means reject (TCP RST / ICMP unreachable) at the engine.
 
-Terminology (Glossary): the three modes replace the Clash-era words
-"Direct/Rule/Global" because "global" does not say what it does. `proxy-all`
+Terminology (Glossary): the three modes are `bypass`, `rule-based`, and
+`proxy-all`. A rule target may still be `direct`, meaning that one flow
+leaves by the WAN. `proxy-all`
 always has an exception list (private ranges, IPTV, the subscription hosts
 themselves when `via = "direct"`).
 
@@ -205,9 +206,14 @@ janus.dns = {
 
 | Value | Meaning |
 |-------|---------|
-| `"auto"` | On in `rule-based` and `proxy-all`, off in `direct`. Default. |
+| `"auto"` | On in `rule-based` and `proxy-all`, off in `bypass`. Default. |
 | `true` | Always fake-IP for proxied names, including when the user wants it under a custom mode later. |
 | `false` | Real addresses only. Remote names are resolved through the tunnel. Use this when an application breaks on the fake-IP range. |
+
+A LAN selects one named policy. The block above is the household policy.
+A guest LAN can select another policy instead of sharing it. `forwarders`
+sends names under one domain to a specific resolver, such as a company DNS
+on a VPN. It is not a second policy and not the carrier resolver.
 
 `janus dns check` compares a fixed probe list (a domestic name, a foreign
 name, a name that pollution commonly forges) against the policy: where the

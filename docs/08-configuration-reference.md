@@ -111,7 +111,7 @@ See *06* §7–8: `zones`, `policies`, `rules`, `services`, `portForwards`,
 |--------|------|---------|-------------|
 | `enable` | bool | `false` | |
 | `engine` | `sing-box\|xray` | `sing-box` | |
-| `mode` | `direct\|rule-based\|proxy-all` | `rule-based` | Traffic mode |
+| `mode` | `bypass\|rule-based\|proxy-all` | `rule-based` | Traffic mode |
 | `defaultTarget` | target | `"group:Auto"` | |
 | `subscriptions.<name>` | submodule | | *07* §3.2 |
 | `nodes.<name>` | submodule | | Manual nodes; protocol-specific submodules `vless`, `trojan`, `shadowsocks`, `hysteria2`, `tuic` |
@@ -164,10 +164,13 @@ resolvers `never`, encryption `prefer`, fake-IP `auto`, `ipv6Answers =
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `wireguard.<name>.{privateKeyFile, address, peer.{publicKey, endpoint, allowedIPs, persistentKeepalive}}` | | | Outbound-initiated WG tunnel; interface joins `mgmt` zone |
+| `tailscale.enable` | bool | `false` | Router joins a tailnet. `tailscale0` joins the `mgmt` zone. |
+| `tailscale.authKeyFile` | path | — | Auth key, from sops. |
+| `tailscale.loginServer` | str/null | `null` | Headscale URL. Unset uses Tailscale's coordination. |
+| `tailscale.advertiseRoutes` | list | `[]` | LAN prefixes offered to the tailnet. Empty: peers reach the router only. |
+| `tailscale.exitNode` | bool | `false` | Router may carry a peer's Internet traffic. |
+| `wireguard.<name>.{privateKeyFile, address, peer.{publicKey, endpoint, allowedIPs, persistentKeepalive}}` | | | Optional tunnel to a user endpoint. Interface joins `mgmt`. |
 | `wireguard.<name>.via` | `direct\|tunnel` | `direct` | |
-| `tailscale.{enable, authKeyFile, loginServer}` | | off | Optional mesh backend (P3) |
-| `sshReverse.{enable, host, port, remotePort, keyFile}` | | off | Reverse SSH fallback (P3) |
 
 ## 10. `janus.access`
 

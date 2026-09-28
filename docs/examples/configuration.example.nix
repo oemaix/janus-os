@@ -240,11 +240,12 @@
     scope      = "counters";
   };
 
-  /* janus.remoteAccess.wireguard.vps = {
-    privateKeyFile = "/var/lib/janus/secrets/wg-vps.key";
-    address        = "10.99.0.2/24";
-    peer = { publicKey = "..."; endpoint = "vps.example.com:51820";
-             allowedIPs = [ "10.99.0.0/24" ]; persistentKeepalive = 25; };
+  /* janus.remoteAccess.tailscale = {
+    enable      = true;
+    authKeyFile = "/var/lib/janus/secrets/tailscale-authkey";
+    # loginServer = "https://headscale.example.com";
+    # advertiseRoutes = [ "192.168.10.0/24" ];
+    # exitNode = true;
   }; */
 
   ############################################################################

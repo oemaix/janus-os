@@ -4,5 +4,5 @@
 throw ''
   lib.mkRouter is not implemented.
   It does not evaluate a NixOS configuration or build an image.
-  See docs/17-implementation-status.md.
+  See docs/13-roadmap.md.
 ''

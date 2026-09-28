@@ -89,7 +89,7 @@ developer's or user's workstation. The device only carries the results.
 * A user copies `docs/examples/configuration.example.nix`, edits WAN mode,
   LAN subnet, SSH key and one subscription URL, runs one `nix build`
   command on an x86_64 workstation and flashes a bootable image for a
-  Raspberry Pi 4 or NanoPi R4S.
+  NanoPi R4S or another Tier 1 board.
 * The device routes IPv4 and IPv6, applies the firewall, resolves DNS through
   the configured policy, and tunnels traffic according to routing rules.
 * Pulling the power 100 times at random moments does not require re-flash.
@@ -125,8 +125,7 @@ vendor tokens.
 
 English is the canonical language of this definition suite. User-facing
 text (`README.md` and `manual/`) is English, then Russian, then Persian.
-Chinese is not in that set yet. The English text is the one definitions
-and reviews follow.
+The English text is the one definitions and reviews follow.
 
 Publication hygiene is mirrors of the git repository (so one hosting
 account is not a single point of failure). A second GitHub account is not

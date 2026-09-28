@@ -104,7 +104,7 @@ Key words MUST / SHOULD / MAY follow RFC 2119. Priority: **P1** required for
 | FR-PRX-013 | Group selection strategies MUST include `manual` (fixed default with SSH override), `url-test`, `fallback`, `load-balance`. | P1 |
 | FR-PRX-014 | The example configuration MUST ship region templates (JP, US, HK, EU, UK, SG, IN) and commented-out usage templates (Telegram, Gemini, Claude, Netflix, …). | P1 |
 | FR-PRX-015 | An empty group (matcher matched nothing) MUST be a warning at build time and a runtime fallback to `direct` or a configured alternative, never a crash. | P1 |
-| FR-PRX-020 | A traffic mode master switch MUST exist: `direct`, `rule-based`, `proxy-all`. | P1 |
+| FR-PRX-020 | A traffic mode master switch MUST exist: `bypass`, `rule-based`, `proxy-all`. | P1 |
 | FR-PRX-021 | Routing rules MUST be an ordered list of predicate → target, where predicates include domain (exact/suffix/keyword/regex), GeoSite category, IP CIDR, GeoIP country, destination port, source LAN, source IP, transport protocol, and targets include a group, `direct`, `block`. | P1 |
 | FR-PRX-022 | Transparent interception MUST cover TCP and UDP from all LANs designated as proxied, for IPv4 and IPv6. | P1 |
 | FR-PRX-023 | Per-LAN opt-out of proxying MUST be supported. | P2 |
@@ -144,8 +144,9 @@ Key words MUST / SHOULD / MAY follow RFC 2119. Priority: **P1** required for
 | ID | Requirement | Prio |
 |----|-------------|------|
 | FR-RA-001 | An outbound-initiated remote-access tunnel MUST be supported so the router is reachable from behind upstream NAT. | P1 |
-| FR-RA-002 | Backends MUST include WireGuard to a user-controlled endpoint; MAY include a mesh service (Tailscale/Headscale) and reverse SSH. | P1/P3 |
+| FR-RA-002 | The remote-access backend MUST be Tailscale. The router joins the tailnet and dials out. `loginServer` MAY point at a Headscale the operator runs. A WireGuard tunnel to a user-controlled endpoint MAY be configured in addition. Reverse SSH is not a backend. | P1 |
 | FR-RA-003 | Remote-access interfaces MUST belong to the `mgmt` zone by default and expose only SSH unless configured otherwise. | P1 |
+| FR-RA-004 | A tailnet peer MUST reach SSH on the router. It MUST NOT be forwarded into `lan`, `guest`, or `iot`, and the router MUST NOT be an exit node, unless the configuration sets `advertiseRoutes` or `exitNode`. | P1 |
 
 ## 10. Access and management (ACC)
 
@@ -202,9 +203,9 @@ Key words MUST / SHOULD / MAY follow RFC 2119. Priority: **P1** required for
 | ID | Requirement | Target |
 |----|-------------|--------|
 | NFR-001 | Image size (compressed) | ≤ 400 MiB for Tier-1 boards |
-| NFR-002 | Boot to routing (power-on → first NAT'd packet) | ≤ 45 s on Raspberry Pi 4 |
+| NFR-002 | Boot to routing (power-on → first NAT'd packet) | ≤ 45 s on NanoPi R4S |
 | NFR-003 | Idle RAM footprint | ≤ 256 MiB including the engine with 500 nodes, on boards with at least 2 GiB RAM. Zero 2 W and Le Potato are not 500-node targets. |
-| NFR-004 | NAT throughput | Line rate for 1 GbE on NanoPi R4S; ≥ 900 Mbit/s on RPi 4 |
+| NFR-004 | NAT throughput | Line rate for 1 GbE on NanoPi R4S |
 | NFR-005 | Engine throughput (VLESS+Vision) | ≥ 300 Mbit/s on NanoPi R4S |
 | NFR-REL-001 | Power-loss robustness | 100 random power cuts without re-flash |
 | NFR-REL-002 | Subscription refresh failure tolerance | Router remains functional with last good data indefinitely |

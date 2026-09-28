@@ -73,7 +73,7 @@ select a node temporarily, restart a WAN, run a DNS self-test.
 attributes) that assigns it to a Group. Kinds: `regex`, `glob`, `peg`.
 
 **Mode (traffic mode)** — The master switch for how LAN traffic is handled by
-the proxy layer: `direct` (nothing tunneled), `rule-based` (routing rules
+the proxy layer: `bypass` (nothing tunneled), `rule-based` (routing rules
 decide), `proxy-all` (everything except explicit exceptions is tunneled).
 *Avoid:* "global".
 

@@ -111,7 +111,7 @@ dedicated service users with `StateDirectory=` in their units.
 | Writer | Frequency | Mitigation |
 |--------|-----------|------------|
 | Journal | continuous | volatile by default; if persistent, `SystemMaxUse=64M`, `Compress=yes` |
-| DHCP leases | per lease event | Kea memfile with `lfc-interval`; or dnsmasq lease file (small) |
+| DHCP leases | per lease event | dnsmasq lease file (small) |
 | vnstat | every 5 min | small db; `SaveInterval` tuned to 15 min |
 | Subscription refresh | per schedule (default 6 h) | atomic, few KiB–MiB |
 | Geo data refresh | default weekly | atomic, ~10–30 MiB |

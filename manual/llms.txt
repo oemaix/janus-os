@@ -13,4 +13,4 @@
 
 - Router commands are specified in [docs/14-cli.md](../docs/14-cli.md)
 - Build-host commands are specified in [docs/16-build-host-cli.md](../docs/16-build-host-cli.md)
-- What the code actually contains is [docs/17-implementation-status.md](../docs/17-implementation-status.md)
+- What the code actually contains is [docs/13-roadmap.md](../docs/13-roadmap.md)

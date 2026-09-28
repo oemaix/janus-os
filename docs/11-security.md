@@ -33,7 +33,7 @@
 ```
 [build host] --image/closure--> [Board: ro store]  --> [state partition rw]
                                       │
-              LAN zones (lan/guest/iot) │ mgmt zone (wg)      wan zone
+              LAN zones (lan/guest/iot) │ mgmt zone (tailscale)  wan zone
 ```
 
 * The store is trusted (it is the image). The state partition is

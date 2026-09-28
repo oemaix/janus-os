@@ -166,7 +166,7 @@ Timers use `Persistent=true` so a missed run executes after boot, and
 |---------|----------|
 | Subscription fetch fails | keep last good data; warning in `janus status`; retry with backoff |
 | Refresh yields < `minimumNodes` or invalid data | rejected; previous kept |
-| Engine crash | systemd restart with backoff; `failMode` decides whether proxied LANs go direct meanwhile (default: closed) |
+| Engine crash | systemd restart with backoff; proxied traffic stays dropped until the engine is back (ADR-0016). `failMode = "open"` is the override that lets it leave via the WAN |
 | WAN down | health check marks it; backup WAN promoted if configured; DNS keeps answering from cache |
 | State partition corrupted | fsck; if unrecoverable, reformat and reseed (logged, HMI notice) |
 | Time far off at boot (no RTC) | engine waits for NTP up to 90 s, then starts anyway; REALITY/TLS may fail until time syncs |

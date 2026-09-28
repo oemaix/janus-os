@@ -3,7 +3,7 @@
 let
   unimplemented = name: doc:
     pkgs.writeShellScriptBin name ''
-      echo "${name} is not implemented. See ${doc} and docs/17-implementation-status.md." >&2
+      echo "${name} is not implemented. See ${doc} and docs/13-roadmap.md." >&2
       exit 2
     '';
   janus-build = unimplemented "janus-build" "docs/16-build-host-cli.md";

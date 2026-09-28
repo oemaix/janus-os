@@ -110,12 +110,10 @@ local DNS (FR-NET-012).
 
 ## 6. DHCP server and RA
 
-Decision pending (ADR-0009): **Kea** (DHCPv4 + DHCPv6, JSON config that maps
-cleanly from Nix, lease durability) versus **dnsmasq** in DHCP-only mode
-(smaller, familiar, RA built in). Requirements either must meet: per-LAN
-scopes, static leases, custom options, persistent leases on `/var`, lease
-hostnames exported for DNS. RA is provided by networkd (`IPv6SendRA=`) with
-prefix from PD or ULA.
+dnsmasq serves DHCP only (ADR-0009). It is not a DNS policy engine.
+Per-LAN scopes, static leases, custom options, and a lease file on `/var`
+are its job. Lease hostnames are exported for DNS. RA is provided by
+networkd (`IPv6SendRA=`) with the prefix from PD or ULA.
 
 ## 7. NAT and port forwarding
 
@@ -142,7 +140,7 @@ janus.firewall = {
   zones = { wan = { interfaces = auto(all WANs); input = "drop"; forward = "drop"; };
             lan = { interfaces = auto(LANs with zone=lan); input = "accept"; forward = "accept"; };
             guest = { ... input = "drop" (except dhcp/dns); forward = "drop"; };
-            mgmt = { interfaces = [ "wg0" ]; input = "ssh"; }; };
+            mgmt = { interfaces = [ "tailscale0" ]; input = "ssh"; }; };
   policies = [ { from = "lan";   to = "wan"; action = "accept"; }
                { from = "guest"; to = "wan"; action = "accept"; }
                { from = "guest"; to = "lan"; action = "drop"; } ];

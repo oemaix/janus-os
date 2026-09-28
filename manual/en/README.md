@@ -11,8 +11,7 @@ The project is public and licensed under the Apache License, Version 2.0.
 The manual and the definition documents are in this repository. The router
 image, `janus`, and `janus-build` are not implemented yet. A development
 shell exists for people working on the source: from the repository root,
-run `nix develop`. That shell is zsh when you open the terminal in Cursor
-or VS Code.
+run `nix develop`.
 
 ## What the router is specified to do
 

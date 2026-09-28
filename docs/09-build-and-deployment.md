@@ -147,9 +147,8 @@ The image builder is a Nix derivation (no root, no loop mounts) that:
 4. Emits `janus-<host>.img` plus `.img.zst`, `SHA256SUMS`,
    `build.json` (provenance, including `configRevision`).
 
-Alternative considered: `systemd-repart` / `image.repart`. It is the
-direction NixOS is moving, but f2fs population support is not established;
-revisit (ADR-0010 placeholder).
+`systemd-repart` is not the builder (ADR-0010). Revisit it when it can
+create and populate f2fs.
 
 ## 7. Preventing on-device builds (FR-BLD-004)
 

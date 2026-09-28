@@ -30,11 +30,11 @@
 ├────────────────────────────────────────────────────────────────────────┤
 │  Lowering layer            renders janus.* into:                        │
 │    network   → systemd.network (netdev/network/link), pppd, udhcpc/    │
-│                networkd DHCP, kea/dnsmasq (DHCPv4/6), radvd/networkd RA │
+│                networkd DHCP client, dnsmasq (DHCPv4), networkd RA        │
 │    firewall  → networking.nftables ruleset (zones, NAT, tproxy/tun)     │
 │    proxy     → engine config JSON (sing-box | xray) + rule-sets         │
 │    dns       → engine DNS section (+ optional local forwarder)          │
-│    storage   → fileSystems, systemd-repart/image builder inputs         │
+│    storage   → fileSystems, custom image builder (*09* §6)              │
 │    hardware  → board profile, kernel, firmware, udev, usb_modeswitch    │
 │    monitoring→ nftables counters, vnstat/softflowd, exporters           │
 │    access    → openssh, users, janus CLI                                │
@@ -67,14 +67,14 @@
 | Init / service manager | systemd (initrd and main) | `boot.initrd.systemd.enable = true` for ordered mounts, fsck of state partition and `/etc` overlay. |
 | Network | systemd-networkd | Bridges, VLANs, DHCP client, static, RA/PD client. |
 | PPPoE | pppd (`rp-pppoe` plugin) | Managed by a systemd unit per PPPoE WAN; publishes state to `/run/janus/wan/<name>`. |
-| WWAN | ModemManager **or** minimal `mmcli`-less path (usb_modeswitch + networkd for ECM/NCM; `qmicli`/`mbimcli` for QMI/MBIM) | Chosen per peripheral; ModemManager is optional to keep slim. |
-| DHCPv4/v6 server, RA | Kea **or** dnsmasq (DHCP only) | Decision pending (ADR-0009). Leases persisted on state partition. |
+| WWAN | `usb_modeswitch` + networkd for Ethernet modes; `qmicli` / `mbimcli` for QMI and MBIM | ADR-0015. ModemManager is not used. |
+| DHCPv4 server, RA | dnsmasq (DHCP only); networkd RA | ADR-0009. Leases persisted on the state partition. |
 | Firewall / NAT | nftables | Single ruleset generated from zones, rules, forwards, tproxy/tun redirection. |
 | Proxy engine | sing-box (default) or Xray | Runs as an unprivileged user with `CAP_NET_ADMIN`/`CAP_NET_BIND_SERVICE`; TUN or TPROXY inbound. |
 | DNS | Engine's DNS server (sing-box: built-in; Xray: built-in) exposed on LAN; optional local forwarder for hosts/static leases | Avoids a second resolver daemon where possible. |
 | Data refresh | `janus-refresh-subscriptions.timer`, `janus-refresh-geodata.timer` | Fetch via engine SOCKS inbound, validate, atomic rename, `systemctl reload`. |
 | Monitoring | nftables named counters; `vnstat` for history; optional `softflowd` (IPFIX); optional `prometheus-node-exporter` | Data under `/var/lib/janus/monitoring`. |
-| Remote access | WireGuard (kernel) ; optional Tailscale | Interfaces in `mgmt` zone. |
+| Remote access | Tailscale. Optional WireGuard to a user endpoint | `tailscale0` (and any `wg` interface) joins the `mgmt` zone. SSH only, unless routes or an exit node are set. |
 | Management | OpenSSH; `janus` CLI (shell + Janet) | CLI is the operator UI. |
 | HMI | `janus-hmi` daemon | Renders the pages in *15* from the framebuffer size; control events map onto the capabilities in *15*. |
 
