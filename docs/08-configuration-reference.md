@@ -51,7 +51,7 @@ learning path: copy, edit values, build.
 | `board` | enum | — (required) | `rpi-zero-2w` `rpi2` `rpi3` `rpi4` `nanopi-r4s` `le-potato` `visionfive2` `yanyu-stx-r19f` `x86_64-test` |
 | `peripherals.<name>.class` | enum | — | `wifi` `nic` `wwan` `bluetooth` `hmi` `power` |
 | `peripherals.<name>.match` | attrs | — | `usbVendorProduct = "0bda:8153"` or `usbPath`, `pciSlot`, `mac` |
-| `peripherals.<name>.wwan.mode` | enum | `auto` | `ecm` `ncm` `rndis` `qmi` `mbim` |
+| `peripherals.<name>.wwan.mode` | enum | `auto` | `auto` uses the mode the allowlist records for that USB ID (*10* §4.2). Explicit values: `ecm` `ncm` `rndis` `qmi` `mbim`. |
 | `peripherals.<name>.wwan.modeSwitch` | attrs | board/ID default | usb_modeswitch parameters |
 | `peripherals.<name>.wwan.atPort` | str/null | auto | Serial device for AT commands (status only) |
 | `peripherals.<name>.hmi.profile` | enum | — | `waveshare-1.3-oled-hat` sets the SH1106 panel, SPI pins, and the key map in *10* §4.6. Behaviour is *15*. |
@@ -94,7 +94,7 @@ Defaults: `role = "default"`, `metric = 100 + index`, `ipv6.mode =
 
 See *06* §5. Mandatory: `members`, `address`, `prefixLength`. Defaults:
 `dhcp.enable = true`, range = `.100`–`.199`, `zone = <name>`,
-`proxied = true`, `ipv6.mode` per traffic mode, `nat.enable = true`.
+`proxied = true`, `ipv6.mode` per traffic mode (*06* §9), `nat.enable = true`.
 
 ### 4.5 `wifi.<name>`, `igmpProxy`
 
@@ -245,7 +245,7 @@ export`. `janus-build fleet pull` writes leases into
 * Engine capability check for every node protocol and feature.
 * `janus.access.ssh.authorizedKeys != []`.
 * `janus.storage`: `/` and `/nix` read-only; exactly one rw partition at `/var`.
-* IPv6 `delegated` + traffic mode ≠ `direct` → warning unless IPv6
-  interception is enabled.
+* IPv6 `delegated` with traffic mode `rule-based` or `proxy-all` → warning
+  unless IPv6 interception is enabled. `bypass` does not warn.
 * `janus.hardware.board` is set and supports every declared peripheral class.
 * A `wwan` peripheral whose USB ID is not on the allowlist fails evaluation.

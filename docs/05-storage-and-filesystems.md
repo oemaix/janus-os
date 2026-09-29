@@ -59,7 +59,7 @@ configures:
 | Concern | Approach |
 |---------|----------|
 | `/etc` | `system.etc.overlay.enable = true`, `mutable = false`: `/etc` is an overlayfs of the store-generated tree with a tmpfs upper. Files that must persist (`machine-id`, `ssh/ssh_host_*_key`) are bind-mounted from `/var/lib/janus/etc/`. |
-| `/nix/var` | Read-only. Profiles and DB are frozen at image build. No `nix` daemon is running; the `nix` binary is present only because NixOS activation requires it, and `nix.enable = false` (no daemon, no channels). |
+| `/nix/var` | Read-only. Profiles and DB are frozen at image build. No `nix` daemon is running. The `nix` binary stays for boot-time activation and for `nix-store --import` during a closure deploy (*09* §8.2). `nix.enable = false` (no daemon, no channels). nixpkgs sources are not on the image, so the board does not evaluate. |
 | `/var` | Real f2fs partition. Standard NixOS `systemd-tmpfiles` rules create the tree at boot. |
 | `/root` | Symlink to `/var/lib/janus/root`. |
 | `/usr/bin/env`, `/bin/sh` | Symlinks baked into the root image. |

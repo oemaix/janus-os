@@ -146,10 +146,11 @@ requirements it drives (see *03 — Requirements*).
 ### UC-15 IPv6 without leaks
 
 * **Actor:** Mei
-* **Flow:** Choose an IPv6 mode. In `tunnel-aware` mode, IPv6 is delivered
-  to LAN but AAAA answers and IPv6 flows follow the same routing rules as
-  IPv4, and stable-privacy addressing is enforced. In `disabled` mode no IPv6
-  reaches LAN hosts.
+* **Flow:** Choose a LAN IPv6 mode: `disabled`, `ula-only`, or `delegated`.
+  In `delegated`, the LAN receives the WAN prefix, and Janus intercepts
+  IPv6 flows and AAAA answers with the same rules as IPv4. Stable-privacy
+  addressing is enforced on the router. In `disabled`, LAN hosts stay on
+  link-local only.
 * **Drives:** FR-NET-030..034, FR-SEC-010
 
 ### UC-16 Vendor rotates the subscription URL

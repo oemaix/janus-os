@@ -84,8 +84,8 @@ runtime, not user-editable) or from *manual* definitions in
 
 **Peripheral** — A supported add-on device attached to a Board: Wi-Fi
 dongle, USB NIC, WWAN (4G/5G) dongle, Bluetooth dongle, HMI (LCD/e-ink with
-optional buttons). *Avoid:* "add-on", "dangle". Declared under
-`janus.hardware.peripherals`.
+optional buttons), or a `power` sensor such as an INA219 UPS. *Avoid:*
+"add-on", "dangle". Declared under `janus.hardware.peripherals`.
 
 **Policy change** — A change to the router's behavior expressed by editing
 `configuration.nix` (e.g. swapping WAN/LAN ports, adding a subscription).

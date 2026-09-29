@@ -27,7 +27,8 @@
     # A USB Ethernet adapter as an extra port.
     # usbnic0 = { class = "nic"; match.usbVendorProduct = "0bda:8153"; };
 
-    # A 4G dongle that shows up as an Ethernet NIC (ECM/NCM) with an AT port.
+    # Huawei E3372s. The allowlist records this ID as ncm, so mode "auto" is ncm.
+    # Ethernet modes do not take an APN. A qmi or mbim dongle does.
     # lte0 = { class = "wwan"; match.usbVendorProduct = "12d1:1506"; wwan.mode = "auto"; };
 
     # A small OLED with two buttons.
@@ -87,12 +88,12 @@
     #   dhcp.vendorClass = "IPTV_RG";
     # };
 
-    /* Backup uplink through the 4G dongle declared above.
+    /* Backup uplink through the ncm dongle declared above. No APN.
     lte = {
       uplink = "lte0";
       mode   = "wwan";
       role   = "backup";
-      wwan   = { peripheral = "lte0"; apn = "internet"; };
+      wwan   = { peripheral = "lte0"; };
     };
     */
   };
@@ -155,7 +156,7 @@
   janus.proxy = {
     enable = true;
     engine = "sing-box";                                   # or "xray"
-    mode   = "rule-based";                                 # direct | rule-based | proxy-all
+    mode   = "rule-based";                                 # bypass | rule-based | proxy-all
 
     subscriptions = {
       providerA = {

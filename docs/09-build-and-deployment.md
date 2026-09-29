@@ -89,8 +89,9 @@ host can still build. The user manual, not the router, is what teaches
 `git init`.
 
 The board never holds a credential for that remote, never pushes, and
-never pulls the repo to apply it (FR-OPS-010). Hot overrides are exported
-over SSH to the build host, then committed there.
+never pulls the repo to apply it (FR-OPS-010). `janus-build fleet pull`
+on the build host reads the current overrides over SSH. The operator
+reviews the diff and commits there.
 
 On-site `nixos-rebuild` was considered and rejected (ADR-0017). It would
 not rewrite the Nix store; it would add store paths. Doing that on the
@@ -155,8 +156,10 @@ create and populate f2fs.
 Multiple independent guards:
 
 * `system.switch.enable = false` — no `switch-to-configuration`.
-* `nix.enable = false` — no daemon, no channels; the `nix` binary is
-  present only for activation script needs.
+* `nix.enable = false` — no daemon, no channels. The `nix` binary stays
+  for boot-time activation and for `nix-store --import` in §8.2. nixpkgs
+  sources are not on the image, and `/nix` is read-only except during
+  that deploy, so the board does not evaluate.
 * `/nix` mounted read-only.
 * No compilers/`stdenv` in the closure: a check derivation asserts that
   `gcc`, `binutils`, `glibc.dev`, `cmake`, `meson` etc. are not in the
@@ -169,10 +172,20 @@ Multiple independent guards:
 
 ### 8.1 Full image re-flash (1.0, always available)
 
-Flash `janus-<host>.img` to SD/eMMC. State partition content on the media
-is lost unless the operator uses `janus-build deploy --preserve-state` which
-copies `/var/lib/janus/{etc,secrets,subscriptions,geodata}` back over SSH
-before flashing. Simple and always correct.
+Flash `janus-<host>.img` to the SD card or eMMC. The command
+`janus-build deploy --preserve-state <host>` does not flash. It copies
+this set to the build host:
+
+* `/var/lib/janus/etc`
+* `/var/lib/janus/secrets`
+* `/var/lib/janus/subscriptions`
+* `/var/lib/janus/geodata`
+* `/var/lib/janus/overrides.json`
+* `/var/lib/janus/engine/selection.json`
+
+The operator flashes the image. After the board boots, `janus restore`
+of that archive puts the set back (*14* §6). A flash without that copy
+starts from an empty state partition.
 
 ### 8.2 Remote closure deployment (P2)
 

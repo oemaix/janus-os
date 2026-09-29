@@ -95,6 +95,12 @@ plane (AT over USB serial, QMI, MBIM) is optional and used for status only
 | `qmi` | raw-IP via `qmi_wwan` | `wwan0` | `qmicli` for connect/status |
 | `mbim` | `cdc_mbim` | `wwan0` | `mbimcli` |
 
+`wwan.mode = "auto"` uses the mode the allowlist records for that USB ID.
+Evaluation fails when the ID is absent or the row records no mode. An
+explicit `ecm`, `ncm`, `rndis`, `qmi`, or `mbim` overrides that row.
+Janus sends `apn` for `qmi` and `mbim` only. Ethernet modes ignore it;
+the module already has an APN.
+
 The board-agnostic module handles mode switching (`usb_modeswitch` rules
 from the allowlist only), link bring-up per mode, and health reporting
 into `/run/janus/wwan/<name>`. A WAN with `mode = "wwan"` references the
@@ -133,7 +139,7 @@ are not part of the profile. QMI and MBIM are not how this unit attaches.
 | Fibocom NL668 (LTE Cat.4) | `05c6:90b6` (product string `Android`) | wwan, Ethernet mode | supported on Le Potato. Same USB ID as other Qualcomm gadgets; the user declares the peripheral. |
 | EigenComm, exposed as a NIC | `19d1:0001` | wwan (ethernet mode, LTE Cat.1) | supported on Zero 2 W |
 | mcuzone Pi Zero UPS (INA219) | I²C `0x40` | power | supported on Zero 2 W (FR-HW-008) |
-| Waveshare Pi Zero UPS (INA219) | I²C `0x43` | power | supported; owner's board is the `0x40` profile |
+| Waveshare Pi Zero UPS (INA219) | I²C `0x43` | power | Address reserved. No discharge measurement, so no readings and shutdown stays unarmed (FR-HW-008). |
 | Huawei E3372h (HiLink) | `12d1:14dc` / `12d1:1f01` | wwan (ecm/rndis) | supported |
 | Huawei E3372s (stick) | `12d1:1506` | wwan (ncm) + AT | supported |
 | Quectel EC25 / EM12 (USB) | `2c7c:0125` / `2c7c:0512` | wwan (qmi) + AT | supported |

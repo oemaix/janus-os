@@ -113,8 +113,11 @@ tree does not mean that behavior exists. Stubs are not finished features.
   unarmed.
 * The CSR Bluetooth dongle `0a12:0001` stays on the allowlist. BlueZ stays
   off. No Bluetooth feature is assigned.
-* The board image must not contain a compiler, a Nix evaluator, or
-  `janus-build`. The dev shell is only for the build host.
+* The board image must not contain a compiler or `janus-build`. The `nix`
+  binary stays for activation and for `nix-store --import` (*05*, *09*
+  §8.2). `nix.enable = false`, nixpkgs sources are absent, and `/nix` is
+  read-only except during that deploy, so the board does not evaluate.
+  The dev shell is only for the build host.
 * No MCP server is included. One would only repeat `janus-build` before
   that program exists, and a stub that returned invented data would be
   worse than no server.

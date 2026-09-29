@@ -172,10 +172,11 @@ IPv6. Janus therefore treats IPv6 as a *policy*, not a checkbox:
 | `ula-only` | RA with ULA prefix, no default route advertised. Hosts talk IPv6 internally; Internet is IPv4-only (through tunnel). |
 | `delegated` | Global prefix from WAN PD is advertised. Requires **tunnel-aware** handling: (a) IPv6 flows from proxied LANs are intercepted and subject to the same rules as IPv4 (FR-NET-033); (b) AAAA handling follows DNS policy (fake-IP or remote resolution); (c) RA advertises stable-privacy + temporary addresses (`IPv6PrivacyExtensions=kernel` on the router; RA flags do not control hosts, so the docs state the host-side expectation) ; (d) optional `npt66` (network prefix translation) to hide the delegated prefix's stability. |
 
-Default LAN IPv6 mode: `disabled` when traffic mode is not `direct`;
-`delegated` when traffic mode is `direct`. Assertion warns when `delegated`
-is combined with `rule-based`/`proxy-all` and interception is not enabled
-for IPv6.
+Default LAN IPv6 mode: `delegated` when the traffic mode is `bypass`;
+`disabled` when the traffic mode is `rule-based` or `proxy-all`. An
+assertion warns when `delegated` is combined with `rule-based` or
+`proxy-all` and IPv6 interception is not enabled. `direct` is a rule
+target, not a traffic mode.
 
 Router-side addresses always use RFC 7217 stable-privacy
 (`IPv6StableSecretAddress`), never EUI-64 (FR-NET-032). Inbound IPv6 is

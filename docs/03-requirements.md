@@ -163,20 +163,20 @@ Key words MUST / SHOULD / MAY follow RFC 2119. Priority: **P1** required for
 | ID | Requirement | Prio |
 |----|-------------|------|
 | FR-HW-001 | Boards MUST be selected by a single option; a board profile MUST provide kernel, firmware, boot layout, default port mapping. | P1 |
-| FR-HW-002 | Peripherals MUST be declared by class (`wifi`, `nic`, `wwan`, `bluetooth`, `hmi`) and identified by USB/PCI ID or bus path. | P1 |
+| FR-HW-002 | Peripherals MUST be declared by class (`wifi`, `nic`, `wwan`, `bluetooth`, `hmi`, `power`) and identified by USB/PCI ID, I²C address, or bus path. | P1 |
 | FR-HW-003 | `wwan` peripherals MUST support Ethernet-mode (ECM/RNDIS/NCM) and QMI/MBIM operation and MAY expose an AT control channel for status (signal, operator, SMS). | P2 |
 | FR-HW-004 | `hmi` peripherals MUST display the pages in *15* and MUST map their controls onto the capabilities in *15*. A key MAY be bound to `refresh`, `reboot-hold`, or `factory-reset`. A missing control MUST hide the action that needed it, not a second interface. | P3 |
 | FR-HW-005 | Unsupported peripherals MUST be reported at evaluation with a pointer to the support matrix. | P2 |
 | FR-HW-006 | Redistributable closed-source firmware blobs required by a supported board or peripheral (Raspberry Pi wireless firmware, board boot firmware) MUST be allowed. Out-of-tree kernel drivers and device-specific mode-switch hacks MUST NOT be added to make an unlisted device work. | P1 |
 | FR-HW-007 | WWAN support MUST be an allowlist of known devices and modes. A dongle that needs an undocumented or fragile setup MUST be rejected with a pointer to the matrix rather than given a best-effort configuration. | P1 |
-| FR-HW-008 | A `power` peripheral class MUST support a TI INA219 on I²C, including the known Pi Zero UPS profiles at address `0x40` (mcuzone) and `0x43` (Waveshare). Readings MUST be available to `janus status`. When the profile records the discharge current sign, Janus MUST shut down on a sustained low cell while discharging, at the thresholds in *10* §4.5, and MUST NOT shut down while charging, when the sensor has failed, or because a threshold was set below those defaults. | P2 |
+| FR-HW-008 | A `power` peripheral class MUST support a TI INA219 on I²C. The mcuzone profile at `0x40` MUST expose readings in `janus status` and MUST shut down on a sustained low cell while discharging, at the thresholds in *10* §4.5. A negative current on that profile means discharge. The Waveshare address `0x43` is reserved. It MUST NOT expose readings or arm shutdown until a discharge measurement exists. Janus MUST NOT shut down while charging, when the sensor has failed, or because a threshold was set below those defaults. | P2 |
 
 ## 12. Operations (OPS)
 
 | ID | Requirement | Prio |
 |----|-------------|------|
 | FR-OPS-001 | Structural configuration MUST change only by rebuild-and-deploy from the build host. The board MUST NOT evaluate Nix or run `nixos-rebuild`. | P1 |
-| FR-OPS-002 | Deployment methods MUST include full-image re-flash; SHOULD include remote closure deployment (`nixos-rebuild --target-host`) with the store temporarily remounted read-write by the deployment tool; MAY include A/B image slots. | P1/P2/P3 |
+| FR-OPS-002 | Deployment methods MUST include full-image re-flash; SHOULD include remote closure deployment by `janus-build deploy` as in *09* §8.2 (`nix copy` or `nix-store --import`, with `/nix` remounted read-write for that session); MAY include A/B image slots. The board MUST NOT run `nixos-rebuild`. | P1/P2/P3 |
 | FR-OPS-003 | *Data* (subscription cache, Geo data, leases, statistics) MUST live on the state partition and MUST be refreshable at runtime without rebuild. | P1 |
 | FR-OPS-004 | The `janus` CLI MUST allow: `status`, `refresh subscriptions`, `refresh geodata`, `select <group> <node>`, `test <group>`, `wan restart <name>`, `logs`. | P1 |
 | FR-OPS-005 | Boot MUST succeed with an empty or corrupted state partition (re-initialize from embedded snapshots). | P1 |
@@ -210,4 +210,4 @@ Key words MUST / SHOULD / MAY follow RFC 2119. Priority: **P1** required for
 | NFR-REL-001 | Power-loss robustness | 100 random power cuts without re-flash |
 | NFR-REL-002 | Subscription refresh failure tolerance | Router remains functional with last good data indefinitely |
 | NFR-006 | Documentation | Every option documented; every board in the matrix has a tested image |
-| NFR-007 | Supported architectures | aarch64-linux and x86_64-linux (Tier 1), armv7l-linux and riscv64-linux (Tier 2/3). Tier is the test obligation, not a promise that every Tier-1 board meets the R4S throughput numbers. |
+| NFR-007 | Supported architectures | `aarch64-linux` and `x86_64-linux` for the boards in *10*, including Tier 2 boards on those architectures. `armv7l-linux` and `riscv64-linux` are Tier 3. Tier is a per-board test obligation (*10*), not a property of the architecture, and not a promise that every Tier 1 board meets the NanoPi R4S throughput numbers. |
