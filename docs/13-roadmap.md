@@ -80,24 +80,36 @@ tree does not mean that behavior exists. Stubs are not finished features.
 * Apache-2.0 license at the repository root.
 * Flake with `nixosModules.janus`, `nixosModules.boards`, `lib.mkRouter`,
   `templates.default`, and `devShells.default` (`nix develop`).
-* Placeholder NixOS modules for the areas in *04* §6. They import and
-  define no options.
+* `lib.mkRouter` reads `janus.hardware.board` and returns a NixOS
+  configuration for `x86_64-test`, including `system.build.janusImage`.
+  Any other board throws. It does not return an empty configuration.
+* `janus.*` option types, defaults, and the structural assertions in
+  *08* §12. Storage is lowered: partition labels, read-only `/` and
+  `/nix`, one read-write `/var`, and `system.etc.overlay` with
+  `mutable = false`. Network, firewall, proxy, DNS, monitoring, remote
+  access, and the OpenSSH daemon are not lowered.
+* `x86_64-test` board profile (virtio NICs, GPT, no raw firmware).
+* Image builder: GPT, FAT boot, f2fs root, f2fs store, f2fs state.
+  `nix build .#checks.x86_64-linux.vm-x86_64-test` boots that image.
+* Options reference: `nix build .#docs-options`.
+* Eval checks under `checks.<system>.eval-*`, and CI for those checks
+  plus the options document.
 * `janus-build` and `janus` binaries in the dev shell. Both exit 2.
+  The commands are specified in *14* and *16*.
 * User-facing text: root `README.md` and `manual/` in English, Russian,
   and Persian, in that order, plus `manual/llms.txt` and `manual/ai.md`.
 
 ### Not done
 
-* Every `janus.*` option in *08*, and every lowering into NixOS.
-* `lib.mkRouter`. Calling it throws. It must not grow a silent empty
-  configuration.
-* Image build, partition layout, and board profiles, including
-  `x86_64-test`.
+* Lowering `janus.network`, `janus.firewall`, `janus.proxy`, `janus.dns`,
+  `janus.monitoring`, and `janus.remoteAccess` into NixOS.
+* Board profiles other than `x86_64-test`.
 * `janus` and `janus-build` behavior from *14* and *16*. The binaries are
   stubs.
 * Subscription snapshot, Geo data, Janet normalizer, matchers, and both
   engine renderers. `janet/` only holds a note. Do not start this in Go.
-* Checks, golden files, and VM tests.
+* Renderer golden files, and the VM checks for DHCP, NAT, DNS, and the
+  firewall. The boot check covers the mount model only.
 * sops-nix wiring, age-key install, hot-override storage, and fleet push.
 * HMI, battery shutdown, WWAN, and Wi-Fi AP.
 * The local wizard. `janus-build init` is specified and not implemented.

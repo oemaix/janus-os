@@ -4,9 +4,10 @@
 router image, and the commands do not do their jobs yet. What is here is
 the specification and a skeleton of the repository.
 
-Janus OS is an image-deployed NixOS router for small boards, with
-censorship-circumvention as a first-class feature. The router does not
-evaluate Nix. Images are built on another machine.
+Janus OS does not ship a router system. You build your own. A
+declarative configuration becomes a read-only NixOS image for a small
+board, with censorship circumvention as a first-class feature. The
+board does not evaluate Nix. The image is built on another machine.
 
 This repository is licensed under the Apache License, Version 2.0. See
 [LICENSE](LICENSE).

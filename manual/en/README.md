@@ -1,8 +1,8 @@
 # Janus OS
 
-Janus OS is a router system based on NixOS. You build an image on one
-computer and flash it to a small board. The board does not build software
-and does not evaluate Nix.
+Janus OS does not ship a router system. You build your own, on NixOS:
+an image on one computer, flashed to a small board. The board does not
+build software and does not evaluate Nix.
 
 The project is public and licensed under the Apache License, Version 2.0.
 

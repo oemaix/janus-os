@@ -1,0 +1,29 @@
+# SPDX-License-Identifier: Apache-2.0
+name: eval
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Evaluate the phase 0 checks and the options document
+        run: |
+          nix build --print-build-logs \
+            .#checks.x86_64-linux.eval-minimal \
+            .#checks.x86_64-linux.eval-missing-board \
+            .#checks.x86_64-linux.eval-missing-key \
+            .#checks.x86_64-linux.eval-root-writable \
+            .#checks.x86_64-linux.eval-overlap \
+            .#checks.x86_64-linux.eval-bad-uplink \
+            .#checks.x86_64-linux.eval-inline-secret \
+            .#checks.x86_64-linux.eval-wwan \
+            .#checks.x86_64-linux.eval-nix-size \
+            .#checks.x86_64-linux.eval-seed \
+            .#packages.x86_64-linux.docs-options

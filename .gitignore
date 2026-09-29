@@ -1,6 +1,6 @@
 /tmp
 /.fresh
-/result
+/result*
 .direnv
 
 /.vscode
