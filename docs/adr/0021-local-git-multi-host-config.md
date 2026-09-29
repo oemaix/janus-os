@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | Accepted |
+| Status | Accepted; refines 0018. The shared-secret file layout is refined by ADR-0022 |
 | Date | 2026-09-26 |
 | Affects | 03 FR-CFG-010/011, FR-OPS-010, 09 §3; refines ADR-0018 |
 

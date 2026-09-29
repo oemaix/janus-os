@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | Accepted |
+| Status | Accepted; the `secrets.yaml` sentence is refined by ADR-0022 |
 | Date | 2026-09-23 |
 | Affects | 00 §4 and §9, 09 §3 |
 

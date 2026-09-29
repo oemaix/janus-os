@@ -19,7 +19,7 @@ An accepted ADR is the record. It is not copied into *18*.
 | [0011](0011-tun-and-tproxy.md) | sing-box TUN, Xray TPROXY | Accepted |
 | [0012](0012-impure-subscription-fetch.md) | Impure subscription fetch, optional snapshot hash | Accepted |
 | [0013](0013-volatile-journal.md) | Volatile journal | Accepted |
-| [0014](0014-sops-nix-age.md) | sops-nix with age for credentials | Accepted |
+| [0014](0014-sops-nix-age.md) | sops-nix with age for credentials | Accepted; key custody refined by 0022 |
 | [0015](0015-qmi-mbim-cli.md) | libqmi and libmbim command-line tools | Accepted |
 | [0016](0016-fail-closed.md) | Fail closed when the engine is down | Accepted |
 | [0017](0017-hot-overrides-no-onsite-rebuild.md) | Hot overrides; no Nix evaluation on the board | Accepted; refines 0002 |
@@ -27,3 +27,4 @@ An accepted ADR is the record. It is not copied into *18*.
 | [0019](0019-dns-inside-the-engine.md) | DNS policy inside the proxy engine | Accepted |
 | [0020](0020-keep-janet-not-go.md) | Keep Janet; do not move tooling into Go | Accepted |
 | [0021](0021-local-git-multi-host-config.md) | Local git mandatory; one repo, many routers | Accepted; refines 0018 |
+| [0022](0022-per-host-age-keys.md) | Per-host age keys; the build host encrypts only | Accepted; refines 0014 |

@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-09-27 |
+| Last updated | 2026-09-29 |
 
 `janus-build` runs on the build host, inside the private config repo. The
 router command stays `janus` (*14*). The two names share the project and
@@ -29,13 +29,14 @@ SSH destinations are `janus.deploy.address`, or the
 | Stage | Command | What it does |
 |-------|---------|--------------|
 | Create the repo | `janus-build init` | `nix flake init -t` for Janus OS, then `git init` and the first commit if the directory is not already a repository. |
-| Age key | `janus-build secret keygen` | Writes `~/.config/janus/age.key` (mode `0600`) if that file is absent, and prints the public key. Refuses to replace an existing key. |
-| Edit a secret | `janus-build secret edit` | Decrypts `secrets.yaml` with that key, opens the editor, and writes ciphertext again. |
+| Age key | `janus-build secret keygen <host>` | Creates that host's keypair outside the Nix build. Commits nothing by itself: it writes `secrets/keys/<host>.pub` and prints the private key once on stdout. Refuses to replace an existing public key. |
+| Set a secret | `janus-build secret set <path>` | Reads plaintext on stdin, encrypts to the recipients of that path, and writes ciphertext. Does not keep a plaintext file. |
+| Rewrap a shared secret | `janus-build secret rewrap <path> --from <host>` | Asks a router that can decrypt that file, then encrypts to the current recipient set. |
 | Check | `janus-build check [<host>]` | Evaluates the named host, or every host. Prints assertion failures. Builds nothing. |
 | Build | `janus-build build [<host>]` | Builds `images.<host>` for one host or every host. Prints the image path. |
 | Install an image | `janus-build deploy <host>` | Closure deploy, or a state-preserving re-flash (*09* §8). |
 | Push overrides | `janus-build fleet apply` | Committed hot-override projection, over SSH (§4). |
-| Pull overrides | `janus-build fleet pull <host>` | Current overrides from one router into this repo (§5). |
+| Pull overrides | `janus-build fleet pull [<host>]` | Current overrides from one router, or every reachable router, into this repo (§5). |
 | Look | `janus-build status [<host>]` | SSH `janus status` on one host or every host. |
 | Save a router | `janus-build backup <host>` | SSH `janus backup` and write the archive on the build host. |
 | New Janus pin | `janus-build update` | `nix flake update janus`. Does not build or deploy. |
@@ -44,19 +45,34 @@ A later local wizard is a front end for `init` and the first edit. It is
 not a hosted builder (*00* §4, *13* Phase 4). Until it exists, `init` is
 the creation step.
 
-## 2. Age key
+## 2. Age keys and secret files
 
-`secrets.yaml` is encrypted to one age key. That private key lives on the
-build host and a copy is installed on each router that must decrypt the
-file. The build host does not collect a separate private key from each
-router. `janus-build secret` and `janus-build fleet` decrypt with the
-build-host copy.
+Each router has its own age key (ADR-0022). The build host stores the
+public key in the repo and does not keep the private key. Encryption uses
+the public key. Decryption runs on the router.
+
+Secret files, one credential each:
+
+```text
+secrets/keys/<host>.pub
+secrets/wifi/<host>/<ap>.yaml
+secrets/pppoe/<host>/<wan>.yaml
+secrets/tailscale/<host>.yaml
+secrets/wireguard/<host>/<name>.yaml
+secrets/subscription/<vendor>.yaml
+secrets/nodes/<name>.yaml
+```
+
+A host path is encrypted to `secrets/keys/<host>.pub`. A subscription or
+node file is encrypted to every host whose configuration names that file.
+The tree must be a git repository. These commands do not commit.
 
 | Command | Effect |
 |---------|--------|
-| `janus-build secret keygen` | Create the key once (§1). |
-| `janus-build secret edit` | Edit `secrets.yaml`. The tree must be a git repository. The command does not commit. |
-| `janus-build deploy --secrets <dir> <host>` | Install the age key and the other secret files over SSH. |
+| `janus-build secret keygen <host>` | Create that host's keypair (§1). Print the private key once. Do not write it into the repo or into `~/.config/janus/`. |
+| `janus-build secret set <path>` | Encrypt stdin to the recipients of `<path>` and write that file. `<path>` is one of the paths above. |
+| `janus-build secret rewrap <path> --from <host>` | SSH to `<host>`, which decrypts `<path>`. Encrypt to the recipient set implied by the current configuration. Warn that the session carried plaintext. |
+| `janus-build deploy --age-key <host>` | Read that host's private key on stdin and install it over SSH. Do not store the key. |
 
 ## 3. `janus-build deploy`
 
@@ -65,7 +81,7 @@ build-host copy.
 | `janus-build deploy <host>` | Remote closure deploy (*09* §8.2). |
 | `janus-build deploy --preserve-state <host>` | Copy state off the router, then the caller re-flashes (*09* §8.1). |
 | `janus-build deploy --confirm <host>` | Mark the booted generation good after a closure deploy. |
-| `janus-build deploy --secrets <dir> <host>` | Install secret files, including the age key, over SSH. |
+| `janus-build deploy --age-key <host>` | Install that host's age private key from stdin (§2). |
 
 `deploy` installs a new image. It is how a change outside the hot-override
 allowlist reaches a router. The copy onto the board uses `--max-jobs 0`
@@ -85,16 +101,18 @@ No host means every `nixosConfigurations` entry. The git tree must be
 clean. The projection, per host, is only:
 
 * `proxy.subscriptions.<name>.url` for a subscription that already exists
-  on that host, taken from the sops key its `urlSecret` names
-* `network.wifi.<name>.passphrase` for an AP that already exists, taken
-  from its `passphraseSecret`
+  on that host, the ciphertext file its `urlSecret` names
+* `network.wifi.<name>.passphrase` for an AP that already exists, the
+  ciphertext file its `passphraseSecret` names
 * `network.lans.<name>.dhcp.staticLeases.<host>` written in
   `hosts/<name>/overrides.nix`
 
-Each reachable router receives its own projection through `janus override
-set` on that board. A shared subscription secret is the same value on
-every host that references it. The URL and the passphrase are passed on
-the remote stdin. A changed URL is followed by `janus proxy refresh` for
+Each reachable router receives its own projection. Static leases are
+passed to `janus override set` as plaintext. Secret files are sent as
+ciphertext. The router decrypts them with its age key and applies the
+override. The build host does not decrypt. A shared subscription file is
+the same ciphertext on every host that references it; each of those hosts
+can decrypt it. A changed URL is followed by `janus proxy refresh` for
 that subscription.
 
 `/etc/janus/build.json` records `configRevision`, the git revision of this
@@ -112,34 +130,42 @@ change. An unreachable host is listed and left unchanged.
 
 ## 5. `janus-build fleet pull`
 
-Brings one router's current overrides into the repo. The router does not
-know which file defines an option, so it does not emit Nix. `fleet pull`
-does, because it has evaluated this repo.
+Brings current overrides into the repo. The router does not know which
+file defines an option, so it does not emit Nix. `fleet pull` does,
+because it has evaluated this repo. There is no `janus override export`.
 
 ```
-janus-build fleet pull <host>
+janus-build fleet pull [<host>] [--with-secrets]
 ```
 
-Over SSH it reads `janus override show --json`. That object is the
-overrides still stored on the router, not a history. A value that was set
-and later unset is absent.
+No host means every reachable `nixosConfigurations` entry. An unreachable
+host is named and skipped. Over SSH the command reads `janus override
+show --json`. That object is the overrides still stored on the router,
+not a history. A value that was set and later unset is absent. Secret
+values are redacted unless `--with-secrets` is set, in which case the
+remote command is `janus override show --secrets --json`.
 
-| Override | Where it is written |
-|----------|---------------------|
-| Subscription URL | The existing sops key named by that host's `urlSecret`. |
-| Wi-Fi passphrase | The existing sops key named by that host's `passphraseSecret`. |
-| Static lease | `hosts/<host>/overrides.nix`, which that host's `configuration.nix` already imports. |
+| Override | Default | `--with-secrets` |
+|----------|---------|------------------|
+| Subscription URL | Named as changed. Not fetched. | Router decrypts. Build host encrypts to the recipients of the existing `urlSecret` file and writes that file. |
+| Wi-Fi passphrase | Named as changed. Not fetched. | Same, for the existing `passphraseSecret` file. |
+| Static lease | `hosts/<host>/overrides.nix`, which that host's `configuration.nix` already imports. | Same file. Leases are not secrets. |
 
-The command re-encrypts `secrets.yaml` with the build-host age key. It
-does not commit and it does not push. It prints the diff.
+The command does not commit and it does not push. It prints the diff.
+`--with-secrets` prints a warning that the SSH session carried plaintext
+credentials and that no plaintext file was kept. The user reviews the
+ciphertext diff and deletes nothing from the repo beyond what they do
+not want to commit.
 
-A shared sops key is not written from one router when another host that
-references it is down or reports a different value. The output names both
-values and leaves the file unchanged. Pull each of those hosts, make the
-values agree on the routers or edit the secret once, then pull again.
+A shared secret file is not written from one router when another
+reachable host that references it reports a different value. The output
+names both hosts and leaves the file unchanged. Make the values agree on
+the routers, or replace the file once with `secret set`, then pull again.
+An unreachable host does not block a per-host file. It does block a
+shared file that host also references.
 
 If `hosts/<host>/overrides.nix` is not imported and the router has lease
-overrides, the command exits `2` and names the import. Secret keys are
+overrides, the command exits `2` and names the import. Secret files are
 not written in that failed run.
 
 ## 6. Check, build, status, backup, update

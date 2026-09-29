@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-09-26 |
+| Last updated | 2026-09-29 |
 
 ## 1. Assets
 
@@ -69,16 +69,25 @@
 
 ### 4.3 Secrets
 
-sops-nix with age is the default (ADR-0014). Ciphertext lives in the
-private config repo (`secrets.yaml`). The age private key is generated on
-the build host. The user keeps it in a password manager and in
-`~/.config/janus/age.key` (mode `0600`, outside the config repo). A copy
-also lives on the state partition of each router that must decrypt at
-boot. It is one key for the repo, not a private key generated on each
-router and collected by the build host. Other storage is allowed; the
-manual teaches this one. Boot-time activation
-decrypts into `/run/secrets` (tmpfs). The Nix store does not contain
-plaintext.
+sops-nix with age is the default (ADR-0014, ADR-0022). Ciphertext lives
+in the private config repo, one credential per file under `secrets/`
+(*08* §11). Each router has its own age keypair. `janus-build secret
+keygen <host>` creates it outside the Nix build. The public key is
+committed at `secrets/keys/<host>.pub`. The private key is installed on
+that router's state partition and is not retained on the build host.
+The password manager is the backup copy. The build host encrypts to
+public keys and cannot decrypt the files.
+
+The repo is the ciphertext a boot can decrypt. It is not the plaintext
+credential store. A changed Wi-Fi passphrase, PPPoE password, Tailscale
+auth key, or subscription URL is supplied again through `janus-build
+secret set`. Boot-time activation decrypts into `/run/secrets` (tmpfs).
+The Nix store holds ciphertext only. The private key is not a build
+output.
+
+A file under `subscription/` or `nodes/` is encrypted to every host that
+references it. Any of those routers can read it. A file under `wifi/`,
+`pppoe/`, `tailscale/`, or `wireguard/` is encrypted to that host only.
 
 | Secret | In sops | Notes |
 |--------|---------|-------|
@@ -87,8 +96,8 @@ plaintext.
 | Subscription URL | yes | The node list is volatile data; the URL usually embeds a token and is not. A hot override may replace the URL on the board (mode `0600`) until the user updates sops. |
 | Manual node credentials (UUID, password, REALITY keys) | yes | |
 | WireGuard private key, mesh auth key | yes | |
-| SSH host keys | no | Generated on first boot, stored under `/var/lib/janus/etc`. |
-| Age private key | no | On the state partition. Whoever has the SD card can read it and the ciphertext in the image. Disk encryption is not in scope (see §5). |
+| SSH host keys | no | Generated on first boot, stored under `/var/lib/janus/etc`. Not the age key. |
+| Age private key | no | One per router, on that router's state partition. The build host does not keep it. Whoever has the SD card can read it and the ciphertext encrypted to that router. Disk encryption is not in scope (see §5). |
 
 | Style | Where the secret ends up | Use when |
 |-------|--------------------------|----------|
@@ -146,9 +155,15 @@ not document two first-class paths.
 
 ## 5. Residual risks
 
-* Anyone with the SD card can read secrets on the state partition (no disk
-  encryption). Mitigation: physical control; future LUKS with TPM/OTP is not
-  realistic on these boards.
+* Anyone with the SD card can read that router's age private key and every
+  secret encrypted to it, including shared subscription and node files
+  (no disk encryption). Mitigation: physical control; future LUKS with
+  TPM/OTP is not realistic on these boards. Another router's per-host
+  secrets stay ciphertext.
+* A backup archive from `janus backup` contains the age private key.
+  Leaving that archive on the build host restores decrypt capability for
+  that router. `fleet pull --with-secrets` and `secret rewrap` also put
+  plaintext in the SSH session.
 * A rogue subscription can direct traffic to attacker-controlled relays;
   this is inherent to the subscription model. Mitigation: per-subscription
   `allowedServers`/`allowedPorts` filters (P2), and TLS verification never

@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-09-27 |
+| Last updated | 2026-09-29 |
 
 This is the contract for the on-router `janus` command. Implementation
 follows this file. The user manual will later show the same commands with
@@ -68,8 +68,9 @@ Creating a subscription, a LAN, or a Wi-Fi AP is a rebuild.
 
 | Command | Effect |
 |---------|--------|
-| `janus override show` | Current stored overrides, and which ones differ from the image. This is the set, not the history of edits. `--json` is what `janus-build fleet pull` reads. |
-| `janus override diff` | Drift only |
+| `janus override show` | Current stored overrides, and which ones differ from the image. This is the set, not the history of edits. Secret values are redacted. `--json` is what `janus-build fleet pull` reads by default. |
+| `janus override show --secrets` | Same set, with secret values. This is the stdout `janus-build fleet pull --with-secrets` reads. There is no `janus override export`. |
+| `janus override diff` | Drift only. Secret values stay redacted. |
 | `janus override unset <key>` | Remove one override and reload |
 
 Applying a valid override reloads only the affected service (subscription
@@ -82,10 +83,10 @@ the build host does that (*16* §5).
 
 | Command | Effect |
 |---------|--------|
-| `janus secrets install-age-key` | Read the age private key on stdin into `/var/lib/janus/secrets/age.key` (mode `0600`) and restart units that decrypt secrets |
+| `janus secrets install-age-key` | Read this router's age private key on stdin into `/var/lib/janus/secrets/age.key` (mode `0600`) and restart units that decrypt secrets |
 | `janus secrets put <name>` | Read a secret on stdin for a value that will not enter git |
 
-The age key is created on the build host (`age-keygen`), not by this command.
+The age key is created on the build host by `janus-build secret keygen <host>` (*16*). This command installs the private key. It does not generate one. The build host does not keep a copy.
 
 ## 5. Audit (after 1.0, FR-MON-007)
 

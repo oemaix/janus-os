@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-09-27 |
+| Last updated | 2026-09-29 |
 
 ## 1. What maintenance is
 
@@ -46,13 +46,24 @@ should change. `janus override show` is that current set.
 From the build host:
 
 ```
-janus-build fleet pull <host>
+janus-build fleet pull [<host>]
 ```
 
-The command reads the set over SSH and writes it into places the repo
-already has: the sops key that host's `urlSecret` or `passphraseSecret`
-names, and `hosts/<host>/overrides.nix` for static leases (*16* §4). It
-does not commit. The user reviews the diff and commits.
+No host means every reachable router. The command reads the set over SSH.
+Secret values stay on the router. The output names a credential that has
+an override and does not write it. Static leases go to
+`hosts/<host>/overrides.nix` (*16* §5).
+
+```
+janus-build fleet pull [<host>] --with-secrets
+```
+
+The router decrypts those overrides. The build host encrypts them to the
+public keys of the existing secret files and writes those files. It warns
+that the session carried plaintext and that no plaintext file was kept.
+The user reviews the ciphertext diff and commits.
+
+The command does not commit.
 
 There is no silent sync. A user who never pulls still has the override in
 `janus backup`. Editing the same key in git and on the router without
@@ -62,11 +73,11 @@ which replaces overrides that the new image now contains.
 
 ### 1.3 Editing on the build host, then updating the routers
 
-The usual path for a subscription URL or a Wi-Fi passphrase is to edit
-`secrets.yaml` on the build host, commit, and run `janus-build fleet apply`.
-The build host decrypts with its copy of the one age key (*16* §1). Each
-reachable router receives the hot-override projection for that host:
-its subscription URLs, its existing Wi-Fi passphrases, and the static
+The usual path for a subscription URL or a Wi-Fi passphrase is
+`janus-build secret set` on that one file, commit, and
+`janus-build fleet apply`. The build host cannot decrypt (*16* §2). It
+sends secret ciphertext to each reachable router. The router decrypts
+with its own age key and applies the override, together with the static
 leases in `hosts/<name>/overrides.nix`.
 
 `fleet apply` is not a partial deploy. If the commit since the running
@@ -76,9 +87,9 @@ projection and leaves the rest for `janus-build deploy`. A router that is down
 is listed and left unchanged.
 
 The board does not pull the repo, and one router does not push values to
-another. A shared secret that two routers have overridden to different
-values is left unchanged by `janus-build fleet pull` until those values agree
-(*16* §4).
+another. A shared secret that two reachable routers have overridden to
+different values is left unchanged by `janus-build fleet pull --with-secrets`
+until those values agree (*16* §5).
 
 ### 1.4 Circumvention is the unstable part
 
@@ -93,7 +104,7 @@ The tunnel needs its own signals because it fails more often than Ethernet:
 | Geo data refresh failed | `janus proxy geodata refresh` | maintenance action |
 | Subscription fetch failed | `janus proxy refresh <name>` | maintenance action |
 | The vendor changed the subscription URL on one router | `janus override set proxy.subscriptions.<name>.url <url>` | hot override |
-| The same URL is shared by several routers | Edit the shared sops secret, commit, `janus-build fleet apply` | one secret, then a hot override on each reachable host (*12* §1.3) |
+| The same URL is shared by several routers | `janus-build secret set` on that subscription file, commit, `janus-build fleet apply` | one ciphertext file, then each reachable host decrypts and applies it (*12* §1.3) |
 
 `janus status` shows the last success, the last error, and the selected
 node for each group. That is the maintenance surface for 1.0. A small web
@@ -104,18 +115,21 @@ does not replace the CLI and it does not edit `configuration.nix`.
 
 1. `janus-build init` on the build host. That runs `nix flake init -t`.
 2. Edit `configuration.nix` (board, ports, WAN, LAN, SSH key,
-   subscriptions). `janus-build secret keygen`, then `janus-build secret edit`.
-3. `janus-build build <host>`; flash the printed image.
+   subscriptions). For each host, `janus-build secret keygen <host>`, store
+   the printed private key in a password manager, then `janus-build secret
+   set` for each credential file that host needs.
+3. `janus-build build <host>`; flash the printed image. The image contains
+   ciphertext. It does not contain the age private key.
 4. Boot; connect to LAN; `ssh root@192.168.10.1` (or the configured address).
-5. The age key is generated on the build host before the first build, and
-   `secrets.yaml` is encrypted to it. After the first boot, install that
-   private key once: `janus secrets install-age-key` (paste). Services that
-   need secrets start when the key appears. A secret that will never live
-   in git can instead be loaded with `janus secrets put`.
+5. Install that host's private key once, from the password manager:
+   `janus secrets install-age-key` (paste). Do not leave the key on the
+   build host. Services that need secrets start when the key appears. A
+   secret that will never live in git can instead be loaded with
+   `janus secrets put`.
 6. `janus status` — verify WAN, DNS, proxy health.
 
-Alternative for step 5: `janus-build deploy --secrets ./secrets/ <host>`
-pushes all secret files before or after flashing.
+Alternative for step 5: `janus-build deploy --age-key <host>` reads the
+private key on stdin and installs it over SSH. It does not store the key.
 
 ## 3. Day-2 tasks
 
@@ -133,7 +147,7 @@ pushes all secret files before or after flashing.
 | Live top talkers | `janus traffic top` (requires `scope = per-host`) |
 | DNS diagnostics | `janus dns query <name>`, `janus dns flush`, `janus dns stats` |
 | DNS leak / poison check | `janus dns check` |
-| Set a hot override on the router | `janus override set <key> <value>`; `janus override diff`; later `janus-build fleet pull <host>` |
+| Set a hot override on the router | `janus override set <key> <value>`; `janus override diff`; later `janus-build fleet pull` (leases), or `janus-build fleet pull --with-secrets` when the credential itself should be written back |
 | Push committed overrides | `janus-build fleet apply [<host>]` (*16*) |
 | Router status from the build host | `janus-build status [<host>]` |
 | Archive one router | `janus-build backup <host>` |
@@ -185,15 +199,16 @@ Timers use `Persistent=true` so a missed run executes after boot, and
 
 ## 7. Backup and restore
 
-The declarative configuration is the private git repo. Backup is not a
-second copy of that repo, and it is not how subscription URLs are saved.
-Those URLs return to the repo through `janus-build fleet pull`.
+The declarative configuration is the private git repo, including
+ciphertext. Backup is not a second copy of that repo. A subscription URL
+that was typed on the router returns through
+`janus-build fleet pull --with-secrets`. The default pull does not copy it.
 
 What is actually worth archiving is whatever a rebuild cannot recreate:
 
 | Item | In `janus backup` | Why |
 |------|-------------------|-----|
-| Age private key | required | Generated on the build host. Without it, `secrets.yaml` cannot be decrypted. The recommended copy is a password manager plus a `0600` file outside the repo, for example `~/.config/janus/age.key`. Other stores are allowed; this is the one the manual will teach. |
+| Age private key | required | One per router, generated on the build host and not retained there. Without it, that router's secret files cannot be decrypted. The copy to keep is a password manager. A `0600` file on the build host is not the steady state. An archive left on the build host is a private key again. |
 | Hot overrides not yet pulled | required | They are the only record until the next commit. |
 | Manual node selection, traffic statistics | included | Operational, not reconstructable from git. |
 | Subscription cache, Geo cache, logs | optional | A refresh or a new boot replaces them. Useful when the WAN is down and the cache is the last good data. |

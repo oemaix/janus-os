@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-09-27 |
+| Last updated | 2026-09-29 |
 
 ## 1. Personas
 
@@ -157,8 +157,11 @@ requirements it drives (see *03 — Requirements*).
 * **Actor:** Mei
 * **Flow:** The vendor replaces the URL. On the router, `janus override set
   proxy.subscriptions.providerA.url <new>`. The refresh runs with the new
-  URL. `janus status` shows drift. Later, on the laptop, `janus override
-  export` updates `secrets.yaml` and the next image has no drift.
+  URL. `janus status` shows drift. Later, on the laptop,
+  `janus-build fleet pull --with-secrets` asks the router to decrypt that
+  URL, writes the ciphertext file, and warns that the session carried
+  plaintext. The next image has no drift. A pull without that flag names
+  the changed credential and leaves the file unchanged.
 * **Drives:** FR-OPS-007, FR-OPS-008, FR-SEC-002
 
 ### UC-17 Add a printer lease without rebuilding
@@ -185,11 +188,13 @@ requirements it drives (see *03 — Requirements*).
   `common/proxy.nix`, which holds the shared subscription. Each host file
   sets only the board, ports, and LAN. `git init` on the laptop is enough
   to build; pushing the repo to a remote is how the laptop can be replaced.
-  When the vendor rotates the URL, Jonas edits that one secret, commits,
-  and runs `janus-build fleet apply`. Both reachable routers refresh. He does
-  not paste the URL into each router. An override made on one router
-  comes back with `janus-build fleet pull` on the laptop, which writes the
-  sops key and that host's `overrides.nix`.
+  When the vendor rotates the URL, Jonas runs `janus-build secret set` on
+  `secrets/subscription/<vendor>.yaml`, commits, and runs
+  `janus-build fleet apply`. The laptop sends ciphertext. Both reachable
+  routers decrypt it and refresh. He does not paste the URL into each
+  router. An override made on one router comes back with
+  `janus-build fleet pull` for leases, or with `--with-secrets` when the
+  URL itself should be written into that shared file.
 * **Drives:** FR-CFG-010, FR-CFG-011, FR-OPS-012, ADR-0021
 
 ### UC-20 Log a LAN device for a few days

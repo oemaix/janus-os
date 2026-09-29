@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | Accepted |
+| Status | Accepted; key custody and the single secrets file are refined by ADR-0022 |
 | Date | 2026-09-23 |
 | Affects | 03 FR-SEC-002, 08 §11, 11 §4.3, 12 §2 |
 

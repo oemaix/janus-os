@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-09-27 |
+| Last updated | 2026-09-29 |
 
 Key words MUST / SHOULD / MAY follow RFC 2119. Priority: **P1** required for
 1.0, **P2** planned, **P3** desirable.
@@ -182,18 +182,18 @@ Key words MUST / SHOULD / MAY follow RFC 2119. Priority: **P1** required for
 | FR-OPS-005 | Boot MUST succeed with an empty or corrupted state partition (re-initialize from embedded snapshots). | P1 |
 | FR-OPS-006 | A factory-reset action (wipe state partition) MUST be available via CLI and MAY be bound to an HMI button. | P2 |
 | FR-OPS-007 | Hot overrides MUST be limited to an allowlist: subscription URL of an existing subscription, static DHCP leases of an existing LAN, Wi-Fi passphrase of an existing AP. Adding a subscription, a LAN, a port forward, or a routing rule MUST NOT be a hot override. | P1 |
-| FR-OPS-008 | Hot overrides MUST be stored on the state partition, applied by a runtime renderer, included in backup, and reported as drift against the embedded configuration. The board MUST present the current set (`janus override show`) and MUST NOT emit Nix for it. `janus-build fleet pull` on the build host MUST write that set into the existing sops keys and into `hosts/<host>/overrides.nix`. | P1 |
+| FR-OPS-008 | Hot overrides MUST be stored on the state partition, applied by a runtime renderer, included in backup, and reported as drift against the embedded configuration. The board MUST present the current set (`janus override show`) with secret values redacted, and MUST NOT emit Nix for it. There MUST NOT be a `janus override export`. `janus-build fleet pull` on the build host MUST write non-secret overrides into `hosts/<host>/overrides.nix`. It MUST name secret overrides without fetching them unless `--with-secrets` is given, in which case the router decrypts and the build host re-encrypts into the existing secret files. | P1 |
 | FR-OPS-009 | Maintenance actions (refresh, temporary node selection, WAN restart, DNS check) MUST be available from the CLI and MUST NOT require a rebuild. Temporary node selection MUST survive reboot and MUST be reset when a rebuild changes that group's `default`. | P1 |
-| FR-OPS-010 | The board MUST NOT store credentials for the config repo's git remote, MUST NOT push hot overrides itself, and MUST NOT fetch that repo to apply it. Export runs on the build host over SSH. | P1 |
+| FR-OPS-010 | The board MUST NOT store credentials for the config repo's git remote, MUST NOT push hot overrides itself, and MUST NOT fetch that repo to apply it. Pull runs on the build host over SSH. | P1 |
 | FR-OPS-011 | `janus backup` is not a copy of the declarative configuration. It MUST contain the age private key and hot overrides not yet pulled. It SHOULD contain manual node selection and traffic statistics. Subscription cache, Geo cache, and logs MAY be included and MUST be recoverable without that archive by refresh or by a new boot. | P1 |
-| FR-OPS-012 | `janus-build fleet apply` on the build host MUST push the committed hot-override projection (existing subscription URLs, existing Wi-Fi passphrases, static leases in `hosts/<name>/overrides.nix`) over SSH and refresh a subscription whose URL changed. If the repo since the running image contains any other change, the command MUST change nothing unless `--only-overrides` is given, and that flag MUST still apply only the projection. An unreachable host MUST be reported and left unchanged. The board MUST NOT fetch the repo, and one board MUST NOT distribute values to another. | P2 |
+| FR-OPS-012 | `janus-build fleet apply` on the build host MUST push the committed hot-override projection over SSH and refresh a subscription whose URL changed. Secret values MUST be sent as ciphertext; the router MUST decrypt them with its own age key. Static leases in `hosts/<name>/overrides.nix` are not secrets. The build host MUST NOT decrypt. If the repo since the running image contains any other change, the command MUST change nothing unless `--only-overrides` is given, and that flag MUST still apply only the projection. An unreachable host MUST be reported and left unchanged. The board MUST NOT fetch the repo, and one board MUST NOT distribute values to another. | P2 |
 
 ## 13. Security (SEC)
 
 | ID | Requirement | Prio |
 |----|-------------|------|
 | FR-SEC-001 | No services other than SSH (and configured remote-access) MUST listen on WAN. | P1 |
-| FR-SEC-002 | Secrets MUST be managed with sops-nix and age (ADR-0014): PPPoE password, Wi-Fi passphrase, subscription URL, manual node credentials, WireGuard private key, remote-access auth key. Wi-Fi SSID and hostnames are not secrets. Plaintext in the Nix store MUST require `janus.security.allowInlineSecrets`. Secrets created only on the board MAY use `janus secrets put` instead of sops. | P1 |
+| FR-SEC-002 | Secrets MUST be managed with sops-nix and age (ADR-0014, ADR-0022): PPPoE password, Wi-Fi passphrase, subscription URL, manual node credentials, WireGuard private key, remote-access auth key. Each router MUST have its own age key. The build host MUST retain only the public keys and MUST NOT decrypt. One credential MUST be one file under `secrets/` as in *08* §11. Wi-Fi SSID and hostnames are not secrets. Plaintext in the Nix store MUST require `janus.security.allowInlineSecrets`. The age private key MUST NOT be produced by the image derivation. Secrets created only on the board MAY use `janus secrets put` instead of sops. | P1 |
 | FR-SEC-003 | The system MUST run with a read-only root and store, no setuid helpers beyond what NixOS requires, and systemd hardening on Janus services. | P1 |
 | FR-SEC-010 | IPv6 privacy controls (FR-NET-032/033) MUST be enabled by default. | P1 |
 | FR-SEC-011 | Outbound telemetry from any bundled component MUST be disabled. | P1 |

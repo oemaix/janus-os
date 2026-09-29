@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-09-26 |
+| Last updated | 2026-09-29 |
 
 This document defines the **shape and semantics** of the `janus.*` option
 tree. The final, exhaustive reference (every option with type, default,
@@ -26,7 +26,7 @@ learning path: copy, edit values, build.
   possible: `port:`, `vlan:`, `node:`, `group:`, `sub:`. Where the type is
   fixed by context (e.g. `lans.<n>.members`), plain names are accepted.
 * Secrets: prefer sops-nix (`urlSecret`, `passwordSecret`, …) naming a
-  key in the user's `secrets.yaml`. A `…File` sibling remains for a file
+  file under `secrets/` (§11). A `…File` sibling remains for a file
   created on the board with `janus secrets put`. Inline strings require
   `janus.security.allowInlineSecrets`. Wi-Fi SSID is a normal string.
   See *11 — Security*.
@@ -186,19 +186,36 @@ resolvers `never`, encryption `prefer`, fake-IP `auto`, `ipv6Answers =
 
 ## 11. Secrets and hot overrides
 
-Secrets in the user's private repo:
+One credential is one sops file (ADR-0022). The age private key for this
+router is `/var/lib/janus/secrets/age.key` on the state partition. It is
+not in git. Public keys are `secrets/keys/<host>.pub`.
 
-```
-sops.defaultSopsFile = ./secrets.yaml;
-sops.age.keyFile = "/var/lib/janus/secrets/age.key";   # not in git; on the state partition
-janus.proxy.subscriptions.providerA.urlSecret = "sub-providerA";
-janus.network.wans.main.pppoe.passwordSecret = "pppoe";
-janus.network.wifi.home.passphraseSecret = "wifi-home";
+```text
+secrets/keys/potato.pub
+secrets/wifi/potato/home.yaml
+secrets/pppoe/potato/main.yaml
+secrets/tailscale/potato.yaml
+secrets/wireguard/potato/uplink.yaml
+secrets/subscription/vendor-a.yaml
+secrets/nodes/manual-a.yaml
 ```
 
-The age key is created once, backed up by the user, and never committed.
-Decryption runs at boot into `/run/secrets` (tmpfs). The Nix store holds
-ciphertext only.
+`wifi`, `pppoe`, `tailscale`, and `wireguard` are encrypted to that
+host only. `subscription` and `nodes` are encrypted to every host that
+references the file. A PPPoE file holds the username and the password
+together. The other files hold one value.
+
+```nix
+sops.age.keyFile = "/var/lib/janus/secrets/age.key";
+sops.secrets.wifi-potato-home.sopsFile = ./secrets/wifi/potato/home.yaml;
+janus.network.wifi.home.passphraseSecret = "wifi-potato-home";
+janus.network.wans.main.pppoe.passwordSecret = "pppoe-potato-main";
+janus.proxy.subscriptions.providerA.urlSecret = "subscription-vendor-a";
+```
+
+`janus-build secret keygen` creates the keypair outside the image build.
+The build host keeps the public key. Decryption runs at boot into
+`/run/secrets` (tmpfs). The Nix store holds ciphertext only.
 
 Hot overrides are not Nix options. They are keys in
 `/var/lib/janus/overrides.json`, written by `janus override set` and read
@@ -210,9 +227,11 @@ by the runtime renderers:
 | `network.lans.<name>.dhcp.staticLeases.<host>` | add a lease |
 | `network.wifi.<name>.passphrase` | rotate a PSK; stored in the secrets directory, not in the JSON |
 
-Anything else is rejected. `janus override diff` shows drift. The board
-does not emit Nix. `janus-build fleet pull` writes the
-current set into the sops keys and `hosts/<host>/overrides.nix` (*16* §4).
+Anything else is rejected. `janus override diff` shows drift and redacts
+secret values. The board does not emit Nix and has no `janus override
+export`. `janus-build fleet pull` writes leases into
+`hosts/<host>/overrides.nix`. Secret values are written only with
+`--with-secrets` (*16* §5).
 
 ## 12. Validation rules (assertions) — non-exhaustive
 

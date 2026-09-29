@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-09-28 |
+| Last updated | 2026-09-29 |
 
 These answers explain a choice that already binds somewhere else. The
 cited ADR, requirement, or section is that place. This list does not
@@ -37,3 +37,4 @@ Each question is `Q-nnnn`. The number is assigned once and is not reused.
 | Q-0021 | Is the journal persistent? | Volatile. `journal.persistent` is an opt-in cap on `/var`. See ADR-0013. |
 | Q-0022 | What controls a QMI or MBIM modem? | `qmicli` and `mbimcli`. Ethernet-mode WWAN stays a DHCP client. See ADR-0015. |
 | Q-0023 | What happens when the engine is down? | Proxied traffic is dropped. `failMode = "open"` is the override that sends it out the WAN. See ADR-0016. |
+| Q-0024 | Why not one age key for every router, kept on the build host? | That key decrypts the whole household from any SD card. Each router has its own key. The build host keeps the public key and encrypts. See ADR-0022. |

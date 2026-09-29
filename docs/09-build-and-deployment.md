@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-09-27 |
+| Last updated | 2026-09-29 |
 
 ## 1. Principles
 
@@ -62,8 +62,8 @@ nixosConfigurations = {
 
 `hosts/<name>/overrides.nix` is the only Nix file `janus-build fleet pull`
 writes. The template imports it. It holds static leases copied back from
-that router. Subscription URLs and Wi-Fi passphrases stay in
-`secrets.yaml`. The file name is `configuration.nix`, including under
+that router. Subscription URLs and Wi-Fi passphrases stay in per-credential
+files under `secrets/` (ADR-0022). The file name is `configuration.nix`, including under
 `hosts/<name>/`. `janus-configuration.nix` and
 `janus_configuration.nix` are not used.
 Snake case is not the NixOS file convention, and a prefix does not help
@@ -194,12 +194,14 @@ JANUS_NIX.slack = "40%"`).
 ### 8.3 Hot overrides, without a new image (P2)
 
 `janus-build fleet apply` and `janus-build fleet pull` run on the build host. The
-contract is *16*. `fleet apply` pushes the committed projection
-(subscription URLs, existing Wi-Fi passphrases, static leases). A commit
-that also changes anything else is refused until the user passes
+contract is *16*. `fleet apply` pushes the committed projection. Secret
+files go as ciphertext; the router decrypts. Static leases are plaintext.
+A commit that also changes anything else is refused until the user passes
 `--only-overrides`, which still does not deploy those other changes.
-`fleet pull <host>` writes the router's current overrides back into the
-sops keys and `hosts/<host>/overrides.nix`.
+`fleet pull` with no host reads every reachable router. It writes leases
+into `hosts/<host>/overrides.nix` and names secret overrides without
+fetching them. `--with-secrets` writes the secret files after the router
+decrypts.
 
 `build.json` includes `configRevision`, the git revision of the private
 repo that built the image. `fleet apply` uses it to see what `HEAD` would
