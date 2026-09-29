@@ -119,7 +119,7 @@ router go through hot overrides instead.
 | RPi 3/4, RPi Zero 2 W, NanoPi R4S, Le Potato | `aarch64-linux` | cache.nixos.org | `boot.binfmt.emulatedSystems = ["aarch64-linux"]` on x86_64 host (transparent, slow for local builds but most packages come from cache) **or** native aarch64 builder **or** cross (`pkgsCross.aarch64-multiplatform`) |
 | RPi 2 (BCM2836) | `armv7l-linux` | none (community only) | cross-compilation required; expect long builds; Tier 3 |
 | VisionFive 2 | `riscv64-linux` | none | cross-compilation; Tier 3 |
-| Yanyu STX-R19F and the test target | `x86_64-linux` | yes | native on the build host. The STX-R19F image boots with legacy GRUB, not UEFI. |
+| Yanyu STX-R19F and the test target | `x86_64-linux` | yes | native on the build host. The STX-R19F image boots with Limine on legacy BIOS, not UEFI. |
 
 `mkRouter` selects `crossSystem` when `janus.build.strategy = "cross"`,
 defaulting to `"emulated"` for aarch64 and `"cross"` for the others. Users
@@ -151,11 +151,13 @@ The image builder is a Nix derivation (no root, no loop mounts) that:
      `/usr/bin/env`, mount points, `/etc` lower dir is in the store);
    * `boot.img` — `mkfs.vfat` + `mcopy` of kernel, initrd, DTBs,
      board firmware and boot script (`extlinux.conf`, `config.txt`,
-     `cmdline.txt`, U-Boot binaries as the profile dictates);
+     `cmdline.txt`, `limine.conf`, U-Boot binaries as the profile dictates);
    * `state.img` — empty `mkfs.f2fs` of `state.minimumSize`; expanded to
      the full media on first boot by `janus-grow-state.service`.
 3. Writes GPT/MBR with labels and PARTUUIDs, installs raw U-Boot/SPL at the
-   profile offsets, concatenates partitions.
+   profile offsets, concatenates partitions. On the Yanyu image, `limine
+   bios-install` writes stage 1 into the image file and stage 2 into
+   `JANUS_BIOS`.
 4. Emits `janus-<host>.img` plus `.img.zst`, `SHA256SUMS`,
    `build.json` (provenance, including `configRevision`).
 

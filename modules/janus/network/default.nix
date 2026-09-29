@@ -1,13 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
 # janus.network option types and structural assertions. docs/06, docs/08 §4.
-# Lowering into networkd, pppd, and dnsmasq is phase 1.
 {
   config,
   lib,
+  options,
   ...
 }: let
   inherit (lib) mkOption types;
   cfg = config.janus.network;
+  proxyMode = config.janus.proxy.mode;
 
   ipv4ToInt = addr: let
     p = lib.splitString "." addr;
@@ -57,6 +58,8 @@
 
   known = name: lib.elem name linkNames;
 in {
+  imports = [./lower.nix];
+
   options.janus.network = {
     ports = mkOption {
       type = types.attrsOf (types.submodule {
@@ -105,7 +108,11 @@ in {
     };
 
     wans = mkOption {
-      type = types.attrsOf (types.submodule ({name, ...}: {
+      type = types.attrsOf (types.submodule ({
+        name,
+        config,
+        ...
+      }: {
         options = {
           uplink = mkOption {
             type = types.str;
@@ -207,7 +214,10 @@ in {
                 passwordSecret = mkOption {
                   type = types.nullOr types.str;
                   default = null;
-                  description = "sops secret name holding the PPPoE username and password.";
+                  description = ''
+                    sops secret name. The decrypted file is YAML with `username` and
+                    `password` keys. The age key is `/var/lib/janus/secrets/age.key`.
+                  '';
                 };
                 serviceName = mkOption {
                   type = types.nullOr types.str;
@@ -308,6 +318,9 @@ in {
             description = "MAC clone for a carrier lock.";
           };
         };
+        config = lib.mkIf (config.role == "backup") {
+          healthCheck.enable = lib.mkDefault true;
+        };
       }));
       default = {};
       description = "WAN uplinks. docs/06 §4.";
@@ -375,8 +388,17 @@ in {
           };
           ipv6.mode = mkOption {
             type = types.enum ["disabled" "ula-only" "delegated"];
-            default = "disabled";
-            description = "LAN IPv6. The bypass traffic mode defaults this to delegated.";
+            default =
+              if proxyMode == "bypass"
+              then "delegated"
+              else "disabled";
+            defaultText = "delegated when janus.proxy.mode is bypass, otherwise disabled";
+            description = "LAN IPv6. docs/06 §9.";
+          };
+          ipv6.ula = mkOption {
+            type = types.str;
+            default = "auto";
+            description = "ULA prefix for ula-only, or auto for a stable prefix.";
           };
           zone = mkOption {
             type = types.str;
@@ -440,7 +462,10 @@ in {
           passphraseSecret = mkOption {
             type = types.nullOr types.str;
             default = null;
-            description = "sops secret name.";
+            description = ''
+              sops secret name. The decrypted file is one line, the passphrase.
+              The age key is `/var/lib/janus/secrets/age.key`. The AP itself is phase 3.
+            '';
           };
           band = mkOption {
             type = types.enum ["2g" "5g"];
@@ -574,6 +599,27 @@ in {
           message = "janus.network.wans.${n}.pppoe.password is inline. Set janus.security.allowInlineSecrets or use passwordSecret.";
         }
         {
+          assertion =
+            cfg.wans.${n}.pppoe.passwordSecret
+            == null
+            || (options ? sops && config.sops.secrets ? ${cfg.wans.${n}.pppoe.passwordSecret});
+          message = "janus.network.wans.${n}.pppoe.passwordSecret is not a sops.secrets name.";
+        }
+        {
+          assertion = let
+            p = cfg.wans.${n}.pppoe;
+          in
+            lib.count (x: x != null) [p.password p.passwordFile p.passwordSecret] <= 1;
+          message = "janus.network.wans.${n}.pppoe has more than one of password, passwordFile, and passwordSecret.";
+        }
+        {
+          assertion =
+            cfg.wans.${n}.pppoe.passwordFile
+            == null
+            || cfg.wans.${n}.pppoe.username != null;
+          message = "janus.network.wans.${n}.pppoe.passwordFile needs username.";
+        }
+        {
           assertion = cfg.wans.${n}.wwan.pin == null || config.janus.security.allowInlineSecrets;
           message = "janus.network.wans.${n}.wwan.pin is inline. Set janus.security.allowInlineSecrets or a secret file.";
         }
@@ -583,13 +629,32 @@ in {
         assertion = ap.passphrase == null || config.janus.security.allowInlineSecrets;
         message = "janus.network.wifi.${n}.passphrase is inline. Set janus.security.allowInlineSecrets or passphraseSecret.";
       })
-      cfg.wifi;
+      cfg.wifi
+      ++ lib.mapAttrsToList (n: ap: {
+        assertion = ap.passphraseSecret == null || (options ? sops && config.sops.secrets ? ${ap.passphraseSecret});
+        message = "janus.network.wifi.${n}.passphraseSecret is not a sops.secrets name.";
+      })
+      cfg.wifi
+      ++ lib.concatMap (n: [
+        {
+          assertion = cfg.wans.${n}.mode != "wwan";
+          message = "janus.network.wans.${n}.mode = wwan is phase 3 (docs/13-roadmap.md).";
+        }
+      ])
+      wanNames
+      ++ lib.concatMap (n:
+        lib.concatMap (member: [
+          {
+            assertion = !(cfg.wifi ? ${member});
+            message = "janus.network.lans.${n}.members entry '${member}' is a Wi-Fi AP. Wi-Fi is phase 3.";
+          }
+        ])
+        cfg.lans.${n}.members)
+      lanNames;
 
     warnings =
-      lib.optional (cfg.wans != {}) "janus.network.wans is not lowered into networkd yet."
-      ++ lib.optional (cfg.lans != {}) "janus.network.lans is not lowered into networkd and dnsmasq yet."
-      ++ lib.optional (cfg.wifi != {}) "janus.network.wifi is not lowered yet."
+      lib.optional (cfg.wifi != {}) "janus.network.wifi is not lowered yet. Wi-Fi AP is phase 3."
       ++ lib.optional cfg.igmpProxy.enable "janus.network.igmpProxy is deferred until after 1.0."
-      ++ lib.concatMap (n: lib.optional (cfg.wans.${n}.role == "iptv") "janus.network.wans.${n}.role = iptv is deferred until after 1.0.") wanNames;
+      ++ lib.concatMap (n: lib.optional (cfg.wans.${n}.role == "iptv") "janus.network.wans.${n}.role = iptv installs no default route. IGMP is deferred until after 1.0.") wanNames;
   };
 }

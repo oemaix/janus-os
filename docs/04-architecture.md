@@ -109,8 +109,8 @@ an evaluation-time assertion, not a silent drop.
 
 ### 5.1 Boot
 
-1. Board firmware → U-Boot / RPi firmware → kernel + initrd from the
-   read-only boot partition.
+1. Board firmware → U-Boot, Raspberry Pi firmware, or Limine (Yanyu,
+   legacy BIOS) → kernel + initrd from the read-only boot partition.
 2. systemd-initrd: mounts `/` (ro), `/nix` (ro); fsck + mount `/var`
    (state, rw); mounts tmpfs `/run`, `/tmp`; sets up `/etc` overlay (lower =
    store-generated `/etc`, upper = tmpfs, with selected paths bind-mounted

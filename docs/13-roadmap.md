@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-09-28 |
+| Last updated | 2026-09-29 |
 
 This file is the implementation plan, the progress of the code, and the
 notes for work that is specified but not started. Choices are *18*.
@@ -29,7 +29,7 @@ Explanations are *19*. Accepted ADRs are `docs/adr/`.
 * `janus-build init`, `secret`, `check`, `build`, and `update` (*16*).
 * sops-nix age key install path for PPPoE and Wi-Fi secrets.
 * Boards (Tier 1): NanoPi R4S, Raspberry Pi Zero 2 W, Le Potato,
-  Yanyu STX-R19F. Raspberry Pi 4 and Pi 400 are Tier 2.
+  Yanyu STX-R19F. 
 * Monitoring: counters + vnstat. No connection audit yet.
 
 ### Phase 2 — Circumvention
@@ -81,45 +81,62 @@ tree does not mean that behavior exists. Stubs are not finished features.
 * Flake with `nixosModules.janus`, `nixosModules.boards`, `lib.mkRouter`,
   `templates.default`, and `devShells.default` (`nix develop`).
 * `lib.mkRouter` reads `janus.hardware.board` and returns a NixOS
-  configuration for `x86_64-test`, including `system.build.janusImage`.
-  Any other board throws. It does not return an empty configuration.
+  configuration, including `system.build.janusImage`. Phase 1 boards are
+  `x86_64-test`, `yanyu-stx-r19f`, `nanopi-r4s`, `le-potato`, and
+  `rpi-zero-2w`. Any other board throws. It does not return an empty
+  configuration.
 * `janus.*` option types, defaults, and the structural assertions in
   *08* §12. Storage is lowered: partition labels, read-only `/` and
   `/nix`, one read-write `/var`, and `system.etc.overlay` with
-  `mutable = false`. Network, firewall, proxy, DNS, monitoring, remote
-  access, and the OpenSSH daemon are not lowered.
-* `x86_64-test` board profile (virtio NICs, GPT, no raw firmware).
+  `mutable = false`.
+* `janus.network` lowers ports, LAN VLANs, WAN `dhcp`/`static`/`pppoe`,
+  LAN bridges, DHCPv4, and the IPv6 modes into networkd, pppd, and
+  dnsmasq. `janus.firewall` lowers zones, NAT, and port forwards into
+  nftables. OpenSSH is key-only. vnstat keeps interface counters.
+* `janus` and `janus-build` implement the phase 1 commands in *14* and
+  *16* (`init`, `host add`, `secret keygen`, `secret set`, `check`,
+  `build`, `update`, and the router status commands). The age private
+  key path is `/var/lib/janus/secrets/age.key`. sops-nix decrypts to
+  `/run/secrets` at activation. A PPPoE `passwordSecret` is YAML with
+  `username` and `password`. A Wi-Fi `passphraseSecret` is one line.
+  The Wi-Fi AP itself is phase 3.
+* Board profiles: `x86_64-test` (virtio, no raw firmware), NanoPi R4S
+  (U-Boot at sector 64, `eth0`/`eth1`, no WAN chosen), Le Potato (U-Boot
+  FIP, one `eth0`), Raspberry Pi Zero 2 W (FAT `config.txt`, no Ethernet
+  port). Yanyu names `lan1`–`lan4` by PCI path and installs Limine
+  (D-0029). The image has not been booted on the lab AMI board.
 * Image builder: GPT, FAT boot, f2fs root, f2fs store, f2fs state.
   `nix build .#checks.x86_64-linux.vm-x86_64-test` boots that image.
 * Options reference: `nix build .#docs-options`.
 * Eval checks under `checks.<system>.eval-*`, and CI for those checks
   plus the options document.
-* `janus-build` and `janus` binaries in the dev shell. Both exit 2.
-  The commands are specified in *14* and *16*.
+* `janus-build` and `janus` binaries in the dev shell.
 * User-facing text: root `README.md` and `manual/` in English, Russian,
   and Persian, in that order, plus `manual/llms.txt` and `manual/ai.md`.
 
 ### Not done
 
-* Lowering `janus.network`, `janus.firewall`, `janus.proxy`, `janus.dns`,
-  `janus.monitoring`, and `janus.remoteAccess` into NixOS.
-* Board profiles other than `x86_64-test`.
-* `janus` and `janus-build` behavior from *14* and *16*. The binaries are
-  stubs.
+* Lowering `janus.proxy`, `janus.dns`, and `janus.remoteAccess`.
+  Wi-Fi, WWAN, and `iptv` stay at their later phases.
+* `janus-build deploy`, `fleet`, `status`, and `backup`. `janus proxy`,
+  `janus dns`, and `janus audit`.
+* The age key is not on the image. The first boot cannot decrypt until
+  `janus secrets install-age-key` has written `/var/lib/janus/secrets/age.key`.
 * Subscription snapshot, Geo data, Janet normalizer, matchers, and both
   engine renderers. `janet/` only holds a note. Do not start this in Go.
 * Renderer golden files, and the VM checks for DHCP, NAT, DNS, and the
   firewall. The boot check covers the mount model only.
-* sops-nix wiring, age-key install, hot-override storage, and fleet push.
+* Hot-override storage and fleet push.
 * HMI, battery shutdown, WWAN, and Wi-Fi AP.
-* The local wizard. `janus-build init` is specified and not implemented.
+* The local wizard. `janus-build init` is implemented; the wizard is not.
 
 ## 3. Notes for later implementation
 
 * Accepted ADRs bind. They are listed in `docs/adr/` and are not restated here.
 * Undecided choices, if any, are *18* §2. Do not invent an answer for one.
 * The Yanyu profile names `lan1`–`lan4` by PCI address (*10* §3.1). It
-  does not pick which jack is WAN.
+  does not pick which jack is WAN. Limine on that image has not been
+  booted on the lab AMI board.
 * Battery shutdown may arm on the mcuzone `0x40` profile, where a
   negative current means discharge. The Waveshare `0x43` profile stays
   unarmed.

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Board name → Nix system. The table is docs/09-build-and-deployment.md §4
-# and docs/10-hardware-support.md §3. Profiles other than x86_64-test are
-# later phases; the mapping itself is fixed.
+# and docs/10-hardware-support.md §3. The mapping is fixed. lib.mkRouter
+# still throws for a name whose boot path is not implemented.
 {
   rpi-zero-2w = "aarch64-linux";
   rpi2 = "armv7l-linux";

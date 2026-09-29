@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
-# janus.monitoring option types. Collectors are a later phase. docs/08 §8.
-{lib, ...}: let
+# janus.monitoring. Counters use vnstat. Flows and the audit log are later. docs/08 §8.
+{
+  config,
+  lib,
+  ...
+}: let
   inherit (lib) mkOption types;
 in {
   options.janus.monitoring = {
@@ -64,5 +68,20 @@ in {
       default = [];
       description = "Interfaces to audit. Empty means the proxied LANs.";
     };
+  };
+
+  config = let
+    cfg = config.janus.monitoring;
+  in {
+    services.vnstat.enable = cfg.enable && (cfg.scope == "counters" || cfg.scope == "per-host");
+    environment.etc."vnstat.conf" = lib.mkIf config.services.vnstat.enable {
+      text = ''
+        DatabaseDir "/var/lib/vnstat"
+        DailyDays ${toString cfg.history.retentionDays}
+      '';
+    };
+    warnings = lib.optional (cfg.scope == "flows" || cfg.flows.export.collector != null) ''
+      janus.monitoring flow export is after phase 1.
+    '';
   };
 }

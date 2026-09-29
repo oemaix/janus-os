@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-09-26 |
+| Last updated | 2026-09-29 |
 
 ## 1. Terminology
 
@@ -30,7 +30,7 @@
 | **Libre Computer Le Potato (AML-S905X-CC)** | S905X · aarch64 | 1× 100 MbE | 1 | Owner's lab. Mainline U-Boot with FIP at raw offset; eMMC or SD. Lab peripherals: Fibocom NL668 as USB Ethernet (§4.2), RTL8188CUS as AP (§4.4), CSR Bluetooth. |
 | **StarFive VisionFive 2** | JH7110 · riscv64 | 2× 1 GbE | 3 | Needs recent kernel; SPL + U-Boot in dedicated GPT partitions (types `2E54B353…`, `BC13C2FF…`); no binary cache. |
 | **Raspberry Pi 2 (v1.1)** | BCM2836 · armv7l | 1× 100 MbE | 3 | 32-bit; no cache; RPi 2 v1.2 is BCM2837 and uses the `rpi3` profile. |
-| **Yanyu STX-R19F** (`yanyu-stx-r19f`) | Intel Celeron J1900 (Bay Trail-D) · x86_64 | 4× Intel 82583V GbE on PCIe, SATA SSD. No Wi-Fi, Bluetooth, or WWAN. | 1 | Lab reference x86 board. Legacy AMI BIOS, GRUB, 4 GiB RAM. Case labels in §3.1. |
+| **Yanyu STX-R19F** (`yanyu-stx-r19f`) | Intel Celeron J1900 (Bay Trail-D) · x86_64 | 4× Intel 82583V GbE on PCIe, SATA SSD. No Wi-Fi, Bluetooth, or WWAN. | 1 | Lab reference x86 board. Legacy AMI BIOS, 4 GiB RAM. The lab OpenWrt install uses GRUB. The Janus image uses Limine. Case labels in §3.1. |
 | **`x86_64-test`** | QEMU | virtio NICs | — | CI/VM test target only, not for deployment. |
 
 Each board profile (`modules/boards/<board>.nix`) provides:
@@ -54,7 +54,7 @@ Measured on the lab unit (OpenWrt kernel 4.14, hostname Mercury).
 | RAM | 4 GiB (`MemTotal` ≈ 3.75 GiB). The 500-node memory budget applies. |
 | Firmware | American Megatrends 5.6.5, 2018-10-10. No `/sys/firmware/efi`: legacy BIOS only. DMI `board_vendor=YANYU`, `board_name=STX-R19F`. `sys_vendor` and `product_name` are the generic string `baytrail`. |
 | Disk | Samsung SSD PM83, ≈ 32 GB, kernel name `sda` on the E3800 SATA AHCI controller. The image is written over the whole disk. The OpenWrt squashfs partition table is not kept. |
-| Boot | GRUB for legacy BIOS (`boot.loader.grub.device` on the disk). UEFI and systemd-boot do not apply. Consoles: `tty0` and `ttyS0,115200n8` (16550A at I/O `0x3f8`). `/dev/rtc0` exists. No `/dev/watchdog`. |
+| Boot | Legacy BIOS only. The Janus image is GPT and boots with Limine (D-0029): stage 2 is the unformatted partition `JANUS_BIOS`, and `limine-bios.sys` plus `limine.conf` are on `JANUS_BOOT`. `limine.conf` sets `editor_enabled: no`. The lab unit's OpenWrt install uses GRUB; that bootloader is not part of the Janus image. UEFI and systemd-boot do not apply. Consoles: `tty0` and `ttyS0,115200n8` (16550A at I/O `0x3f8`). `/dev/rtc0` exists. No `/dev/watchdog`. |
 | NICs | Four Intel 82583V, driver `e1000e`, PCIe x1 Gen2, one function behind each root port. Probe order on that kernel: `01:00.0`, `02:00.0`, `03:00.0`, `04:00.0`. On that boot the kernel named them `eth0`–`eth3` in the same order. The profile matches the PCI paths and does not use `eth0`–`eth3`. MACs on the lab unit are sequential; they are not part of the profile. |
 | Absent | USB peripherals, Wi-Fi, Bluetooth, WWAN. The only USB device besides the root hub is the onboard Intel function `8087:07e6`. |
 

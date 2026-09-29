@@ -13,5 +13,6 @@
     ./remote-access
     ./access
     ./system
+    ./secrets.nix
   ];
 }

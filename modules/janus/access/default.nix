@@ -4,6 +4,7 @@
 {
   config,
   lib,
+  pkgs,
   ...
 }: let
   inherit (lib) mkOption types;
@@ -38,7 +39,7 @@ in {
     cli.enable = mkOption {
       type = types.bool;
       default = true;
-      description = "Install the janus command. The program is specified in docs/14 and implemented in a later phase.";
+      description = "Install the janus command (docs/14).";
     };
     deploy.address = mkOption {
       type = types.str;
@@ -60,8 +61,32 @@ in {
       }
     ];
 
-    # The key is what the image boots with. sshd itself is phase 1: host keys
-    # have to live on the state partition, and the listen zones are not enforced yet.
     users.users.root.openssh.authorizedKeys.keys = cfg.ssh.authorizedKeys;
+
+    services.openssh = {
+      enable = true;
+      ports = [cfg.ssh.port];
+      settings = {
+        PasswordAuthentication = cfg.ssh.passwordAuthentication;
+        KbdInteractiveAuthentication = false;
+        PermitRootLogin =
+          if cfg.ssh.passwordAuthentication
+          then "yes"
+          else "prohibit-password";
+      };
+      hostKeys = [
+        {
+          type = "ed25519";
+          path = "/var/lib/janus/etc/ssh/ssh_host_ed25519_key";
+        }
+      ];
+    };
+    systemd.services.sshd.after = ["janus-seed.service"];
+
+    environment.systemPackages = lib.optional cfg.cli.enable (pkgs.writeShellApplication {
+      name = "janus";
+      runtimeInputs = with pkgs; [jq iproute2 nftables vnstat coreutils systemd util-linux];
+      text = builtins.readFile ../../../pkgs/janus.sh;
+    });
   };
 }

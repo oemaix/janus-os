@@ -13,7 +13,7 @@ jobs:
       - uses: cachix/install-nix-action@v31
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Evaluate the phase 0 checks and the options document
+      - name: Evaluate the phase 1 checks and the options document
         run: |
           nix build --print-build-logs \
             .#checks.x86_64-linux.eval-minimal \
@@ -26,4 +26,13 @@ jobs:
             .#checks.x86_64-linux.eval-wwan \
             .#checks.x86_64-linux.eval-nix-size \
             .#checks.x86_64-linux.eval-seed \
+            .#checks.x86_64-linux.eval-router \
+            .#checks.x86_64-linux.eval-vlan \
+            .#checks.x86_64-linux.eval-boards \
+            .#checks.x86_64-linux.eval-rpi4 \
+            .#checks.x86_64-linux.eval-pppoe-secret \
+            .#checks.x86_64-linux.eval-pppoe-file \
+            .#checks.x86_64-linux.limine-bios \
+            .#checks.x86_64-linux.cli-usage \
+            .#checks.x86_64-linux.cli-init \
             .#packages.x86_64-linux.docs-options

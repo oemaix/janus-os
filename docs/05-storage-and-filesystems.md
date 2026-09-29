@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-09-15 |
+| Last updated | 2026-09-29 |
 
 ## 1. Objectives
 
@@ -30,9 +30,13 @@ etc.).
 
 Notes:
 
-* Boards with U-Boot in raw sectors (NanoPi R4S, Le Potato, VisionFive 2)
-  additionally need reserved unpartitioned space before partition 1; the
-  board profile declares `janus.storage.firmwareOffsetMiB`.
+* `janus.storage.firmwareOffsetMiB` reserves space before partition 1,
+  after the leading 1 MiB. Firmware in raw sectors (NanoPi R4S, Le Potato,
+  VisionFive 2) leaves that gap unpartitioned. A bootloader that keeps a
+  boot stage of its own uses the gap as an extra unformatted partition.
+* The Yanyu image keeps GPT partitions 1–4 and their PARTUUIDs. Partition 5,
+  `JANUS_BIOS`, is unformatted (type `EF02`) in the 1 MiB before
+  `JANUS_BOOT`. Limine stage 2 is written there. It is not mounted.
 * Partition table is GPT by default; MBR where the Board firmware requires it
   (Raspberry Pi 2/3 firmware reads MBR; RPi 4 firmware handles GPT via
   hybrid MBR — board profile decides).

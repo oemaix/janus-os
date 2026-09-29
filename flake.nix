@@ -3,10 +3,13 @@
   description = "Janus OS, an image-deployed NixOS router";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
+  inputs.sops-nix.url = "github:Mic92/sops-nix/5efb5a6f4f5ab192817d28557dd4d650fa14d866";
+  inputs.sops-nix.inputs.nixpkgs.follows = "nixpkgs";
 
   outputs = {
     self,
     nixpkgs,
+    sops-nix,
   }: let
     systems = ["x86_64-linux" "aarch64-linux"];
     forAllSystems = f:
@@ -15,7 +18,7 @@
     nixosModules.janus = ./modules/janus;
     nixosModules.boards = ./modules/boards;
     lib.mkRouter = import ./lib/mk-router.nix {
-      inherit nixpkgs;
+      inherit nixpkgs sops-nix;
       janus = self;
     };
 
@@ -25,7 +28,14 @@
     };
 
     packages = forAllSystems (pkgs:
-      import ./pkgs {inherit pkgs;}
+      import ./pkgs {
+        inherit pkgs;
+        template = ./templates/default;
+        janusUrl =
+          if self ? rev && self.rev != null
+          then "github:oemaix/janus-os/${self.rev}"
+          else "path:${self.outPath}";
+      }
       // {
         docs-options = let
           nixos = self.lib.mkRouter {
@@ -63,6 +73,7 @@
       }
       // nixpkgs.lib.optionalAttrs (pkgs.stdenv.hostPlatform.system == "x86_64-linux") {
         vm-x86_64-test = import ./tests/vm-boot.nix {inherit pkgs self;};
+        limine-bios = import ./tests/limine-bios.nix {inherit pkgs;};
       });
 
     formatter = forAllSystems (pkgs: pkgs.alejandra);

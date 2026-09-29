@@ -1,13 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
-# janus.firewall option types. nftables lowering is phase 1. docs/06 §7–8, docs/08 §5.
+# janus.firewall option types and nftables lowering. docs/06 §7–8, docs/08 §5.
 {
   config,
   lib,
   ...
 }: let
   inherit (lib) mkOption types;
-  cfg = config.janus.firewall;
 in {
+  imports = [./lower.nix];
+
   options.janus.firewall = {
     zones = mkOption {
       type = types.attrsOf (types.submodule {
@@ -205,8 +206,4 @@ in {
       description = "Rate limit for new SSH connections.";
     };
   };
-
-  config.warnings = lib.optional (cfg.portForwards != {} || cfg.rules != []) ''
-    janus.firewall rules and port forwards are not lowered into nftables yet.
-  '';
 }

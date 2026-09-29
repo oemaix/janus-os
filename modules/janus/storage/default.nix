@@ -151,7 +151,7 @@ in {
     firmwareOffsetMiB = mkOption {
       type = types.ints.unsigned;
       default = 0;
-      description = "Unpartitioned space before the boot partition, for boards that store firmware in raw sectors.";
+      description = "Mebibytes reserved before the boot partition, after the leading 1 MiB. Firmware written in raw sectors leaves this gap unpartitioned. A bootloader that keeps a boot stage of its own uses the gap as an extra unformatted partition.";
     };
   };
 
@@ -449,29 +449,39 @@ in {
     system.build.janusSeed = janusSeed;
     system.build.janusNixPartition = janusNixPartition;
 
-    system.build.janusImage = (pkgs.callPackage ../../../pkgs/image.nix {}) {
-      hostName = config.janus.system.hostName;
-      toplevel = config.system.build.toplevel;
-      closureInfo = pkgs.closureInfo {rootPaths = [config.system.build.toplevel];};
-      buildJson = config.environment.etc."janus/build.json".source;
-      firmwareOffsetMiB = cfg.firmwareOffsetMiB;
-      bootMiB = sizeMiB (cfg.layout.partitions.JANUS_BOOT.size or "256M");
-      rootMinMiB = sizeMiB (cfg.layout.partitions.JANUS_ROOT.size or "64M");
-      stateMiB = sizeMiB (
-        if cfg.layout.partitions.JANUS_STATE.size == null
-        then cfg.state.minimumSize
-        else cfg.layout.partitions.JANUS_STATE.size
-      );
-      nixSlackPercent = slackPercent cfg.layout.partitions.JANUS_NIX.slack;
-      nixSizeMode = janusNixPartition.mode;
-      nixExactMiB =
-        if janusNixPartition.exactMiB == null
-        then "0"
-        else toString janusNixPartition.exactMiB;
-      bootLabel = "JANUS_BOOT";
-      rootLabel = "JANUS_ROOT";
-      nixLabel = "JANUS_NIX";
-      stateLabel = "JANUS_STATE";
-    };
+    system.build.janusBoardImage = lib.mkDefault {};
+
+    system.build.janusImage = let
+      boardImage = config.system.build.janusBoardImage;
+    in
+      (pkgs.callPackage ../../../pkgs/image.nix {}) {
+        hostName = config.janus.system.hostName;
+        toplevel = config.system.build.toplevel;
+        closureInfo = pkgs.closureInfo {rootPaths = [config.system.build.toplevel];};
+        buildJson = config.environment.etc."janus/build.json".source;
+        firmwareOffsetMiB = cfg.firmwareOffsetMiB;
+        bootMiB = sizeMiB (cfg.layout.partitions.JANUS_BOOT.size or "256M");
+        rootMinMiB = sizeMiB (cfg.layout.partitions.JANUS_ROOT.size or "64M");
+        stateMiB = sizeMiB (
+          if cfg.layout.partitions.JANUS_STATE.size == null
+          then cfg.state.minimumSize
+          else cfg.layout.partitions.JANUS_STATE.size
+        );
+        nixSlackPercent = slackPercent cfg.layout.partitions.JANUS_NIX.slack;
+        nixSizeMode = janusNixPartition.mode;
+        nixExactMiB =
+          if janusNixPartition.exactMiB == null
+          then "0"
+          else toString janusNixPartition.exactMiB;
+        bootLabel = "JANUS_BOOT";
+        rootLabel = "JANUS_ROOT";
+        nixLabel = "JANUS_NIX";
+        stateLabel = "JANUS_STATE";
+        bootExtra = boardImage.bootExtra or "";
+        firmwareInstall = boardImage.firmwareInstall or "";
+        dtbName = boardImage.dtbName or null;
+        dtbSource = boardImage.dtbSource or null;
+        limineBios = boardImage.limineBios or false;
+      };
   };
 }

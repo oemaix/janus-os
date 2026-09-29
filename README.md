@@ -1,8 +1,9 @@
 # Janus OS
 
-**This project is in its infancy. It will not work.** There is no bootable
-router image, and the commands do not do their jobs yet. What is here is
-the specification and a skeleton of the repository.
+**This project is in its infancy.** The VM image boots, and the phase 1
+router core is in the tree. Proxy, fleet, and deploy are not implemented.
+What is specified, and what is done, is
+[docs/13-roadmap.md](docs/13-roadmap.md).
 
 Janus OS does not ship a router system. You build your own. A
 declarative configuration becomes a read-only NixOS image for a small
@@ -37,5 +38,6 @@ have are specified in [docs/14-cli.md](docs/14-cli.md). Commands the build
 machine will have are specified in [docs/16-build-host-cli.md](docs/16-build-host-cli.md).
 The `janus.*` options are specified in
 [docs/08-configuration-reference.md](docs/08-configuration-reference.md).
-Neither program is implemented yet. `janus-build` and `janus`, when run
-from the development shell, exit 2 and say so.
+`janus-build` implements `init`, `host add`, `secret`, `check`, `build`,
+and `update`. `janus` implements the router status, WAN, lease, firewall,
+and age-key commands. Proxy, fleet, and deploy still exit 2.

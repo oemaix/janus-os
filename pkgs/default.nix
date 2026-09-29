@@ -1,15 +1,25 @@
 # SPDX-License-Identifier: Apache-2.0
-{ pkgs }:
-let
-  unimplemented = name: doc:
-    pkgs.writeShellScriptBin name ''
-      echo "${name} is not implemented. See ${doc} and docs/13-roadmap.md." >&2
-      exit 2
-    '';
-  janus-build = unimplemented "janus-build" "docs/16-build-host-cli.md";
-  janus-cli = unimplemented "janus" "docs/14-cli.md";
-in
 {
+  pkgs,
+  template,
+  janusUrl,
+}: let
+  janus-cli = pkgs.writeShellApplication {
+    name = "janus";
+    runtimeInputs = with pkgs; [jq iproute2 nftables vnstat coreutils systemd util-linux];
+    text = builtins.readFile ./janus.sh;
+  };
+  janus-build = pkgs.writeShellApplication {
+    name = "janus-build";
+    runtimeInputs = with pkgs; [git age nix coreutils gnused findutils];
+    text =
+      ''
+        TEMPLATE=${template}
+        JANUS_URL=${pkgs.lib.escapeShellArg janusUrl}
+      ''
+      + builtins.readFile ./janus-build.sh;
+  };
+in {
   inherit janus-build janus-cli;
   default = janus-build;
   dev-env = pkgs.buildEnv {

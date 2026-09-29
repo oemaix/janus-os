@@ -5,6 +5,7 @@
 {
   nixpkgs,
   janus,
+  sops-nix,
 }: {
   modules ? [],
   board ? null,
@@ -14,6 +15,14 @@
 }: let
   lib = nixpkgs.lib;
   boards = import ./boards.nix;
+  # docs/13 phase 1. Later tiers stay a throw until their boot path exists.
+  implemented = [
+    "x86_64-test"
+    "yanyu-stx-r19f"
+    "nanopi-r4s"
+    "le-potato"
+    "rpi-zero-2w"
+  ];
 
   peek = lib.evalModules {
     modules =
@@ -47,6 +56,7 @@
       [
         janus.nixosModules.janus
         janus.nixosModules.boards
+        sops-nix.nixosModules.sops
       ]
       ++ modules
       ++ lib.optional (board != null) {
@@ -58,10 +68,11 @@
       };
   };
 in
-  if boardName != "x86_64-test"
+  if !lib.elem boardName implemented
   then
     throw ''
       The board profile '${boardName}' is not implemented.
-      Phase 0 ships the x86_64-test profile (docs/13-roadmap.md, docs/10-hardware-support.md).
+      Phase 1 ships x86_64-test, yanyu-stx-r19f, nanopi-r4s, le-potato, and rpi-zero-2w
+      (docs/13-roadmap.md, docs/10-hardware-support.md).
     ''
   else nixos
