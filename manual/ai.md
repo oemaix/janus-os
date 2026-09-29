@@ -7,7 +7,9 @@ Read this file before answering a question about using Janus OS.
 - Definitions, requirements, and option names live in `docs/`. English
   there is canonical. Do not invent `janus.*` options.
 - Router commands are `docs/14-cli.md`. Build-host commands are
-  `docs/16-build-host-cli.md`. The programs are not implemented. Say so.
+  `docs/16-build-host-cli.md`. `janus.*` options are
+  `docs/08-configuration-reference.md`. The programs are not implemented.
+  Say so.
 - The router never evaluates Nix and never runs `nixos-rebuild`.
 - `docs/13-roadmap.md` says what the repository can already
   do. A placeholder module is not a finished feature.

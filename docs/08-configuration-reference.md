@@ -196,14 +196,14 @@ secrets/wifi/potato/home.yaml
 secrets/pppoe/potato/main.yaml
 secrets/tailscale/potato.yaml
 secrets/wireguard/potato/uplink.yaml
-secrets/subscription/vendor-a.yaml
-secrets/nodes/manual-a.yaml
+secrets/subscription/vendor-a.yaml   # proxy subscription URL
+secrets/nodes/manual-a.yaml          # manual proxy-node credential
 ```
 
 `wifi`, `pppoe`, `tailscale`, and `wireguard` are encrypted to that
-host only. `subscription` and `nodes` are encrypted to every host that
-references the file. A PPPoE file holds the username and the password
-together. The other files hold one value.
+host only. A proxy subscription file and a manual proxy-node file are
+encrypted to every host that references the file. A PPPoE file holds the
+username and the password together. The other files hold one value.
 
 ```nix
 sops.age.keyFile = "/var/lib/janus/secrets/age.key";

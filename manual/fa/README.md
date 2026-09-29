@@ -23,8 +23,9 @@ Janus OS یک مسیریاب بر پایه NixOS است. تصویر سیستم �
 
 فهرست فرمان‌های روی مسیریاب [docs/14-cli.md](../../docs/14-cli.md) است.
 فهرست فرمان‌های ماشین ساخت [docs/16-build-host-cli.md](../../docs/16-build-host-cli.md)
-است. سخت‌افزار، گزینه‌ها و برنامه مرحله‌ای در [docs/](../../docs/README.md)
-است.
+است. گزینه‌های `janus.*` در
+[docs/08-configuration-reference.md](../../docs/08-configuration-reference.md)
+است. سخت‌افزار و برنامه مرحله‌ای در [docs/](../../docs/README.md) است.
 
 ## زبان‌ها
 

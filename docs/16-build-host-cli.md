@@ -139,12 +139,13 @@ secrets/wifi/<host>/<ap>.yaml
 secrets/pppoe/<host>/<wan>.yaml
 secrets/tailscale/<host>.yaml
 secrets/wireguard/<host>/<name>.yaml
-secrets/subscription/<vendor>.yaml
-secrets/nodes/<name>.yaml
+secrets/subscription/<vendor>.yaml   # proxy subscription URL
+secrets/nodes/<name>.yaml            # manual proxy-node credential
 ```
 
-A host path is encrypted to `secrets/keys/<host>.pub`. A subscription or
-node file is encrypted to every host whose configuration names that file.
+A host path is encrypted to `secrets/keys/<host>.pub`. A proxy
+subscription file or a manual proxy-node file is encrypted to every host
+whose configuration names that file.
 The tree must be a git repository. These commands do not commit.
 
 | Command | Effect |

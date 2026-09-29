@@ -46,10 +46,10 @@ developer's or user's workstation. The device only carries the results.
 
 | ID | Goal | Measure |
 |----|------|---------|
-| G1 | **Declarative, router-style configuration.** A single `configuration.nix` written in router vocabulary (WAN, LAN, VLAN, firewall zones, nodes, routing rules) — not in Linux-workstation vocabulary. | A user unfamiliar with Nix can produce a working configuration by editing the shipped example only. |
+| G1 | **Declarative, router-style configuration.** A single `configuration.nix` written in router vocabulary (WAN, LAN, VLAN, firewall zones, proxy nodes, routing rules) — not in Linux-workstation vocabulary. | A user unfamiliar with Nix can produce a working configuration by editing the shipped example only. |
 | G2 | **Power-loss resilience.** Root and store file systems are read-only; every file system has its own partition; mutable state is confined to a small, journaled, rw partition. | Repeated hard power cuts under load never leave the device unbootable. |
 | G3 | **Immutable, reproducible system.** The device carries no compiler or build tooling; a rebuild that would download or compile fails loudly. | `nix build` of the same flake revision yields an identical system closure. |
-| G4 | **First-class circumvention.** Subscriptions, manual nodes, grouping (regex, glob, PEG), policy routing and hardened split DNS are native configuration objects, backed by sing-box or Xray. | All listed protocols are configurable without leaving `configuration.nix`. |
+| G4 | **First-class circumvention.** Proxy subscriptions, manual proxy nodes, grouping (regex, glob, PEG), policy routing and hardened split DNS are native configuration objects, backed by sing-box or Xray. | All listed protocols are configurable without leaving `configuration.nix`. |
 | G5 | **Slim and fast.** Only what a router needs. | Image size and boot time budgets defined in the SRS (NFR). |
 | G6 | **Multi-board.** Support for common ARM and RISC-V single-board computers and their USB peripherals (Wi-Fi, NIC, 4G/WWAN, Bluetooth, small HMI), including boards that need redistributable closed firmware. | Each board listed in *10 — Hardware Support* boots and routes from a stock image. |
 | G7 | **Maintainable by a person, not only by a rebuild.** Frequent failures and small edits (a dead node, a failed refresh, a new static lease, a rotated subscription URL) are handled on the router. Structural edits still require a rebuild. | Every on-router change is either a maintenance action or a hot override that `janus status` can show. |

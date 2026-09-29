@@ -78,7 +78,7 @@ review — best effort; documented residual risk).
 │   ├── etc/                 machine-id, ssh host keys (bind-mounted to /etc)
 │   ├── root/                root home (known_hosts)
 │   ├── secrets/             user-provisioned secret files (0600)
-│   ├── subscriptions/       <name>.json (normalized), <name>.meta
+│   ├── subscriptions/       proxy subscription cache: <name>.json, <name>.meta
 │   ├── geodata/             geoip.*, geosite.*, versions.json
 │   ├── engine/              rendered runtime config, selection state
 │   ├── leases/              DHCPv4/v6 leases
@@ -95,7 +95,7 @@ dedicated service users with `StateDirectory=` in their units.
 ## 6. Seeding and recovery
 
 * The store contains `/nix/store/…-janus-seed/` with the build-time
-  snapshot of subscriptions, Geo data and default engine selection.
+  snapshot of proxy subscriptions, Geo data and default engine selection.
 * At boot, `janus-seed.service` runs before the engine:
   * if `/var/lib/janus` is missing, empty or its `seed.stamp` differs from
     the embedded seed hash **and** the embedded data is newer than what is
@@ -113,7 +113,7 @@ dedicated service users with `StateDirectory=` in their units.
 | Journal | continuous | volatile by default; if persistent, `SystemMaxUse=64M`, `Compress=yes` |
 | DHCP leases | per lease event | dnsmasq lease file (small) |
 | vnstat | every 5 min | small db; `SaveInterval` tuned to 15 min |
-| Subscription refresh | per schedule (default 6 h) | atomic, few KiB–MiB |
+| Proxy subscription refresh | per schedule (default 6 h) | atomic, few KiB–MiB |
 | Geo data refresh | default weekly | atomic, ~10–30 MiB |
 | Flow export spool | continuous if enabled | ring buffer with cap |
 

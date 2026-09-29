@@ -26,8 +26,10 @@ Janus OS — это маршрутизатор на базе NixOS. Образ �
 
 Список команд на маршрутизаторе — [docs/14-cli.md](../../docs/14-cli.md).
 Список команд на сборочной машине —
-[docs/16-build-host-cli.md](../../docs/16-build-host-cli.md). Оборудование,
-параметры и план по этапам — в [docs/](../../docs/README.md).
+[docs/16-build-host-cli.md](../../docs/16-build-host-cli.md). Параметры
+`janus.*` —
+[docs/08-configuration-reference.md](../../docs/08-configuration-reference.md).
+Оборудование и план по этапам — в [docs/](../../docs/README.md).
 
 ## Языки
 

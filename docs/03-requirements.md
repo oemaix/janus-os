@@ -14,7 +14,7 @@ Key words MUST / SHOULD / MAY follow RFC 2119. Priority: **P1** required for
 | ID | Requirement | Prio |
 |----|-------------|------|
 | FR-CFG-001 | The system shape MUST be described by a NixOS configuration consumed by a Nix flake. Runtime files outside the Nix store are authoritative only for *data* (FR-OPS-003) and *hot overrides* (FR-OPS-007). | P1 |
-| FR-CFG-002 | All Janus-specific options MUST live under the `janus.*` namespace and MUST use router vocabulary (WAN, LAN, VLAN, zone, node, group, rule). | P1 |
+| FR-CFG-002 | All Janus-specific options MUST live under the `janus.*` namespace and MUST use router vocabulary (WAN, LAN, VLAN, zone, proxy node, group, rule). | P1 |
 | FR-CFG-003 | A user MUST be able to produce a working configuration by editing only values in the shipped example, without knowing the Nix language beyond literals, lists and attribute sets. | P1 |
 | FR-CFG-004 | Every `janus.*` option MUST have a description, a type and, where sensible, a default and an example; the reference document MUST be generated from module definitions. | P1 |
 | FR-CFG-005 | Physical ports MUST be referenced by stable, user-given names mapped to board-specific interface names; swapping WAN/LAN ports MUST be a configuration change only. | P1 |
@@ -23,7 +23,7 @@ Key words MUST / SHOULD / MAY follow RFC 2119. Priority: **P1** required for
 | FR-CFG-008 | The complete flake source tree used to build an image (`flake.nix`, `flake.lock`, `configuration.nix` and all imported modules, whether single-file or modular) MUST be embedded read-only in the image at `/etc/janus/source`, so the exact image can be rebuilt from the device alone. Sources outside the flake tree MUST produce an evaluation warning. Embedding MAY be disabled by the user. | P1 |
 | FR-CFG-009 | Configuration MUST be validated at evaluation time with assertions producing actionable messages (e.g. overlapping subnets, unknown port name, node referenced by a rule but not defined). | P1 |
 | FR-CFG-010 | The user's config project MUST be a local git repository, because flakes ignore uncommitted files. A remote git host is recommended and MUST NOT be required to build an image. | P1 |
-| FR-CFG-011 | One private repo MUST be able to describe several routers (`nixosConfigurations.<host>`) and MUST be able to import shared modules (for example one subscription used by two routers). The entry file MUST be named `configuration.nix`. | P1 |
+| FR-CFG-011 | One private repo MUST be able to describe several routers (`nixosConfigurations.<host>`) and MUST be able to import shared modules (for example one proxy subscription used by two routers). The entry file MUST be named `configuration.nix`. | P1 |
 
 ## 2. Build and deployment (BLD)
 
@@ -204,7 +204,7 @@ Key words MUST / SHOULD / MAY follow RFC 2119. Priority: **P1** required for
 |----|-------------|--------|
 | NFR-001 | Image size (compressed) | ≤ 400 MiB for Tier-1 boards |
 | NFR-002 | Boot to routing (power-on → first NAT'd packet) | ≤ 45 s on NanoPi R4S |
-| NFR-003 | Idle RAM footprint | ≤ 256 MiB including the engine with 500 nodes, on boards with at least 2 GiB RAM. Zero 2 W and Le Potato are not 500-node targets. |
+| NFR-003 | Idle RAM footprint | ≤ 256 MiB including the engine with 500 proxy nodes, on boards with at least 2 GiB RAM. Zero 2 W and Le Potato are not 500-node targets. |
 | NFR-004 | NAT throughput | Line rate for 1 GbE on NanoPi R4S |
 | NFR-005 | Engine throughput (VLESS+Vision) | ≥ 300 Mbit/s on NanoPi R4S |
 | NFR-REL-001 | Power-loss robustness | 100 random power cuts without re-flash |

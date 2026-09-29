@@ -9,7 +9,7 @@
 ## 1. What maintenance is
 
 A router is used by a person who will not rebuild an image to add a printer
-lease or to paste a new subscription URL, and who will also not accept a
+lease or to paste a new proxy subscription URL, and who will also not accept a
 box that can be changed from the shell with nothing written down. Janus
 keeps both constraints by splitting work into three kinds.
 

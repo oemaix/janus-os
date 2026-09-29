@@ -26,8 +26,9 @@ run `nix develop`.
 
 The command lists are [docs/14-cli.md](../../docs/14-cli.md) on the router
 and [docs/16-build-host-cli.md](../../docs/16-build-host-cli.md) on the
-build machine. Hardware, options, and the phased plan are in
-[docs/](../../docs/README.md).
+build machine. The `janus.*` options are
+[docs/08-configuration-reference.md](../../docs/08-configuration-reference.md).
+Hardware and the phased plan are in [docs/](../../docs/README.md).
 
 ## Languages
 

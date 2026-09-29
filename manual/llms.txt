@@ -13,4 +13,5 @@
 
 - Router commands are specified in [docs/14-cli.md](../docs/14-cli.md)
 - Build-host commands are specified in [docs/16-build-host-cli.md](../docs/16-build-host-cli.md)
+- `janus.*` options are specified in [docs/08-configuration-reference.md](../docs/08-configuration-reference.md)
 - What the code actually contains is [docs/13-roadmap.md](../docs/13-roadmap.md)

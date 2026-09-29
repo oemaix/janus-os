@@ -46,7 +46,7 @@ router file. `janus-build init` writes the tree below and adds no host
 ```text
 flake.nix                      # one nixosConfigurations.<name> per hosts/<name>/
 flake.lock
-common/default.nix             # imported for every host; shared subscription goes here
+common/default.nix             # imported for every host; a shared proxy subscription goes here
 hosts/<name>/configuration.nix # this router only
 hosts/<name>/overrides.nix     # fleet pull writes static leases here
 secrets/                       # one ciphertext file per credential (ADR-0022)
@@ -70,8 +70,8 @@ shell that contains only that program. A hand-written flake with one
 template does not ship that shape.
 
 `hosts/<name>/overrides.nix` is the only Nix file `janus-build fleet pull`
-writes. It holds static leases copied back from that router. Subscription
-URLs and Wi-Fi passphrases stay in per-credential files under `secrets/`
+writes. It holds static leases copied back from that router. Proxy
+subscription URLs and Wi-Fi passphrases stay in per-credential files under `secrets/`
 (ADR-0022). The file name is `configuration.nix`, including under
 `hosts/<name>/`. `janus-configuration.nix` and
 `janus_configuration.nix` are not used.

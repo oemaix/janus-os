@@ -34,5 +34,7 @@ What already exists, and what is still a placeholder, is
 The user manual is [manual/](manual/README.md). Commands the router will
 have are specified in [docs/14-cli.md](docs/14-cli.md). Commands the build
 machine will have are specified in [docs/16-build-host-cli.md](docs/16-build-host-cli.md).
+The `janus.*` options are specified in
+[docs/08-configuration-reference.md](docs/08-configuration-reference.md).
 Neither program is implemented yet. `janus-build` and `janus`, when run
 from the development shell, exit 2 and say so.
