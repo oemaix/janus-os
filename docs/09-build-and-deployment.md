@@ -38,32 +38,41 @@
 
 ## 3. Flake layout (user template)
 
+`nixosConfigurations` lives in this repo's `flake.nix`. It is not a
+router file. `janus-build init` writes the tree below and adds no host
+(*16* §0). `janus-build host add <name>` creates one directory under
+`hosts/`.
+
+```text
+flake.nix                      # one nixosConfigurations.<name> per hosts/<name>/
+flake.lock
+common/default.nix             # imported for every host; shared subscription goes here
+hosts/<name>/configuration.nix # this router only
+hosts/<name>/overrides.nix     # fleet pull writes static leases here
+secrets/                       # one ciphertext file per credential (ADR-0022)
+```
+
+`flake.nix` reads the directories under `hosts/` and builds each one as:
+
 ```nix
-{
-  inputs.janus.url = "github:<org>/janus-os/<release>";
-  outputs = { janus, ... }: {
-    nixosConfigurations.home-router = janus.lib.mkRouter {
-      modules = [ ./configuration.nix ];        # may import ./network.nix, ./proxy.nix …
-    };
-    images.home-router = janus.lib.mkImage self.nixosConfigurations.home-router;
-  };
+janus.lib.mkRouter {
+  modules = [
+    ./common/default.nix
+    ./hosts/<name>/configuration.nix
+    ./hosts/<name>/overrides.nix
+  ];
 }
 ```
 
-Several routers that share a subscription live in that same repo
-(ADR-0021):
-
-```nix
-nixosConfigurations = {
-  potato = janus.lib.mkRouter { modules = [ ./common/proxy.nix ./hosts/potato/configuration.nix ./hosts/potato/overrides.nix ]; };
-  zero   = janus.lib.mkRouter { modules = [ ./common/proxy.nix ./hosts/zero/configuration.nix ./hosts/zero/overrides.nix ]; };
-};
-```
+It also re-exports `packages.<system>.janus-build` and a development
+shell that contains only that program. A hand-written flake with one
+`configuration.nix` and one attribute remains valid (FR-CFG-006). The
+template does not ship that shape.
 
 `hosts/<name>/overrides.nix` is the only Nix file `janus-build fleet pull`
-writes. The template imports it. It holds static leases copied back from
-that router. Subscription URLs and Wi-Fi passphrases stay in per-credential
-files under `secrets/` (ADR-0022). The file name is `configuration.nix`, including under
+writes. It holds static leases copied back from that router. Subscription
+URLs and Wi-Fi passphrases stay in per-credential files under `secrets/`
+(ADR-0022). The file name is `configuration.nix`, including under
 `hosts/<name>/`. `janus-configuration.nix` and
 `janus_configuration.nix` are not used.
 Snake case is not the NixOS file convention, and a prefix does not help
@@ -71,15 +80,17 @@ the flake find the module.
 
 `mkRouter` reads `janus.hardware.board` from the modules to pick the system
 (`aarch64-linux`, `x86_64-linux`, `armv7l-linux`, `riscv64-linux`) and the
-board profile. Splitting `configuration.nix` into several files is
-supported (FR-CFG-006, FR-CFG-011). The template ships a single file for
-one router.
+board profile. Splitting one router's `configuration.nix` into further
+files is supported (FR-CFG-006, FR-CFG-011). Those files stay under that
+host's directory, or under `common/` when every host imports them.
 
 This template is a **separate git repository** from Janus OS. The user
-clones nothing of the OS for day-to-day use; `nix flake init -t` creates
-their private repo, and `inputs.janus.url` pins a release. They do not
-fork Janus OS per router, and they do not keep one branch per device
-inside the OS repo.
+clones nothing of the OS for day-to-day use. The first command is
+`nix run github:oemaix/janus-os#janus-build -- init <dir>` (*16* §0).
+`inputs.janus.url` pins the Janus that provided that `janus-build`. They
+do not fork Janus OS per router, and they do not keep one branch per
+device inside the OS repo. A second router is `janus-build host add <name>`
+in this same repo.
 
 A **local** git repository is mandatory (FR-CFG-010). Flakes skip
 uncommitted files, so the sequence is edit, commit, `nix build`. A

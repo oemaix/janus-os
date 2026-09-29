@@ -1,4 +1,4 @@
-# 18 â€” Decisions
+# 18 âÿÿ Decisions
 
 | Field | Value |
 |-------|-------|
@@ -21,7 +21,7 @@ Undecided rows are open. Implementation does not invent an answer for them.
 
 | # | Choice | Where |
 |---|--------|-------|
-| D-0001 | One configuration file and a module list are both valid. The template ships one file. | FR-CFG-006 |
+| D-0001 | One configuration file and a module list are both valid. The fleet template gives each router `hosts/<name>/configuration.nix`. `flake.nix` is the index. Shared modules are `common/default.nix`. | FR-CFG-006, FR-CFG-011, *09* ?3 |
 | D-0002 | The flake tree that built the image is embedded at `/etc/janus/source`. | FR-CFG-008 |
 | D-0003 | Mutable data lives on the `/var` state partition. | FR-STO-004 |
 | D-0004 | Traffic modes are `bypass`, `rule-based`, and `proxy-all`. A rule target may be `direct`. | *01*, FR-PRX-020 |

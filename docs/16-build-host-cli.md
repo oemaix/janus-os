@@ -6,11 +6,62 @@
 | Version | 0.1.0 |
 | Last updated | 2026-09-29 |
 
-`janus-build` runs on the build host, inside the private config repo. The
-router command stays `janus` (*14*). The two names share the project and
-name different programs. The router image does not contain `janus-build`.
-On the board, `janus deploy` and `janus fleet` exit `2` and name the
-`janus-build` command.
+`janus-build` runs on the build host. After the fleet repo exists, every
+command runs in that repo. The router command stays `janus` (*14*). The
+two names share the project and name different programs. The router image
+does not contain `janus-build`. On the board, `janus deploy` and
+`janus fleet` exit `2` and name the `janus-build` command.
+
+One fleet repo holds every router. `flake.nix` turns each directory
+`hosts/<name>/` into `nixosConfigurations.<name>`. `init` prepares that
+repo and adds no router, unless `--host` is given. A later router is
+`janus-build host add <name>`. `build`, `check`, `status`, and
+`fleet apply` with no host name cover every host. With no hosts they
+exit `0` and say so.
+
+## 0. Where the program comes from
+
+The operator does not clone Janus OS, and does not already have
+`janus-build` installed. The build host has Nix, with flakes enabled.
+That is the prerequisite.
+
+The first command fetches the Janus OS flake into the Nix store and runs
+the `janus-build` package from it:
+
+```text
+nix run github:oemaix/janus-os#janus-build -- init ./fleet
+```
+
+That fetch is not a working copy the operator maintains. `init` then
+creates `./fleet` from the template bundled with that same `janus-build`
+(*09* §3):
+
+* `nix flake init` of that template. `inputs.janus.url` is the flake this
+  `janus-build` came from, so the repo and the tool pin the same Janus.
+* `git init` and an initial commit when the directory is not already a
+  repository.
+* The command refuses when the directory already contains `flake.nix`.
+
+From then on the program is the fleet repo's package, not a second
+install:
+
+```text
+cd fleet
+nix develop
+janus-build host add potato
+```
+
+`host add` writes the stub and does not commit. Flakes ignore untracked
+files, so the next step is a commit, then `janus-build secret keygen potato`.
+
+`nix develop` in the fleet repo puts that repo's `janus-build` on `PATH`.
+`nix run .#janus-build -- <args>` is the same program without the shell.
+Both follow `inputs.janus`. `janus-build update` moves that pin.
+
+Cloning Janus OS and running `nix develop` there is how someone changes
+Janus itself. That shell also contains `janus-build`. `init` from it
+still writes a separate fleet directory. Operating routers does not
+require that clone.
 
 Nix evaluates and builds. `janus-build` does not replace it, and it does
 not grow a recipe language, a layer stack, or a task graph. It drives the
@@ -28,7 +79,8 @@ SSH destinations are `janus.deploy.address`, or the
 
 | Stage | Command | What it does |
 |-------|---------|--------------|
-| Create the repo | `janus-build init` | `nix flake init -t` for Janus OS, then `git init` and the first commit if the directory is not already a repository. |
+| Create the fleet repo | `nix run github:oemaix/janus-os#janus-build -- init <dir> [--host <name>]` | The only command that runs before the repo exists (§0). No `--host` means the repo has no router. Each `--host` adds that router before the initial commit. Later, `janus-build init <dir>` from a fleet shell creates another fleet directory the same way. |
+| Add a router | `janus-build host add <name>` | Creates `hosts/<name>/configuration.nix` and `hosts/<name>/overrides.nix`. Does not edit `flake.nix` and does not commit. |
 | Age key | `janus-build secret keygen <host>` | Creates that host's keypair outside the Nix build. Commits nothing by itself: it writes `secrets/keys/<host>.pub` and prints the private key once on stdout. Refuses to replace an existing public key. |
 | Set a secret | `janus-build secret set <path>` | Reads plaintext on stdin, encrypts to the recipients of that path, and writes ciphertext. Does not keep a plaintext file. |
 | Rewrap a shared secret | `janus-build secret rewrap <path> --from <host>` | Asks a router that can decrypt that file, then encrypts to the current recipient set. |
@@ -41,9 +93,37 @@ SSH destinations are `janus.deploy.address`, or the
 | Save a router | `janus-build backup <host>` | SSH `janus backup` and write the archive on the build host. |
 | New Janus pin | `janus-build update` | `nix flake update janus`. Does not build or deploy. |
 
-A later local wizard is a front end for `init` and the first edit. It is
-not a hosted builder (*00* §4, *13* Phase 4). Until it exists, `init` is
-the creation step.
+A later local wizard is a front end for `init` and `host add`. It is
+not a hosted builder (*00* §4, *13* Phase 4). Until it exists, those two
+commands are the creation steps.
+
+### Adding a host
+
+```text
+janus-build host add <name>
+```
+
+`<name>` is the `nixosConfigurations` attribute, the default SSH
+destination, and the directory name. It starts with a letter and then
+contains only letters, digits, and hyphens. The command refuses when
+`hosts/<name>` already exists.
+
+It writes:
+
+* `hosts/<name>/configuration.nix` — this router only. `janus.system.hostName`
+  is `<name>`. Board, ports, WAN, LAN, and an SSH key are still unset.
+  The comment points at `docs/examples/configuration.example.nix`.
+  `check` fails until those values are filled in.
+* `hosts/<name>/overrides.nix` — an empty module. `fleet pull` writes
+  static leases here.
+
+`flake.nix` already imports `common/default.nix` and those two files for
+every directory under `hosts/`. Shared options, including a subscription
+used by two routers, go in `common/default.nix`. The command does not
+commit. Commit, then `secret keygen <name>`.
+
+`init <dir> --host <name>` is `host add` run before the initial commit,
+so that commit already contains the host. `--host` may be repeated.
 
 ## 2. Age keys and secret files
 

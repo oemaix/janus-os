@@ -113,11 +113,16 @@ does not replace the CLI and it does not edit `configuration.nix`.
 
 ## 2. Day-0: first deployment
 
-1. `janus-build init` on the build host. That runs `nix flake init -t`.
-2. Edit `configuration.nix` (board, ports, WAN, LAN, SSH key,
-   subscriptions). For each host, `janus-build secret keygen <host>`, store
-   the printed private key in a password manager, then `janus-build secret
-   set` for each credential file that host needs.
+1. On a build host that has Nix and does not yet have a fleet repo:
+   `nix run github:oemaix/janus-os#janus-build -- init <dir>` (*16* §0).
+   Enter that directory and run `nix develop`. Later commands are
+   `janus-build`.
+2. `janus-build host add <host>` unless `init --host` already did.
+   Edit `hosts/<host>/configuration.nix` (board, ports, WAN, LAN, SSH key).
+   Put a shared subscription in `common/default.nix`. Commit. Then
+   `janus-build secret keygen <host>`, store the printed private key in a
+   password manager, and `janus-build secret set` for each credential file
+   that host needs.
 3. `janus-build build <host>`; flash the printed image. The image contains
    ciphertext. It does not contain the age private key.
 4. Boot; connect to LAN; `ssh root@192.168.10.1` (or the configured address).

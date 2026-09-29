@@ -26,10 +26,14 @@ requirements it drives (see *03 — Requirements*).
 * **Precondition:** Build host with Nix (flakes enabled) and unrestricted
   network; target Board and SD card/eMMC.
 * **Flow:**
-  1. Clone the Janus flake template (`nix flake init -t github:…/janus-os`).
-  2. Edit `configuration.nix`: board, WAN mode, LAN subnet, SSH public key,
-     subscription URL.
-  3. Run `nix build .#images.<host>`; obtain `result/janus-<host>.img`.
+  1. `nix run github:oemaix/janus-os#janus-build -- init ./fleet`, then
+     `nix develop` in that directory (*16* §0). This does not clone Janus OS
+     and does not add a router.
+  2. `janus-build host add <host>`. Edit `hosts/<host>/configuration.nix`:
+     board, WAN mode, LAN subnet, SSH public key. Commit.
+     `janus-build secret keygen <host>` and `janus-build secret set` for
+     each credential.
+  3. `janus-build build <host>`; obtain the printed image.
   4. Flash to media; insert; power on.
   5. SSH into the router at the configured LAN address with the private key.
 * **Drives:** FR-CFG-*, FR-BLD-*, FR-ACC-001

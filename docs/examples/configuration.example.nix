@@ -1,9 +1,10 @@
 # Janus OS — example configuration
 #
-# This file is the recommended starting point. Copy it, change the values
-# marked with "CHANGE ME", and build:
+# This file is the shape of hosts/<name>/configuration.nix, one router.
+# The fleet index is flake.nix. Add a router with `janus-build host add`.
+# Change the values marked with "CHANGE ME", commit, and build:
 #
-#   nix build .#images.home-router
+#   janus-build build <host>
 #
 # Everything here is a NixOS module. You only need three ideas from the Nix
 # language:
