@@ -1,7 +1,8 @@
 # Janus OS
 
-**This project is in its infancy.** The VM image boots, and the phase 1
-router core is in the tree. Proxy, fleet, and deploy are not implemented.
+**This project is in its infancy.** The VM image boots. The phase 1
+router core is in the tree, and so are the sing-box proxy, DNS policy,
+and fleet commands. Deploy is not implemented.
 What is specified, and what is done, is
 [docs/13-roadmap.md](docs/13-roadmap.md).
 
@@ -39,5 +40,7 @@ machine will have are specified in [docs/16-build-host-cli.md](docs/16-build-hos
 The `janus.*` options are specified in
 [docs/08-configuration-reference.md](docs/08-configuration-reference.md).
 `janus-build` implements `init`, `host add`, `secret`, `check`, `build`,
-and `update`. `janus` implements the router status, WAN, lease, firewall,
-and age-key commands. Proxy, fleet, and deploy still exit 2.
+`update`, `fleet`, `status`, and `backup`. `janus` implements the router
+status, WAN, lease, firewall, age-key, proxy, DNS, and backup commands.
+Deploy still exits 2. Static-lease and Wi-Fi passphrase overrides still
+exit 2.

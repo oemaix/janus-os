@@ -285,4 +285,171 @@ in {
       test "$(cat ${seed}/seed.generation)" = 1
       echo ok > "$out"
     '';
+  eval-proxy = let
+    os = mk [
+      base
+      {
+        janus.network.lans.lan = {
+          members = ["lan"];
+          address = "192.168.10.1";
+          prefixLength = 24;
+        };
+        janus.dns.blockDoT = true;
+        janus.dns.blockKnownDoH = true;
+        janus.proxy = {
+          enable = true;
+          blockQuic = true;
+          nodes.demo = {
+            protocol = "vless";
+            server = "203.0.113.10";
+            port = 443;
+            vless.uuid = "b831381d-6324-4d53-ad4f-8cda48b30811";
+            tls.enable = true;
+            tls.serverName = "www.example.com";
+            tls.insecure = true;
+          };
+          groups.Demo = {
+            members = ["node:demo"];
+            strategy = "url-test";
+          };
+        };
+      }
+    ];
+    engine = os.config.system.build.janusEngineConfig;
+    mark = os.config.networking.nftables.tables.janus_intercept.content;
+    dnsUdp = os.config.networking.nftables.tables.janus_dns.content;
+    nat = os.config.networking.nftables.tables.janus.content;
+    geo = os.config.environment.etc."janus/geodata".source;
+    proxyBin = os.config.environment.etc."janus/bin/janus-proxy".source;
+    pre = os.config.systemd.services.janus-engine.serviceConfig.ExecStartPre;
+    preText = pkgs.writeText "exec-start-pre" (
+      if builtins.isList pre
+      then lib.concatStringsSep "\n" pre
+      else pre
+    );
+    markFile = pkgs.writeText "mark.nft" mark;
+    dnsFile = pkgs.writeText "dns.nft" dnsUdp;
+    natFile = pkgs.writeText "nat.nft" nat;
+  in
+    pkgs.runCommand "eval-proxy" {
+      nativeBuildInputs = [pkgs.sing-box pkgs.jq];
+    } ''
+      sing-box check -c ${engine}
+      jq -e '.inbounds[] | select(.type == "tun" and .auto_route == false)' ${engine} >/dev/null
+      jq -e '.outbounds[] | select(.tag == "direct" and .routing_mark == 74)' ${engine} >/dev/null
+      jq -e '.inbounds[] | select(.type == "tproxy" and .network == "udp")' ${engine} >/dev/null
+      jq -e '[.inbounds[] | select(.type == "tproxy" and .network == "tcp")] | length == 0' ${engine} >/dev/null
+      grep -q geodata-missing ${preText}
+      grep -q '0x00004a01' ${markFile}
+      grep -q 'dport 53 return' ${markFile}
+      grep -q 'ip6 daddr != fc00::/18' ${markFile}
+      grep -q 'priority -200' ${markFile}
+      grep -q 'dport 853 reject' ${markFile}
+      grep -q '1.1.1.1' ${markFile}
+      grep -q 'udp dport 443 reject' ${markFile}
+      if grep -q 'hook forward' ${markFile}; then
+        echo "DoT and DoH rejects are still on the forward hook" >&2
+        exit 1
+      fi
+      grep -q 'tproxy to :5353' ${dnsFile}
+      grep -q '0x00004a02' ${dnsFile}
+      grep -q 'meta l4proto tcp th dport 53 redirect to :5353' ${natFile}
+      if grep -q 'l4proto udp th dport 53 redirect' ${natFile}; then
+        echo "UDP/53 is still NAT-redirected" >&2
+        exit 1
+      fi
+      test -s ${geo}/geosite-private.srs
+      test -s ${geo}/geosite-cn.srs
+      test -s ${geo}/geosite-geolocation-cn.srs
+      test -s ${geo}/geoip-private.srs
+      grep -a -F -q 'dest}.partial' ${proxyBin}
+      if grep -a -F -q 'rm -f "/var/lib/janus/geodata/' ${proxyBin}; then
+        echo "geo refresh deletes the live rule set" >&2
+        exit 1
+      fi
+      echo ok > "$out"
+    '';
+  eval-proxy-password = let
+    os = mk [
+      base
+      {
+        janus.network.lans.lan = {
+          members = ["lan"];
+          address = "192.168.10.1";
+          prefixLength = 24;
+        };
+        janus.proxy = {
+          enable = true;
+          nodes.secret = {
+            protocol = "trojan";
+            server = "203.0.113.10";
+            port = 443;
+            trojan.passwordFile = "/var/lib/janus/secrets/trojan";
+          };
+        };
+      }
+    ];
+    nodes = os.config.environment.etc."janus/nodes-built.json".source;
+    passwords = os.config.environment.etc."janus/password-files.json".source;
+    engine = os.config.system.build.janusEngineConfig;
+  in
+    pkgs.runCommand "eval-proxy-password" {
+      nativeBuildInputs = [pkgs.jq pkgs.sing-box];
+    } ''
+      jq -e '.[] | select(.name == "secret") | .trojan.passwordFile == "/var/lib/janus/secrets/trojan" and .trojan.password == "janus-build-check"' ${nodes} >/dev/null
+      jq -e '.secret == "/var/lib/janus/secrets/trojan"' ${passwords} >/dev/null
+      jq -e '.outbounds[] | select(.tag == "secret") | .password == "janus-build-check"' ${engine} >/dev/null
+      sing-box check -c ${engine}
+      echo ok > "$out"
+    '';
+  eval-proxy-xray = fail "eval-proxy-xray" [
+    base
+    {
+      janus.proxy.enable = true;
+      janus.proxy.engine = "xray";
+    }
+  ];
+  eval-proxy-fallback = fail "eval-proxy-fallback" [
+    base
+    {
+      janus.proxy.groups.A = {
+        members = ["group:Auto"];
+        strategy = "fallback";
+      };
+    }
+  ];
+  janet-normalizer =
+    pkgs.runCommand "janet-normalizer" {
+      nativeBuildInputs = [pkgs.janet pkgs.sing-box pkgs.jq pkgs.coreutils];
+    } ''
+      set -eu
+      script=${../janet/janus.janet}
+      test "$(janet "$script" match regex 'japan|jp' 'Tokyo JP')" = yes
+      test "$(janet "$script" match regex 'japan|jp' 'London')" = no
+      test "$(janet "$script" match glob 'Premium*' 'Premium-HK')" = yes
+      test "$(janet "$script" match peg '(some "a")' aaa)" = yes
+      json='{"v":"2","ps":"Tokyo JP 1","add":"203.0.113.10","port":"443","id":"b831381d-6324-4d53-ad4f-8cda48b30811","aid":"0","scy":"auto","net":"tcp","tls":"tls","sni":"www.example.com"}'
+      {
+        printf 'vmess://'
+        printf '%s' "$json" | base64 -w0
+        printf '\n'
+      } > share.txt
+      janet "$script" normalize --format share-links --prefix provider --input share.txt --output nodes.json
+      jq -e '.[0].protocol == "vmess" and .[0].name == "provider/Tokyo JP 1"' nodes.json >/dev/null
+      printf '%s\n' '- {name: Premium-HK, type: vmess, server: 203.0.113.11, port: 443, uuid: b831381d-6324-4d53-ad4f-8cda48b30811, alterId: 0, cipher: auto}' > clash.txt
+      janet "$script" normalize --format clash --prefix clash --input clash.txt --output clash.json
+      jq -e '.[0].protocol == "vmess" and .[0].server == "203.0.113.11"' clash.json >/dev/null
+      cat > model.json <<'EOF'
+      {"mode":"rule-based","defaultTarget":"group:Auto","blockQuic":false,"groups":{"Demo":{"members":["node:provider/Tokyo JP 1"],"strategy":"url-test","match":{},"fromSubscriptions":[],"test":{"url":"https://www.gstatic.com/generate_204","interval":"5m","tolerance":50}}},"rules":[],"subscriptionNames":["provider"],"dns":{"domestic":{"resolvers":["https://dns.alidns.com/dns-query"],"domains":[]},"remote":{"resolvers":["https://1.1.1.1/dns-query"],"via":"direct"},"fakeIp":{"enable":false,"exclude":[]},"hosts":{},"forwarders":{},"ipv6Answers":"keep"}}
+      EOF
+      janet "$script" render --model model.json --nodes nodes.json --rule-set remote --output engine.json
+      sing-box check -c engine.json
+      cat > block.json <<'EOF'
+      {"mode":"rule-based","defaultTarget":"block","blockQuic":false,"groups":{},"rules":[],"subscriptionNames":[],"dns":{"domestic":{"resolvers":[],"domains":[]},"remote":{"resolvers":[],"via":"direct"},"fakeIp":{"enable":false,"exclude":[]},"hosts":{},"forwarders":{},"ipv6Answers":"keep"}}
+      EOF
+      janet "$script" render --model block.json --nodes nodes.json --rule-set remote --output block-engine.json
+      jq -e '.route.final == "direct" and any(.route.rules[]; .action == "reject")' block-engine.json >/dev/null
+      sing-box check -c block-engine.json
+      echo ok > "$out"
+    '';
 }

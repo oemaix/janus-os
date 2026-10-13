@@ -248,10 +248,17 @@ the build host) and refreshes them with Geo data.
 
 * Build-time fetch of engine-native rule sets for every `geosite:`/`geoip:`
   tag referenced anywhere (rules, DNS sets, exclusions). Unreferenced
-  categories are not shipped (slimness).
+  categories are not shipped (slimness). A tag is fetched at build time
+  when it has a sha256 pin (`janus.proxy.geodata.hashes`, which overrides
+  the built-in pins for `geosite-private`, `geosite-cn`, and
+  `geosite-geolocation-cn`). The sing-geoip rule-set branch does not
+  publish `geoip-private`, so Janus compiles that set from the private
+  ranges. A referenced tag with no pin is copied from the image when the
+  image has it, and otherwise downloaded on the router.
 * Runtime refresh (`janus.proxy.geodata.refresh = "weekly"`) downloads the
-  same set via the tunnel, verifies size/format, atomically replaces, and
-  reloads the engine.
+  same set via the tunnel, verifies the download is non-empty, replaces
+  the live file only then, and reloads the engine. A failed download
+  leaves the previous file in place.
 * Source repositories are configurable (`janus.proxy.geodata.sources`),
   defaulting to the widely used community sets for the chosen engine.
 

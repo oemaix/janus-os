@@ -122,6 +122,7 @@ See *06* §7–8: `zones`, `policies`, `rules`, `services`, `portForwards`,
 | `blockQuic` | bool | `false` | |
 | `geodata.refresh` | duration | `"weekly"` | |
 | `geodata.sources` | attrs | community defaults | |
+| `geodata.hashes` | attrs of sha256 | `{}` | Overrides the built-in pins. A referenced tag with no pin is left for the router |
 | `engineSettings` | attrs | `{}` | Raw engine config merged last (escape hatch; unsupported) |
 
 Built-in group `Auto`: `url-test` over all subscription nodes unless the

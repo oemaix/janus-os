@@ -1,4 +1,4 @@
-# docs/14. Proxy, DNS policy, and fleet commands are later phases.
+# docs/14. deploy, fleet, and audit stay later phases.
 usage() {
   echo "janus [--json] <command> [<args>]" >&2
   echo "See docs/14-cli.md." >&2
@@ -21,9 +21,100 @@ later() {
   exit 2
 }
 
+proxy_bin() {
+  if [ ! -x /etc/janus/bin/janus-proxy ]; then
+    echo "janus $1 needs janus.proxy.enable. See docs/13-roadmap.md." >&2
+    exit 2
+  fi
+  /etc/janus/bin/janus-proxy "$@"
+}
+
+overrides_file=/var/lib/janus/overrides.json
+
+read_overrides() {
+  if [ -f "$overrides_file" ]; then
+    cat "$overrides_file"
+  else
+    echo '{}'
+  fi
+}
+
 case "$cmd" in
-  deploy|fleet|proxy|dns|audit)
+  deploy|fleet|audit)
     later "$cmd${1:+ $1}"
+    ;;
+  proxy)
+    sub=${1:-}
+    shift || true
+    case "$sub" in
+      refresh) proxy_bin refresh "${1:-}" ;;
+      geodata)
+        if [ "${1:-}" != refresh ]; then
+          usage
+        fi
+        proxy_bin geodata-refresh
+        ;;
+      select) proxy_bin select "${1:-}" "${2:-}" ;;
+      groups) proxy_bin groups ;;
+      test) proxy_bin test "${1:-}" ;;
+      *) usage ;;
+    esac
+    ;;
+  dns)
+    sub=${1:-}
+    shift || true
+    case "$sub" in
+      query) proxy_bin dns-query "${1:-}" ;;
+      flush) proxy_bin dns-flush ;;
+      stats) proxy_bin dns-stats ;;
+      check) proxy_bin dns-check ;;
+      *) usage ;;
+    esac
+    ;;
+  backup)
+    list=$(mktemp)
+    {
+      [ -f /var/lib/janus/secrets/age.key ] && printf '%s\n' var/lib/janus/secrets/age.key
+      [ -f /var/lib/janus/overrides.json ] && printf '%s\n' var/lib/janus/overrides.json
+      [ -f /var/lib/janus/engine/selection.json ] && printf '%s\n' var/lib/janus/engine/selection.json
+      [ -d /var/lib/vnstat ] && printf '%s\n' var/lib/vnstat
+    } > "$list"
+    if [ ! -s "$list" ]; then
+      rm -f "$list"
+      echo "janus backup: no age key, overrides, selection, or traffic data." >&2
+      exit 1
+    fi
+    tar -C / -cf - -T "$list"
+    rm -f "$list"
+    ;;
+  restore)
+    if [ "${1:-}" != "--yes" ]; then
+      echo "janus restore reads an archive on stdin and requires --yes." >&2
+      exit 2
+    fi
+    archive=$(mktemp)
+    list=$(mktemp)
+    cat > "$archive"
+    tar -tf "$archive" > "$list"
+    while IFS= read -r member; do
+      [ -n "$member" ] || continue
+      case "$member" in
+        *..* | /*)
+          echo "janus restore: rejected ${member}" >&2
+          exit 2
+          ;;
+        var/lib/janus/secrets/age.key | var/lib/janus/overrides.json | var/lib/janus/engine/selection.json)
+          ;;
+        var/lib/vnstat | var/lib/vnstat/ | var/lib/vnstat/*)
+          ;;
+        *)
+          echo "janus restore: rejected ${member}" >&2
+          exit 2
+          ;;
+      esac
+    done < "$list"
+    tar -C / -xf "$archive"
+    rm -f "$archive" "$list"
     ;;
   status)
     if [ "$json" = 1 ]; then
@@ -38,6 +129,18 @@ case "$cmd" in
       wc -l /var/lib/janus/leases/dnsmasq.leases 2>/dev/null || echo 0
       echo "State:"
       findmnt -n /var || true
+      if [ -d /var/lib/janus/subscriptions ]; then
+        echo "Subscriptions:"
+        for stamp in /var/lib/janus/subscriptions/*.stamp; do
+          [ -f "$stamp" ] || continue
+          echo "$(basename "$stamp" .stamp) $(cat "$stamp")"
+        done
+      fi
+      if systemctl is-active --quiet janus-engine.service 2>/dev/null; then
+        echo "Engine: active"
+      else
+        echo "Engine: inactive"
+      fi
     fi
     ;;
   wan)
@@ -119,16 +222,84 @@ case "$cmd" in
     ;;
   override)
     sub=${1:-}
+    shift || true
+    show_secrets=0
+    if [ "${1:-}" = "--secrets" ]; then
+      show_secrets=1
+      shift
+    fi
     case "$sub" in
       show|diff)
-        if [ -f /var/lib/janus/overrides.json ]; then
-          cat /var/lib/janus/overrides.json
+        data=$(read_overrides)
+        if [ "$json" = 1 ] && [ "$show_secrets" = 1 ]; then
+          printf '%s\n' "$data"
+        elif [ "$json" = 1 ]; then
+          printf '%s\n' "$data" | jq 'with_entries(.value = "(redacted)")'
         else
-          echo '{}'
+          printf '%s\n' "$data" | jq -r --argjson secrets "$show_secrets" '
+            to_entries[]
+            | if $secrets == 1 then "\(.key) \(.value)" else "\(.key) (redacted)" end
+          '
         fi
         ;;
-      set|unset)
-        later "override $sub"
+      set)
+        key=${1:-}
+        value=${2:-}
+        case "$key" in
+          proxy.subscriptions.*.url) ;;
+          network.lans.*.dhcp.staticLeases.*|network.wifi.*.passphrase)
+            echo "janus override set ${key} is phase 3. See docs/13-roadmap.md." >&2
+            exit 2
+            ;;
+          *)
+            echo "janus override set ${key} is not on the allowlist. Rebuild on the build host." >&2
+            exit 2
+            ;;
+        esac
+        name=${key#proxy.subscriptions.}
+        name=${name%.url}
+        if [ ! -f /etc/janus/subscriptions.json ] || ! jq -e --arg n "$name" 'has($n)' /etc/janus/subscriptions.json >/dev/null; then
+          echo "subscription ${name} is not in this image." >&2
+          exit 2
+        fi
+        if [ -z "$value" ]; then
+          value=$(cat)
+        fi
+        if [ -z "$value" ]; then
+          usage
+        fi
+        install -d -m 0700 /var/lib/janus
+        current=$(read_overrides)
+        printf '%s\n' "$current" | jq --arg k "$key" --arg v "$value" '.[$k] = $v' > "${overrides_file}.new"
+        mv "${overrides_file}.new" "$overrides_file"
+        chmod 0600 "$overrides_file"
+        if ! /etc/janus/bin/janus-proxy refresh "$name"; then
+          printf '%s\n' "$current" > "$overrides_file"
+          chmod 0600 "$overrides_file"
+          exit 1
+        fi
+        ;;
+      unset)
+        key=${1:-}
+        if [ -z "$key" ]; then
+          usage
+        fi
+        case "$key" in
+          proxy.subscriptions.*.url) ;;
+          *)
+            echo "janus override unset ${key} is not a phase 2 subscription url." >&2
+            exit 2
+            ;;
+        esac
+        name=${key#proxy.subscriptions.}
+        name=${name%.url}
+        current=$(read_overrides)
+        printf '%s\n' "$current" | jq --arg k "$key" 'del(.[$k])' > "${overrides_file}.new"
+        mv "${overrides_file}.new" "$overrides_file"
+        chmod 0600 "$overrides_file"
+        if [ -x /etc/janus/bin/janus-proxy ]; then
+          /etc/janus/bin/janus-proxy refresh "$name" || true
+        fi
         ;;
       *) usage ;;
     esac

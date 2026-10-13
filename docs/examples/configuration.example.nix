@@ -197,10 +197,14 @@
       #   pattern = ''(* (not (any (if-not "x0.5" 1)) "x0.5") (any (if-not "JP" 1)) "JP")''; }; };
 
       # Usage groups — templates. Uncomment together with the matching rule below.
+      # sing-box rejects strategy fallback and load-balance (ADR-0006). Those
+      # templates wait for the xray renderer.
       /* Telegram = { members = [ "group:SG" "group:HK" ]; strategy = "fallback"; }; */
       /* Gemini   = { members = [ "group:US" ];            strategy = "url-test"; }; */
       /* Claude   = { members = [ "group:US" "group:JP" ]; strategy = "fallback"; }; */
       /* Netflix  = { members = [ "group:JP" "group:SG" ]; strategy = "manual"; default = "group:JP"; }; */
+      /* YouTube = { members = [ "group:US" "group:JP" ]; strategy = "url-test"; }; */
+      /* GitHub  = { members = [ "group:US" "group:SG" ]; strategy = "url-test"; }; */
     };
 
     defaultTarget = "group:Auto";                          # Auto = url-test over everything
@@ -215,6 +219,8 @@
       /* { match = { domainSuffix = [ "gemini.google.com" "generativelanguage.googleapis.com" ]; }; target = "group:Gemini"; } */
       /* { match = { domainSuffix = [ "anthropic.com" "claude.ai" ]; };  target = "group:Claude"; } */
       /* { match = { geosite = [ "netflix" ]; };                          target = "group:Netflix"; } */
+      /* { match = { geosite = [ "youtube" ]; };                          target = "group:YouTube"; } */
+      /* { match = { geosite = [ "github" ]; };                           target = "group:GitHub"; } */
     ];
   };
 

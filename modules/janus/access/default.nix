@@ -85,7 +85,7 @@ in {
 
     environment.systemPackages = lib.optional cfg.cli.enable (pkgs.writeShellApplication {
       name = "janus";
-      runtimeInputs = with pkgs; [jq iproute2 nftables vnstat coreutils systemd util-linux];
+      runtimeInputs = with pkgs; [jq iproute2 nftables vnstat coreutils systemd util-linux gnutar];
       text = builtins.readFile ../../../pkgs/janus.sh;
     });
   };

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# janus.proxy option types and structural assertions. The engine is not rendered yet.
+# janus.proxy option types and structural assertions. Rendering is modules/janus/proxy/lower.nix.
 # docs/07, docs/08 §6.
 {
   config,
@@ -24,6 +24,8 @@
     || target == "block"
     || (group != null && (group == "Auto" || cfg.groups ? ${group}));
 in {
+  imports = [./lower.nix];
+
   options.janus.proxy = {
     enable = mkOption {
       type = types.bool;
@@ -56,7 +58,7 @@ in {
           urlSecret = mkOption {
             type = types.nullOr types.str;
             default = null;
-            description = "sops secret name of the subscription URL.";
+            description = "sops secret name of the subscription URL. The router reads /run/secrets/<name>. In a fleet repo the ciphertext file is secrets/<name>.";
           };
           format = mkOption {
             type = types.enum ["auto" "share-links" "clash" "sing-box"];
@@ -66,7 +68,7 @@ in {
           refresh = mkOption {
             type = types.str;
             default = "6h";
-            description = "Refresh interval or cron expression.";
+            description = "Refresh interval (Nh, Nm, weekly, daily, hourly) or a five-field cron expression whose day fields are *.";
           };
           userAgent = mkOption {
             type = types.nullOr types.str;
@@ -101,7 +103,7 @@ in {
           nameFilter = mkOption {
             type = types.nullOr types.str;
             default = null;
-            description = "Matcher that drops junk entries.";
+            description = "Regex that drops junk node names. A name that does not match is kept out of the snapshot.";
           };
         };
       });
@@ -430,12 +432,17 @@ in {
     geodata.refresh = mkOption {
       type = types.str;
       default = "weekly";
-      description = "Geo data refresh interval.";
+      description = "Geo data refresh interval (Nh, Nm, weekly, daily, hourly) or a five-field cron expression whose day fields are *.";
     };
     geodata.sources = mkOption {
       type = types.attrs;
       default = {};
       description = "Geo data sources. Empty uses the release defaults.";
+    };
+    geodata.hashes = mkOption {
+      type = types.attrsOf types.str;
+      default = {};
+      description = "sha256 pins for Geo rule-set tags. These override the built-in pins. A referenced tag with no pin is not fetched at build time.";
     };
     engineSettings = mkOption {
       type = types.attrs;
@@ -493,12 +500,28 @@ in {
             message = "janus.proxy.nodes.${name} has an inline password. Use a file or janus.security.allowInlineSecrets.";
           }
         ]
-      ) (lib.attrNames cfg.nodes);
-
-    warnings =
-      lib.optional cfg.enable "janus.proxy.enable is set. The engine renderer is not implemented yet."
-      ++ lib.optional (lib.any (lan: lan.ipv6.mode == "delegated") (lib.attrValues config.janus.network.lans) && (cfg.mode == "rule-based" || cfg.mode == "proxy-all")) ''
-        A LAN uses ipv6.mode = delegated while the traffic mode is ${cfg.mode}. IPv6 interception is not implemented yet, so this can leak.
-      '';
+      ) (lib.attrNames cfg.nodes)
+      ++ lib.mapAttrsToList (name: group: {
+        assertion = cfg.engine != "sing-box" || !(lib.elem group.strategy ["fallback" "load-balance"]);
+        message = "janus.proxy.groups.${name}.strategy ${group.strategy} is not expressible by sing-box (ADR-0006).";
+      })
+      cfg.groups
+      ++ [
+        {
+          assertion = !cfg.enable || cfg.engine != "xray";
+          message = "janus.proxy.engine = xray is phase 3 (docs/13-roadmap.md).";
+        }
+        {
+          assertion = cfg.egressWan == null || config.janus.network.wans ? ${cfg.egressWan};
+          message = "janus.proxy.egressWan '${toString cfg.egressWan}' is not a WAN.";
+        }
+      ]
+      ++ lib.concatMap (rule:
+        map (lan: {
+          assertion = config.janus.network.lans ? ${lan};
+          message = "janus.proxy.rules sourceLan '${lan}' is not a LAN.";
+        })
+        rule.match.sourceLan)
+      cfg.rules;
   };
 }

@@ -1,10 +1,10 @@
-# 18 ˇˇˇ Decisions
+# 18 ùùù Decisions
 
 | Field | Value |
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-09-29 |
+| Last updated | 2026-09-30 |
 
 A row here is a choice that binds implementation and is not an ADR. The
 cited requirement or design section is the text that binds. An accepted
@@ -50,6 +50,7 @@ Undecided rows are open. Implementation does not invent an answer for them.
 | D-0027 | `janus` runs on the router. `janus-build` runs on the build host. | *16* |
 | D-0028 | The license is Apache-2.0. User-facing text is English, then Russian, then Persian. | `LICENSE`, *00* ?9 |
 | D-0029 | The Yanyu Janus image uses Limine on legacy BIOS and GPT. The measured OpenWrt install uses GRUB. UEFI and systemd-boot do not apply. | *10* ?3.1, *05* ?2, *09* ?4 |
+| D-0030 | Proxied LAN traffic, other than private destinations and traffic to the router, is marked `0x4a01` and looked up in table 2022. The configured IPv6 fake-IP range is not private, and port 53 is not marked `0x4a01`. While the engine is down and `failMode` is `closed`, that table's default is a blackhole. While the engine is up, the default is `dev tun0`. Engine egress stays mark `0x4a` and is not looked up in table 2022. TCP/53 is redirected to `[::]:5353`. UDP/53 is tproxied there with mark `0x4a02`, looked up in table 2023 (`local default dev lo`), including while the engine is down. Refresh SOCKS listens on `127.0.0.1:2080` and the Clash API on `127.0.0.1:9090`. A rule whose target is `direct` because of a domain list is enforced by the engine, so it drops with the engine; the private-range exception is in nftables and stays direct. | ADR-0011, ADR-0016, *07* |
 
 ## 2. Undecided
 

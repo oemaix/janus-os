@@ -12,8 +12,8 @@ The manual and the definition documents are in this repository. The router
 image boots in a VM. Image profiles exist for the NanoPi R4S, the Le
 Potato, the Raspberry Pi Zero 2 W, and the Yanyu STX-R19F (Limine on
 legacy BIOS). `janus` and
-`janus-build` implement the phase 1 commands. Proxy, fleet, and deploy
-are not implemented yet. A development
+`janus-build` implement the phase 1 commands, plus proxy, DNS, fleet,
+status, and backup. Deploy is not implemented yet. A development
 shell exists for people working on the source: from the repository root,
 run `nix develop`.
 

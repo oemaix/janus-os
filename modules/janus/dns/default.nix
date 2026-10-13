@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# janus.dns option types. Rendering into the engine is phase 2. docs/07 §7, docs/08 §7.
+# janus.dns option types. The proxy module renders this policy into sing-box. docs/07 §7, docs/08 §7.
 {lib, ...}: let
   inherit (lib) mkOption types;
 in {

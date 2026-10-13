@@ -24,7 +24,14 @@
           then "unknown"
           else janusConfigRevision;
         board = config.janus.hardware.board;
-        subscriptions = {};
+        subscriptions =
+          lib.mapAttrs (_: sub: {
+            format = sub.format;
+            via = sub.via;
+            refresh = sub.refresh;
+            secret = sub.urlSecret != null;
+          })
+          config.janus.proxy.subscriptions;
       };
       passAsFile = ["metaJson"];
     } ''

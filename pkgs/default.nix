@@ -6,12 +6,12 @@
 }: let
   janus-cli = pkgs.writeShellApplication {
     name = "janus";
-    runtimeInputs = with pkgs; [jq iproute2 nftables vnstat coreutils systemd util-linux];
+    runtimeInputs = with pkgs; [jq iproute2 nftables vnstat coreutils systemd util-linux gnutar];
     text = builtins.readFile ./janus.sh;
   };
   janus-build = pkgs.writeShellApplication {
     name = "janus-build";
-    runtimeInputs = with pkgs; [git age nix coreutils gnused findutils];
+    runtimeInputs = with pkgs; [git age nix coreutils gnused findutils gawk jq openssh];
     text =
       ''
         TEMPLATE=${template}
