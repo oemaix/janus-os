@@ -1,4 +1,4 @@
-# docs/14. audit stays a later phase. deploy and fleet name janus-build.
+# docs/14. deploy and fleet name janus-build.
 usage() {
   echo "janus [--json] <command> [<args>]" >&2
   echo "See docs/14-cli.md." >&2
@@ -102,7 +102,11 @@ case "$cmd" in
     exit 2
     ;;
   audit)
-    later "$cmd${1:+ $1}"
+    if [ ! -x /etc/janus/bin/janus-audit ]; then
+      echo "janus audit is not in this image. Set janus.monitoring.audit.enable and rebuild." >&2
+      exit 2
+    fi
+    /etc/janus/bin/janus-audit "${1:-}"
     ;;
   proxy)
     sub=${1:-}

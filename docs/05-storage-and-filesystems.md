@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-09-29 |
+| Last updated | 2026-10-14 |
 
 ## 1. Objectives
 
@@ -41,6 +41,9 @@ Notes:
   (Raspberry Pi 2/3 firmware reads MBR; RPi 4 firmware handles GPT via
   hybrid MBR — board profile decides).
 * Partitions are discovered by label/PARTUUID, never by device name.
+* `janus.storage.slots.enable` (default false) inserts `JANUS_ROOT_B` and
+  `JANUS_NIX_B` before `JANUS_STATE`. The boot entry selects the slot.
+  See *09* §8.4.
 
 ## 3. Why f2fs
 
@@ -87,6 +90,7 @@ review — best effort; documented residual risk).
 │   ├── engine/              rendered runtime config, selection state
 │   ├── leases/              DHCPv4/v6 leases
 │   ├── monitoring/          vnstat db, flow spool
+│   ├── audit/               connection audit JSON Lines, when enabled
 │   ├── hmi/                 display state
 │   └── seed.stamp           hash of embedded snapshot last applied
 ├── log/journal/             optional persistent journal (capped)
@@ -139,8 +143,5 @@ MUST mount `/var` rw; no overlay-on-shared-partition option exists.
 
 ## 9. Out of scope / future
 
-* A/B image slots for atomic remote upgrades (see *13 — Roadmap*). The
-  one-partition-per-FS layout leaves room: slots would duplicate `ROOT`
-  and `NIX`.
 * Encrypted state partition (LUKS) — possible, low priority on a router
   without a keyboard.

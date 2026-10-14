@@ -30,7 +30,7 @@ Explanations are *19*. Accepted ADRs are `docs/adr/`.
 * sops-nix age key install path for PPPoE and Wi-Fi secrets.
 * Boards (Tier 1): NanoPi R4S, Raspberry Pi Zero 2 W, Le Potato,
   Yanyu STX-R19F. 
-* Monitoring: counters + vnstat. No connection audit yet.
+* Monitoring: counters + vnstat. The connection audit is FR-MON-007.
 
 ### Phase 2 — Circumvention
 
@@ -58,16 +58,16 @@ Explanations are *19*. Accepted ADRs are `docs/adr/`.
 ### After 1.0
 
 * WAN VLAN, `iptv` role, IGMP proxy.
-* Connection audit log (FR-MON-007), JSON Lines.
+* Connection audit log (FR-MON-007), JSON Lines. Implemented; see Progress.
 
 ### Phase 4 — Polish
 
 * HMI daemon. The interaction model is *15*. The first profile is the Waveshare 1.3" OLED HAT (*10* §4.6).
 * Flow export (IPFIX), Prometheus endpoint.
 * VisionFive 2, RPi 2 (Tier 3).
-* A/B image slots.
+* A/B image slots. Implemented; see Progress.
 * Maintenance page limited to status, maintenance actions, and hot overrides.
-* Expand `manual/` (English, Russian, Persian).
+* Expand `manual/` (English, Russian, Persian). The operator guide covers build, flash, deploy, audit, and A/B slots.
 * Optional local configuration wizard, a front end for the build-host commands in *16*. No hosted build service.
 
 ## 2. Progress
@@ -130,10 +130,15 @@ tree does not mean that behavior exists. Stubs are not finished features.
   its health targets fail.
 * Tailscale and optional WireGuard join the `mgmt` zone. There is no
   reverse SSH.
+* Connection audit (FR-MON-007) records metadata as JSON Lines on the
+  state partition when `janus.monitoring.audit.enable` is set. `janus audit`
+  starts and stops recording without a rebuild.
+* `janus.storage.slots.enable` duplicates `ROOT` and `NIX`. `janus-build
+  deploy` then writes the inactive slot and toggles the boot entry (*09* §8.4).
 
 ### Not done
 
-* `iptv` and IGMP stay after 1.0. `janus audit` stays after 1.0.
+* `iptv` and IGMP stay after 1.0.
 * The age key is not on the image. The first boot cannot decrypt until
   `janus secrets install-age-key` has written `/var/lib/janus/secrets/age.key`.
   A `urlSecret` subscription is an empty snapshot until that key is

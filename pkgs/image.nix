@@ -38,8 +38,14 @@
   # Legacy BIOS via Limine. Needs the boot partition to start at 2 MiB
   # or later so partition 5 can hold Limine stage 2. docs/10 §3.1.
   limineBios ? false,
+  # Duplicate ROOT and NIX. Partition 5 stays free for the Limine BIOS gap.
+  slots ? false,
 }: let
   limineBoot = import ./limine-boot.nix {inherit limine;};
+  slotsFlag =
+    if slots
+    then "1"
+    else "0";
 in
   stdenvNoCC.mkDerivation {
     name = "janus-${hostName}-image";
@@ -76,10 +82,17 @@ in
       hostName
       ;
 
-    passthru = lib.optionalAttrs limineBios {
-      limineConfigScript = limineBoot.configScript;
-      limineBiosPartitionScript = limineBoot.biosPartitionScript;
-    };
+    slots = slotsFlag;
+    passthru =
+      {
+        inherit slots;
+        rootBUuid = "4a414e55-5300-4000-8000-000000000006";
+        nixBUuid = "4a414e55-5300-4000-8000-000000000007";
+      }
+      // lib.optionalAttrs limineBios {
+        limineConfigScript = limineBoot.configScript;
+        limineBiosPartitionScript = limineBoot.biosPartitionScript;
+      };
 
     # The Nix database is loaded below with NIX_STATE_DIR inside the image tree.
     requiredSystemFeatures = [];
@@ -149,6 +162,10 @@ in
       else
         nix_mib=$(make_f2fs "$nixLabel" nixfs nix.img 64 "$nixSlackPercent" "")
       fi
+      if [ "$slots" = 1 ]; then
+        make_f2fs "''${rootLabel}_B" rootfs root-b.img 0 0 "$root_mib" >/dev/null
+        make_f2fs "''${nixLabel}_B" nixfs nix-b.img 0 0 "$nix_mib" >/dev/null
+      fi
 
       truncate -s "''${stateMiB}M" state.img
       mkfs.f2fs -f -l "$stateLabel" state.img
@@ -181,6 +198,37 @@ in
         ${bootExtra}
       )
       ${lib.optionalString limineBios limineBoot.configScript}
+      if [ "$slots" = 1 ]; then
+        cp -L bootfiles/vmlinuz bootfiles/vmlinuz-b
+        cp -L bootfiles/initrd bootfiles/initrd-b
+        params_a="$params janus.slot=a"
+        params_b="$params janus.slot=b"
+        printf '%s\n' "$params_a" > bootfiles/cmdline.txt
+        printf '%s\n' "$params_a" > bootfiles/cmdline-a.txt
+        printf '%s\n' "$params_b" > bootfiles/cmdline-b.txt
+        printf 'a\n' > bootfiles/slot
+        fdt_line=$(sed -n '/FDT /{p;q;}' bootfiles/extlinux.conf || true)
+        {
+          printf '%s\n' "DEFAULT slot-a" "LABEL slot-a" "  LINUX /vmlinuz" "  INITRD /initrd"
+          printf '  APPEND %s\n' "$params_a"
+          if [ -n "$fdt_line" ]; then printf '%s\n' "$fdt_line"; fi
+          printf '%s\n' "LABEL slot-b" "  LINUX /vmlinuz-b" "  INITRD /initrd-b"
+          printf '  APPEND %s\n' "$params_b"
+          if [ -n "$fdt_line" ]; then printf '%s\n' "$fdt_line"; fi
+        } > bootfiles/extlinux.conf
+        cp bootfiles/extlinux.conf bootfiles/extlinux/extlinux.conf
+        if [ -f bootfiles/limine.conf ]; then
+          {
+            printf '%s\n' "timeout: 0" "serial: yes" "editor_enabled: no" "/slot-a"
+            printf '%s\n' "    protocol: linux" "    kernel_path: boot():/vmlinuz"
+            printf '    cmdline: %s\n' "$params_a"
+            printf '%s\n' "    module_path: boot():/initrd" "/slot-b"
+            printf '%s\n' "    protocol: linux" "    kernel_path: boot():/vmlinuz-b"
+            printf '    cmdline: %s\n' "$params_b"
+            printf '%s\n' "    module_path: boot():/initrd-b"
+          } > bootfiles/limine.conf
+        fi
+      fi
 
       truncate -s "''${bootMiB}M" boot.img
       mkfs.vfat -F 32 -n "$bootLabel" boot.img
@@ -190,13 +238,32 @@ in
       boot_start=$start_mib
       root_start=$(( boot_start + bootMiB ))
       nix_start=$(( root_start + root_mib ))
-      state_start=$(( nix_start + nix_mib ))
+      if [ "$slots" = 1 ]; then
+        root_b_start=$(( nix_start + nix_mib ))
+        nix_b_start=$(( root_b_start + root_mib ))
+        state_start=$(( nix_b_start + nix_mib ))
+        nix_end=$root_b_start
+      else
+        state_start=$(( nix_start + nix_mib ))
+        nix_end=$state_start
+      fi
       state_end=$(( state_start + stateMiB ))
       # One MiB past the last partition holds the backup GPT header.
       total_mib=$(( state_end + 1 ))
       truncate -s "''${total_mib}M" disk.img
 
       sec() { echo $(( $1 * 2048 )); }
+      slot_args=()
+      if [ "$slots" = 1 ]; then
+        slot_args=(
+          -n "6:$(sec "$root_b_start"):$(( $(sec "$nix_b_start") - 1 ))"
+          -c 6:JANUS_ROOT_B -t 6:8300
+          -u 6:4a414e55-5300-4000-8000-000000000006
+          -n "7:$(sec "$nix_b_start"):$(( $(sec "$state_start") - 1 ))"
+          -c 7:JANUS_NIX_B -t 7:8300
+          -u 7:4a414e55-5300-4000-8000-000000000007
+        )
+      fi
       sgdisk -o \
         -n "1:$(sec "$boot_start"):$(( $(sec "$root_start") - 1 ))" \
         -c "1:$bootLabel" -t 1:EF00 \
@@ -204,9 +271,10 @@ in
         -n "2:$(sec "$root_start"):$(( $(sec "$nix_start") - 1 ))" \
         -c "2:$rootLabel" -t 2:8300 \
         -u 2:4a414e55-5300-4000-8000-000000000002 \
-        -n "3:$(sec "$nix_start"):$(( $(sec "$state_start") - 1 ))" \
+        -n "3:$(sec "$nix_start"):$(( $(sec "$nix_end") - 1 ))" \
         -c "3:$nixLabel" -t 3:8300 \
         -u 3:4a414e55-5300-4000-8000-000000000003 \
+        "''${slot_args[@]}" \
         -n "4:$(sec "$state_start"):$(( $(sec "$state_end") - 1 ))" \
         -c "4:$stateLabel" -t 4:8300 \
         -u 4:4a414e55-5300-4000-8000-000000000004 \
@@ -215,6 +283,10 @@ in
       dd if=boot.img of=disk.img bs=1M seek="$boot_start" conv=notrunc status=none
       dd if=root.img of=disk.img bs=1M seek="$root_start" conv=notrunc status=none
       dd if=nix.img of=disk.img bs=1M seek="$nix_start" conv=notrunc status=none
+      if [ "$slots" = 1 ]; then
+        dd if=root-b.img of=disk.img bs=1M seek="$root_b_start" conv=notrunc status=none
+        dd if=nix-b.img of=disk.img bs=1M seek="$nix_b_start" conv=notrunc status=none
+      fi
       dd if=state.img of=disk.img bs=1M seek="$state_start" conv=notrunc status=none
 
       ${firmwareInstall}

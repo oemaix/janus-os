@@ -707,4 +707,89 @@ in {
       grep -q 'old cmdline' "$TMPDIR/boot/cmdline.txt"
       echo ok > "$out"
     '';
+  eval-audit = let
+    os = mk [
+      base
+      {
+        janus.monitoring.audit.enable = true;
+        janus.network.lans.lan = {
+          members = ["lan"];
+          address = "192.168.10.1";
+          prefixLength = 24;
+        };
+      }
+    ];
+    bin = os.config.environment.etc."janus/bin/janus-audit".source;
+    spec = os.config.environment.etc."janus/audit.json".text;
+  in
+    pkgs.runCommand "eval-audit" {
+      nativeBuildInputs = [pkgs.jq];
+    } ''
+      set -eu
+      printf '%s\n' ${lib.escapeShellArg spec} | jq -e '.enable == true and (.cidrs | index("192.168.10.1/24"))' >/dev/null
+      printf '%s\n' '[DESTROY] tcp 6 src=192.168.10.20 dst=203.0.113.9 sport=40000 dport=443 packets=2 bytes=40 src=203.0.113.9 dst=192.168.10.20 sport=443 dport=40000 packets=2 bytes=60' | ${bin} parse > one.json
+      jq -e '.proto == "tcp" and .src == "192.168.10.20" and .dst == "203.0.113.9" and .sport == 40000 and .dport == 443 and .bytes == 100 and .domain == null' one.json >/dev/null
+      dir=$TMPDIR/audit
+      mkdir -p "$dir"
+      jq -nc --arg path "$dir/log.jsonl" '{enable:true, retention:"7d", path:$path, cidrs:["192.168.10.1/24"]}' > "$dir/audit.json"
+      {
+        printf '%s\n' '[DESTROY] tcp 6 src=10.0.0.8 dst=203.0.113.9 sport=1 dport=443 packets=1 bytes=1 src=203.0.113.9 dst=10.0.0.8 sport=443 dport=1 packets=1 bytes=1'
+        printf '%s\n' '[DESTROY] tcp 6 src=192.168.10.20 dst=203.0.113.9 sport=40000 dport=443 packets=2 bytes=40 src=203.0.113.9 dst=192.168.10.20 sport=443 dport=40000 packets=2 bytes=60'
+      } | JANUS_AUDIT_JSON=$dir/audit.json JANUS_AUDIT_FEED=1 ${bin} record
+      test "$(wc -l < "$dir/log.jsonl" | tr -d '[:space:]')" = 1
+      jq -e '.src == "192.168.10.20"' "$dir/log.jsonl" >/dev/null
+      echo ok > "$out"
+    '';
+  eval-slots = let
+    os = mk [
+      base
+      {janus.storage.slots.enable = true;}
+    ];
+  in
+    pkgs.runCommand "eval-slots" {} ''
+      test ${lib.escapeShellArg os.config.fileSystems."/".device} = /dev/disk/by-janus/root
+      test ${lib.escapeShellArg os.config.fileSystems."/nix".device} = /dev/disk/by-janus/nix
+      test ${
+        if os.config.system.build.janusImage.slots
+        then "yes"
+        else "no"
+      } = yes
+      echo ${lib.escapeShellArg os.config.boot.initrd.systemd.services.janus-slot-select.script} | grep -q 4a414e55-5300-4000-8000-000000000006
+      echo ${lib.escapeShellArg os.config.environment.etc."janus/slots.json".text} | grep -q 4a414e55-5300-4000-8000-000000000007
+      test -n ${lib.escapeShellArg os.config.system.build.janusSlotImages.name}
+      echo ok > "$out"
+    '';
+  eval-boot-slot =
+    pkgs.runCommand "eval-boot-slot" {
+      nativeBuildInputs = [pkgs.bash pkgs.coreutils pkgs.gnused];
+    } ''
+      set -eu
+      store=$TMPDIR/nix
+      closure=/nix/store/closure
+      mkdir -p "$store''${closure#/nix}" "$TMPDIR/boot/extlinux" "$TMPDIR/state"
+      printf 'console=ttyS0\n' > "$store''${closure#/nix}/kernel-params"
+      printf 'new-kernel\n' > "$store''${closure#/nix}/kernel"
+      printf 'new-initrd\n' > "$store''${closure#/nix}/initrd"
+      printf 'old-kernel\n' > "$TMPDIR/boot/vmlinuz"
+      printf 'old-initrd\n' > "$TMPDIR/boot/initrd"
+      printf 'a\n' > "$TMPDIR/boot/slot"
+      printf '%s\n' 'DEFAULT slot-a' 'LABEL slot-a' '  LINUX /vmlinuz' '  INITRD /initrd' '  APPEND old-a' 'LABEL slot-b' '  LINUX /vmlinuz-b' '  INITRD /initrd-b' '  APPEND old-b' > "$TMPDIR/boot/extlinux.conf"
+      printf '%s\n' 'timeout: 0' '/slot-a' '    cmdline: old-a' '/slot-b' '    cmdline: old-b' > "$TMPDIR/boot/limine.conf"
+      printf '%s\n' 'kernel=vmlinuz' > "$TMPDIR/boot/config.txt"
+      printf '%s\n' 'old-a' > "$TMPDIR/boot/cmdline-a.txt"
+      JANUS_BOOT_DIR=$TMPDIR/boot JANUS_STATE_DIR=$TMPDIR/state JANUS_SLOT_STORE=$store bash ${self.packages.${pkgs.stdenv.hostPlatform.system}.bootInstall} install-slot "$closure" b
+      grep -q new-kernel "$TMPDIR/boot/vmlinuz-b"
+      grep -q old-kernel "$TMPDIR/boot/vmlinuz"
+      grep -q '^DEFAULT slot-b$' "$TMPDIR/boot/extlinux.conf"
+      grep -q 'janus.slot=b' "$TMPDIR/boot/cmdline.txt"
+      test "$(grep -m1 '^/slot-' "$TMPDIR/boot/limine.conf")" = /slot-b
+      grep -q '^kernel=vmlinuz-b$' "$TMPDIR/boot/config.txt"
+      test "$(tr -d '[:space:]' < "$TMPDIR/boot/slot")" = b
+      JANUS_BOOT_DIR=$TMPDIR/boot JANUS_STATE_DIR=$TMPDIR/state bash ${self.packages.${pkgs.stdenv.hostPlatform.system}.bootInstall} restore-slot
+      test "$(tr -d '[:space:]' < "$TMPDIR/boot/slot")" = a
+      grep -q '^DEFAULT slot-a$' "$TMPDIR/boot/extlinux.conf"
+      test "$(grep -m1 '^/slot-' "$TMPDIR/boot/limine.conf")" = /slot-a
+      grep -q '^kernel=vmlinuz$' "$TMPDIR/boot/config.txt"
+      echo ok > "$out"
+    '';
 }

@@ -29,9 +29,14 @@ in {
           exit 0
         fi
         if [ -e "$booted" ]; then
-          mount -o remount,rw /nix || true
-          ${pkgs.bash}/bin/bash ${bootScript} restore
-          ${pkgs.nix}/bin/nix-env -p /nix/var/nix/profiles/system --rollback
+          if [ -f /etc/janus/slots.json ] && ${pkgs.jq}/bin/jq -e '.enable == true' /etc/janus/slots.json >/dev/null; then
+            mount -o remount,rw /boot || true
+            ${pkgs.bash}/bin/bash ${bootScript} restore-slot
+          else
+            mount -o remount,rw /nix || true
+            ${pkgs.bash}/bin/bash ${bootScript} restore
+            ${pkgs.nix}/bin/nix-env -p /nix/var/nix/profiles/system --rollback
+          fi
           rm -f "$pending" "$booted"
           ${pkgs.systemd}/bin/systemctl reboot
           exit 0

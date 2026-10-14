@@ -233,10 +233,25 @@ decrypts.
 repo that built the image. `fleet apply` uses it to see what `HEAD` would
 change beyond the projection.
 
-### 8.4 A/B slots (P3)
+### 8.4 A/B slots
 
-Duplicate `ROOT`/`NIX` partitions with a boot-side toggle; enables atomic,
-power-safe upgrades over the tunnel. See *13 — Roadmap*.
+`janus.storage.slots.enable` (default false) duplicates `ROOT` and `NIX`.
+`JANUS_STATE` stays one partition and stays last, so it can still grow.
+The first flash writes the same system into both slots and boots slot A.
+Partition 5 stays the Limine BIOS gap. Slot B is GPT partitions 6 and 7.
+
+`janus-build deploy` on a host with the option set writes the new root
+and store images onto the inactive slot, updates that slot's kernel and
+command line, and then changes the boot entry. A power loss before that
+change leaves the active slot bootable. The state partition is shared.
+`janus-build deploy --confirm` marks the boot good. Without it, the next
+boot changes the boot entry back. The other slot's files stay where they
+are.
+
+The slot partitions are the size fixed by the flashed image. If the new
+images do not fit, deploy stops and the operator flashes a larger image.
+A disk that was flashed without the option has no inactive slot; deploy
+says so and does not resize the table.
 
 ## 9. Testing strategy
 

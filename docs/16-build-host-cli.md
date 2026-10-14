@@ -159,7 +159,7 @@ The tree must be a git repository. These commands do not commit.
 
 | Command | Effect |
 |---------|--------|
-| `janus-build deploy <host>` | Remote closure deploy (*09* §8.2). |
+| `janus-build deploy <host>` | Remote closure deploy (*09* §8.2). When `janus.storage.slots.enable` is true, write the inactive ROOT and NIX slot and then toggle the boot entry (*09* §8.4). |
 | `janus-build deploy --preserve-state <host>` | Copy the state set in *09* §8.1 to the build host. Does not flash. The operator flashes, then sends the archive to `janus restore`. |
 | `janus-build deploy --confirm <host>` | Mark the booted generation good after a closure deploy. |
 | `janus-build deploy --age-key <host>` | Install that host's age private key from stdin (§2). |

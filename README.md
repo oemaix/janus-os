@@ -1,8 +1,8 @@
 # Janus OS
 
 **This project is in its infancy.** The VM image boots. The phase 1
-router core is in the tree, and so are the sing-box proxy, DNS policy,
-and fleet commands. Deploy is not implemented.
+router core is in the tree, and so are the proxy, DNS policy, fleet
+commands, closure deploy, the connection audit log, and A/B image slots.
 What is specified, and what is done, is
 [docs/13-roadmap.md](docs/13-roadmap.md).
 

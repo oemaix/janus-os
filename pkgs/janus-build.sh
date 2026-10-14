@@ -68,6 +68,56 @@ ssh_to() {
   ssh -o BatchMode=yes -o ConnectTimeout=8 "$dest" "$@"
 }
 
+slot_fits() {
+  addr=$1
+  uuid=$2
+  img=$3
+  part=$(ssh_to "$addr" "blockdev --getsize64 /dev/disk/by-partuuid/${uuid}")
+  part=$(printf '%s' "$part" | tr -d '[:space:]')
+  bytes=$(wc -c < "$img")
+  bytes=$(printf '%s' "$bytes" | tr -d '[:space:]')
+  if [ "$bytes" -gt "$part" ]; then
+    echo "janus-build: the new slot image does not fit the partition. Flash a larger image." >&2
+    exit 1
+  fi
+}
+
+deploy_slots() {
+  host=$1
+  addr=$2
+  meta=$(nix eval --raw ".#nixosConfigurations.${host}.config.environment.etc.\"janus/slots.json\".text")
+  imgs=$(nix build --print-out-paths ".#nixosConfigurations.${host}.config.system.build.janusSlotImages")
+  closure=$(tr -d '[:space:]' < "$imgs/toplevel")
+  active=$(ssh_to "$addr" "if [ -f /boot/slot ]; then tr -d '[:space:]' < /boot/slot; else printf a; fi")
+  if [ "$active" = b ]; then
+    next=a
+    root_uuid=$(printf '%s\n' "$meta" | jq -r .rootA)
+    nix_uuid=$(printf '%s\n' "$meta" | jq -r .nixA)
+    root_img="$imgs/root-a.img"
+    nix_img="$imgs/nix-a.img"
+  else
+    next=b
+    root_uuid=$(printf '%s\n' "$meta" | jq -r .rootB)
+    nix_uuid=$(printf '%s\n' "$meta" | jq -r .nixB)
+    root_img="$imgs/root-b.img"
+    nix_img="$imgs/nix-b.img"
+  fi
+  if ! ssh_to "$addr" "test -b /dev/disk/by-partuuid/${root_uuid}"; then
+    echo "janus-build: this disk has no inactive slot. Flash an image built with janus.storage.slots.enable." >&2
+    exit 1
+  fi
+  slot_fits "$addr" "$root_uuid" "$root_img"
+  slot_fits "$addr" "$nix_uuid" "$nix_img"
+  ssh_to "$addr" "mount -o remount,rw /boot || true"
+  ssh_to "$addr" "dd of=/dev/disk/by-partuuid/${root_uuid} bs=1M conv=fsync status=none" < "$root_img"
+  ssh_to "$addr" "dd of=/dev/disk/by-partuuid/${nix_uuid} bs=1M conv=fsync status=none" < "$nix_img"
+  if ! ssh_to "$addr" "mkdir -p /mnt/janus-slot-nix && mount -o ro /dev/disk/by-partuuid/${nix_uuid} /mnt/janus-slot-nix && JANUS_SLOT_STORE=/mnt/janus-slot-nix bash -s -- install-slot ${closure} ${next}" < "$JANUS_BOOT_INSTALL"; then
+    ssh_to "$addr" "umount /mnt/janus-slot-nix" || true
+    exit 1
+  fi
+  ssh_to "$addr" "umount /mnt/janus-slot-nix || true; install -d -m 0755 /var/lib/janus && : > /var/lib/janus/deploy-pending && rm -f /var/lib/janus/deploy-confirmed /var/lib/janus/deploy-booted && mount -o remount,ro /boot || true; systemctl reboot"
+}
+
 require_clean() {
   if [ -n "$(git status --porcelain)" ]; then
     echo "The git tree is not clean." >&2
@@ -729,6 +779,10 @@ case "$cmd" in
       path="./backup/${host}-state-${utc}.tar"
       ssh_to "$addr" "list=\$(mktemp); for p in var/lib/janus/etc var/lib/janus/secrets var/lib/janus/subscriptions var/lib/janus/geodata var/lib/janus/overrides.json var/lib/janus/engine/selection.json; do if [ -e \"/\$p\" ]; then printf '%s\n' \"\$p\" >> \"\$list\"; fi; done; if [ ! -s \"\$list\" ]; then rm -f \"\$list\"; exit 1; fi; tar -C / -cf - -T \"\$list\"; rm -f \"\$list\"" > "$path"
       printf '%s\n' "$path"
+      exit 0
+    fi
+    if [ "$(nix eval --json ".#nixosConfigurations.${host}.config.janus.storage.slots.enable")" = true ]; then
+      deploy_slots "$host" "$addr"
       exit 0
     fi
     closure=$(nix build --print-out-paths ".#nixosConfigurations.${host}.config.system.build.toplevel")

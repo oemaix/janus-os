@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# janus.monitoring. Counters use vnstat. Flows and the audit log are later. docs/08 §8.
+# janus.monitoring. Counters use vnstat. The audit log is FR-MON-007. docs/08 §8.
 {
   config,
   lib,
@@ -7,6 +7,7 @@
 }: let
   inherit (lib) mkOption types;
 in {
+  imports = [./audit.nix];
   options.janus.monitoring = {
     enable = mkOption {
       type = types.bool;

@@ -10,6 +10,11 @@
   cfg = config.janus.storage;
   # GPT partition GUID. It survives a wiped filesystem, unlike by-label.
   statePartUuid = "4a414e55-5300-4000-8000-000000000004";
+  rootPartUuid = "4a414e55-5300-4000-8000-000000000002";
+  nixPartUuid = "4a414e55-5300-4000-8000-000000000003";
+  # 000000000005 is the Limine BIOS gap. Slot B uses the next two.
+  rootBPartUuid = "4a414e55-5300-4000-8000-000000000006";
+  nixBPartUuid = "4a414e55-5300-4000-8000-000000000007";
 
   sizeMiB = s: let
     m = builtins.match "([0-9]+)([KMGT]i?B?)" s;
@@ -153,6 +158,11 @@ in {
       default = 0;
       description = "Mebibytes reserved before the boot partition, after the leading 1 MiB. Firmware written in raw sectors leaves this gap unpartitioned. A bootloader that keeps a boot stage of its own uses the gap as an extra unformatted partition.";
     };
+    slots.enable = mkOption {
+      type = types.bool;
+      default = false;
+      description = "Duplicate ROOT and NIX. janus-build deploy writes the inactive slot, then the boot entry toggles. docs/09 §8.4.";
+    };
   };
 
   config = {
@@ -204,6 +214,14 @@ in {
           options = ["nosuid" "nodev"];
         };
       }
+      (mkIf cfg.slots.enable {
+        "/" = {
+          device = lib.mkForce "/dev/disk/by-janus/root";
+        };
+        "/nix" = {
+          device = lib.mkForce "/dev/disk/by-janus/nix";
+        };
+      })
     ];
 
     # Store-generated /etc, immutable lower dir. Persistent files are bind-mounted
@@ -214,6 +232,52 @@ in {
     systemd.sysusers.enable = true;
     boot.initrd.supportedFilesystems = ["f2fs" "vfat"];
     boot.initrd.availableKernelModules = ["f2fs" "vfat" "nls_cp437" "nls_iso8859_1"];
+
+    boot.initrd.systemd.services.janus-slot-select = mkIf cfg.slots.enable {
+      description = "Point / and /nix at the active image slot";
+      requiredBy = ["sysroot.mount"];
+      before = ["sysroot.mount"];
+      after = ["systemd-udev-trigger.service"];
+      unitConfig.DefaultDependencies = false;
+      path = [pkgs.coreutils pkgs.gnugrep];
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+      };
+      script = ''
+        set -eu
+        slot=a
+        for arg in $(cat /proc/cmdline); do
+          case "$arg" in
+            janus.slot=*) slot=''${arg#janus.slot=} ;;
+          esac
+        done
+        if [ "$slot" = b ]; then
+          root=${rootBPartUuid}
+          nixp=${nixBPartUuid}
+        else
+          root=${rootPartUuid}
+          nixp=${nixPartUuid}
+        fi
+        mkdir -p /dev/disk/by-janus
+        for _ in $(seq 1 50); do
+          [ -b "/dev/disk/by-partuuid/$root" ] && [ -b "/dev/disk/by-partuuid/$nixp" ] && break
+          sleep 0.1
+        done
+        ln -sfn "/dev/disk/by-partuuid/$root" /dev/disk/by-janus/root
+        ln -sfn "/dev/disk/by-partuuid/$nixp" /dev/disk/by-janus/nix
+      '';
+    };
+
+    environment.etc."janus/slots.json" = mkIf cfg.slots.enable {
+      text = builtins.toJSON {
+        enable = true;
+        rootA = rootPartUuid;
+        nixA = nixPartUuid;
+        rootB = rootBPartUuid;
+        nixB = nixBPartUuid;
+      };
+    };
 
     # Compilers and dev headers, not the runtime libgcc/libstdc++ that systemd needs.
     system.forbiddenDependenciesRegexes = [
@@ -482,6 +546,21 @@ in {
         dtbName = boardImage.dtbName or null;
         dtbSource = boardImage.dtbSource or null;
         limineBios = boardImage.limineBios or false;
+        slots = cfg.slots.enable;
       };
+
+    system.build.janusSlotImages = mkIf cfg.slots.enable (
+      (pkgs.callPackage ../../../pkgs/slot-images.nix {}) {
+        toplevel = config.system.build.toplevel;
+        closureInfo = pkgs.closureInfo {rootPaths = [config.system.build.toplevel];};
+        rootMinMiB = sizeMiB (cfg.layout.partitions.JANUS_ROOT.size or "64M");
+        nixSlackPercent = slackPercent cfg.layout.partitions.JANUS_NIX.slack;
+        nixSizeMode = janusNixPartition.mode;
+        nixExactMiB =
+          if janusNixPartition.exactMiB == null
+          then "0"
+          else toString janusNixPartition.exactMiB;
+      }
+    );
   };
 }

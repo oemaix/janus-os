@@ -38,7 +38,7 @@ Undecided rows are open. Implementation does not invent an answer for them.
 | D-0015 | `docs/` is the definition suite. `manual/` is the user guide. `llms.txt` points at `ai.md`. | *14*, *16* |
 | D-0016 | Tier 1 is Zero 2 W, Le Potato, NanoPi R4S, and Yanyu STX-R19F. Raspberry Pi 4 and Pi 400 are Tier 2. | *10* |
 | D-0017 | The VLAN model is general. 1.0 implements LAN VLANs. WAN VLAN, the `iptv` role, and IGMP are after 1.0. | FR-NET-005, FR-NET-014, FR-NET-020 |
-| D-0018 | A connection audit log is after 1.0, off unless configured, metadata only. | FR-MON-007 |
+| D-0018 | A connection audit log is off unless configured, metadata only, on the state partition. `janus audit stop` pauses it without a rebuild. | FR-MON-007 |
 | D-0019 | RTL8188CUS is a 2.4 GHz access point on in-tree `rtl8192cu`. | *10* ?4.4 |
 | D-0020 | The router shuts down on a low cell only while that cell is discharging, and only at the default voltages. | *10* ?4.5, FR-HW-008 |
 | D-0021 | The Waveshare panel is a Janus HMI profile. | *10* ?4.6 |

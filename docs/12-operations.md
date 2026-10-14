@@ -228,13 +228,15 @@ board does not back itself up to the git remote.
 * Local: `janus traffic`, `janus status`, HMI pages.
 * Remote (optional): IPFIX export to a collector in `mgmt`/LAN; Prometheus
   endpoint on `mgmt` zone; syslog forwarding via `journald` remote (P3).
-* Connection audit (FR-MON-007, after 1.0): `janus.monitoring.audit.enable`
-  includes it, default off. `janus audit start` and `janus audit stop`
-  pause it without a rebuild. `janus audit start` refuses when the
-  configuration did not include the feature. The file is JSON Lines
-  (one object per line). The log is metadata for the owner (for example,
-  checking whether a LAN device reports home to an unexpected network).
-  It is not a packet capture, and Janus does not analyse it on the board.
+* Connection audit (FR-MON-007): `janus.monitoring.audit.enable` includes
+  it, default off. With the switch on, recording starts at boot.
+  `janus audit stop` pauses it without a rebuild, and `janus audit start`
+  turns it back on. `janus audit start` exits 2 when the image was built
+  without the switch. The file is JSON Lines (one object per line) at
+  `/var/lib/janus/audit/connections.jsonl`. The log is metadata for the
+  owner (for example, checking whether a LAN device reports home to an
+  unexpected network). It is not a packet capture, and Janus does not
+  analyse it on the board.
 
 ## 9. Support bundle
 

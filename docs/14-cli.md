@@ -89,7 +89,7 @@ the build host does that (*16* §5).
 
 The age key is created on the build host by `janus-build secret keygen <host>` (*16*). This command installs the private key. It does not generate one. The build host does not keep a copy.
 
-## 5. Audit (after 1.0, FR-MON-007)
+## 5. Audit (FR-MON-007)
 
 | Command | Effect |
 |---------|--------|
