@@ -19,6 +19,13 @@ Read this file before answering a question about using Janus OS.
 - `janus.storage.slots.enable` defaults to false. With it set, deploy
   writes the inactive ROOT and NIX slot and then changes the boot entry.
   The state partition is shared. Confirm with `janus-build deploy --confirm`.
+- A Waveshare 1.3" OLED HAT on a Raspberry Pi Zero 2 W or a Raspberry Pi 3
+  is a status panel. It runs `janus proxy refresh`, `janus proxy select`,
+  `janus reboot`, and `janus reset --state --yes`. It does not edit
+  configuration, hot overrides, or secrets.
+- A mcuzone UPS at I²C `0x40` shows the cell in `janus status` and powers
+  the router off while that cell is discharging, at the thresholds in
+  docs/10 §4.5. Address `0x43` stays unarmed.
 - The router never evaluates Nix and never runs `nixos-rebuild`.
 - `docs/13-roadmap.md` says what the repository can already
   do. A placeholder module is not a finished feature.

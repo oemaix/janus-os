@@ -13,7 +13,10 @@ the Le Potato, the Raspberry Pi Zero 2 W, the Raspberry Pi 3 / 3+, and
 the Yanyu STX-R19F (Limine on legacy BIOS). `janus` and `janus-build`
 implement the phase 1 commands, plus proxy, DNS, fleet, status, backup,
 deploy, and the connection audit. On the board, `janus deploy` exits 2
-and names `janus-build`.
+and names `janus-build`. A Waveshare 1.3" OLED HAT on a Raspberry Pi
+Zero 2 W or a Raspberry Pi 3 shows status. From the panel you can refresh
+the proxy, select a node, reboot, or wipe state. A mcuzone UPS on that
+board can power it off while the cell is discharging.
 
 A development shell exists for people working on the source: from the
 repository root, run `nix develop`.
@@ -90,6 +93,37 @@ Payloads are not stored, and the board does not analyse the log.
 
 An empty interface list audits the proxied LANs. `audit.interfaces` names
 LANs to audit instead.
+
+## Status panel
+
+A Waveshare 1.3" OLED HAT on a Raspberry Pi Zero 2 W or a Raspberry Pi 3
+shows status. Name the peripheral in the host file:
+
+```
+janus.hardware.peripherals.panel = {
+  class = "hmi";
+  hmi.profile = "waveshare-1.3-oled-hat";
+};
+```
+
+The joystick changes page and row. The centre press confirms a tunnel
+node. KEY1 runs `janus proxy refresh`. Holding KEY3 for three seconds
+runs `janus reboot`. `hmi.keys.KEY1`, `hmi.keys.KEY2`, and `hmi.keys.KEY3`
+may be `refresh`, `reboot-hold`, `factory-reset`, or `unbound`.
+`factory-reset` runs `janus reset --state --yes`, which wipes the state
+partition and reboots. The panel does not change the configuration, hot
+overrides, or secrets. After a minute with no input the screen sleeps;
+the next press wakes the same page.
+
+## Battery
+
+A mcuzone Pi Zero UPS at I²C `0x40` shows the cell in `janus status`.
+While the cell is discharging, the router powers off if the voltage stays
+at or below 3.50 V for 60 seconds, or at or below 3.30 V for 10 seconds.
+At boot, a discharging cell already below 3.55 V powers off before the
+network starts. Charging, a current within 5 mA of zero, a missing
+sensor, and `power.shutdown.enable = false` leave the router running.
+The Waveshare address `0x43` stays unarmed and shows no readings.
 
 ## What the board does not do
 

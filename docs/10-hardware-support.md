@@ -187,7 +187,7 @@ stay visible in `janus status` either way.
 | Rule | Default |
 |------|---------|
 | Armed | Yes, when the peripheral's profile records which current sign means discharge. |
-| While charging, or current near zero | Do not shut down. A low cell on mains power must not take the router down. |
+| While charging, or current near zero | Do not shut down. Within 5 mA of zero is near zero. A low cell on mains power must not take the router down. |
 | No readings, or a failed sensor | Do not shut down. |
 | Warning | Bus voltage ≤ 3.60 V while discharging. Journal, and the HMI if present. |
 | Shutdown | ≤ 3.50 V for 60 s while discharging, then `systemctl poweroff`. |
@@ -201,7 +201,8 @@ discharging when the capture was taken, and `curr1_input` was negative
 (about −33 mA, shunt about −4 mV, bus about 4.108 V). For that profile a
 negative current means discharge, and shutdown may arm. The Waveshare
 board (`0x43`) has no capture. Its profile exposes nothing and does not
-arm.
+arm. On a Raspberry Pi the image enables I²C and installs
+`overlays/janus-ina219.dtbo` (a 0.1 Ω shunt, which matches that capture).
 
 ### 4.6 Waveshare 1.3" OLED HAT
 

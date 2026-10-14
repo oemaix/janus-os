@@ -33,12 +33,14 @@ in {
       bootExtra = ''
         cp ${fw}/bootcode.bin ${fw}/fixup*.dat ${fw}/start*.elf .
         cp ${dtb} bcm2710-rpi-zero-2-w.dtb
+        ${config.janus.board.bootScript}
         cat > config.txt << EOF
         arm_64bit=1
         enable_uart=1
         kernel=vmlinuz
         initramfs initrd followkernel
         device_tree=bcm2710-rpi-zero-2-w.dtb
+        ${config.janus.board.configTxt}
         EOF
       '';
     };

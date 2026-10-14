@@ -32,9 +32,15 @@
     # Ethernet modes do not take an APN. A qmi or mbim dongle does.
     # lte0 = { class = "wwan"; match.usbVendorProduct = "12d1:1506"; wwan.mode = "auto"; };
 
-    # A small OLED with two buttons.
-    # screen = { class = "hmi"; hmi.driver = "ssd1306";
-    #            hmi.buttons = { gpio17 = "cycle-group"; gpio27 = "refresh"; }; };
+    # Waveshare 1.3" OLED HAT. The board must be rpi-zero-2w or rpi3.
+    # screen = {
+    #   class = "hmi";
+    #   hmi.profile = "waveshare-1.3-oled-hat";
+    #   # hmi.keys.KEY3 = "factory-reset";
+    # };
+
+    # mcuzone Pi Zero UPS. On a Raspberry Pi the image enables I²C and the INA219.
+    # ups = { class = "power"; match.i2cAddress = "0x40"; };
   };
 
   ############################################################################

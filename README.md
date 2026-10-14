@@ -2,7 +2,8 @@
 
 **This project is in its infancy.** The VM image boots. The phase 1
 router core is in the tree, and so are the proxy, DNS policy, fleet
-commands, closure deploy, the connection audit log, and A/B image slots.
+commands, closure deploy, the connection audit log, A/B image slots, and
+the Waveshare 1.3" status panel, and battery shutdown for the mcuzone UPS.
 What is specified, and what is done, is
 [docs/13-roadmap.md](docs/13-roadmap.md).
 

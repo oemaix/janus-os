@@ -36,6 +36,7 @@ in {
       bootExtra = ''
         cp ${fw}/bootcode.bin ${fw}/fixup*.dat ${fw}/start*.elf .
         cp ${dtbDir}/bcm2710-rpi-3-b.dtb ${dtbDir}/bcm2710-rpi-3-b-plus.dtb .
+        ${config.janus.board.bootScript}
         cat > config.txt << EOF
         arm_64bit=1
         enable_uart=1
@@ -46,6 +47,7 @@ in {
         [pi3+]
         device_tree=bcm2710-rpi-3-b-plus.dtb
         [all]
+        ${config.janus.board.configTxt}
         EOF
       '';
     };

@@ -792,4 +792,303 @@ in {
       grep -q '^kernel=vmlinuz$' "$TMPDIR/boot/config.txt"
       echo ok > "$out"
     '';
+
+  eval-hmi = let
+    os = mk [
+      {
+        janus.hardware.board = "rpi-zero-2w";
+        janus.access.ssh.authorizedKeys = [key];
+        janus.hardware.peripherals.panel = {
+          class = "hmi";
+          hmi.profile = "waveshare-1.3-oled-hat";
+          hmi.keys.KEY2 = "factory-reset";
+        };
+      }
+    ];
+    conf = os.config.environment.etc."janus/hmi-panel.conf".text;
+    boot = builtins.unsafeDiscardStringContext os.config.system.build.janusBoardImage.bootExtra;
+    janus = self.packages.${pkgs.stdenv.hostPlatform.system}.janus-cli;
+  in
+    pkgs.runCommand "eval-hmi" {
+      nativeBuildInputs = [pkgs.janet];
+    } ''
+      janet ${../janet/hmi.janet} check
+      cat > conf << 'ENDCONF'
+      ${conf}
+      ENDCONF
+      grep -q $'control\tleft\tpage-prev\t5' conf
+      grep -q $'control\tKEY1\trefresh\t21' conf
+      grep -q $'control\tKEY2\tfactory-reset\t20' conf
+      grep -q $'control\tKEY3\treboot-hold\t16' conf
+      cat > boot << 'ENDBOOT'
+      ${boot}
+      ENDBOOT
+      grep -q 'dtparam=spi=on' boot
+      grep -q 'gpio=6,19,5,26,13,21,20,16=pu' boot
+      test ${os.config.janus.hardware.peripherals.panel.hmi.driver} = sh1106
+      test ${
+        if lib.elem "multi-user.target" os.config.systemd.services.janus-hmi-panel.wantedBy
+        then "yes"
+        else "no"
+      } = yes
+      printf '%s\n' ${lib.escapeShellArg os.config.systemd.services.janus-hmi-panel.serviceConfig.ExecStart} > unit
+      grep -q '/bin/janus-hmi ' unit
+      panel=$(awk -F '\t' '$1=="bin" && $2=="panel" {print $3}' conf)
+      snap=$(awk -F '\t' '$1=="bin" && $2=="snapshot" {print $3}' conf)
+      "$panel" --self-test
+      "$snap" conf > snap.out
+      grep -q $'uptime\t' snap.out
+      grep -q $'tunnel-error\t0' snap.out
+      set +e
+      ${janus}/bin/janus reset --state
+      code=$?
+      set -e
+      test "$code" = 2
+      echo ok > "$out"
+    '';
+
+  eval-hmi-board = fail "eval-hmi-board" [
+    base
+    {
+      janus.hardware.peripherals.panel = {
+        class = "hmi";
+        hmi.profile = "waveshare-1.3-oled-hat";
+      };
+    }
+  ];
+  eval-hmi-profile = fail "eval-hmi-profile" [
+    {
+      janus.hardware.board = "rpi-zero-2w";
+      janus.access.ssh.authorizedKeys = [key];
+      janus.hardware.peripherals.panel.class = "hmi";
+    }
+  ];
+  eval-hmi-key = fail "eval-hmi-key" [
+    {
+      janus.hardware.board = "rpi-zero-2w";
+      janus.access.ssh.authorizedKeys = [key];
+      janus.hardware.peripherals.panel = {
+        class = "hmi";
+        hmi.profile = "waveshare-1.3-oled-hat";
+        hmi.keys.up = "refresh";
+      };
+    }
+  ];
+
+  eval-power = let
+    os = mk [
+      {
+        janus.hardware.board = "rpi-zero-2w";
+        janus.access.ssh.authorizedKeys = [key];
+        janus.hardware.peripherals.ups = {
+          class = "power";
+          match.i2cAddress = "0x40";
+        };
+        janus.hardware.peripherals.panel = {
+          class = "hmi";
+          hmi.profile = "waveshare-1.3-oled-hat";
+        };
+      }
+    ];
+    conf = os.config.environment.etc."janus/power.conf".text;
+    boot = builtins.unsafeDiscardStringContext os.config.system.build.janusBoardImage.bootExtra;
+    dtbo = os.config.system.build.janusIna219Dtbo;
+  in
+    pkgs.runCommand "eval-power" {} ''
+      test -s ${dtbo}
+      cat > conf << 'ENDCONF'
+      ${conf}
+      ENDCONF
+      grep -q $'sign\tnegative' conf
+      grep -q $'armed\t1' conf
+      cat > boot << 'ENDBOOT'
+      ${boot}
+      ENDBOOT
+      grep -q 'dtparam=i2c_arm=on' boot
+      grep -q 'dtoverlay=janus-ina219' boot
+      grep -q 'overlays/janus-ina219.dtbo' boot
+      grep -q 'dtparam=spi=on' boot
+      test ${
+        if os.config.janus.hardware.peripherals.ups.power.shutdown.enable
+        then "yes"
+        else "no"
+      } = yes
+      test ${
+        if lib.elem "network-pre.target" os.config.systemd.services.janus-power-guard.before
+        then "yes"
+        else "no"
+      } = yes
+      test ${
+        if lib.elem "network-pre.target" os.config.systemd.services.janus-power-guard.wants
+        then "yes"
+        else "no"
+      } = yes
+      test ${
+        if lib.elem "multi-user.target" os.config.systemd.services.janus-power-guard.wantedBy
+        then "yes"
+        else "no"
+      } = yes
+      test ${
+        if os.config.systemd.services.janus-power-guard.serviceConfig.TimeoutStartSec == "infinity"
+        then "yes"
+        else "no"
+      } = yes
+      test ${
+        if lib.elem "multi-user.target" os.config.systemd.services.janus-power.wantedBy
+        then "yes"
+        else "no"
+      } = yes
+      bin=$(awk -F '\t' '$1=="bin" { print $2 }' conf)
+      field() {
+        printf '%s\n' "$1" | awk -F '\t' -v k="$2" '$1 == k { print $2 }'
+      }
+      decide() {
+        VOLTS=$1 MA=$2 SIGN=$3 ARMED=$4 LOW_MS=$5 CRITICAL_MS=$6 DT_MS=$7 \
+          WARN=3.60 SHUTDOWN=3.50 CRITICAL=3.30 \
+          "$bin" step
+      }
+      got=$(decide 3.40 -40 negative 1 59000 0 1000)
+      test "$(field "$got" action)" = poweroff
+      got=$(decide 3.40 -40 negative 1 58000 0 1000)
+      test "$(field "$got" action)" = none
+      test "$(field "$got" low-ms)" = 59000
+      got=$(decide 3.20 -40 negative 1 0 9000 1000)
+      test "$(field "$got" action)" = poweroff
+      got=$(decide 3.00 40 negative 1 0 9000 1000)
+      test "$(field "$got" action)" = none
+      test "$(field "$got" direction)" = charge
+      got=$(decide 3.00 -4 negative 1 59000 9000 1000)
+      test "$(field "$got" action)" = none
+      test "$(field "$got" low-ms)" = 0
+      got=$(decide 3.00 -5 negative 1 59000 9000 1000)
+      test "$(field "$got" direction)" = idle
+      test "$(field "$got" low-ms)" = 0
+      got=$(decide 3.00 5 negative 1 59000 9000 1000)
+      test "$(field "$got" direction)" = idle
+      got=$(decide 3.00 -6 negative 1 0 0 1000)
+      test "$(field "$got" direction)" = discharge
+      got=$(decide 3.00 -40 negative 0 59000 9000 1000)
+      test "$(field "$got" action)" = none
+      test "$(field "$got" warning)" = 1
+      got=$(decide 3.60 -40 negative 1 0 0 1000)
+      test "$(field "$got" warning)" = 1
+      test "$(field "$got" action)" = none
+      got=$(decide 3.61 -40 negative 1 0 0 1000)
+      test "$(field "$got" warning)" = 0
+      got=$(VOLTS=3.54 MA=-40 SIGN=negative ARMED=1 "$bin" boot-step)
+      test "$(field "$got" action)" = poweroff
+      got=$(VOLTS=3.55 MA=-40 SIGN=negative ARMED=1 "$bin" boot-step)
+      test "$(field "$got" action)" = none
+      got=$(VOLTS=3.40 MA=40 SIGN=negative ARMED=1 "$bin" boot-step)
+      test "$(field "$got" action)" = none
+      got=$(VOLTS=3.40 MA=-40 SIGN=negative ARMED=0 "$bin" boot-step)
+      test "$(field "$got" action)" = none
+      sys=$(mktemp -d)
+      mkdir -p "$sys/hwmon0"
+      printf '%s\n' ina219 > "$sys/hwmon0/name"
+      printf '%s\n' 4108 > "$sys/hwmon0/in1_input"
+      printf '%s\n' -33 > "$sys/hwmon0/curr1_input"
+      JANUS_POWER_SYS=$sys "$bin" status conf | grep -q '4.11 V, -33 mA, discharge, shutdown armed'
+      flag=$sys/off
+      printf '%s\n' 3540 > "$sys/hwmon0/in1_input"
+      printf '%s\n' -40 > "$sys/hwmon0/curr1_input"
+      rm -f "$flag"
+      set +e
+      JANUS_POWER_SYS=$sys JANUS_POWER_OFF="touch $flag" timeout 2 "$bin" guard conf
+      code=$?
+      set -e
+      test "$code" = 124
+      test -f "$flag"
+      rm -f "$flag"
+      printf '%s\n' 3550 > "$sys/hwmon0/in1_input"
+      JANUS_POWER_SYS=$sys JANUS_POWER_OFF="touch $flag" "$bin" guard conf
+      test ! -f "$flag"
+      printf '%s\n' 3000 > "$sys/hwmon0/in1_input"
+      printf '%s\n' 40 > "$sys/hwmon0/curr1_input"
+      JANUS_POWER_SYS=$sys JANUS_POWER_OFF="touch $flag" "$bin" guard conf
+      test ! -f "$flag"
+      printf '%s\n' -5 > "$sys/hwmon0/curr1_input"
+      JANUS_POWER_SYS=$sys JANUS_POWER_OFF="touch $flag" "$bin" guard conf
+      test ! -f "$flag"
+      empty=$(mktemp -d)
+      JANUS_POWER_SYS=$empty JANUS_POWER_PAUSE=true JANUS_POWER_OFF="touch $flag" "$bin" guard conf
+      test ! -f "$flag"
+      printf '%s\n' 3000 > "$sys/hwmon0/in1_input"
+      printf '%s\n' -40 > "$sys/hwmon0/curr1_input"
+      printf '%s\n' 1000 > "$sys/clock"
+      : > "$sys/ticks"
+      cat > "$sys/now" << 'EOF'
+      #!/bin/sh
+      n=$(cat "$1")
+      printf '%s\n' "$n"
+      printf '%s\n' $((n + 10)) > "$1"
+      printf 'x\n' >> "$2"
+      EOF
+      chmod +x "$sys/now"
+      JANUS_POWER_SYS=$sys JANUS_POWER_OFF="touch $flag" JANUS_POWER_PAUSE=true \
+        JANUS_POWER_NOW="$sys/now $sys/clock $sys/ticks" "$bin" watch conf
+      test -f "$flag"
+      test "$(grep -c x "$sys/ticks")" = 11
+      echo ok > "$out"
+    '';
+
+  eval-power-unarmed = let
+    os = mk [
+      {
+        janus.hardware.board = "rpi-zero-2w";
+        janus.access.ssh.authorizedKeys = [key];
+        janus.hardware.peripherals.ups = {
+          class = "power";
+          match.i2cAddress = "0x43";
+        };
+      }
+    ];
+    boot = builtins.unsafeDiscardStringContext os.config.system.build.janusBoardImage.bootExtra;
+  in
+    pkgs.runCommand "eval-power-unarmed" {} ''
+      test ${
+        if os.config.janus.hardware.peripherals.ups.power.shutdown.enable
+        then "yes"
+        else "no"
+      } = no
+      test ${
+        if os.config.environment.etc ? "janus/power.conf"
+        then "yes"
+        else "no"
+      } = no
+      test ${
+        if os.config.systemd.services ? "janus-power"
+        then "yes"
+        else "no"
+      } = no
+      cat > boot << 'ENDBOOT'
+      ${boot}
+      ENDBOOT
+      if grep -q 'dtoverlay=janus-ina219' boot; then
+        echo "unarmed profile installed an INA219 overlay" >&2
+        exit 1
+      fi
+      echo ok > "$out"
+    '';
+
+  eval-power-low = fail "eval-power-low" [
+    base
+    {
+      janus.hardware.peripherals.ups = {
+        class = "power";
+        match.i2cAddress = "0x40";
+        power.shutdown.volts = 3.40;
+      };
+    }
+  ];
+  eval-power-arm = fail "eval-power-arm" [
+    base
+    {
+      janus.hardware.peripherals.ups = {
+        class = "power";
+        match.i2cAddress = "0x43";
+        power.shutdown.enable = true;
+      };
+    }
+  ];
 }

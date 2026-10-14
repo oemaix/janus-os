@@ -77,6 +77,7 @@
 | Remote access | Tailscale. Optional WireGuard to a user endpoint | `tailscale0` (and any `wg` interface) joins the `mgmt` zone. SSH only, unless routes or an exit node are set. |
 | Management | OpenSSH; `janus` CLI (shell + Janet) | CLI is the operator UI. |
 | HMI | `janus-hmi` daemon | Renders the pages in *15* from the framebuffer size; control events map onto the capabilities in *15*. |
+| Power | `janus-power` | INA219 readings in `janus status`. Early cutoff while the cell is discharging (*10* §4.5). |
 
 ## 4. Data model (canonical)
 
@@ -174,6 +175,8 @@ janus-os/
 │   │   ├── proxy/            engine, nodes, subscriptions, groups, rules
 │   │   ├── dns/              policy
 │   │   ├── monitoring/
+│   │   ├── hmi/              status panel
+│   │   ├── power/            battery readings and cutoff
 │   │   ├── remote-access/
 │   │   ├── access/           ssh, cli
 │   │   └── system/           hostname, time, journald limits

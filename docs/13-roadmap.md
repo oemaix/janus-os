@@ -62,12 +62,12 @@ Explanations are *19*. Accepted ADRs are `docs/adr/`.
 
 ### Phase 4 — Polish
 
-* HMI daemon. The interaction model is *15*. The first profile is the Waveshare 1.3" OLED HAT (*10* §4.6).
+* HMI daemon. The interaction model is *15*. The first profile is the Waveshare 1.3" OLED HAT (*10* §4.6). Implemented; see Progress.
 * Flow export (IPFIX), Prometheus endpoint.
 * VisionFive 2, RPi 2 (Tier 3).
 * A/B image slots. Implemented; see Progress.
 * Maintenance page limited to status, maintenance actions, and hot overrides.
-* Expand `manual/` (English, Russian, Persian). The operator guide covers build, flash, deploy, audit, and A/B slots.
+* Expand `manual/` (English, Russian, Persian). The operator guide covers build, flash, deploy, audit, A/B slots, and the status panel.
 * Optional local configuration wizard, a front end for the build-host commands in *16*. No hosted build service.
 
 ## 2. Progress
@@ -135,6 +135,13 @@ tree does not mean that behavior exists. Stubs are not finished features.
   starts and stops recording without a rebuild.
 * `janus.storage.slots.enable` duplicates `ROOT` and `NIX`. `janus-build
   deploy` then writes the inactive slot and toggles the boot entry (*09* §8.4).
+* The Waveshare 1.3" OLED HAT on `rpi-zero-2w` or `rpi3` is a status
+  panel (*15*, *10* §4.6). It runs `janus proxy refresh`, `janus proxy
+  select`, `janus reboot`, and `janus reset --state --yes`. It does not
+  edit configuration, hot overrides, or secrets.
+* A mcuzone INA219 at `0x40` reports the cell in `janus status` and powers
+  the router off while the cell is discharging, at the thresholds in *10*
+  §4.5. The Waveshare address `0x43` stays unarmed.
 
 ### Not done
 
@@ -146,7 +153,6 @@ tree does not mean that behavior exists. Stubs are not finished features.
 * VM checks for DHCP, NAT, DNS, and the firewall. The boot check covers
   the mount model only. `eval-proxy` checks the rendered config and the
   nftables text, not a running engine.
-* HMI and battery shutdown.
 * The local wizard. `janus-build init` is implemented; the wizard is not.
 
 ## 3. Notes for later implementation
@@ -156,7 +162,7 @@ tree does not mean that behavior exists. Stubs are not finished features.
 * The Yanyu profile names `lan1`–`lan4` by PCI address (*10* §3.1). It
   does not pick which jack is WAN. Limine on that image has not been
   booted on the lab AMI board.
-* Battery shutdown may arm on the mcuzone `0x40` profile, where a
+* Battery shutdown arms on the mcuzone `0x40` profile, where a
   negative current means discharge. The Waveshare `0x43` profile stays
   unarmed.
 * The CSR Bluetooth dongle `0a12:0001` stays on the allowlist. BlueZ stays

@@ -17,6 +17,8 @@ CI runs the eval checks and the options document
 
 `limine-bios` runs the image builder's Limine scripts on a GPT disk with
 FAT32 and checks that QEMU BIOS loads the kernel file. `eval-router` checks the generated nftables masquerade, the DHCP client,
-dnsmasq, OpenSSH, and vnstat. `cli-usage` and `cli-init` cover the phase 1
-commands. Golden files for the engines are still absent. A VM check does
-not yet exchange DHCP or NAT traffic.
+dnsmasq, OpenSSH, and vnstat. `eval-hmi` checks the panel model, the
+Waveshare binding, and `janus reset --state` without `--yes`. `eval-power`
+checks the cell cutoff. `cli-usage`
+and `cli-init` cover the phase 1 commands. Golden files for the engines
+are still absent. A VM check does not yet exchange DHCP or NAT traffic.

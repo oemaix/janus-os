@@ -126,6 +126,11 @@
           then false
           else row.armShutdown or false
         );
+      hmi.driver = lib.mkDefault (
+        if config.hmi.profile == "waveshare-1.3-oled-hat"
+        then "sh1106"
+        else null
+      );
     };
   });
 in {
@@ -147,7 +152,7 @@ in {
       rows =
         lib.mapAttrsToList (name: p: {
           inherit name;
-          inherit (p) class match wwan wifi power;
+          inherit (p) class match wwan wifi power hmi;
         })
         cfg.peripherals;
     in
@@ -159,6 +164,7 @@ in {
           wwan,
           wifi,
           power,
+          hmi,
         }: let
           usb =
             if match.usbVendorProduct == null
@@ -221,6 +227,26 @@ in {
               assertion = !(power.shutdown.enable && i2c != null && !(i2c.armShutdown or false));
               message = ''
                 janus.hardware.peripherals.${name}: address ${match.i2cAddress} has no discharge measurement, so shutdown stays unarmed.
+              '';
+            }
+          ]
+          ++ lib.optionals (class == "hmi") [
+            {
+              assertion = hmi.profile != null;
+              message = "janus.hardware.peripherals.${name}: an hmi peripheral needs hmi.profile.";
+            }
+            {
+              assertion = hmi.profile != "waveshare-1.3-oled-hat" || lib.elem cfg.board ["rpi-zero-2w" "rpi3"];
+              message = ''
+                janus.hardware.peripherals.${name}: waveshare-1.3-oled-hat uses BCM pins and needs board rpi-zero-2w or rpi3.
+                See docs/10 §4.6.
+              '';
+            }
+            {
+              assertion = lib.all (key: lib.elem key ["KEY1" "KEY2" "KEY3"]) (lib.attrNames hmi.keys);
+              message = ''
+                janus.hardware.peripherals.${name}.hmi.keys may replace KEY1, KEY2, and KEY3.
+                The joystick stays navigation.
               '';
             }
           ]

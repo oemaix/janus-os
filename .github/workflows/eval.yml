@@ -32,6 +32,14 @@ jobs:
             .#checks.x86_64-linux.eval-rpi4 \
             .#checks.x86_64-linux.eval-pppoe-secret \
             .#checks.x86_64-linux.eval-pppoe-file \
+            .#checks.x86_64-linux.eval-hmi \
+            .#checks.x86_64-linux.eval-hmi-board \
+            .#checks.x86_64-linux.eval-hmi-profile \
+            .#checks.x86_64-linux.eval-hmi-key \
+            .#checks.x86_64-linux.eval-power \
+            .#checks.x86_64-linux.eval-power-unarmed \
+            .#checks.x86_64-linux.eval-power-low \
+            .#checks.x86_64-linux.eval-power-arm \
             .#checks.x86_64-linux.limine-bios \
             .#checks.x86_64-linux.cli-usage \
             .#checks.x86_64-linux.cli-init \

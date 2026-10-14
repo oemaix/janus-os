@@ -10,6 +10,8 @@
     ./proxy
     ./dns
     ./monitoring
+    ./hmi
+    ./power
     ./remote-access
     ./access
     ./system

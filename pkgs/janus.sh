@@ -187,11 +187,31 @@ case "$cmd" in
     rm -f "$archive" "$list"
     ;;
   status)
+    power_bin=""
+    if [ -f /etc/janus/power.conf ]; then
+      while IFS=$'\t' read -r key val; do
+        if [ "$key" = bin ]; then
+          power_bin=$val
+        fi
+      done < /etc/janus/power.conf
+    fi
     if [ "$json" = 1 ]; then
-      printf '{"wans":"%s","leases":%s,"var":"%s"}\n' \
-        "$(networkctl list --no-legend 2>/dev/null | wc -l)" \
-        "$(wc -l < /var/lib/janus/leases/dnsmasq.leases 2>/dev/null || echo 0)" \
-        "$(findmnt -n -b -o SIZE /var 2>/dev/null || echo 0)"
+      power_json=""
+      if [ -n "$power_bin" ]; then
+        power_json=$("$power_bin" status /etc/janus/power.conf --json 2>/dev/null || true)
+      fi
+      if [ -n "$power_json" ]; then
+        printf '{"wans":"%s","leases":%s,"var":"%s","power":%s}\n' \
+          "$(networkctl list --no-legend 2>/dev/null | wc -l)" \
+          "$(wc -l < /var/lib/janus/leases/dnsmasq.leases 2>/dev/null || echo 0)" \
+          "$(findmnt -n -b -o SIZE /var 2>/dev/null || echo 0)" \
+          "$power_json"
+      else
+        printf '{"wans":"%s","leases":%s,"var":"%s"}\n' \
+          "$(networkctl list --no-legend 2>/dev/null | wc -l)" \
+          "$(wc -l < /var/lib/janus/leases/dnsmasq.leases 2>/dev/null || echo 0)" \
+          "$(findmnt -n -b -o SIZE /var 2>/dev/null || echo 0)"
+      fi
     else
       echo "WANs:"
       networkctl list 2>/dev/null || true
@@ -199,6 +219,9 @@ case "$cmd" in
       wc -l /var/lib/janus/leases/dnsmasq.leases 2>/dev/null || echo 0
       echo "State:"
       findmnt -n /var || true
+      if [ -n "$power_bin" ]; then
+        "$power_bin" status /etc/janus/power.conf || true
+      fi
       if [ -d /var/lib/janus/subscriptions ]; then
         echo "Subscriptions:"
         for stamp in /var/lib/janus/subscriptions/*.stamp; do
@@ -268,7 +291,17 @@ case "$cmd" in
     systemctl reboot
     ;;
   reset)
-    later "reset"
+    if [ "${1:-}" != "--state" ] || [ "${2:-}" != "--yes" ]; then
+      echo "janus reset --state requires --yes." >&2
+      exit 2
+    fi
+    if ! findmnt -n /var >/dev/null 2>&1; then
+      echo "janus reset: /var is not a mounted state partition." >&2
+      exit 1
+    fi
+    find /var -mindepth 1 -maxdepth 1 -exec rm -rf {} + || true
+    sync || true
+    systemctl reboot
     ;;
   secrets)
     sub=${1:-}
