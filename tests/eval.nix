@@ -408,6 +408,100 @@ in {
       sing-box check -c ${engine}
       echo ok > "$out"
     '';
+  eval-proxy-local = let
+    os = mk [
+      base
+      {
+        janus.network.lans.lan = {
+          members = ["lan"];
+          address = "192.168.10.1";
+          prefixLength = 24;
+        };
+        janus.security.allowInlineSecrets = true;
+        janus.proxy = {
+          enable = true;
+          nodes.local = {
+            protocol = "shadowsocks";
+            server = "127.0.0.1";
+            port = 18388;
+            shadowsocks.method = "aes-256-gcm";
+            shadowsocks.password = "janus-local-proxy-test";
+          };
+          groups.Local = {
+            members = ["node:local"];
+            strategy = "manual";
+            default = "local";
+          };
+        };
+      }
+    ];
+    engine = os.config.system.build.janusEngineConfig;
+  in
+    pkgs.runCommand "eval-proxy-local" {
+      nativeBuildInputs = [pkgs.sing-box pkgs.jq pkgs.curl pkgs.python3];
+    } ''
+      set -eu
+      sing-box check -c ${engine}
+      jq -e '
+        .outbounds[]
+        | select(.tag == "local")
+        | .type == "shadowsocks"
+          and .server == "127.0.0.1"
+          and .server_port == 18388
+          and .method == "aes-256-gcm"
+          and .password == "janus-local-proxy-test"
+          and .routing_mark == 74
+      ' ${engine} >/dev/null
+      jq -e '.outbounds[] | select(.tag == "local") | del(.routing_mark)' ${engine} > outbound.json
+      jq -n --slurpfile ob outbound.json '{
+        log: {level: "info"},
+        inbounds: [{
+          type: "socks",
+          tag: "socks",
+          listen: "127.0.0.1",
+          listen_port: 11080
+        }],
+        outbounds: $ob,
+        route: {final: "local"}
+      }' > client.json
+      jq -n --slurpfile ob outbound.json '{
+        log: {level: "info"},
+        inbounds: [{
+          type: "shadowsocks",
+          tag: "ss",
+          listen: "127.0.0.1",
+          listen_port: $ob[0].server_port,
+          method: $ob[0].method,
+          password: $ob[0].password
+        }],
+        outbounds: [{type: "direct", tag: "direct"}]
+      }' > server.json
+      sing-box check -c client.json
+      sing-box check -c server.json
+      web=$(mktemp -d)
+      printf '%s\n' janus-local-ok > "$web/token"
+      python3 -m http.server 18080 --bind 127.0.0.1 --directory "$web" > http.log 2>&1 &
+      sing-box run -c server.json > server.log 2>&1 &
+      sing-box run -c client.json > client.log 2>&1 &
+      trap 'kill $(jobs -p) 2>/dev/null || true' EXIT
+      if ! curl -fsS --retry 30 --retry-delay 0 --retry-all-errors --max-time 20 \
+        --socks5-hostname 127.0.0.1:11080 \
+        http://127.0.0.1:18080/token | grep -q janus-local-ok; then
+        echo "--- server ---" >&2
+        cat server.log >&2 || true
+        echo "--- client ---" >&2
+        cat client.log >&2 || true
+        echo "--- http ---" >&2
+        cat http.log >&2 || true
+        exit 1
+      fi
+      if ! grep -q 'inbound connection' server.log; then
+        echo "the page was fetched without a shadowsocks hop" >&2
+        cat server.log >&2 || true
+        exit 1
+      fi
+      echo ok > "$out"
+    '';
   eval-proxy-xray = let
     os = mk [
       base

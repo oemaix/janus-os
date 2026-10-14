@@ -55,11 +55,6 @@ Explanations are *19*. Accepted ADRs are `docs/adr/`.
 * Hot overrides for static leases and Wi-Fi passphrase.
 * Remote closure deployment (`janus-build deploy`).
 
-### After 1.0
-
-* WAN VLAN, `iptv` role, IGMP proxy.
-* Connection audit log (FR-MON-007), JSON Lines. Implemented; see Progress.
-
 ### Phase 4 — Polish
 
 * HMI daemon. The interaction model is *15*. The first profile is the Waveshare 1.3" OLED HAT (*10* §4.6). Implemented; see Progress.
@@ -68,6 +63,10 @@ Explanations are *19*. Accepted ADRs are `docs/adr/`.
 * A/B image slots. Implemented; see Progress.
 * Maintenance page limited to status, maintenance actions, and hot overrides.
 * Expand `manual/` (English, Russian, Persian). The operator guide covers build, flash, deploy, audit, A/B slots, and the status panel.
+
+### Future
+
+* WAN VLAN, the `iptv` role, and IGMP proxy (*06*, FR-NET-003, FR-NET-020).
 * Optional local configuration wizard, a front end for the build-host commands in *16*. No hosted build service.
 
 ## 2. Progress
@@ -142,14 +141,13 @@ tree does not mean that behavior exists. Stubs are not finished features.
 * A mcuzone INA219 at `0x40` reports the cell in `janus status` and powers
   the router off while the cell is discharging, at the thresholds in *10*
   §4.5. The Waveshare address `0x43` stays unarmed.
-
-### Not done
-
-* `iptv` and IGMP stay after 1.0.
-* VM checks for DHCP, NAT, DNS, and the firewall. The boot check covers
-  the mount model only. `eval-proxy` checks the rendered config and the
-  nftables text, not a running engine.
-* The local wizard. `janus-build init` is implemented; the wizard is not.
+* `eval-proxy-local` fetches a page on `127.0.0.1` through the rendered
+  sing-box Shadowsocks outbound. The fixture server speaks the same method
+  and password. The router's firewall mark is not applied on that hop.
+* `vm-x86_64-net` boots the `x86_64-test` image with a WAN and a LAN. A
+  second guest takes a DHCPv4 lease, reaches a host service through NAT,
+  receives `vm.test` from the engine, reads the SSH banner on the LAN, and
+  cannot open SSH on the WAN. The mount check remains `vm-x86_64-test`.
 
 ## 3. Notes for later implementation
 

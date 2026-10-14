@@ -94,7 +94,7 @@ SSH destinations are `janus.deploy.address`, or the
 | New Janus pin | `janus-build update` | `nix flake update janus`. Does not build or deploy. |
 
 A later local wizard is a front end for `init` and `host add`. It is
-not a hosted builder (*00* §4, *13* Phase 4). Until it exists, those two
+not a hosted builder (*00* §4, *13* Future). Until it exists, those two
 commands are the creation steps.
 
 ### Adding a host

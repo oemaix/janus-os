@@ -40,6 +40,7 @@ jobs:
             .#checks.x86_64-linux.eval-power-unarmed \
             .#checks.x86_64-linux.eval-power-low \
             .#checks.x86_64-linux.eval-power-arm \
+            .#checks.x86_64-linux.eval-proxy-local \
             .#checks.x86_64-linux.limine-bios \
             .#checks.x86_64-linux.cli-usage \
             .#checks.x86_64-linux.cli-init \

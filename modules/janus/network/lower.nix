@@ -423,6 +423,8 @@ in {
 
       services.dnsmasq = lib.mkIf (dhcpLanNames != []) {
         enable = true;
+        # DHCP only (ADR-0009). The NixOS default would write /etc and listen for DNS.
+        resolveLocalQueries = false;
         settings = {
           port = 0;
           bind-interfaces = true;
@@ -501,9 +503,13 @@ in {
 
       systemd.services = lib.mkMerge [
         (lib.mkIf (dhcpLanNames != []) {
-          dnsmasq.serviceConfig = {
-            ExecStartPre = ["${pkgs.coreutils}/bin/mkdir -p /var/lib/janus" "/etc/janus/bin/janus-dhcp-hosts"];
-            ExecReload = "${pkgs.procps}/bin/kill -HUP $MAINPID";
+          # network.target arrives when networkd starts, before br-* exists.
+          # dnsmasq --test then fails on bind-interfaces.
+          dnsmasq = {
+            after = ["network-online.target"];
+            wants = ["network-online.target"];
+            startLimitBurst = 20;
+            serviceConfig.ExecStartPre = ["${pkgs.coreutils}/bin/mkdir -p /var/lib/janus" "/etc/janus/bin/janus-dhcp-hosts"];
           };
         })
         (lib.mkMerge (map pppService wanNames))

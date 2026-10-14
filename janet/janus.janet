@@ -867,7 +867,8 @@
         :address @["172.19.0.1/30" "fdfe:dcba:9876::1/126"]
         :auto_route false :strict_route false}
       @{:type "redirect" :tag "dns-tcp" :listen "::" :listen_port 5353}
-      @{:type "tproxy" :tag "dns-udp" :listen "::" :listen_port 5353 :network "udp"}
+      # IPv4 tproxy is not delivered to an IPv6 socket.
+      @{:type "tproxy" :tag "dns-udp" :listen "0.0.0.0" :listen_port 5353 :network "udp"}
       @{:type "socks" :tag "refresh" :listen "127.0.0.1" :listen_port 2080}]
     :outbounds outbounds
     :route @{
