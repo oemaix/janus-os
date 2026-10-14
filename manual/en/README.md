@@ -28,11 +28,30 @@ On the build machine:
 1. `janus-build init` creates the private configuration repository.
 2. `janus-build host add` names one board.
 3. The host file sets the board, the WAN, and at least one LAN. Ports
-   come from the board profile.
-4. `janus-build build <host>` writes `janus-<host>.img`.
-5. Flash that image. The state partition starts empty.
-6. SSH in as root with the key from the host configuration. There is no
+   come from the board profile. Commit that host.
+4. `janus-build secret keygen <host>` creates this router's age key.
+   It writes the public key to `secrets/keys/<host>.pub` and prints the
+   private key once. Store that private key in a password manager, such
+   as KeePass. The build machine does not keep a copy, and the key does
+   not go into git. Do this after the host exists and before the build.
+5. `janus-build secret set <path>` encrypts each credential this host
+   needs: a PPPoE password, a Wi-Fi passphrase, a subscription URL, or a
+   manual node. The public key from the previous step must already exist.
+6. `janus-build build <host>` writes `janus-<host>.img`. The image
+   contains that ciphertext. It does not contain the private key.
+7. Flash that image. The state partition starts empty.
+8. SSH in as root with the key from the host configuration. There is no
    password login.
+9. Install the private key from the password manager, once, with
+   `janus-build deploy --age-key <host>` on the build machine.
+   (`janus secrets install-age-key` on the router does the same thing.)
+   PPPoE, Wi-Fi, and a subscription URL that is a secret stay unavailable
+   until this step.
+10. `janus proxy refresh` fills a subscription that came from `urlSecret`.
+    Until the key is installed and that refresh runs, the snapshot is empty.
+
+A host with no encrypted credential can skip the key, `secret set`, and
+the install. LAN and SSH do not need the age key.
 
 Option names are in
 [docs/08-configuration-reference.md](../../docs/08-configuration-reference.md).

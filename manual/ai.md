@@ -6,6 +6,13 @@ Read this file before answering a question about using Janus OS.
   Persian copies follow it.
 - Definitions, requirements, and option names live in `docs/`. English
   there is canonical. Do not invent `janus.*` options.
+- After `host add`, `janus-build secret keygen` prints the age private
+  key once. The operator stores it in a password manager. The image
+  contains ciphertext and not that key. After boot, `janus-build deploy
+  --age-key` or `janus secrets install-age-key` installs it.
+  `install-age-key` restarts `sops-install-secrets` when that unit
+  exists. A `urlSecret` subscription stays an empty snapshot until
+  `janus proxy refresh`.
 - Router commands are `docs/14-cli.md`. Build-host commands are
   `docs/16-build-host-cli.md`. `janus.*` options are
   `docs/08-configuration-reference.md`. Phase 1 commands exist, and so

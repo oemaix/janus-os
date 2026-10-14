@@ -310,6 +310,17 @@ case "$cmd" in
         install -d -m 0700 /var/lib/janus/secrets
         cat > /var/lib/janus/secrets/age.key
         chmod 0600 /var/lib/janus/secrets/age.key
+        if systemctl cat sops-install-secrets.service >/dev/null 2>&1; then
+          systemctl restart sops-install-secrets.service
+          systemctl list-units --failed --no-legend --plain --type=service \
+            | while read -r unit _extra; do
+                case "$unit" in
+                  janus-pppoe-*.service|janus-hostapd-*.service)
+                    systemctl restart "$unit" || true
+                    ;;
+                esac
+              done
+        fi
         ;;
       put)
         name=${2:-}

@@ -146,10 +146,6 @@ tree does not mean that behavior exists. Stubs are not finished features.
 ### Not done
 
 * `iptv` and IGMP stay after 1.0.
-* The age key is not on the image. The first boot cannot decrypt until
-  `janus secrets install-age-key` has written `/var/lib/janus/secrets/age.key`.
-  A `urlSecret` subscription is an empty snapshot until that key is
-  installed and `janus proxy refresh` runs.
 * VM checks for DHCP, NAT, DNS, and the firewall. The boot check covers
   the mount model only. `eval-proxy` checks the rendered config and the
   nftables text, not a running engine.
