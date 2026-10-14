@@ -52,10 +52,13 @@ blackhole() {
 }
 
 intercept_up() {
-  if [ "${JANUS_DNS_TPROXY}" = 1 ]; then
+  if [ "${JANUS_DNS_TPROXY}" = 1 ] || [ "${JANUS_ENGINE}" = xray ]; then
     tproxy_route
   fi
   [ "${JANUS_INTERCEPT}" = 1 ] || return 0
+  if [ "${JANUS_ENGINE}" = xray ]; then
+    return 0
+  fi
   rule_add
   if [ "${JANUS_FAIL_MODE}" = closed ]; then
     blackhole
@@ -79,7 +82,46 @@ apply_selection() {
   done < <(jq -r 'keys[]' "$sel")
 }
 
+xray_pin_balancers() {
+  [ "${JANUS_ENGINE}" = xray ] || return 0
+  [ -f "$sel" ] || return 0
+  [ -f "$model" ] || return 0
+  i=0
+  while [ "$i" -lt 20 ]; do
+    if xray api bi -s 127.0.0.1:8080 >/dev/null 2>&1; then
+      break
+    fi
+    sleep 0.2
+    i=$((i + 1))
+  done
+  while IFS= read -r group; do
+    [ -n "$group" ] || continue
+    strategy=$(jq -r --arg g "$group" '.groups[$g].strategy // "url-test"' "$model")
+    if [ "$strategy" = manual ]; then
+      continue
+    fi
+    image=$(jq -c --arg g "$group" '.[$g]' "$defs")
+    remembered=$(jq -c --arg g "$group" '.[$g].default' "$sel")
+    node=$(jq -r --arg g "$group" '.[$g].node // empty' "$sel")
+    if [ "$image" != "$remembered" ] || [ -z "$node" ]; then
+      continue
+    fi
+    case "$node" in
+      node:*) node=${node#node:} ;;
+    esac
+    xray api bo -s 127.0.0.1:8080 -b "$group" "$node" || true
+  done < <(jq -r 'keys[]' "$sel")
+}
+
 tun_up() {
+  if [ "${JANUS_ENGINE}" = xray ]; then
+    if [ "${JANUS_FAIL_MODE}" = open ] && [ -n "${JANUS_XRAY_NFT:-}" ]; then
+      nft delete table inet janus_xray 2>/dev/null || true
+      nft -f "$JANUS_XRAY_NFT"
+    fi
+    xray_pin_balancers
+    return 0
+  fi
   [ "${JANUS_INTERCEPT}" = 1 ] || return 0
   if [ "${JANUS_FAIL_MODE}" = open ]; then
     rule_add
@@ -96,6 +138,12 @@ tun_up() {
 }
 
 tun_down() {
+  if [ "${JANUS_ENGINE}" = xray ]; then
+    if [ "${JANUS_FAIL_MODE}" = open ]; then
+      nft delete table inet janus_xray 2>/dev/null || true
+    fi
+    return 0
+  fi
   [ "${JANUS_INTERCEPT}" = 1 ] || return 0
   if [ "${JANUS_FAIL_MODE}" = open ]; then
     ip rule del fwmark 0x4a01 lookup 2022 priority 110 2>/dev/null || true
@@ -174,28 +222,59 @@ apply_passwords() {
     fi
     pw=$(cat "$path")
     next=$(mktemp)
-    jq --arg tag "$name" --arg pw "$pw" \
-      '.outbounds |= map(if .tag == $tag then .password = $pw else . end)' \
-      "$src" > "$next"
+    if [ "${JANUS_ENGINE}" = xray ]; then
+      jq --arg tag "$name" --arg pw "$pw" \
+        '.outbounds |= map(if .tag == $tag then
+          if .protocol == "trojan" or .protocol == "shadowsocks" then .settings.servers[0].password = $pw
+          else . end
+        else . end)' \
+        "$src" > "$next"
+    else
+      jq --arg tag "$name" --arg pw "$pw" \
+        '.outbounds |= map(if .tag == $tag then .password = $pw else . end)' \
+        "$src" > "$next"
+    fi
     mv "$next" "$src"
   done < <(jq -r 'keys[]' "$map")
+}
+
+apply_saved_selection() {
+  src=$1
+  dst=$2
+  if [ "${JANUS_ENGINE}" != xray ] || [ ! -f "$sel" ]; then
+    cp "$src" "$dst"
+    return 0
+  fi
+  jq --slurpfile sel "$sel" '
+    reduce ($sel[0] | to_entries[]) as $e (.;
+      if ((.groups[$e.key].strategy // "url-test") == "manual")
+         and (.groups[$e.key].default == $e.value.default)
+      then .groups[$e.key].default = $e.value.node
+      else . end)
+  ' "$src" > "$dst"
 }
 
 render_config() {
   ensure_dirs
   nodes=$(merge_nodes)
   work=$(mktemp)
+  selected=$(mktemp)
   out=$(mktemp)
   carrier_model "$model" "$work"
-  janet "$JANUS_SCRIPT" render --model "$work" --nodes "$nodes" --rule-set local --output "$out"
+  apply_saved_selection "$work" "$selected"
+  janet "$JANUS_SCRIPT" render --model "$selected" --nodes "$nodes" --rule-set local --engine "${JANUS_ENGINE}" --output "$out"
   apply_passwords "$out"
-  sing-box check -c "$out"
+  if [ "${JANUS_ENGINE}" = xray ]; then
+    xray run -test -c "$out"
+  else
+    sing-box check -c "$out"
+  fi
   if [ -f "$cfg" ]; then
     cp -a "$cfg" "${cfg}.prev"
   fi
   mv "$out" "$cfg"
   chmod 0600 "$cfg"
-  rm -f "$nodes" "$work"
+  rm -f "$nodes" "$work" "$selected"
 }
 
 geo_base() {
@@ -357,6 +436,33 @@ refresh_one() {
   rm -f "/var/lib/janus/subscriptions/${name}.error"
 }
 
+resolve_name() {
+  name=$1
+  qtype=$2
+  if [ "${JANUS_ENGINE}" = xray ]; then
+    dig +time=2 +tries=1 +short @127.0.0.1 -p 5353 "$name" "$qtype" || true
+  else
+    curl -fsS -G "${clash}/query" --data-urlencode "name=${name}" --data-urlencode "type=${qtype}" || true
+  fi
+}
+
+write_selection() {
+  group=$1
+  node=$2
+  ensure_dirs
+  image=$(jq -c --arg g "$group" '.[$g]' "$defs")
+  if [ -f "$sel" ]; then
+    current=$sel
+  else
+    current=$(mktemp)
+    echo '{}' > "$current"
+  fi
+  tmp=$(mktemp)
+  jq --arg g "$group" --arg n "$node" --argjson d "$image" '.[$g] = {node:$n, default:$d}' "$current" > "$tmp"
+  mv "$tmp" "$sel"
+  chmod 0600 "$sel"
+}
+
 report() {
   printf '%s %s\n' "$1" "$2"
   if [ "$1" = fail ]; then
@@ -375,7 +481,7 @@ dns_check() {
   else
     report pass "plaintext interception is disabled in the policy"
   fi
-  foreign=$(curl -fsS -G "${clash}/query" --data-urlencode "name=example.com" --data-urlencode "type=A" || true)
+  foreign=$(resolve_name example.com A)
   if [ -z "$foreign" ]; then
     report fail "foreign name example.com was not answered"
   elif printf '%s' "$foreign" | grep -q '198\.18\.'; then
@@ -394,7 +500,7 @@ dns_check() {
       report pass "foreign name example.com was not a listed bogus answer"
     fi
   fi
-  domestic=$(curl -fsS -G "${clash}/query" --data-urlencode "name=www.baidu.com" --data-urlencode "type=A" || true)
+  domestic=$(resolve_name www.baidu.com A)
   if [ -z "$domestic" ]; then
     report fail "domestic name www.baidu.com was not answered"
   elif printf '%s' "$domestic" | grep -q '198\.18\.'; then
@@ -403,7 +509,7 @@ dns_check() {
     report pass "domestic name www.baidu.com was not a fake-IP"
   fi
   if [ "$(jq -r '.ipv6Answers' "$policy")" = strip-all ]; then
-    aaaa=$(curl -fsS -G "${clash}/query" --data-urlencode "name=example.com" --data-urlencode "type=AAAA" || true)
+    aaaa=$(resolve_name example.com AAAA)
     if printf '%s' "$aaaa" | grep -Eq ':[0-9a-fA-F]'; then
       report fail "AAAA for example.com was present while ipv6Answers is strip-all"
     else
@@ -437,7 +543,12 @@ case "$cmd" in
   geodata-missing) geodata_missing ;;
   geodata-refresh) geodata_refresh ;;
   groups)
-    curl -fsS "${clash}/proxies"
+    if [ "${JANUS_ENGINE}" = xray ]; then
+      jq -r '.groups | to_entries[] | "\(.key) \(.value.strategy // "url-test")"' "$model"
+      xray api bi -s 127.0.0.1:8080 || true
+    else
+      curl -fsS "${clash}/proxies"
+    fi
     ;;
   select)
     group=${1:-}
@@ -445,41 +556,57 @@ case "$cmd" in
     if [ -z "$group" ] || [ -z "$node" ]; then
       usage
     fi
-    curl -fsS -X PUT -H 'content-type: application/json' \
-      -d "$(jq -nc --arg n "$node" '{name:$n}')" \
-      "${clash}/proxies/${group}"
-    ensure_dirs
-    image=$(jq -c --arg g "$group" '.[$g]' "$defs")
-    if [ -f "$sel" ]; then
-      current=$sel
+    if [ "${JANUS_ENGINE}" = xray ]; then
+      previous=$(mktemp)
+      if [ -f "$sel" ]; then
+        cp "$sel" "$previous"
+      else
+        echo '{}' > "$previous"
+      fi
+      write_selection "$group" "$node"
+      if ! render_config; then
+        cp "$previous" "$sel"
+        chmod 0600 "$sel"
+        rm -f "$previous"
+        exit 1
+      fi
+      rm -f "$previous"
+      systemctl restart janus-engine.service
+      xray_pin_balancers
     else
-      current=$(mktemp)
-      echo '{}' > "$current"
+      curl -fsS -X PUT -H 'content-type: application/json' \
+        -d "$(jq -nc --arg n "$node" '{name:$n}')" \
+        "${clash}/proxies/${group}"
+      write_selection "$group" "$node"
     fi
-    tmp=$(mktemp)
-    jq --arg g "$group" --arg n "$node" --argjson d "$image" '.[$g] = {node:$n, default:$d}' "$current" > "$tmp"
-    mv "$tmp" "$sel"
-    chmod 0600 "$sel"
     ;;
   test)
     group=${1:-}
     if [ -z "$group" ]; then
       usage
     fi
-    url=$(jq -r --arg g "$group" '.groups[$g].test.url // "https://www.gstatic.com/generate_204"' "$model")
-    curl -fsS -G "${clash}/proxies/${group}/delay" \
-      --data-urlencode "url=${url}" \
-      --data-urlencode "timeout=5000"
+    if [ "${JANUS_ENGINE}" = xray ]; then
+      xray api bi -s 127.0.0.1:8080 "$group"
+    else
+      url=$(jq -r --arg g "$group" '.groups[$g].test.url // "https://www.gstatic.com/generate_204"' "$model")
+      curl -fsS -G "${clash}/proxies/${group}/delay" \
+        --data-urlencode "url=${url}" \
+        --data-urlencode "timeout=5000"
+    fi
     ;;
   dns-query)
     name=${1:-}
     if [ -z "$name" ]; then
       usage
     fi
-    curl -fsS -G "${clash}/query" --data-urlencode "name=${name}" --data-urlencode "type=A"
+    resolve_name "$name" A
     ;;
   dns-flush)
-    curl -fsS -X POST "${clash}/dns/flush"
+    if [ "${JANUS_ENGINE}" = xray ]; then
+      systemctl restart janus-engine.service
+    else
+      curl -fsS -X POST "${clash}/dns/flush"
+    fi
     ;;
   dns-stats)
     if [ -f /var/lib/janus/engine/cache.db ]; then
@@ -487,7 +614,9 @@ case "$cmd" in
     else
       echo "cache-bytes 0"
     fi
-    curl -fsS "${clash}/connections" || true
+    if [ "${JANUS_ENGINE}" != xray ]; then
+      curl -fsS "${clash}/connections" || true
+    fi
     ;;
   dns-check) dns_check ;;
   *) usage ;;

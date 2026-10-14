@@ -10,10 +10,10 @@ Janus OS یک سیستم مسیریاب آماده تحویل نمی‌دهد. �
 
 راهنما و سند تعریف سیستم در همین مخزن هستند. تصویر مسیریاب در ماشین
 مجازی بوت می‌شود. تصویر برای NanoPi R4S، Le Potato،
-Raspberry Pi Zero 2 W و Yanyu STX-R19F (Limine روی legacy BIOS) ساخته
+Raspberry Pi Zero 2 W، Raspberry Pi 3 / 3+ و Yanyu STX-R19F (Limine روی legacy BIOS) ساخته
 می‌شود. `janus` و `janus-build`
-فرمان‌های فاز ۱ و همچنین proxy، DNS، fleet، status و backup را
-پیاده می‌کنند. deploy هنوز پیاده‌سازی نشده است. برای کار روی
+فرمان‌های فاز ۱ و همچنین proxy، DNS، fleet، status، backup و deploy را
+پیاده می‌کنند. روی برد، `janus deploy` با کد ۲ خارج می‌شود و `janus-build` را نام می‌برد. برای کار روی
 کد منبع یک پوسته توسعه وجود دارد: در ریشه مخزن `nix develop` را اجرا کنید.
 
 ## آنچه برای مسیریاب مشخص شده است

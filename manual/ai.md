@@ -9,8 +9,10 @@ Read this file before answering a question about using Janus OS.
 - Router commands are `docs/14-cli.md`. Build-host commands are
   `docs/16-build-host-cli.md`. `janus.*` options are
   `docs/08-configuration-reference.md`. Phase 1 commands exist, and so
-  do proxy, DNS, fleet, status, and backup. Deploy does not. Static
-  leases and Wi-Fi passphrase overrides do not. Say so.
+  do proxy, DNS, fleet, status, backup, and deploy. On the board,
+  `janus deploy` exits 2 and names `janus-build`. Hot overrides cover
+  an existing subscription URL, a static lease on an existing LAN, and
+  an existing Wi-Fi passphrase.
 - The router never evaluates Nix and never runs `nixos-rebuild`.
 - `docs/13-roadmap.md` says what the repository can already
   do. A placeholder module is not a finished feature.

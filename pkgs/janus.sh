@@ -1,4 +1,4 @@
-# docs/14. deploy, fleet, and audit stay later phases.
+# docs/14. audit stays a later phase. deploy and fleet name janus-build.
 usage() {
   echo "janus [--json] <command> [<args>]" >&2
   echo "See docs/14-cli.md." >&2
@@ -39,8 +39,69 @@ read_overrides() {
   fi
 }
 
+write_overrides() {
+  install -d -m 0700 /var/lib/janus
+  printf '%s\n' "$1" > "${overrides_file}.new"
+  mv "${overrides_file}.new" "$overrides_file"
+  chmod 0600 "$overrides_file"
+}
+
+restore_overrides() {
+  printf '%s\n' "$1" > "$overrides_file"
+  chmod 0600 "$overrides_file"
+}
+
+merged_overrides() {
+  data=$(read_overrides)
+  extra='{}'
+  for secret in /var/lib/janus/secrets/wifi-*; do
+    if [ ! -f "$secret" ]; then
+      continue
+    fi
+    name=${secret##*/}
+    name=${name#wifi-}
+    key="network.wifi.${name}.passphrase"
+    if [ "$1" = 1 ]; then
+      value=$(tr -d '\n' < "$secret")
+    else
+      value='(redacted)'
+    fi
+    extra=$(printf '%s\n' "$extra" | jq --arg k "$key" --arg v "$value" '.[$k] = $v')
+  done
+  printf '%s\n' "$data" | jq --argjson extra "$extra" --argjson secrets "$1" '
+    . * $extra
+    | with_entries(
+        if $secrets == 0 and (.key | test("^(proxy\\.subscriptions\\.|network\\.wifi\\.)"))
+        then .value = "(redacted)"
+        else . end)
+  '
+}
+
+reload_dhcp() {
+  if [ ! -x /etc/janus/bin/janus-dhcp-hosts ]; then
+    echo "janus: this image has no DHCP host file." >&2
+    return 1
+  fi
+  /etc/janus/bin/janus-dhcp-hosts
+  if systemctl is-active --quiet dnsmasq; then
+    systemctl reload dnsmasq
+  fi
+}
+
+lan_exists() {
+  [ -f /etc/janus/lans.json ] && jq -e --arg n "$1" 'index($n) != null' /etc/janus/lans.json >/dev/null
+}
+
+wifi_exists() {
+  [ -f /etc/janus/wifi.json ] && jq -e --arg n "$1" 'has($n)' /etc/janus/wifi.json >/dev/null
+}
+
 case "$cmd" in
-  deploy|fleet|audit)
+  deploy|fleet)
+    echo "janus ${cmd} runs on the build host as janus-build. See docs/16-build-host-cli.md." >&2
+    exit 2
+    ;;
+  audit)
     later "$cmd${1:+ $1}"
     ;;
   proxy)
@@ -75,6 +136,11 @@ case "$cmd" in
     list=$(mktemp)
     {
       [ -f /var/lib/janus/secrets/age.key ] && printf '%s\n' var/lib/janus/secrets/age.key
+      for secret in /var/lib/janus/secrets/wifi-*; do
+        if [ -f "$secret" ]; then
+          printf '%s\n' "var/lib/janus/secrets/${secret##*/}"
+        fi
+      done
       [ -f /var/lib/janus/overrides.json ] && printf '%s\n' var/lib/janus/overrides.json
       [ -f /var/lib/janus/engine/selection.json ] && printf '%s\n' var/lib/janus/engine/selection.json
       [ -d /var/lib/vnstat ] && printf '%s\n' var/lib/vnstat
@@ -103,7 +169,7 @@ case "$cmd" in
           echo "janus restore: rejected ${member}" >&2
           exit 2
           ;;
-        var/lib/janus/secrets/age.key | var/lib/janus/overrides.json | var/lib/janus/engine/selection.json)
+        var/lib/janus/secrets/age.key | var/lib/janus/secrets/wifi-* | var/lib/janus/overrides.json | var/lib/janus/engine/selection.json)
           ;;
         var/lib/vnstat | var/lib/vnstat/ | var/lib/vnstat/*)
           ;;
@@ -230,54 +296,121 @@ case "$cmd" in
     fi
     case "$sub" in
       show|diff)
-        data=$(read_overrides)
-        if [ "$json" = 1 ] && [ "$show_secrets" = 1 ]; then
+        data=$(merged_overrides "$show_secrets")
+        if [ "$json" = 1 ]; then
           printf '%s\n' "$data"
-        elif [ "$json" = 1 ]; then
-          printf '%s\n' "$data" | jq 'with_entries(.value = "(redacted)")'
         else
-          printf '%s\n' "$data" | jq -r --argjson secrets "$show_secrets" '
+          printf '%s\n' "$data" | jq -r '
             to_entries[]
-            | if $secrets == 1 then "\(.key) \(.value)" else "\(.key) (redacted)" end
+            | if (.value | type) == "object" then "\(.key) \(.value | tojson)" else "\(.key) \(.value)" end
           '
         fi
         ;;
       set)
         key=${1:-}
-        value=${2:-}
+        shift || true
+        mac=""
+        ip=""
+        value=""
+        while [ $# -gt 0 ]; do
+          case "$1" in
+            --mac)
+              mac=${2:-}
+              shift 2
+              ;;
+            --ip)
+              ip=${2:-}
+              shift 2
+              ;;
+            *)
+              value=$1
+              shift
+              ;;
+          esac
+        done
         case "$key" in
-          proxy.subscriptions.*.url) ;;
-          network.lans.*.dhcp.staticLeases.*|network.wifi.*.passphrase)
-            echo "janus override set ${key} is phase 3. See docs/13-roadmap.md." >&2
-            exit 2
+          proxy.subscriptions.*.url)
+            name=${key#proxy.subscriptions.}
+            name=${name%.url}
+            if [ ! -f /etc/janus/subscriptions.json ] || ! jq -e --arg n "$name" 'has($n)' /etc/janus/subscriptions.json >/dev/null; then
+              echo "subscription ${name} is not in this image." >&2
+              exit 2
+            fi
+            if [ -z "$value" ]; then
+              value=$(cat)
+            fi
+            if [ -z "$value" ]; then
+              usage
+            fi
+            current=$(read_overrides)
+            next=$(printf '%s\n' "$current" | jq --arg k "$key" --arg v "$value" '.[$k] = $v')
+            write_overrides "$next"
+            if ! /etc/janus/bin/janus-proxy refresh "$name"; then
+              restore_overrides "$current"
+              exit 1
+            fi
+            ;;
+          network.lans.*.dhcp.staticLeases.*)
+            rest=${key#network.lans.}
+            lan=${rest%%.dhcp.staticLeases.*}
+            if ! lan_exists "$lan"; then
+              echo "LAN ${lan} is not in this image. A new LAN is a rebuild." >&2
+              exit 2
+            fi
+            if [ -z "$mac" ] || [ -z "$ip" ]; then
+              echo "janus override set ${key} needs --mac and --ip." >&2
+              exit 2
+            fi
+            current=$(read_overrides)
+            next=$(printf '%s\n' "$current" | jq --arg k "$key" --arg mac "$mac" --arg ip "$ip" '.[$k] = {mac: $mac, ip: $ip}')
+            write_overrides "$next"
+            if ! reload_dhcp; then
+              restore_overrides "$current"
+              reload_dhcp || true
+              exit 1
+            fi
+            ;;
+          network.wifi.*.passphrase)
+            ap=${key#network.wifi.}
+            ap=${ap%.passphrase}
+            if ! wifi_exists "$ap"; then
+              echo "Wi-Fi AP ${ap} is not in this image. A new AP is a rebuild." >&2
+              exit 2
+            fi
+            if [ -z "$value" ]; then
+              value=$(cat)
+            fi
+            if [ -z "$value" ]; then
+              usage
+            fi
+            install -d -m 0700 /var/lib/janus/secrets
+            dest="/var/lib/janus/secrets/wifi-${ap}"
+            previous=$(mktemp)
+            had=0
+            if [ -f "$dest" ]; then
+              cp "$dest" "$previous"
+              had=1
+            fi
+            umask 077
+            printf '%s\n' "$value" > "$dest"
+            chmod 0600 "$dest"
+            if ! systemctl restart "janus-hostapd-${ap}"; then
+              if [ "$had" = 1 ]; then
+                cp "$previous" "$dest"
+                chmod 0600 "$dest"
+              else
+                rm -f "$dest"
+              fi
+              rm -f "$previous"
+              exit 1
+            fi
+            rm -f "$previous"
             ;;
           *)
             echo "janus override set ${key} is not on the allowlist. Rebuild on the build host." >&2
             exit 2
             ;;
         esac
-        name=${key#proxy.subscriptions.}
-        name=${name%.url}
-        if [ ! -f /etc/janus/subscriptions.json ] || ! jq -e --arg n "$name" 'has($n)' /etc/janus/subscriptions.json >/dev/null; then
-          echo "subscription ${name} is not in this image." >&2
-          exit 2
-        fi
-        if [ -z "$value" ]; then
-          value=$(cat)
-        fi
-        if [ -z "$value" ]; then
-          usage
-        fi
-        install -d -m 0700 /var/lib/janus
-        current=$(read_overrides)
-        printf '%s\n' "$current" | jq --arg k "$key" --arg v "$value" '.[$k] = $v' > "${overrides_file}.new"
-        mv "${overrides_file}.new" "$overrides_file"
-        chmod 0600 "$overrides_file"
-        if ! /etc/janus/bin/janus-proxy refresh "$name"; then
-          printf '%s\n' "$current" > "$overrides_file"
-          chmod 0600 "$overrides_file"
-          exit 1
-        fi
         ;;
       unset)
         key=${1:-}
@@ -285,21 +418,37 @@ case "$cmd" in
           usage
         fi
         case "$key" in
-          proxy.subscriptions.*.url) ;;
+          proxy.subscriptions.*.url)
+            name=${key#proxy.subscriptions.}
+            name=${name%.url}
+            current=$(read_overrides)
+            next=$(printf '%s\n' "$current" | jq --arg k "$key" 'del(.[$k])')
+            write_overrides "$next"
+            if [ -x /etc/janus/bin/janus-proxy ]; then
+              /etc/janus/bin/janus-proxy refresh "$name" || true
+            fi
+            ;;
+          network.lans.*.dhcp.staticLeases.*)
+            current=$(read_overrides)
+            next=$(printf '%s\n' "$current" | jq --arg k "$key" 'del(.[$k])')
+            write_overrides "$next"
+            if ! reload_dhcp; then
+              restore_overrides "$current"
+              reload_dhcp || true
+              exit 1
+            fi
+            ;;
+          network.wifi.*.passphrase)
+            ap=${key#network.wifi.}
+            ap=${ap%.passphrase}
+            rm -f "/var/lib/janus/secrets/wifi-${ap}"
+            systemctl restart "janus-hostapd-${ap}" || true
+            ;;
           *)
-            echo "janus override unset ${key} is not a phase 2 subscription url." >&2
+            echo "janus override unset ${key} is not on the allowlist." >&2
             exit 2
             ;;
         esac
-        name=${key#proxy.subscriptions.}
-        name=${name%.url}
-        current=$(read_overrides)
-        printf '%s\n' "$current" | jq --arg k "$key" 'del(.[$k])' > "${overrides_file}.new"
-        mv "${overrides_file}.new" "$overrides_file"
-        chmod 0600 "$overrides_file"
-        if [ -x /etc/janus/bin/janus-proxy ]; then
-          /etc/janus/bin/janus-proxy refresh "$name" || true
-        fi
         ;;
       *) usage ;;
     esac

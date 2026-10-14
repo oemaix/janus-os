@@ -63,7 +63,8 @@ Allowlist (FR-OPS-007). Nothing else is accepted.
 | `network.lans.<name>.dhcp.staticLeases.<host>` | `janus override set network.lans.<name>.dhcp.staticLeases.<host> --mac <mac> --ip <ip>` |
 | `network.wifi.<name>.passphrase` | `janus override set network.wifi.<name>.passphrase` (reads stdin, writes the secrets directory, not the JSON) |
 
-`<name>` and `<host>` must already exist in the embedded configuration.
+The subscription, the LAN, and the Wi-Fi AP must already exist in the
+embedded configuration. A static-lease hostname may be new on that LAN.
 Creating a subscription, a LAN, or a Wi-Fi AP is a rebuild.
 
 | Command | Effect |

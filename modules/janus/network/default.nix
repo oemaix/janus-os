@@ -58,7 +58,7 @@
 
   known = name: lib.elem name linkNames;
 in {
-  imports = [./lower.nix];
+  imports = [./lower.nix ./wifi.nix ./wwan.nix ./health.nix];
 
   options.janus.network = {
     ports = mkOption {
@@ -280,7 +280,7 @@ in {
               };
             };
             default = {};
-            description = "WWAN uplink. Bring-up is a later phase.";
+            description = "WWAN uplink. Ethernet modes are DHCP clients. QMI and MBIM connect before networkd.";
           };
           ipv6.mode = mkOption {
             type = types.enum ["disabled" "slaac" "dhcpv6-pd" "static" "passthrough"];
@@ -320,6 +320,7 @@ in {
         };
         config = lib.mkIf (config.role == "backup") {
           healthCheck.enable = lib.mkDefault true;
+          healthCheck.targets = lib.mkDefault ["1.1.1.1" "9.9.9.9"];
         };
       }));
       default = {};
@@ -464,7 +465,7 @@ in {
             default = null;
             description = ''
               sops secret name. The decrypted file is one line, the passphrase.
-              The age key is `/var/lib/janus/secrets/age.key`. The AP itself is phase 3.
+              The age key is `/var/lib/janus/secrets/age.key`.
             '';
           };
           band = mkOption {
@@ -637,24 +638,29 @@ in {
       cfg.wifi
       ++ lib.concatMap (n: [
         {
-          assertion = cfg.wans.${n}.mode != "wwan";
-          message = "janus.network.wans.${n}.mode = wwan is phase 3 (docs/13-roadmap.md).";
+          assertion = cfg.wans.${n}.mode != "wwan" || (cfg.wans.${n}.wwan.peripheral != null && config.janus.hardware.peripherals ? ${cfg.wans.${n}.wwan.peripheral});
+          message = "janus.network.wans.${n}.mode = wwan needs a declared wwan peripheral.";
         }
       ])
       wanNames
-      ++ lib.concatMap (n:
-        lib.concatMap (member: [
-          {
-            assertion = !(cfg.wifi ? ${member});
-            message = "janus.network.lans.${n}.members entry '${member}' is a Wi-Fi AP. Wi-Fi is phase 3.";
-          }
-        ])
-        cfg.lans.${n}.members)
-      lanNames;
+      ++ lib.mapAttrsToList (n: ap: {
+        assertion = config.janus.hardware.peripherals ? ${ap.peripheral} && config.janus.hardware.peripherals.${ap.peripheral}.class == "wifi";
+        message = "janus.network.wifi.${n}.peripheral '${ap.peripheral}' is not a wifi peripheral.";
+      })
+      cfg.wifi
+      ++ lib.mapAttrsToList (n: ap: {
+        assertion = cfg.lans ? ${ap.lan};
+        message = "janus.network.wifi.${n}.lan '${ap.lan}' is not a LAN.";
+      })
+      cfg.wifi
+      ++ lib.mapAttrsToList (n: ap: {
+        assertion = ap.passphrase != null || ap.passphraseFile != null || ap.passphraseSecret != null;
+        message = "janus.network.wifi.${n} needs a passphrase, passphraseFile, or passphraseSecret.";
+      })
+      cfg.wifi;
 
     warnings =
-      lib.optional (cfg.wifi != {}) "janus.network.wifi is not lowered yet. Wi-Fi AP is phase 3."
-      ++ lib.optional cfg.igmpProxy.enable "janus.network.igmpProxy is deferred until after 1.0."
+      lib.optional cfg.igmpProxy.enable "janus.network.igmpProxy is deferred until after 1.0."
       ++ lib.concatMap (n: lib.optional (cfg.wans.${n}.role == "iptv") "janus.network.wans.${n}.role = iptv installs no default route. IGMP is deferred until after 1.0.") wanNames;
   };
 }

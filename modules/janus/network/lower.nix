@@ -30,6 +30,8 @@
     then portIface name
     else if vlanByRef name != null
     then vlanNetdev cfg.vlans.${vlanByRef name}
+    else if cfg.wifi ? ${name}
+    then "wifi-${name}"
     else name;
 
   wanIface = name: let
@@ -37,6 +39,8 @@
   in
     if wan.mode == "pppoe"
     then "ppp-${name}"
+    else if wan.mode == "wwan"
+    then "wwan-${wan.wwan.peripheral}"
     else resolve wan.uplink;
 
   wanIndex = lib.listToAttrs (lib.imap0 (i: n: {
@@ -136,9 +140,12 @@
 
   wanFile = name: let
     wan = cfg.wans.${name};
-    iface = resolve wan.uplink;
+    iface =
+      if wan.mode == "wwan"
+      then "wwan-${wan.wwan.peripheral}"
+      else resolve wan.uplink;
     v6 = wan.ipv6.mode;
-    dhcp = wan.mode == "dhcp";
+    dhcp = wan.mode == "dhcp" || wan.mode == "wwan";
     both = dhcp && v6 != "disabled";
   in
     if wan.mode == "pppoe"
@@ -425,14 +432,52 @@ in {
             lan = cfg.lans.${n};
           in "${lan.dhcp.rangeStart},${lan.dhcp.rangeEnd},${lan.dhcp.leaseTime}")
           dhcpLanNames;
-          dhcp-host = lib.concatMap (n:
-            lib.mapAttrsToList (host: lease: "${lease.mac},${lease.ip},${host}") cfg.lans.${n}.dhcp.staticLeases)
-          dhcpLanNames;
+          dhcp-hostsfile = "/var/lib/janus/dhcp-hosts";
         };
       };
 
       environment.etc = lib.mkMerge (
-        map (name: let
+        [
+          {
+            "janus/static-leases.json".text = builtins.toJSON (
+              lib.mapAttrs (_: lan: lan.dhcp.staticLeases) cfg.lans
+            );
+            "janus/lans.json".text = builtins.toJSON lanNames;
+            "janus/bin/janus-dhcp-hosts" = {
+              source = pkgs.writeShellScript "janus-dhcp-hosts" ''
+                set -eu
+                install -d -m 0755 /var/lib/janus
+                base=/etc/janus/static-leases.json
+                over=/var/lib/janus/overrides.json
+                out=/var/lib/janus/dhcp-hosts
+                if [ ! -f "$base" ]; then
+                  : > "$out"
+                  exit 0
+                fi
+                if [ -f "$over" ]; then
+                  src=$over
+                else
+                  src=$(mktemp)
+                  printf '%s\n' '{}' > "$src"
+                fi
+                ${pkgs.jq}/bin/jq -r --slurpfile extra "$src" '
+                  . as $base
+                  | ($extra[0] // {}) as $o
+                  | reduce ($o | to_entries[]) as $e ($base;
+                      if ($e.key | test("^network\\.lans\\.[^.]+\\.dhcp\\.staticLeases\\.")) then
+                        ($e.key | capture("^network\\.lans\\.(?<lan>[^.]+)\\.dhcp\\.staticLeases\\.(?<host>.+)$")) as $p
+                        | .[$p.lan][$p.host] = $e.value
+                      else . end)
+                  | to_entries[]
+                  | .value | to_entries[]
+                  | "\(.value.mac),\(.value.ip),\(.key)"
+                ' "$base" > "$out"
+              '';
+              mode = "0555";
+            };
+          }
+        ]
+        ++ map (name: let
           wan = cfg.wans.${name};
         in
           lib.optionalAttrs (wan.mode == "pppoe" && !pppFromSecret name) {
@@ -455,6 +500,12 @@ in {
       );
 
       systemd.services = lib.mkMerge [
+        (lib.mkIf (dhcpLanNames != []) {
+          dnsmasq.serviceConfig = {
+            ExecStartPre = ["${pkgs.coreutils}/bin/mkdir -p /var/lib/janus" "/etc/janus/bin/janus-dhcp-hosts"];
+            ExecReload = "${pkgs.procps}/bin/kill -HUP $MAINPID";
+          };
+        })
         (lib.mkMerge (map pppService wanNames))
         (lib.mkIf (wanNames != []) {
           janus-wan-policy = {

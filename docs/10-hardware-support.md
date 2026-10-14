@@ -101,9 +101,11 @@ explicit `ecm`, `ncm`, `rndis`, `qmi`, or `mbim` overrides that row.
 Janus sends `apn` for `qmi` and `mbim` only. Ethernet modes ignore it;
 the module already has an APN.
 
-The board-agnostic module handles mode switching (`usb_modeswitch` rules
-from the allowlist only), link bring-up per mode, and health reporting
-into `/run/janus/wwan/<name>`. A WAN with `mode = "wwan"` references the
+The board-agnostic module handles mode switching, link bring-up per mode,
+and health reporting into `/run/janus/wwan/<name>`. The allowlist has no
+`usb_modeswitch` message. An empty `wwan.modeSwitch` does not invent one.
+A non-empty set is written as a usb_modeswitch config and run before the
+link comes up. A WAN with `mode = "wwan"` references the
 peripheral; internally it becomes a `dhcp` WAN (Ethernet modes) or a
 QMI/MBIM-managed link.
 

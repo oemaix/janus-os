@@ -189,17 +189,41 @@
 
   modelFile = pkgs.writeText "janus-proxy-model.json" (builtins.toJSON model);
 
-  engineConfig =
-    pkgs.runCommand "janus-engine.json" {
-      nativeBuildInputs = [pkgs.janet pkgs.sing-box];
-    } ''
-      janet ${janetScript} render \
-        --model ${modelFile} \
-        --nodes ${builtNodes} \
-        --rule-set remote \
-        --output "$out"
-      sing-box check -c "$out"
-    '';
+  xrayAssets = pkgs.linkFarm "xray-assets" [
+    {
+      name = "geosite.dat";
+      path = "${pkgs.v2ray-domain-list-community}/share/v2ray/geosite.dat";
+    }
+    {
+      name = "geoip.dat";
+      path = "${pkgs.v2ray-geoip}/share/v2ray/geoip.dat";
+    }
+  ];
+
+  engineConfig = pkgs.runCommand "janus-engine.json" ({
+      nativeBuildInputs =
+        [pkgs.janet]
+        ++ (
+          if cfg.engine == "xray"
+          then [pkgs.xray]
+          else [pkgs.sing-box]
+        );
+    }
+    // lib.optionalAttrs (cfg.engine == "xray") {
+      XRAY_LOCATION_ASSET = xrayAssets;
+    }) ''
+    janet ${janetScript} render \
+      --model ${modelFile} \
+      --nodes ${builtNodes} \
+      --rule-set remote \
+      --engine ${cfg.engine} \
+      --output "$out"
+    ${
+      if cfg.engine == "xray"
+      then ''xray run -test -c "$out"''
+      else ''sing-box check -c "$out"''
+    }
+  '';
 
   geosites = lib.unique (
     lib.concatMap (rule: rule.match.geosite or []) model.rules
@@ -274,11 +298,20 @@
 
   helper = pkgs.writeShellApplication {
     name = "janus-proxy";
-    runtimeInputs = with pkgs; [janet sing-box curl jq iproute2 coreutils age nftables systemd gawk];
+    runtimeInputs = with pkgs;
+      [janet curl jq iproute2 coreutils age nftables systemd gawk]
+      ++ (
+        if cfg.engine == "xray"
+        then [xray bind]
+        else [sing-box]
+      );
     text =
       ''
         JANUS_SCRIPT=${janetScript}
+        JANUS_ENGINE=${cfg.engine}
         JANUS_FAIL_MODE=${cfg.failMode}
+        ${lib.optionalString (cfg.engine == "xray") "XRAY_LOCATION_ASSET=${xrayAssets}"}
+        ${lib.optionalString (cfg.engine == "xray" && cfg.failMode == "open" && intercept) "JANUS_XRAY_NFT=/etc/janus/xray-open.nft"}
         JANUS_INTERCEPT=${
           if intercept
           then "1"
@@ -334,7 +367,9 @@
       iifname { ${bridgeSet} } ip daddr { ${privateV4} } return
       iifname { ${bridgeSet} } ip6 daddr { ${privateV6} } return
       iifname { ${bridgeSet} } ip6 daddr fc00::/7 ip6 daddr != ${fakeV6} return
-      iifname { ${bridgeSet} } meta mark set 0x00004a01
+      ${lib.optionalString (cfg.engine != "xray") ''
+        iifname { ${bridgeSet} } meta mark set 0x00004a01
+      ''}
     '';
 
   guardRules = lib.concatStringsSep "\n" (lib.filter (s: s != "") [
@@ -384,6 +419,17 @@ in {
       }
       // lib.optionalAttrs (geodataFiles != {}) {
         "janus/geodata".source = geodataDir;
+      }
+      // lib.optionalAttrs (cfg.engine == "xray" && cfg.failMode == "open" && intercept) {
+        "janus/xray-open.nft".text = ''
+          table inet janus_xray {
+            chain xray {
+              type filter hook prerouting priority mangle; policy accept;
+              ${markRules}
+              iifname { ${bridgeSet} } meta mark set 0x00004a02 tproxy to :12345
+            }
+          }
+        '';
       };
 
     systemd.tmpfiles.rules = [
@@ -419,7 +465,7 @@ in {
     };
 
     systemd.services.janus-engine = {
-      description = "Janus sing-box engine";
+      description = "Janus proxy engine";
       wantedBy = ["multi-user.target"];
       wants = ["network-online.target"];
       after = ["network-online.target" "janus-intercept.service"];
@@ -429,7 +475,11 @@ in {
           "${helper}/bin/janus-proxy geodata-missing"
           "${helper}/bin/janus-proxy render"
         ];
-        ExecStart = "${pkgs.sing-box}/bin/sing-box run -c /var/lib/janus/engine/config.json";
+        ExecStart =
+          if cfg.engine == "xray"
+          then "${pkgs.xray}/bin/xray run -c /var/lib/janus/engine/config.json"
+          else "${pkgs.sing-box}/bin/sing-box run -c /var/lib/janus/engine/config.json";
+        Environment = lib.optional (cfg.engine == "xray") "XRAY_LOCATION_ASSET=${xrayAssets}";
         ExecStartPost = "${helper}/bin/janus-proxy tun-up";
         ExecStopPost = "${helper}/bin/janus-proxy tun-down";
         Restart = "on-failure";
@@ -499,6 +549,13 @@ in {
           chain guard {
             type filter hook prerouting priority -200; policy accept;
             ${guardRules}
+          }
+        ''}
+        ${lib.optionalString (cfg.engine == "xray" && cfg.failMode == "closed") ''
+          chain xray {
+            type filter hook prerouting priority mangle; policy accept;
+            ${markRules}
+            iifname { ${bridgeSet} } meta mark set 0x00004a02 tproxy to :12345
           }
         ''}
       '';

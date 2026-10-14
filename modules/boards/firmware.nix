@@ -6,19 +6,21 @@
   lib,
   ...
 }: {
-  config = lib.mkIf (
-    builtins.elem config.janus.hardware.board [
-      "nanopi-r4s"
-      "le-potato"
-      "rpi-zero-2w"
-    ]
-  ) {
-    nixpkgs.config.allowUnfreePredicate = pkg: let
-      licenses = lib.toList (pkg.meta.license or []);
-    in
-      builtins.any (
-        license: (license.redistributable or false) && !(license.free or true)
-      )
-      licenses;
-  };
+  config =
+    lib.mkIf (
+      builtins.elem config.janus.hardware.board [
+        "nanopi-r4s"
+        "le-potato"
+        "rpi-zero-2w"
+        "rpi3"
+      ]
+    ) {
+      nixpkgs.config.allowUnfreePredicate = pkg: let
+        licenses = lib.toList (pkg.meta.license or []);
+      in
+        builtins.any (
+          license: (license.redistributable or false) && !(license.free or true)
+        )
+        licenses;
+    };
 }

@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-09-30 |
+| Last updated | 2026-10-14 |
 
 This file is the implementation plan, the progress of the code, and the
 notes for work that is specified but not started. Choices are *18*.
@@ -99,11 +99,12 @@ tree does not mean that behavior exists. Stubs are not finished features.
   key path is `/var/lib/janus/secrets/age.key`. sops-nix decrypts to
   `/run/secrets` at activation. A PPPoE `passwordSecret` is YAML with
   `username` and `password`. A Wi-Fi `passphraseSecret` is one line.
-  The Wi-Fi AP itself is phase 3.
+  `janus-hostapd-<name>` reads a runtime passphrase file.
 * Board profiles: `x86_64-test` (virtio, no raw firmware), NanoPi R4S
   (U-Boot at sector 64, `eth0`/`eth1`, no WAN chosen), Le Potato (U-Boot
   FIP, one `eth0`), Raspberry Pi Zero 2 W (FAT `config.txt`, no Ethernet
-  port). Yanyu names `lan1`–`lan4` by PCI path and installs Limine
+  port), Raspberry Pi 3 / 3+ (`rpi3`, FAT `config.txt`, one `eth0`).
+  Yanyu names `lan1`–`lan4` by PCI path and installs Limine
   (D-0029). The image has not been booted on the lab AMI board.
 * Image builder: GPT, FAT boot, f2fs root, f2fs store, f2fs state.
   `nix build .#checks.x86_64-linux.vm-x86_64-test` boots that image.
@@ -114,22 +115,25 @@ tree does not mean that behavior exists. Stubs are not finished features.
 * User-facing text: root `README.md` and `manual/` in English, Russian,
   and Persian, in that order, plus `manual/llms.txt` and `manual/ai.md`.
 * `janet/janus.janet` normalizes share links, Clash, and sing-box, matches
-  with regex, glob, and PEG, and renders sing-box. The image build runs
-  `sing-box check` on that config. Xray is not rendered.
-* `janus.proxy.enable` installs sing-box, redirects LAN DNS to it, and
-  marks proxied LAN traffic into table 2022 (D-0030). `failMode = closed`
-  blackholes that table until the engine replaces it with `tun0`.
-* Subscription refresh, Geo data download, and a hot override for an
-  existing subscription URL. `janus dns check` reports and does not
-  change policy. `janus-build fleet`, `status`, and `backup` are the
-  build-host commands in *16*. Static-lease and Wi-Fi passphrase
-  overrides stay phase 3.
+  with regex, glob, and PEG, and renders sing-box or Xray. The image
+  build runs `sing-box check` or `xray run -test`.
+* `janus.proxy.enable` installs the selected engine and redirects LAN DNS
+  to it. sing-box marks proxied LAN traffic into table 2022 (D-0030).
+  Xray tproxies that traffic to port 12345 (D-0031).
+* Subscription refresh, Geo data download, and hot overrides for an
+  existing subscription URL, a static lease on an existing LAN, and an
+  existing Wi-Fi passphrase. `janus dns check` reports and does not
+  change policy. `janus-build fleet`, `status`, `backup`, and `deploy`
+  are the build-host commands in *16*.
+* WWAN Ethernet modes are DHCP clients. QMI and MBIM run `qmicli` or
+  `mbimcli` before networkd (ADR-0015). A backup WAN can fail over when
+  its health targets fail.
+* Tailscale and optional WireGuard join the `mgmt` zone. There is no
+  reverse SSH.
 
 ### Not done
 
-* Lowering `janus.remoteAccess`. Wi-Fi, WWAN, and `iptv` stay at their
-  later phases. The Xray renderer is phase 3.
-* `janus-build deploy`. `janus audit`.
+* `iptv` and IGMP stay after 1.0. `janus audit` stays after 1.0.
 * The age key is not on the image. The first boot cannot decrypt until
   `janus secrets install-age-key` has written `/var/lib/janus/secrets/age.key`.
   A `urlSecret` subscription is an empty snapshot until that key is
@@ -137,8 +141,7 @@ tree does not mean that behavior exists. Stubs are not finished features.
 * VM checks for DHCP, NAT, DNS, and the firewall. The boot check covers
   the mount model only. `eval-proxy` checks the rendered config and the
   nftables text, not a running engine.
-* Hot overrides for static leases and Wi-Fi passphrases.
-* HMI, battery shutdown, WWAN, and Wi-Fi AP.
+* HMI and battery shutdown.
 * The local wizard. `janus-build init` is implemented; the wizard is not.
 
 ## 3. Notes for later implementation

@@ -40,7 +40,7 @@ machine will have are specified in [docs/16-build-host-cli.md](docs/16-build-hos
 The `janus.*` options are specified in
 [docs/08-configuration-reference.md](docs/08-configuration-reference.md).
 `janus-build` implements `init`, `host add`, `secret`, `check`, `build`,
-`update`, `fleet`, `status`, and `backup`. `janus` implements the router
-status, WAN, lease, firewall, age-key, proxy, DNS, and backup commands.
-Deploy still exits 2. Static-lease and Wi-Fi passphrase overrides still
-exit 2.
+`update`, `fleet`, `status`, `backup`, and `deploy`. `janus` implements
+the router status, WAN, lease, firewall, age-key, proxy, DNS, backup,
+and hot-override commands. On the board, `janus deploy` exits 2 and
+names `janus-build`.

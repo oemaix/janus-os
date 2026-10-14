@@ -1,12 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
-# janus.remoteAccess option types. Tailscale lowering is phase 3. docs/08 §9.
+# janus.remoteAccess option types. Lowering is lower.nix. docs/08 §9.
 {
   config,
   lib,
   ...
 }: let
   inherit (lib) mkOption types;
-  cfg = config.janus.remoteAccess;
 in {
   options.janus.remoteAccess = {
     tailscale.enable = mkOption {
@@ -79,7 +78,5 @@ in {
     };
   };
 
-  config.warnings = lib.optional cfg.tailscale.enable ''
-    janus.remoteAccess.tailscale is not lowered yet.
-  '';
+  imports = [./lower.nix];
 }

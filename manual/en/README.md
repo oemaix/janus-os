@@ -10,12 +10,12 @@ The project is public and licensed under the Apache License, Version 2.0.
 
 The manual and the definition documents are in this repository. The router
 image boots in a VM. Image profiles exist for the NanoPi R4S, the Le
-Potato, the Raspberry Pi Zero 2 W, and the Yanyu STX-R19F (Limine on
-legacy BIOS). `janus` and
-`janus-build` implement the phase 1 commands, plus proxy, DNS, fleet,
-status, and backup. Deploy is not implemented yet. A development
-shell exists for people working on the source: from the repository root,
-run `nix develop`.
+Potato, the Raspberry Pi Zero 2 W, the Raspberry Pi 3 / 3+, and the
+Yanyu STX-R19F (Limine on legacy BIOS). `janus` and `janus-build`
+implement the phase 1 commands, plus proxy, DNS, fleet, status, backup,
+and deploy. On the board, `janus deploy` exits 2 and names `janus-build`.
+A development shell exists for people working on the source: from the
+repository root, run `nix develop`.
 
 ## What the router is specified to do
 

@@ -209,6 +209,7 @@ in {
     r4s = one "nanopi-r4s";
     potato = one "le-potato";
     zero = one "rpi-zero-2w";
+    rpi = one "rpi3";
     plain = mk [base];
     # The boot scripts name store paths. Drop that context so the check
     # evaluates the profiles without building U-Boot or the kernel.
@@ -230,6 +231,11 @@ in {
       echo ${text potato.config.system.build.janusBoardImage.firmwareInstall} | grep -q u-boot.gxl
       test ${toString (lib.length (lib.attrNames zero.config.janus.network.ports))} = 0
       echo ${text zero.config.system.build.janusBoardImage.bootExtra} | grep -q config.txt
+      test ${lib.escapeShellArg (lib.head (lib.attrNames rpi.config.janus.network.ports))} = eth0
+      echo ${text rpi.config.system.build.janusBoardImage.bootExtra} | grep -q bcm2710-rpi-3-b.dtb
+      echo ${text rpi.config.system.build.janusBoardImage.bootExtra} | grep -q bcm2710-rpi-3-b-plus.dtb
+      echo ${text rpi.config.system.build.janusBoardImage.bootExtra} | grep -q '\[pi3\]'
+      echo ${text rpi.config.system.build.janusBoardImage.bootExtra} | grep -q '\[pi3+\]'
       test ${lib.escapeShellArg plain.config.sops.age.keyFile} = /var/lib/janus/secrets/age.key
       echo ok > "$out"
     '';
@@ -402,13 +408,236 @@ in {
       sing-box check -c ${engine}
       echo ok > "$out"
     '';
-  eval-proxy-xray = fail "eval-proxy-xray" [
+  eval-proxy-xray = let
+    os = mk [
+      base
+      {
+        janus.network.lans.lan = {
+          members = ["lan"];
+          address = "192.168.10.1";
+          prefixLength = 24;
+        };
+        janus.proxy = {
+          enable = true;
+          engine = "xray";
+          nodes.demo = {
+            protocol = "trojan";
+            server = "203.0.113.10";
+            port = 443;
+            trojan.password = "janus-build-check";
+          };
+          groups.Wave = {
+            members = ["node:demo"];
+            strategy = "load-balance";
+          };
+          rules = [
+            {
+              match.domains = ["example.com"];
+              target = "direct";
+            }
+          ];
+        };
+        janus.security.allowInlineSecrets = true;
+      }
+    ];
+    engine = os.config.system.build.janusEngineConfig;
+    mark = os.config.networking.nftables.tables.janus_intercept.content;
+    start = os.config.systemd.services.janus-engine.serviceConfig.ExecStart;
+  in
+    pkgs.runCommand "eval-proxy-xray" {
+      nativeBuildInputs = [pkgs.jq pkgs.xray];
+    } ''
+      xray run -test -c ${engine}
+      jq -e '.inbounds[] | select(.protocol == "dokodemo-door" and .port == 12345)' ${engine} >/dev/null
+      jq -e '.inbounds[] | select(.tag == "api" and .port == 8080)' ${engine} >/dev/null
+      jq -e '.outbounds[] | select(.protocol == "dns" and .tag == "dns-out")' ${engine} >/dev/null
+      jq -e 'any(.routing.rules[]; (.domain // []) | index("full:example.com"))' ${engine} >/dev/null
+      jq -e '.routing.balancers[] | select(.tag == "Wave") | .strategy.type == "roundRobin"' ${engine} >/dev/null
+      jq -e '[.inbounds[] | select(.protocol == "tun" or .type == "tun")] | length == 0' ${engine} >/dev/null
+      echo ${lib.escapeShellArg start} | grep -q 'xray run'
+      echo ${lib.escapeShellArg mark} | grep -q 'tproxy to :12345'
+      if echo ${lib.escapeShellArg mark} | grep -q '0x00004a01'; then
+        echo "xray still marks 0x4a01" >&2
+        exit 1
+      fi
+      echo ok > "$out"
+    '';
+  eval-proxy-xray-insecure = fail "eval-proxy-xray-insecure" [
     base
     {
-      janus.proxy.enable = true;
-      janus.proxy.engine = "xray";
+      janus.security.allowInlineSecrets = true;
+      janus.proxy = {
+        enable = true;
+        engine = "xray";
+        nodes.demo = {
+          protocol = "trojan";
+          server = "203.0.113.10";
+          port = 443;
+          trojan.password = "janus-build-check";
+          tls.enable = true;
+          tls.insecure = true;
+        };
+      };
     }
   ];
+  eval-proxy-xray-fallback = fail "eval-proxy-xray-fallback" [
+    base
+    {
+      janus.security.allowInlineSecrets = true;
+      janus.proxy = {
+        enable = true;
+        engine = "xray";
+        nodes.demo = {
+          protocol = "trojan";
+          server = "203.0.113.10";
+          port = 443;
+          trojan.password = "janus-build-check";
+        };
+        groups.A = {
+          members = ["node:demo"];
+          strategy = "fallback";
+        };
+      };
+    }
+  ];
+  eval-wifi = let
+    os = mk [
+      base
+      {
+        janus.security.allowInlineSecrets = true;
+        janus.hardware.peripherals.stick = {
+          class = "wifi";
+          match.usbVendorProduct = "0bda:8176";
+        };
+        janus.network.lans.lan = {
+          members = ["lan" "home"];
+          address = "192.168.10.1";
+          prefixLength = 24;
+        };
+        janus.network.wifi.home = {
+          peripheral = "stick";
+          ssid = "ja\$nus";
+          passphrase = "secret\$1";
+          lan = "lan";
+        };
+      }
+    ];
+    script = os.config.systemd.services.janus-hostapd-home.serviceConfig.ExecStart;
+  in
+    pkgs.runCommand "eval-wifi" {} ''
+      test ${lib.escapeShellArg os.config.systemd.network.networks."30-member-lan-home".networkConfig.Bridge} = br-lan
+      test ${lib.escapeShellArg os.config.systemd.network.networks."30-member-lan-home".matchConfig.Name} = wifi-home
+      grep -q 'wpa_passphrase=%s' ${script}
+      grep -q ${lib.escapeShellArg "ssid='ja\$nus'"} ${script}
+      if grep -q '<<' ${script}; then
+        echo "hostapd config is still a shell heredoc" >&2
+        exit 1
+      fi
+      echo ${lib.escapeShellArg (lib.concatStrings os.config.boot.blacklistedKernelModules)} | grep -q rtl8xxxu
+      echo ok > "$out"
+    '';
+  eval-wwan-qmi = let
+    os = mk [
+      base
+      {
+        janus.hardware.peripherals.lte = {
+          class = "wwan";
+          match.usbVendorProduct = "2c7c:0125";
+          wwan.mode = "qmi";
+          wwan.modeSwitch = {
+            DefaultVendor = "0x2c7c";
+            DefaultProduct = "0x0125";
+          };
+        };
+        janus.network.wans.cell = {
+          uplink = "lte";
+          mode = "wwan";
+          wwan.peripheral = "lte";
+          wwan.apn = "in'ternet";
+        };
+      }
+    ];
+    connect = os.config.systemd.services.janus-wwan-cell.serviceConfig.ExecStart;
+    health = os.config.systemd.services.janus-wwan-health-cell.serviceConfig.ExecStart;
+    switch = os.config.systemd.services.janus-wwan-switch-cell.serviceConfig.ExecStart;
+  in
+    pkgs.runCommand "eval-wwan-qmi" {} ''
+      test ${lib.escapeShellArg os.config.systemd.network.networks."40-wan-cell".matchConfig.Name} = wwan-lte
+      test ${lib.escapeShellArg os.config.systemd.network.networks."40-wan-cell".networkConfig.DHCP} = ipv4
+      grep -q wds-start-network ${connect}
+      grep -F ${lib.escapeShellArg "apn=${lib.escapeShellArg "in'ternet"}"} ${connect}
+      if grep -q 'qmi=failed' ${connect}; then
+        echo "qmi connect hides failure" >&2
+        exit 1
+      fi
+      if grep -q wds-start-network ${health}; then
+        echo "wwan health dials again" >&2
+        exit 1
+      fi
+      echo ${lib.escapeShellArg switch} | grep -q usb_modeswitch
+      conf=$(printf '%s\n' ${lib.escapeShellArg switch} | awk '{print $NF}')
+      grep -q 'DefaultVendor=0x2c7c' "$conf"
+      echo ${lib.escapeShellArg (lib.concatStringsSep " " os.config.boot.kernelModules)} | grep -q qmi_wwan
+      echo ok > "$out"
+    '';
+  eval-remote = let
+    os = mk [
+      base
+      {
+        janus.remoteAccess.tailscale.enable = true;
+        janus.remoteAccess.wireguard.uplink = {
+          privateKeyFile = "/run/secrets/wg";
+          address = "10.9.0.2/32";
+          peer.publicKey = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa=";
+          peer.endpoint = "203.0.113.8:51820";
+          peer.allowedIPs = ["0.0.0.0/0"];
+          via = "tunnel";
+        };
+      }
+    ];
+    ifaces = lib.concatStringsSep " " os.config.janus.firewall.zones.mgmt.interfaces;
+  in
+    pkgs.runCommand "eval-remote" {} ''
+      test ${
+        if os.config.services.tailscale.enable
+        then "yes"
+        else "no"
+      } = yes
+      test ${lib.escapeShellArg os.config.services.tailscale.useRoutingFeatures} = none
+      test ${lib.escapeShellArg (toString os.config.networking.wireguard.interfaces.wg-uplink.fwMark)} = 74
+      echo ${lib.escapeShellArg ifaces} | grep -q tailscale0
+      echo ${lib.escapeShellArg ifaces} | grep -q wg-uplink
+      echo ok > "$out"
+    '';
+  eval-backup-health = let
+    os = mk [
+      base
+      {
+        janus.network.wans.main = {
+          uplink = "wan";
+          mode = "dhcp";
+        };
+        janus.network.wans.spare = {
+          uplink = "lan";
+          mode = "dhcp";
+          role = "backup";
+        };
+      }
+    ];
+    script = os.config.systemd.services.janus-wan-health.serviceConfig.ExecStart;
+  in
+    pkgs.runCommand "eval-backup-health" {} ''
+      test ${
+        if os.config.systemd.timers.janus-wan-health.enable or false
+        then "yes"
+        else "no"
+      } = yes
+      echo ${lib.escapeShellArg (lib.concatStringsSep " " os.config.janus.network.wans.spare.healthCheck.targets)} | grep -q 1.1.1.1
+      grep -q 'iface=eth0' ${script}
+      grep -q 'role=default' ${script}
+      grep -q 'healthy=' ${script}
+      echo ok > "$out"
+    '';
   eval-proxy-fallback = fail "eval-proxy-fallback" [
     base
     {
@@ -450,6 +679,32 @@ in {
       janet "$script" render --model block.json --nodes nodes.json --rule-set remote --output block-engine.json
       jq -e '.route.final == "direct" and any(.route.rules[]; .action == "reject")' block-engine.json >/dev/null
       sing-box check -c block-engine.json
+      echo ok > "$out"
+    '';
+  eval-boot-install =
+    pkgs.runCommand "eval-boot-install" {
+      nativeBuildInputs = [pkgs.bash pkgs.coreutils pkgs.gnused];
+    } ''
+      set -eu
+      closure=$TMPDIR/closure
+      mkdir -p "$closure" "$TMPDIR/boot/extlinux" "$TMPDIR/state"
+      printf 'console=ttyS0\n' > "$closure/kernel-params"
+      printf 'new-kernel\n' > "$closure/kernel"
+      printf 'new-initrd\n' > "$closure/initrd"
+      printf 'old-kernel\n' > "$TMPDIR/boot/vmlinuz"
+      printf 'old-initrd\n' > "$TMPDIR/boot/initrd"
+      printf 'old cmdline\n' > "$TMPDIR/boot/cmdline.txt"
+      printf '%s\n' 'DEFAULT janus' 'LABEL janus' '  LINUX /vmlinuz' '  INITRD /initrd' '  APPEND old' '  FDT /board.dtb' > "$TMPDIR/boot/extlinux.conf"
+      printf '%s\n' 'timeout: 0' '    cmdline: old' > "$TMPDIR/boot/limine.conf"
+      JANUS_BOOT_DIR=$TMPDIR/boot JANUS_STATE_DIR=$TMPDIR/state bash ${self.packages.${pkgs.stdenv.hostPlatform.system}.bootInstall} install "$closure"
+      grep -q "init=$closure/init" "$TMPDIR/boot/cmdline.txt"
+      grep -q new-kernel "$TMPDIR/boot/vmlinuz"
+      grep -q 'FDT /board.dtb' "$TMPDIR/boot/extlinux.conf"
+      grep -q "cmdline: console=ttyS0 init=$closure/init" "$TMPDIR/boot/limine.conf"
+      grep -q old-kernel "$TMPDIR/state/boot-previous/vmlinuz"
+      JANUS_BOOT_DIR=$TMPDIR/boot JANUS_STATE_DIR=$TMPDIR/state bash ${self.packages.${pkgs.stdenv.hostPlatform.system}.bootInstall} restore
+      grep -q old-kernel "$TMPDIR/boot/vmlinuz"
+      grep -q 'old cmdline' "$TMPDIR/boot/cmdline.txt"
       echo ok > "$out"
     '';
 }

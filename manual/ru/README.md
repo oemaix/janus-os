@@ -10,9 +10,9 @@ Janus OS не поставляет готовую систему маршрут�
 
 В репозитории есть руководство и документы с определением системы. Образ
 загружается в виртуальной машине. Образы есть для NanoPi R4S, Le Potato,
-Raspberry Pi Zero 2 W и Yanyu STX-R19F (Limine на legacy BIOS). `janus` и `janus-build`
-реализуют команды фазы 1, а также proxy, DNS, fleet, status и backup.
-deploy ещё не реализован. Для работы с
+Raspberry Pi Zero 2 W, Raspberry Pi 3 / 3+ и Yanyu STX-R19F (Limine на legacy BIOS). `janus` и `janus-build`
+реализуют команды фазы 1, а также proxy, DNS, fleet, status, backup и deploy.
+На плате `janus deploy` завершается с кодом 2 и называет `janus-build`. Для работы с
 исходным кодом есть оболочка разработки: в корне репозитория выполните
 `nix develop`.
 

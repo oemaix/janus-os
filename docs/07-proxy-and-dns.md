@@ -24,7 +24,7 @@ for one engine:
 | REALITY | yes | yes | — |
 | Trojan | yes | yes | — |
 | Shadowsocks AEAD (incl. 2022) | yes | yes (2022 partial) | assertion on unsupported cipher |
-| Shadowsocks + `simple-obfs` | yes (built-in `obfs-local` plugin) | via external plugin process | Xray: Janus spawns `obfs-local` sidecar or asserts |
+| Shadowsocks + `simple-obfs` | yes (built-in `obfs-local` plugin) | via external plugin process | Xray: evaluation fails. No sidecar (ADR-0006). |
 | Shadowsocks + `v2ray-plugin` | yes (built-in) | external process | as above |
 | Hysteria2 / TUIC | yes | no | assertion when engine = xray |
 | Transparent inbound | TUN, TPROXY, redirect | TPROXY, redirect, (TUN via external) | default: sing-box TUN with auto-route off (Janus owns routing); Xray TPROXY |
@@ -153,6 +153,7 @@ themselves when `via = "direct"`).
 * TCP+UDP for IPv4 and IPv6 are redirected to the engine's transparent
   inbound (sing-box TUN with `auto_route = false` and Janus-managed `ip
   rule`/`ip route` to the TUN for marked traffic; or TPROXY on Xray).
+  With Xray, that TPROXY target is port 12345 and mark `0x4a02` (D-0031).
 * Engine egress is marked `0x4a` and routed via the WAN tables, never back
   into interception. The engine binds to no specific WAN by default;
   `janus.proxy.egressWan = "<wan>"` pins it.

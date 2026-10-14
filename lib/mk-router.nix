@@ -22,6 +22,7 @@
     "nanopi-r4s"
     "le-potato"
     "rpi-zero-2w"
+    "rpi3"
   ];
 
   peek = lib.evalModules {
@@ -72,7 +73,8 @@ in
   then
     throw ''
       The board profile '${boardName}' is not implemented.
-      Phase 1 ships x86_64-test, yanyu-stx-r19f, nanopi-r4s, le-potato, and rpi-zero-2w
+      Phase 1 ships x86_64-test, yanyu-stx-r19f, nanopi-r4s, le-potato, and rpi-zero-2w.
+      Phase 3 adds rpi3
       (docs/13-roadmap.md, docs/10-hardware-support.md).
     ''
   else nixos

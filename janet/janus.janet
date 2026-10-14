@@ -880,6 +880,165 @@
       :clash_api @{:external_controller "127.0.0.1:9090"}
       :cache_file @{:enabled true :path "/var/lib/janus/engine/cache.db"}}})
 
+(defn xray-stream [node]
+  (def tls (at node :tls))
+  (def transport (or (at-in node [:transport :type]) "tcp"))
+  (def stream @{:network transport :sockopt @{:mark 74}})
+  (when (and tls (at tls :enable))
+    (def reality (at-in tls [:reality :publicKey]))
+    (if reality
+      (do
+        (put stream :security "reality")
+        (put stream :realitySettings @{
+          :serverName (at tls :serverName)
+          :publicKey reality
+          :shortId (or (at-in tls [:reality :shortId]) "")}))
+      (do
+        (put stream :security "tls")
+        (def settings @{})
+        (when (at tls :serverName) (put settings :serverName (at tls :serverName)))
+        (put stream :tlsSettings settings))))
+  (when (not= transport "tcp")
+    (def extra @{})
+    (when (at-in node [:transport :path]) (put extra :path (at-in node [:transport :path])))
+    (when (at-in node [:transport :host]) (put extra :headers @{:Host (at-in node [:transport :host])}))
+    (put stream (keyword (string transport "Settings")) extra))
+  stream)
+
+(defn xray-outbound [node]
+  (def tag (tag-of node))
+  (def proto (at node :protocol))
+  (def addr (at node :server))
+  (def port (at node :port))
+  (def settings
+    (case proto
+      "vless"
+      (let [user @{:id (at-in node [:vless :uuid]) :encryption "none"}]
+        (when (at-in node [:vless :flow]) (put user :flow (at-in node [:vless :flow])))
+        @{:vnext @[@{:address addr :port port :users @[user]}]})
+      "vmess"
+      @{:vnext @[@{:address addr :port port :users @[@{:id (at-in node [:vmess :uuid]) :security (or (at-in node [:vmess :security]) "auto") :alterId (or (at-in node [:vmess :alterId]) 0)}]}]}
+      "trojan"
+      @{:servers @[@{:address addr :port port :password (or (at-in node [:trojan :password]) "")}]}
+      "shadowsocks"
+      @{:servers @[@{:address addr :port port :method (at-in node [:shadowsocks :method]) :password (or (at-in node [:shadowsocks :password]) "")}]}
+      @{}))
+  @{:tag tag :protocol proto :settings settings :streamSettings (xray-stream node)})
+
+(defn node-tag [target]
+  (if (and target (string/has-prefix? "node:" target)) (string/slice target 5) (or target "direct")))
+
+(defn xray-balancer-strategy [strategy]
+  (case strategy
+    "load-balance" "roundRobin"
+    "url-test" "leastPing"
+    "manual" "leastPing"
+    "fallback" (die "xray cannot express group strategy fallback")
+    (die (string "xray cannot express group strategy " strategy))))
+
+(defn xray-dispatch [model target]
+  (cond
+    (= target "direct") ["outbound" "direct"]
+    (= target "block") ["outbound" "block"]
+    (string/has-prefix? "group:" target)
+    (let [name (string/slice target 6)
+          group (or (get (or (get model "groups") @{}) name) @{})
+          strategy (or (get group "strategy") "url-test")]
+      (if (= strategy "manual")
+        ["outbound" (node-tag (or (get group "default") "direct"))]
+        ["balancer" name]))
+    ["outbound" (node-tag (or target "direct"))]))
+
+(defn xray-rule [model rule]
+  (def match (or (get rule "match") rule))
+  (def item @{:type "field"})
+  (def domains @[])
+  (each name (or (get match "domains") @[])
+    (array/push domains (if (string/has-prefix? "full:" name) name (string "full:" name))))
+  (each name (or (get match "domainSuffix") @[]) (array/push domains (string "domain:" name)))
+  (each name (or (get match "geosite") @[]) (array/push domains (string "geosite:" name)))
+  (when (not (empty? domains)) (put item :domain domains))
+  (def ips @[])
+  (each name (or (get match "geoip") @[]) (array/push ips (string "geoip:" name)))
+  (each cidr (or (get match "ipCidr") @[]) (array/push ips cidr))
+  (when (not (empty? ips)) (put item :ip ips))
+  (when (not (empty? (or (get match "port") @[]))) (put item :port (get match "port")))
+  (def where (xray-dispatch model (get rule "target")))
+  (if (= (get where 0) "balancer")
+    (put item :balancerTag (get where 1))
+    (put item :outboundTag (get where 1)))
+  item)
+
+(defn render-xray [model nodes]
+  (def outbounds @[])
+  (each node nodes (array/push outbounds (xray-outbound node)))
+  (array/push outbounds @{:tag "direct" :protocol "freedom" :streamSettings @{:sockopt @{:mark 74}}})
+  (array/push outbounds @{:tag "block" :protocol "blackhole"})
+  (array/push outbounds @{:tag "dns-out" :protocol "dns"})
+  (def groups (or (get model "groups") @{}))
+  (def balancers @[])
+  (def observed @[])
+  (each name (keys groups)
+    (def group (get groups name))
+    (def strategy (or (get group "strategy") "url-test"))
+    (when (not= strategy "manual")
+      (def mem (members-of model nodes name))
+      (array/push balancers @{:tag name :selector (if (empty? mem) @["direct"] mem) :strategy @{:type (xray-balancer-strategy strategy)}})
+      (each tag mem (array/push observed tag))))
+  (unless (get groups "Auto")
+    (def all (map tag-of nodes))
+    (array/push balancers @{:tag "Auto" :selector (if (empty? all) @["direct"] all) :strategy @{:type "leastPing"}})
+    (each tag all (array/push observed tag)))
+  (def rules @[
+    @{:type "field" :inboundTag @["api"] :outboundTag "api"}
+    @{:type "field" :inboundTag @["dns-in"] :outboundTag "dns-out"}])
+  (each rule (or (get model "rules") @[])
+    (array/push rules (xray-rule model rule)))
+  (def final-target (or (get model "defaultTarget") "group:Auto"))
+  (def final (xray-dispatch model final-target))
+  (def catch @{:type "field" :network "tcp,udp"})
+  (if (= (get final 0) "balancer")
+    (put catch :balancerTag (get final 1))
+    (put catch :outboundTag (get final 1)))
+  (array/push rules catch)
+  (def dns (or (get model "dns") @{}))
+  (def fake (or (get dns "fakeIp") @{}))
+  (def mode (or (get model "mode") "rule-based"))
+  (def fake-on
+    (case (get fake "enable")
+      false false
+      true true
+      (not= mode "bypass")))
+  (def servers @[])
+  (when fake-on
+    (array/push servers @{:address "fakedns"}))
+  (each url (or (get (or (get dns "domestic") @{}) "resolvers") @[])
+    (array/push servers @{:address url :domains (or (get (or (get dns "domestic") @{}) "domains") @[])}))
+  (each url (or (get (or (get dns "remote") @{}) "resolvers") @[])
+    (array/push servers url))
+  (when (empty? servers)
+    (array/push servers "1.1.1.1"))
+  (def cfg @{
+    :log @{:loglevel "warning"}
+    :api @{:tag "api" :services @["RoutingService"]}
+    :inbounds @[
+      @{:tag "api" :listen "127.0.0.1" :port 8080 :protocol "dokodemo-door"
+        :settings @{:address "127.0.0.1"}}
+      @{:tag "tproxy-in" :listen "0.0.0.0" :port 12345 :protocol "dokodemo-door"
+        :settings @{:network "tcp,udp" :followRedirect true}
+        :sniffing @{:enabled true :destOverride (if fake-on @["fakedns" "http" "tls"] @["http" "tls"])}
+        :streamSettings @{:sockopt @{:tproxy "tproxy"}}}
+      @{:tag "dns-in" :listen "::" :port 5353 :protocol "dokodemo-door"
+        :settings @{:address "1.1.1.1" :port 53 :network "tcp,udp"}}]
+    :outbounds outbounds
+    :routing @{:domainStrategy "AsIs" :rules rules :balancers balancers}
+    :dns @{
+      :servers servers
+      :queryStrategy (if (= (get dns "ipv6Answers") "strip-all") "UseIPv4" "UseIP")}})
+  (when (not (empty? observed))
+    (put cfg :observatory @{:subjectSelector (distinct observed) :probeUrl "https://www.gstatic.com/generate_204" :probeInterval "10s"}))
+  cfg)
+
 (defn arg-value [args flag]
   (def i (index-of flag args))
   (if i (get args (+ i 1)) nil))
@@ -910,8 +1069,10 @@
     (let [model (json-decode (read-all (or (arg-value args "--model") "-")))
           nodes (json-decode (read-all (or (arg-value args "--nodes") (die "--nodes is required"))))
           mode (or (arg-value args "--rule-set") "remote")
-          dst (or (arg-value args "--output") "-")]
-      (write-out dst (json-encode (render model nodes mode))))
+          engine (or (arg-value args "--engine") "sing-box")
+          dst (or (arg-value args "--output") "-")
+          rendered (if (= engine "xray") (render-xray model nodes) (render model nodes mode))]
+      (write-out dst (json-encode rendered)))
     "match"
     (let [kind (get args (+ (index-of "match" args) 1))
           pattern (get args (+ (index-of "match" args) 2))

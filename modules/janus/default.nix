@@ -14,5 +14,6 @@
     ./access
     ./system
     ./secrets.nix
+    ./deploy.nix
   ];
 }

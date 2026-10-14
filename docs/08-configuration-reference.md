@@ -52,7 +52,7 @@ learning path: copy, edit values, build.
 | `peripherals.<name>.class` | enum | — | `wifi` `nic` `wwan` `bluetooth` `hmi` `power` |
 | `peripherals.<name>.match` | attrs | — | `usbVendorProduct = "0bda:8153"` or `usbPath`, `pciSlot`, `mac` |
 | `peripherals.<name>.wwan.mode` | enum | `auto` | `auto` uses the mode the allowlist records for that USB ID (*10* §4.2). Explicit values: `ecm` `ncm` `rndis` `qmi` `mbim`. |
-| `peripherals.<name>.wwan.modeSwitch` | attrs | board/ID default | usb_modeswitch parameters |
+| `peripherals.<name>.wwan.modeSwitch` | attrs | `{}` | usb_modeswitch parameters. Empty does not run usb_modeswitch. |
 | `peripherals.<name>.wwan.atPort` | str/null | auto | Serial device for AT commands (status only) |
 | `peripherals.<name>.hmi.profile` | enum | — | `waveshare-1.3-oled-hat` sets the SH1106 panel, SPI pins, and the key map in *10* §4.6. Behaviour is *15*. |
 | `peripherals.<name>.hmi.driver` | enum | from profile | `sh1106` `ssd1306` `st7789` `waveshare-epd-2in13` |

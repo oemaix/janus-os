@@ -1,6 +1,6 @@
-# docs/16. deploy is still a later phase.
+# docs/16.
 usage() {
-  echo "janus-build <init|host|secret|check|build|update|fleet|status|backup> [<args>]" >&2
+  echo "janus-build <init|host|secret|check|build|update|fleet|status|backup|deploy> [<args>]" >&2
   echo "See docs/16-build-host-cli.md." >&2
   exit 2
 }
@@ -80,6 +80,45 @@ subscription_secrets() {
     | jq -r 'to_entries[] | select(.value.urlSecret != null) | "\(.key) \(.value.urlSecret)"'
 }
 
+wifi_secrets() {
+  nix eval --json ".#nixosConfigurations.${1}.config.janus.network.wifi" \
+    | jq -r 'to_entries[] | select(.value.passphraseSecret != null) | "\(.key) \(.value.passphraseSecret)"'
+}
+
+apply_leases() {
+  host=$1
+  addr=$(host_address "$host")
+  file="hosts/${host}/overrides.nix"
+  if [ ! -f "$file" ]; then
+    return 0
+  fi
+  nix eval --json --impure --expr "import ./hosts/${host}/overrides.nix {}" \
+    | jq -r '
+      (.janus.network.lans // {})
+      | to_entries[]
+      | .key as $lan
+      | (.value.dhcp.staticLeases // {})
+      | to_entries[]
+      | "\($lan) \(.key) \(.value.mac) \(.value.ip)"
+    ' | while IFS= read -r lease; do
+      [ -n "$lease" ] || continue
+      lan=${lease%% *}
+      rest=${lease#* }
+      name=${rest%% *}
+      rest=${rest#* }
+      mac=${rest%% *}
+      ip=${rest#* }
+      ssh_to "$addr" janus override set "network.lans.${lan}.dhcp.staticLeases.${name}" --mac "$mac" --ip "$ip"
+    done
+}
+
+ssh_dest() {
+  case "$1" in
+    *@*) printf '%s\n' "$1" ;;
+    *) printf 'root@%s\n' "$1" ;;
+  esac
+}
+
 fleet_apply() {
   only=0
   host_arg=""
@@ -97,11 +136,9 @@ fleet_apply() {
   done
   require_clean
   structural=$(mktemp)
-  phase3=$(mktemp)
   plan=$(mktemp)
   unknown_diff=0
   : > "$structural"
-  : > "$phase3"
   : > "$plan"
   while IFS= read -r host; do
     if ! addr=$(host_address "$host"); then
@@ -113,6 +150,7 @@ fleet_apply() {
       continue
     fi
     secrets=$(subscription_secrets "$host" || true)
+    radios=$(wifi_secrets "$host" || true)
     files=""
     if [ "$rev" = unknown ] || [ -z "$rev" ] || ! git cat-file -e "${rev}^{commit}" 2>/dev/null; then
       if [ "$only" != 1 ]; then
@@ -123,18 +161,31 @@ fleet_apply() {
         fi
         exit 2
       fi
-      echo "${host}: the structural diff was not computed. Static leases and Wi-Fi passphrases were not applied." >&2
+      echo "${host}: the structural diff was not computed." >&2
       unknown_diff=1
       while IFS= read -r pair; do
         [ -n "$pair" ] || continue
         secret=${pair#* }
         file="secrets/${secret}"
         if [ -f "$file" ]; then
-          printf '%s %s\n' "$host" "$file" >> "$plan"
+          printf 'subscription %s %s\n' "$host" "$file" >> "$plan"
         else
           echo "${host}: ${file} is not in this repo, so it was not applied." >&2
         fi
       done <<< "$secrets"
+      while IFS= read -r pair; do
+        [ -n "$pair" ] || continue
+        secret=${pair#* }
+        file="secrets/${secret}"
+        if [ -f "$file" ]; then
+          printf 'wifi %s %s\n' "$host" "$file" >> "$plan"
+        else
+          echo "${host}: ${file} is not in this repo, so it was not applied." >&2
+        fi
+      done <<< "$radios"
+      if [ -f "hosts/${host}/overrides.nix" ]; then
+        printf 'leases %s -\n' "$host" >> "$plan"
+      fi
     else
       files=$(git diff --name-only "$rev" HEAD)
     fi
@@ -142,8 +193,11 @@ fleet_apply() {
       [ -n "$file" ] || continue
       kind=structural
       case "$file" in
-        "hosts/${host}/overrides.nix" | secrets/wifi/"${host}"/*)
-          kind=phase3
+        "hosts/${host}/overrides.nix")
+          kind=leases
+          ;;
+        secrets/wifi/"${host}"/*)
+          kind=wifi
           ;;
         secrets/*)
           while IFS= read -r pair; do
@@ -157,8 +211,9 @@ fleet_apply() {
       esac
       case "$kind" in
         structural) printf '%s %s\n' "$host" "$file" >> "$structural" ;;
-        phase3) printf '%s %s\n' "$host" "$file" >> "$phase3" ;;
-        subscription) printf '%s %s\n' "$host" "$file" >> "$plan" ;;
+        leases) printf 'leases %s -\n' "$host" >> "$plan" ;;
+        wifi) printf 'wifi %s %s\n' "$host" "$file" >> "$plan" ;;
+        subscription) printf 'subscription %s %s\n' "$host" "$file" >> "$plan" ;;
       esac
     done
   done < <(list_hosts "$host_arg")
@@ -179,16 +234,34 @@ fleet_apply() {
         echo "$row" >&2
         ;;
       *)
-        host=${row%% *}
-        file=${row#* }
+        kind=${row%% *}
+        rest=${row#* }
+        host=${rest%% *}
+        file=${rest#* }
         addr=$(host_address "$host")
-        name=$(subscription_secrets "$host" | awk -v path="${file#secrets/}" '$2 == path {print $1}')
-        if [ -z "$name" ]; then
-          echo "${file} is not a subscription secret for ${host}." >&2
-          exit 2
-        fi
-        ssh_to "$addr" "umask 077; mkdir -p /var/lib/janus/secrets/inbox; cat > /var/lib/janus/secrets/inbox/${name}.age" < "$file"
-        ssh_to "$addr" "age -d -i /var/lib/janus/secrets/age.key /var/lib/janus/secrets/inbox/${name}.age | janus override set proxy.subscriptions.${name}.url"
+        case "$kind" in
+          subscription)
+            name=$(subscription_secrets "$host" | awk -v path="${file#secrets/}" '$2 == path {print $1}')
+            if [ -z "$name" ]; then
+              echo "${file} is not a subscription secret for ${host}." >&2
+              exit 2
+            fi
+            ssh_to "$addr" "umask 077; mkdir -p /var/lib/janus/secrets/inbox; cat > /var/lib/janus/secrets/inbox/${name}.age" < "$file"
+            ssh_to "$addr" "age -d -i /var/lib/janus/secrets/age.key /var/lib/janus/secrets/inbox/${name}.age | janus override set proxy.subscriptions.${name}.url"
+            ;;
+          wifi)
+            ap=$(basename "$file" .yaml)
+            ssh_to "$addr" "umask 077; mkdir -p /var/lib/janus/secrets/inbox; cat > /var/lib/janus/secrets/inbox/${ap}.age" < "$file"
+            ssh_to "$addr" "age -d -i /var/lib/janus/secrets/age.key /var/lib/janus/secrets/inbox/${ap}.age | janus override set network.wifi.${ap}.passphrase"
+            ;;
+          leases)
+            apply_leases "$host"
+            ;;
+          *)
+            echo "janus-build fleet apply: unknown plan row ${row}" >&2
+            exit 2
+            ;;
+        esac
         ;;
     esac
   done < "$plan"
@@ -196,15 +269,10 @@ fleet_apply() {
   if grep -q '^unreachable:' "$plan"; then
     code=1
   fi
-  if [ -s "$phase3" ]; then
-    echo "Static leases and Wi-Fi passphrases are phase 3 and were not applied:" >&2
-    cat "$phase3" >&2
-    code=2
-  fi
   if [ "$unknown_diff" = 1 ]; then
     code=2
   fi
-  rm -f "$structural" "$phase3" "$plan"
+  rm -f "$structural" "$plan"
   exit "$code"
 }
 
@@ -228,9 +296,13 @@ fleet_pull() {
     exit 2
   fi
   values=$(mktemp)
+  radios=$(mktemp)
+  leases=$(mktemp)
   reached=$(mktemp)
   refs=$(mktemp)
   : > "$values"
+  : > "$radios"
+  : > "$leases"
   : > "$reached"
   : > "$refs"
   while IFS= read -r host; do
@@ -253,6 +325,14 @@ fleet_pull() {
       | select(.key | startswith("proxy.subscriptions."))
       | "\($host) \(.key) \(.value)"
     ' >> "$values"
+    printf '%s\n' "$raw" | jq -r --arg host "$host" '
+      to_entries[]
+      | select(.key | startswith("network.wifi."))
+      | "\($host) \(.key) \(.value)"
+    ' >> "$radios"
+    printf '%s\n' "$raw" | jq -c --arg host "$host" '
+      {host: $host, leases: [to_entries[] | select(.key | startswith("network.lans."))]}
+    ' >> "$leases"
   done < <(list_hosts "$host_arg")
   if [ "$with_secrets" = 1 ]; then
     echo "The SSH session carried plaintext credentials. No plaintext file was kept." >&2
@@ -277,12 +357,37 @@ fleet_pull() {
     fi
     printf '%s\t%s\t%s\n' "$file" "$host" "$value" >> "${values}.files"
   done < "$values"
+  while IFS= read -r row; do
+    [ -n "$row" ] || continue
+    host=${row%% *}
+    rest=${row#* }
+    key=${rest%% *}
+    value=${rest#* }
+    ap=${key#network.wifi.}
+    ap=${ap%.passphrase}
+    secret=$(wifi_secrets "$host" | awk -v n="$ap" '$1 == n {print $2}')
+    if [ -z "$secret" ]; then
+      echo "${host}: ${key} has no passphraseSecret in this repo." >&2
+      exit 2
+    fi
+    file="secrets/${secret}"
+    if [ "$with_secrets" != 1 ] || [ "$value" = "(redacted)" ]; then
+      echo "${host}: ${key} changed. Not fetched."
+      continue
+    fi
+    printf '%s\t%s\t%s\n' "$file" "$host" "$value" >> "${values}.files"
+  done < "$radios"
   while IFS= read -r host; do
     while IFS= read -r pair; do
       [ -n "$pair" ] || continue
       secret=${pair#* }
       printf '%s %s\n' "secrets/${secret}" "$host" >> "$refs"
     done <<< "$(subscription_secrets "$host" || true)"
+    while IFS= read -r pair; do
+      [ -n "$pair" ] || continue
+      secret=${pair#* }
+      printf '%s %s\n' "secrets/${secret}" "$host" >> "$refs"
+    done <<< "$(wifi_secrets "$host" || true)"
   done < <(list_hosts)
   if [ -f "${values}.files" ]; then
     while IFS= read -r file; do
@@ -327,8 +432,36 @@ fleet_pull() {
       echo "updated ${file}"
     done < <(cut -f1 "${values}.files" | sort -u)
   fi
+  while IFS= read -r host; do
+    if ! grep -qx "$host" "$reached"; then
+      continue
+    fi
+    target="hosts/${host}/overrides.nix"
+    blob=$(jq -c --arg h "$host" 'select(.host == $h) | .leases' "$leases" | head -n 1)
+    if [ -z "$blob" ]; then
+      blob='[]'
+    fi
+    generated=0
+    if [ -f "$target" ] && grep -q 'generated by janus-build fleet pull' "$target"; then
+      generated=1
+    fi
+    if [ "$blob" = "[]" ] && [ "$generated" != 1 ]; then
+      continue
+    fi
+    if [ -f "$target" ] && [ "$generated" != 1 ] && grep -q 'janus\.' "$target"; then
+      echo "${host}: ${target} was not generated by fleet pull and already sets janus options. Left unchanged."
+      continue
+    fi
+    {
+      printf '%s\n' "# generated by janus-build fleet pull"
+      printf '%s\n' "{ ... }: {"
+      printf '%s\n' "$blob" | jq -r '.[] | select(.value | type == "object") | "  janus.\(.key) = { mac = \(.value.mac | @json); ip = \(.value.ip | @json); };"'
+      printf '%s\n' "}"
+    } > "${target}.new"
+    mv "${target}.new" "$target"
+  done < <(list_hosts "$host_arg")
   git diff --stat || true
-  rm -f "$values" "${values}.files" "$reached" "$refs"
+  rm -f "$values" "${values}.files" "$radios" "$leases" "$reached" "$refs"
 }
 
 write_host() {
@@ -557,7 +690,60 @@ case "$cmd" in
     printf '%s\n' "$path"
     ;;
   deploy)
-    later "$cmd"
+    require_repo
+    preserve=0
+    confirm=0
+    age_key=0
+    host=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --preserve-state) preserve=1 ;;
+        --confirm) confirm=1 ;;
+        --age-key) age_key=1 ;;
+        *)
+          if [ -n "$host" ]; then
+            usage
+          fi
+          host=$1
+          ;;
+      esac
+      shift
+    done
+    if [ -z "$host" ] || [ $((preserve + confirm + age_key)) -gt 1 ]; then
+      usage
+    fi
+    host_ok "$host"
+    addr=$(host_address "$host")
+    if [ "$age_key" = 1 ]; then
+      ssh_to "$addr" janus secrets install-age-key
+      exit 0
+    fi
+    if [ "$confirm" = 1 ]; then
+      ssh_to "$addr" "install -d -m 0755 /var/lib/janus && : > /var/lib/janus/deploy-confirmed"
+      exit 0
+    fi
+    if [ "$preserve" = 1 ]; then
+      umask 077
+      mkdir -p backup
+      utc=$(date -u +%Y%m%dT%H%M%SZ)
+      path="./backup/${host}-state-${utc}.tar"
+      ssh_to "$addr" "list=\$(mktemp); for p in var/lib/janus/etc var/lib/janus/secrets var/lib/janus/subscriptions var/lib/janus/geodata var/lib/janus/overrides.json var/lib/janus/engine/selection.json; do if [ -e \"/\$p\" ]; then printf '%s\n' \"\$p\" >> \"\$list\"; fi; done; if [ ! -s \"\$list\" ]; then rm -f \"\$list\"; exit 1; fi; tar -C / -cf - -T \"\$list\"; rm -f \"\$list\"" > "$path"
+      printf '%s\n' "$path"
+      exit 0
+    fi
+    closure=$(nix build --print-out-paths ".#nixosConfigurations.${host}.config.system.build.toplevel")
+    dest=$(ssh_dest "$addr")
+    ssh_to "$addr" "mount -o remount,rw /nix; mount -o remount,rw /boot || true"
+    if ! NIX_SSHOPTS="-o BatchMode=yes -o ConnectTimeout=8" nix copy --to "ssh://${dest}" "$closure"; then
+      nix-store -qR "$closure" | nix-store --export | ssh_to "$addr" "NIX_CONFIG=\$(printf '%s\n' 'max-jobs = 0' 'substituters = ') nix-store --import"
+    fi
+    ssh_to "$addr" "NIX_CONFIG=\$(printf '%s\n' 'max-jobs = 0' 'substituters = ') nix-env -p /nix/var/nix/profiles/system --set ${closure}"
+    if ! ssh_to "$addr" "bash -s -- install ${closure}" < "$JANUS_BOOT_INSTALL"; then
+      ssh_to "$addr" "bash -s -- restore" < "$JANUS_BOOT_INSTALL" || true
+      ssh_to "$addr" "nix-env -p /nix/var/nix/profiles/system --rollback" || true
+      exit 1
+    fi
+    ssh_to "$addr" "install -d -m 0755 /var/lib/janus && : > /var/lib/janus/deploy-pending && rm -f /var/lib/janus/deploy-confirmed /var/lib/janus/deploy-booted && mount -o remount,ro /nix || true; mount -o remount,ro /boot || true; systemctl reboot"
     ;;
   *)
     usage

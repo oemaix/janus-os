@@ -10,5 +10,6 @@
     ./nanopi-r4s.nix
     ./le-potato.nix
     ./rpi-zero-2w.nix
+    ./rpi3.nix
   ];
 }

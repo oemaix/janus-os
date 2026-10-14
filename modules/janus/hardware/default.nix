@@ -64,7 +64,7 @@
       wwan.modeSwitch = mkOption {
         type = types.attrs;
         default = {};
-        description = "usb_modeswitch parameters. Empty uses the allowlist row.";
+        description = "usb_modeswitch parameters. Empty does not run usb_modeswitch. The allowlist has no switch message.";
       };
       wwan.atPort = mkOption {
         type = types.nullOr types.str;

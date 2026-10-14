@@ -496,6 +496,14 @@ in {
             message = "janus.proxy.nodes.${name}.protocol ${node.protocol} is not supported by xray.";
           }
           {
+            assertion = cfg.engine == "sing-box" || !node.tls.insecure;
+            message = "janus.proxy.nodes.${name}.tls.insecure is not expressible by xray 26 (ADR-0006).";
+          }
+          {
+            assertion = cfg.engine == "sing-box" || node.shadowsocks.plugin.name == null;
+            message = "janus.proxy.nodes.${name}.shadowsocks.plugin is not expressible by xray (ADR-0006).";
+          }
+          {
             assertion = secretOk node.trojan.password && secretOk node.shadowsocks.password && secretOk node.hysteria2.password && secretOk node.tuic.password;
             message = "janus.proxy.nodes.${name} has an inline password. Use a file or janus.security.allowInlineSecrets.";
           }
@@ -506,11 +514,12 @@ in {
         message = "janus.proxy.groups.${name}.strategy ${group.strategy} is not expressible by sing-box (ADR-0006).";
       })
       cfg.groups
+      ++ lib.mapAttrsToList (name: group: {
+        assertion = cfg.engine != "xray" || group.strategy != "fallback";
+        message = "janus.proxy.groups.${name}.strategy fallback is not expressible by xray (ADR-0006).";
+      })
+      cfg.groups
       ++ [
-        {
-          assertion = !cfg.enable || cfg.engine != "xray";
-          message = "janus.proxy.engine = xray is phase 3 (docs/13-roadmap.md).";
-        }
         {
           assertion = cfg.egressWan == null || config.janus.network.wans ? ${cfg.egressWan};
           message = "janus.proxy.egressWan '${toString cfg.egressWan}' is not a WAN.";
