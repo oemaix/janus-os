@@ -37,10 +37,31 @@
           after = ["dnsmasq.service" "janus-engine.service" "network-online.target"];
           serviceConfig.Type = "oneshot";
           script = ''
-            echo JANUS_ROUTER_UP > /dev/console
             systemctl is-active dnsmasq > /dev/console 2>&1 || true
             systemctl is-active janus-engine > /dev/console 2>&1 || true
-            ${pkgs.bind}/bin/dig @127.0.0.1 -p 5353 vm.test A +time=2 +tries=1 +short > /dev/console 2>&1 || true
+            # 5353 is 0x14E9. A direct query to that port is not tproxied,
+            # so the sockets and the engine API are checked separately.
+            v4=0
+            v6=0
+            body=
+            i=0
+            while [ "$i" -lt 20 ]; do
+              i=$((i + 1))
+              if grep -qi '00000000:14E9' /proc/net/udp; then v4=1; fi
+              if grep -qi '00000000000000000000000000000000:14E9' /proc/net/udp6; then v6=1; fi
+              body=$(${pkgs.curl}/bin/curl -fsS -G 'http://127.0.0.1:9090/dns/query' \
+                --data-urlencode 'name=vm.test' --data-urlencode 'type=A' 2>/dev/console || true)
+              if [ "$v4" = 1 ] && [ "$v6" = 1 ] && printf '%s\n' "$body" | grep -q 192.0.2.53; then
+                break
+              fi
+              sleep 1
+            done
+            echo "JANUS_DIG sockets=$v4$v6 $body" > /dev/console
+            if [ "$v4" != 1 ] || [ "$v6" != 1 ] || ! printf '%s\n' "$body" | grep -q 192.0.2.53; then
+              journalctl -u janus-engine -n 40 --no-pager > /dev/console 2>&1 || true
+              exit 1
+            fi
+            echo JANUS_ROUTER_UP > /dev/console
           '';
         };
       })
@@ -187,20 +208,24 @@ in
       -serial file:client.log &
     client_pid=$!
 
-    probed=0
+    wan_tries=0
     ok=0
     for _i in $(seq 1 360); do
       if grep -q JANUS_NET_FAIL client.log; then
         break
       fi
-      if [ "$probed" = 0 ] && grep -q JANUS_FW_LAN_OK client.log; then
-        probed=1
-        banner=$(timeout 5 bash -c 'exec 3<>/dev/tcp/127.0.0.1/2222; head -c 3 <&3' || true)
+      # sshd is already answering on the LAN. One missed banner is not a drop.
+      if [ ! -f wan.log ] && grep -q JANUS_FW_LAN_OK client.log; then
+        wan_tries=$((wan_tries + 1))
+        banner=$(timeout 3 bash -c 'exec 3<>/dev/tcp/127.0.0.1/2222; head -c 3 <&3' || true)
         if [ "$banner" = SSH ]; then
           echo "WAN accepted an SSH connection" > wan.log
-        else
+        elif [ "$wan_tries" -ge 5 ]; then
           echo JANUS_FW_WAN_OK > wan.log
         fi
+      fi
+      if [ -f wan.log ] && ! grep -q JANUS_FW_WAN_OK wan.log; then
+        break
       fi
       if grep -q JANUS_NET_OK client.log && [ -f wan.log ]; then
         ok=1

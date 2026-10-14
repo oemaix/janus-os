@@ -867,8 +867,9 @@
         :address @["172.19.0.1/30" "fdfe:dcba:9876::1/126"]
         :auto_route false :strict_route false}
       @{:type "redirect" :tag "dns-tcp" :listen "::" :listen_port 5353}
-      # IPv4 tproxy is not delivered to an IPv6 socket.
-      @{:type "tproxy" :tag "dns-udp" :listen "0.0.0.0" :listen_port 5353 :network "udp"}
+      # TProxy delivers a packet only to a socket of the same family.
+      @{:type "tproxy" :tag "dns-udp4" :listen "0.0.0.0" :listen_port 5353 :network "udp"}
+      @{:type "tproxy" :tag "dns-udp6" :listen "::" :listen_port 5353 :network "udp"}
       @{:type "socks" :tag "refresh" :listen "127.0.0.1" :listen_port 2080}]
     :outbounds outbounds
     :route @{
@@ -992,7 +993,7 @@
     (each tag all (array/push observed tag)))
   (def rules @[
     @{:type "field" :inboundTag @["api"] :outboundTag "api"}
-    @{:type "field" :inboundTag @["dns-in"] :outboundTag "dns-out"}])
+    @{:type "field" :inboundTag @["dns-tcp" "dns-udp4" "dns-udp6"] :outboundTag "dns-out"}])
   (each rule (or (get model "rules") @[])
     (array/push rules (xray-rule model rule)))
   (def final-target (or (get model "defaultTarget") "group:Auto"))
@@ -1029,8 +1030,15 @@
         :settings @{:network "tcp,udp" :followRedirect true}
         :sniffing @{:enabled true :destOverride (if fake-on @["fakedns" "http" "tls"] @["http" "tls"])}
         :streamSettings @{:sockopt @{:tproxy "tproxy"}}}
-      @{:tag "dns-in" :listen "::" :port 5353 :protocol "dokodemo-door"
-        :settings @{:address "1.1.1.1" :port 53 :network "tcp,udp"}}]
+      # TCP/53 is redirected. UDP/53 is tproxied, one socket per family.
+      @{:tag "dns-tcp" :listen "::" :port 5353 :protocol "dokodemo-door"
+        :settings @{:address "1.1.1.1" :port 53 :network "tcp"}}
+      @{:tag "dns-udp4" :listen "0.0.0.0" :port 5353 :protocol "dokodemo-door"
+        :settings @{:address "1.1.1.1" :port 53 :network "udp"}
+        :streamSettings @{:sockopt @{:tproxy "tproxy"}}}
+      @{:tag "dns-udp6" :listen "::" :port 5353 :protocol "dokodemo-door"
+        :settings @{:address "1.1.1.1" :port 53 :network "udp"}
+        :streamSettings @{:sockopt @{:tproxy "tproxy" :v6only true}}}]
     :outbounds outbounds
     :routing @{:domainStrategy "AsIs" :rules rules :balancers balancers}
     :dns @{

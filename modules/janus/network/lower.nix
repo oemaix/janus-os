@@ -79,6 +79,8 @@
   pdWan = lib.findFirst (n: builtins.elem cfg.wans.${n}.ipv6.mode ["dhcpv6-pd" "passthrough" "slaac"]) null wanNames;
 
   dhcpLanNames = lib.filter (n: cfg.lans.${n}.dhcp.enable) lanNames;
+  # systemd-escape -p of /sys/subsystem/net/devices/br-<lan>.
+  bridgeDevice = name: "sys-subsystem-net-devices-${lib.replaceStrings ["-"] ["\\x2d"] "br-${name}"}.device";
 
   portLink = name: port: let
     match =
@@ -504,11 +506,10 @@ in {
       systemd.services = lib.mkMerge [
         (lib.mkIf (dhcpLanNames != []) {
           # network.target arrives when networkd starts, before br-* exists.
-          # dnsmasq --test then fails on bind-interfaces.
+          # network-online.target also waits for a WAN lease.
           dnsmasq = {
-            after = ["network-online.target"];
-            wants = ["network-online.target"];
-            startLimitBurst = 20;
+            after = map bridgeDevice dhcpLanNames;
+            wants = map bridgeDevice dhcpLanNames;
             serviceConfig.ExecStartPre = ["${pkgs.coreutils}/bin/mkdir -p /var/lib/janus" "/etc/janus/bin/janus-dhcp-hosts"];
           };
         })

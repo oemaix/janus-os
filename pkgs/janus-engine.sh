@@ -440,9 +440,9 @@ resolve_name() {
   name=$1
   qtype=$2
   if [ "${JANUS_ENGINE}" = xray ]; then
-    dig +time=2 +tries=1 +short @127.0.0.1 -p 5353 "$name" "$qtype" || true
+    mdig @127.0.0.1 -p 5353 +short "$name" -t "$qtype" +timeout=2 +tries=1 || true
   else
-    curl -fsS -G "${clash}/query" --data-urlencode "name=${name}" --data-urlencode "type=${qtype}" || true
+    curl -fsS -G "${clash}/dns/query" --data-urlencode "name=${name}" --data-urlencode "type=${qtype}" || true
   fi
 }
 

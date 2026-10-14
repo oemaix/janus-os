@@ -123,6 +123,11 @@ in {
       grep -q 192.168.10.0/24 rules.nft
       test ${lib.escapeShellArg dhcp} = ipv4
       echo ${lib.escapeShellArg range} | grep -q 192.168.10.100
+      printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " os.config.systemd.services.dnsmasq.wants)} | grep -F -q 'sys-subsystem-net-devices-br\x2dlan.device'
+      if printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " os.config.systemd.services.dnsmasq.wants)} | grep -F -q network-online.target; then
+        echo "dnsmasq still waits for the WAN" >&2
+        exit 1
+      fi
       test ${
         if os.config.services.openssh.enable
         then "yes"
@@ -343,7 +348,8 @@ in {
       sing-box check -c ${engine}
       jq -e '.inbounds[] | select(.type == "tun" and .auto_route == false)' ${engine} >/dev/null
       jq -e '.outbounds[] | select(.tag == "direct" and .routing_mark == 74)' ${engine} >/dev/null
-      jq -e '.inbounds[] | select(.type == "tproxy" and .network == "udp")' ${engine} >/dev/null
+      jq -e '[.inbounds[] | select(.type == "tproxy" and .network == "udp" and .listen == "0.0.0.0" and .listen_port == 5353)] | length == 1' ${engine} >/dev/null
+      jq -e '[.inbounds[] | select(.type == "tproxy" and .network == "udp" and .listen == "::" and .listen_port == 5353)] | length == 1' ${engine} >/dev/null
       jq -e '[.inbounds[] | select(.type == "tproxy" and .network == "tcp")] | length == 0' ${engine} >/dev/null
       grep -q geodata-missing ${preText}
       grep -q '0x00004a01' ${markFile}
@@ -543,6 +549,10 @@ in {
     } ''
       xray run -test -c ${engine}
       jq -e '.inbounds[] | select(.protocol == "dokodemo-door" and .port == 12345)' ${engine} >/dev/null
+      jq -e '.inbounds[] | select(.tag == "dns-udp4" and .listen == "0.0.0.0" and .port == 5353 and .streamSettings.sockopt.tproxy == "tproxy")' ${engine} >/dev/null
+      jq -e '.inbounds[] | select(.tag == "dns-udp6" and .listen == "::" and .port == 5353 and .streamSettings.sockopt.tproxy == "tproxy" and .streamSettings.sockopt.v6only == true)' ${engine} >/dev/null
+      jq -e '.inbounds[] | select(.tag == "dns-tcp" and .listen == "::" and .port == 5353 and .settings.network == "tcp")' ${engine} >/dev/null
+      jq -e 'any(.routing.rules[]; (["dns-tcp","dns-udp4","dns-udp6"] - (.inboundTag // [])) == [])' ${engine} >/dev/null
       jq -e '.inbounds[] | select(.tag == "api" and .port == 8080)' ${engine} >/dev/null
       jq -e '.outbounds[] | select(.protocol == "dns" and .tag == "dns-out")' ${engine} >/dev/null
       jq -e 'any(.routing.rules[]; (.domain // []) | index("full:example.com"))' ${engine} >/dev/null
