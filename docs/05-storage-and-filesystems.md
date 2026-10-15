@@ -38,8 +38,8 @@ Notes:
   `JANUS_BIOS`, is unformatted (type `EF02`) in the 1 MiB before
   `JANUS_BOOT`. Limine stage 2 is written there. It is not mounted.
 * Partition table is GPT by default; MBR where the Board firmware requires it
-  (Raspberry Pi 2/3 firmware reads MBR; RPi 4 firmware handles GPT via
-  hybrid MBR — board profile decides).
+  (Raspberry Pi 2/3 firmware reads MBR; the `rpi4` profile writes a hybrid
+  MBR so the Pi 4 EEPROM finds the GPT boot partition).
 * Partitions are discovered by label/PARTUUID, never by device name.
 * `janus.storage.slots.enable` (default false) inserts `JANUS_ROOT_B` and
   `JANUS_NIX_B` before `JANUS_STATE`. The boot entry selects the slot.

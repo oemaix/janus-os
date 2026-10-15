@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-14 |
+| Last updated | 2026-10-15 |
 
 This file is the implementation plan, the progress of the code, and the
 notes for work that is specified but not started. Choices are *18*.
@@ -82,7 +82,7 @@ tree does not mean that behavior exists. Stubs are not finished features.
 * `lib.mkRouter` reads `janus.hardware.board` and returns a NixOS
   configuration, including `system.build.janusImage`. Implemented boards
   are `x86_64-test`, `yanyu-stx-r19f`, `nanopi-r4s`, `le-potato`,
-  `rpi-zero-2w`, `rpi3`, `rpi2`, and `visionfive2`. `rpi4` throws. It
+  `rpi-zero-2w`, `rpi3`, `rpi4`, `rpi2`, and `visionfive2`. It
   does not return an empty configuration. `armv7l` and `riscv64` default
   to a cross build (`janus.build.strategy`).
 * `janus.*` option types, defaults, and the structural assertions in
@@ -104,6 +104,8 @@ tree does not mean that behavior exists. Stubs are not finished features.
   (U-Boot at sector 64, `eth0`/`eth1`, no WAN chosen), Le Potato (U-Boot
   FIP, one `eth0`), Raspberry Pi Zero 2 W (FAT `config.txt`, no Ethernet
   port), Raspberry Pi 3 / 3+ (`rpi3`, FAT `config.txt`, one `eth0`),
+  Raspberry Pi 4 and Compute Module 4 (`rpi4`, FAT `config.txt`, hybrid
+  MBR, one `eth0`; the Pi 400 is not a board),
   Raspberry Pi 2 v1.1 (`rpi2`, 32-bit, hybrid MBR, one `eth0`; a v1.2
   uses `rpi3`), and StarFive VisionFive 2 (SPL and U-Boot in GPT
   partitions `2E54B353…` and `BC13C2FF…`, `eth0`/`eth1`, no WAN chosen).
@@ -139,7 +141,7 @@ tree does not mean that behavior exists. Stubs are not finished features.
   starts and stops recording without a rebuild.
 * `janus.storage.slots.enable` duplicates `ROOT` and `NIX`. `janus-build
   deploy` then writes the inactive slot and toggles the boot entry (*09* §8.4).
-* The Waveshare 1.3" OLED HAT on `rpi-zero-2w` or `rpi3` is a status
+* The Waveshare 1.3" OLED HAT on `rpi-zero-2w`, `rpi3`, or `rpi4` is a status
   panel (*15*, *10* §4.6). It runs `janus proxy refresh`, `janus proxy
   select`, `janus reboot`, and `janus reset --state --yes`. It does not
   edit configuration, hot overrides, or secrets.

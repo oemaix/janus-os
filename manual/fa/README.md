@@ -11,13 +11,14 @@ NixOS است. خود برد نرم‌افزار را نمی‌سازد و Nix ر
 ## اکنون چه کاری ممکن است
 
 تصویر مسیریاب در ماشین مجازی بوت می‌شود. تصویر برای NanoPi R4S، Le Potato،
-Raspberry Pi Zero 2 W، Raspberry Pi 3 / 3+، Raspberry Pi 2 v1.1،
+Raspberry Pi Zero 2 W، Raspberry Pi 3 / 3+، Raspberry Pi 4 و
+Compute Module 4، Raspberry Pi 2 v1.1،
 StarFive VisionFive 2 و Yanyu STX-R19F (Limine روی legacy BIOS) ساخته
 می‌شود. `janus` و `janus-build` فرمان‌های فاز ۱ و
 همچنین proxy، DNS، fleet، status، backup، deploy و گزارش اتصال را پیاده
 می‌کنند. روی برد، `janus deploy` با کد ۲ خارج می‌شود و `janus-build` را
-نام می‌برد. کلاهک OLED یک‌وسه‌دهم اینچی Waveshare روی Raspberry Pi Zero 2 W
-یا Raspberry Pi 3 وضعیت را نشان می‌دهد. از روی صفحه می‌توان پروکسی را تازه
+نام می‌برد. کلاهک OLED یک‌وسه‌دهم اینچی Waveshare روی Raspberry Pi Zero 2 W،
+Raspberry Pi 3 یا Raspberry Pi 4 وضعیت را نشان می‌دهد. از روی صفحه می‌توان پروکسی را تازه
 کرد، یک گره را برگزید، برد را دوباره راه انداخت یا وضعیت را پاک کرد. منبع
 mcuzone روی همین برد می‌تواند هنگام تخلیه سلول آن را خاموش کند.
 
@@ -169,7 +170,7 @@ deploy می‌ایستد و یک تصویر تازه می‌خواهد. رسان
 ## صفحه وضعیت
 
 کلاهک OLED یک‌وسه‌دهم اینچی Waveshare روی Raspberry Pi Zero 2 W یا
-Raspberry Pi 3 وضعیت را نشان می‌دهد. در پرونده میزبان این وسیله را نام
+Raspberry Pi 3 یا Raspberry Pi 4 وضعیت را نشان می‌دهد. در پرونده میزبان این وسیله را نام
 بگذارید:
 
 ```

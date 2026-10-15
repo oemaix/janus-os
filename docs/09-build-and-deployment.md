@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-09-29 |
+| Last updated | 2026-10-15 |
 
 ## 1. Principles
 
@@ -249,7 +249,9 @@ Partition 5 stays the Limine BIOS gap. Slot B is GPT partitions 6 and 7.
 
 `janus-build deploy` on a host with the option set writes the new root
 and store images onto the inactive slot, updates that slot's kernel and
-command line, and then changes the boot entry. A power loss before that
+command line, and then changes the boot entry. On a Raspberry Pi image
+the same step rewrites `kernel=` and `initramfs` in `config.txt`, so
+slot B loads `initrd-b`. A power loss before that
 change leaves the active slot bootable. The state partition is shared.
 `janus-build deploy --confirm` marks the boot good. Without it, the next
 boot changes the boot entry back. The other slot's files stay where they

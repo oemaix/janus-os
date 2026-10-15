@@ -22,7 +22,8 @@ CI runs the eval checks and the options document
 FAT32 and checks that QEMU BIOS loads the kernel file. `eval-router` checks the generated nftables masquerade, the DHCP client,
 dnsmasq, OpenSSH, and vnstat. `eval-hmi` checks the panel model, the
 Waveshare binding, and `janus reset --state` without `--yes`. It compiles
-the panel for the machine running the check. `eval-power` checks the cell
+the panel and the SPI overlay for the machine running the check. `eval-boot-slot` checks that a Raspberry Pi `config.txt` follows slot B
+onto `initrd-b` and back. `eval-power` checks the cell
 cutoff and compiles the Raspberry Pi overlay with that machine's `dtc`.
 `eval-power-x86` keeps the INA219 on `x86_64-test` and does not install a
 device-tree overlay. `eval-monitoring` checks IPFIX and NetFlow export, resolution of
@@ -31,7 +32,7 @@ zones, and the engine metrics text. `eval-rpi2-mbr` checks the hybrid
 MBR type byte and the LBA fields. `eval-tier3-boot` checks the
 VisionFive GPT layout and that the Pi 2 and VisionFive device-tree
 names exist in the kernel source. `eval-boards` includes the Raspberry
-Pi 2 and VisionFive 2 profiles. `eval-proxy-local` fetches a page through the
+Pi 2, Raspberry Pi 4, and VisionFive 2 profiles. `eval-proxy-local` fetches a page through the
 rendered Shadowsocks outbound and a server on `127.0.0.1`. `cli-usage`
 and `cli-init` cover the phase 1 commands. Golden files for the engines
 are still absent.

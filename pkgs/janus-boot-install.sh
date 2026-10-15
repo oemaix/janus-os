@@ -1,6 +1,7 @@
 # Install or restore the FAT boot entry for one system closure. docs/09 §8.2.
 # The bootloader loads /boot/vmlinuz and /boot/initrd, and the kernel command
 # line carries init=<closure>/init. The profile symlink alone does not boot.
+# A Raspberry Pi config.txt names both files. Slot B uses vmlinuz-b and initrd-b.
 # install-slot updates the inactive A/B entry and then the boot-side toggle.
 # docs/09 §8.4.
 set -eu
@@ -25,6 +26,15 @@ save_previous() {
   if [ -f "${boot}/extlinux/extlinux.conf" ]; then
     mkdir -p "${prev}/extlinux"
     cp -a "${boot}/extlinux/extlinux.conf" "${prev}/extlinux/extlinux.conf"
+  fi
+}
+
+write_pi_boot() {
+  kern=$1
+  initrd_name=$2
+  if [ -f "${boot}/config.txt" ]; then
+    sed -i "s/^kernel=.*/kernel=${kern}/" "${boot}/config.txt"
+    sed -i "s/^initramfs .*/initramfs ${initrd_name} followkernel/" "${boot}/config.txt"
   fi
 }
 
@@ -220,10 +230,12 @@ install_slot() {
     cp -L "${src}/kernel" "${boot}/vmlinuz-b"
     cp -L "${src}/initrd" "${boot}/initrd-b"
     kern=vmlinuz-b
+    initrd_name=initrd-b
   else
     cp -L "${src}/kernel" "${boot}/vmlinuz"
     cp -L "${src}/initrd" "${boot}/initrd"
     kern=vmlinuz
+    initrd_name=initrd
   fi
   printf '%s\n' "$params" > "${boot}/cmdline-${slot}.txt"
   printf '%s\n' "$params" > "${boot}/cmdline.txt"
@@ -239,9 +251,7 @@ install_slot() {
     limine_prefer "$slot" "$params" "${boot}/limine.conf" "${boot}/limine.conf.new"
     mv "${boot}/limine.conf.new" "${boot}/limine.conf"
   fi
-  if [ -f "${boot}/config.txt" ]; then
-    sed -i "s/^kernel=.*/kernel=${kern}/" "${boot}/config.txt"
-  fi
+  write_pi_boot "$kern" "$initrd_name"
   printf '%s\n' "$slot" > "${boot}/slot"
   sync || true
 }
@@ -261,8 +271,10 @@ restore_slot() {
   fi
   if [ "$slot" = b ]; then
     kern=vmlinuz-b
+    initrd_name=initrd-b
   else
     kern=vmlinuz
+    initrd_name=initrd
   fi
   if [ -f "${boot}/extlinux.conf" ]; then
     sed -i "s/^DEFAULT .*/DEFAULT slot-${slot}/" "${boot}/extlinux.conf"
@@ -274,9 +286,7 @@ restore_slot() {
     limine_prefer "$slot" "" "${boot}/limine.conf" "${boot}/limine.conf.new"
     mv "${boot}/limine.conf.new" "${boot}/limine.conf"
   fi
-  if [ -f "${boot}/config.txt" ]; then
-    sed -i "s/^kernel=.*/kernel=${kern}/" "${boot}/config.txt"
-  fi
+  write_pi_boot "$kern" "$initrd_name"
   printf '%s\n' "$slot" > "${boot}/slot"
   sync || true
 }

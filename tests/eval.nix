@@ -216,6 +216,7 @@ in {
     potato = one "le-potato";
     zero = one "rpi-zero-2w";
     rpi = one "rpi3";
+    rpi4 = one "rpi4";
     rpi2 = one "rpi2";
     vf2 = one "visionfive2";
     plain = mk [base];
@@ -249,6 +250,28 @@ in {
         then "yes"
         else "no"
       } = no
+      test ${lib.escapeShellArg rpi4.config.janus.build.strategy} = emulated
+      test ${lib.escapeShellArg rpi4.pkgs.stdenv.hostPlatform.system} = aarch64-linux
+      test ${lib.escapeShellArg (lib.head (lib.attrNames rpi4.config.janus.network.ports))} = eth0
+      test ${toString rpi4.config.janus.storage.firmwareOffsetMiB} = 0
+      test ${
+        if rpi4.config.system.build.janusImage.hybridFatMbr or false
+        then "yes"
+        else "no"
+      } = yes
+      echo ${text rpi4.config.system.build.janusBoardImage.bootExtra} | grep -q bcm2711-rpi-4-b.dtb
+      echo ${text rpi4.config.system.build.janusBoardImage.bootExtra} | grep -q bcm2711-rpi-cm4-io.dtb
+      echo ${text rpi4.config.system.build.janusBoardImage.bootExtra} | grep -q '\[pi4\]'
+      echo ${text rpi4.config.system.build.janusBoardImage.bootExtra} | grep -q '\[cm4\]'
+      echo ${text rpi4.config.system.build.janusBoardImage.bootExtra} | grep -q arm_64bit
+      echo ${text rpi4.config.system.build.janusBoardImage.bootExtra} | grep -q start4.elf
+      echo ${text rpi4.config.system.build.janusBoardImage.bootExtra} | grep -q fixup4.dat
+      echo ${text rpi4.config.system.build.janusBoardImage.bootExtra} | grep -q /dtbs/broadcom/bcm2711-rpi-4-b.dtb
+      echo ${text rpi4.config.system.build.janusBoardImage.bootExtra} | grep -q /dtbs/broadcom/bcm2711-rpi-cm4-io.dtb
+      if echo ${text rpi4.config.system.build.janusBoardImage.bootExtra} | grep -q 'bcm2711-rpi-400\|\[pi400\]'; then
+        echo "rpi4 profile still names the Pi 400" >&2
+        exit 1
+      fi
       test ${lib.escapeShellArg rpi2.config.janus.build.strategy} = cross
       test ${lib.escapeShellArg rpi2.config.nixpkgs.hostPlatform.system} = armv7l-linux
       test ${lib.escapeShellArg rpi2.config.nixpkgs.buildPlatform.system} = ${lib.escapeShellArg pkgs.stdenv.hostPlatform.system}
@@ -317,6 +340,7 @@ in {
         }
       ];
     rpi2 = board "rpi2";
+    rpi4 = board "rpi4";
     vf2 = board "visionfive2";
   in
     pkgs.runCommand "eval-tier3-boot" {
@@ -347,6 +371,9 @@ in {
       }
       list_dts ${rpi2.config.boot.kernelPackages.kernel.src} \
         arch/arm/boot/dts/broadcom/bcm2836-rpi-2-b.dts
+      list_dts ${rpi4.config.boot.kernelPackages.kernel.src} \
+        arch/arm64/boot/dts/broadcom/bcm2711-rpi-4-b.dts \
+        arch/arm64/boot/dts/broadcom/bcm2711-rpi-cm4-io.dts
       list_dts ${vf2.config.boot.kernelPackages.kernel.src} \
         arch/riscv/boot/dts/starfive/jh7110-starfive-visionfive-2-v1.2a.dts \
         arch/riscv/boot/dts/starfive/jh7110-starfive-visionfive-2-v1.3b.dts
@@ -371,12 +398,6 @@ in {
       grep -q 'Last sector: 16383' part9
       echo ok > "$out"
     '';
-  eval-rpi4 = fail "eval-rpi4" [
-    {
-      janus.hardware.board = "rpi4";
-      janus.access.ssh.authorizedKeys = [key];
-    }
-  ];
   eval-pppoe-secret = fail "eval-pppoe-secret" [
     base
     {
@@ -1234,7 +1255,7 @@ in {
       printf 'a\n' > "$TMPDIR/boot/slot"
       printf '%s\n' 'DEFAULT slot-a' 'LABEL slot-a' '  LINUX /vmlinuz' '  INITRD /initrd' '  APPEND old-a' 'LABEL slot-b' '  LINUX /vmlinuz-b' '  INITRD /initrd-b' '  APPEND old-b' > "$TMPDIR/boot/extlinux.conf"
       printf '%s\n' 'timeout: 0' '/slot-a' '    cmdline: old-a' '/slot-b' '    cmdline: old-b' > "$TMPDIR/boot/limine.conf"
-      printf '%s\n' 'kernel=vmlinuz' > "$TMPDIR/boot/config.txt"
+      printf '%s\n' 'kernel=vmlinuz' 'initramfs initrd followkernel' > "$TMPDIR/boot/config.txt"
       printf '%s\n' 'old-a' > "$TMPDIR/boot/cmdline-a.txt"
       JANUS_BOOT_DIR=$TMPDIR/boot JANUS_STATE_DIR=$TMPDIR/state JANUS_SLOT_STORE=$store bash ${self.packages.${pkgs.stdenv.hostPlatform.system}.bootInstall} install-slot "$closure" b
       grep -q new-kernel "$TMPDIR/boot/vmlinuz-b"
@@ -1243,12 +1264,14 @@ in {
       grep -q 'janus.slot=b' "$TMPDIR/boot/cmdline.txt"
       test "$(grep -m1 '^/slot-' "$TMPDIR/boot/limine.conf")" = /slot-b
       grep -q '^kernel=vmlinuz-b$' "$TMPDIR/boot/config.txt"
+      grep -q '^initramfs initrd-b followkernel$' "$TMPDIR/boot/config.txt"
       test "$(tr -d '[:space:]' < "$TMPDIR/boot/slot")" = b
       JANUS_BOOT_DIR=$TMPDIR/boot JANUS_STATE_DIR=$TMPDIR/state bash ${self.packages.${pkgs.stdenv.hostPlatform.system}.bootInstall} restore-slot
       test "$(tr -d '[:space:]' < "$TMPDIR/boot/slot")" = a
       grep -q '^DEFAULT slot-a$' "$TMPDIR/boot/extlinux.conf"
       test "$(grep -m1 '^/slot-' "$TMPDIR/boot/limine.conf")" = /slot-a
       grep -q '^kernel=vmlinuz$' "$TMPDIR/boot/config.txt"
+      grep -q '^initramfs initrd followkernel$' "$TMPDIR/boot/config.txt"
       echo ok > "$out"
     '';
 
@@ -1271,6 +1294,7 @@ in {
     boot = builtins.unsafeDiscardStringContext os.config.system.build.janusBoardImage.bootExtra;
     janus = self.packages.${pkgs.stdenv.hostPlatform.system}.janus-cli;
     panel = pkgs.callPackage ../pkgs/hmi-panel.nix {};
+    spi = pkgs.writeText "janus-spi.dts" os.config.system.build.janusSpiDts;
     snap = pkgs.writeShellApplication {
       name = "janus-hmi-snapshot";
       runtimeInputs = with pkgs; [gawk jq iproute2 curl systemd coreutils];
@@ -1278,7 +1302,7 @@ in {
     };
   in
     pkgs.runCommand "eval-hmi" {
-      nativeBuildInputs = [pkgs.janet];
+      nativeBuildInputs = [pkgs.janet pkgs.dtc];
     } ''
       janet ${../janet/hmi.janet} check
       cat > conf << 'ENDCONF'
@@ -1291,7 +1315,19 @@ in {
       cat > boot << 'ENDBOOT'
       ${boot}
       ENDBOOT
-      grep -q 'dtparam=spi=on' boot
+      dtc -@ -I dts -O dtb -o spi.dtbo ${spi}
+      test -s spi.dtbo
+      grep -q 'target = <&spi>' ${spi}
+      grep -q 'rohm,dh2228fv' ${spi}
+      grep -q 'spi0 = "/soc/spi@7e204000"' ${spi}
+      grep -q 'brcm,bcm2711' ${spi}
+      grep -q 'brcm,bcm2837' ${spi}
+      grep -q 'dtoverlay=janus-spi' boot
+      grep -q 'overlays/janus-spi.dtbo' boot
+      if grep -q 'dtparam=spi=on' boot; then
+        echo "panel still uses firmware dtparam=spi" >&2
+        exit 1
+      fi
       grep -q 'gpio=6,19,5,26,13,21,20,16=pu' boot
       test ${os.config.janus.hardware.peripherals.panel.hmi.driver} = sh1106
       test ${
@@ -1370,6 +1406,7 @@ in {
     } ''
       dtc -@ -I dts -O dtb -o overlay.dtbo ${dts}
       test -s overlay.dtbo
+      cp ${dts} overlay.dts
       cat > conf << 'ENDCONF'
       ${conf}
       ENDCONF
@@ -1378,10 +1415,16 @@ in {
       cat > boot << 'ENDBOOT'
       ${boot}
       ENDBOOT
-      grep -q 'dtparam=i2c_arm=on' boot
+      if grep -q 'dtparam=i2c_arm\|i2c_arm' boot overlay.dts; then
+        echo "INA219 overlay still targets the firmware symbol i2c_arm" >&2
+        exit 1
+      fi
+      grep -q 'target = <&i2c1>' overlay.dts
+      grep -q 'brcm,bcm2711' overlay.dts
+      grep -q 'brcm,bcm2837' overlay.dts
       grep -q 'dtoverlay=janus-ina219' boot
       grep -q 'overlays/janus-ina219.dtbo' boot
-      grep -q 'dtparam=spi=on' boot
+      grep -q 'dtoverlay=janus-spi' boot
       test ${
         if os.config.janus.hardware.peripherals.ups.power.shutdown.enable
         then "yes"

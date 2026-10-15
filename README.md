@@ -4,7 +4,8 @@ The VM image boots. The phase 1 router core is in the tree, and so are
 the proxy, DNS policy, fleet commands, closure deploy, the connection
 audit log, A/B image slots, the Waveshare 1.3" status panel, battery
 shutdown for the mcuzone UPS, IPFIX export, a Prometheus endpoint, and
-Tier 3 profiles for the Raspberry Pi 2 and the VisionFive 2. What is
+Tier 3 profiles for the Raspberry Pi 2 and the VisionFive 2, and a
+Tier 2 profile for the Raspberry Pi 4 and Compute Module 4. What is
 specified, and what is done, is
 [docs/13-roadmap.md](docs/13-roadmap.md).
 

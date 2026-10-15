@@ -9,6 +9,7 @@
     ./le-potato.nix
     ./rpi-zero-2w.nix
     ./rpi3.nix
+    ./rpi4.nix
     ./rpi2.nix
     ./visionfive2.nix
   ];

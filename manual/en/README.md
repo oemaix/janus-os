@@ -12,13 +12,15 @@ The project is public and licensed under the Apache License, Version 2.0.
 
 The router image boots in a VM. Image profiles exist for the NanoPi R4S,
 the Le Potato, the Raspberry Pi Zero 2 W, the Raspberry Pi 3 / 3+, the
-Raspberry Pi 2 v1.1, the StarFive VisionFive 2, and the Yanyu STX-R19F
+Raspberry Pi 4 and Compute Module 4, the Raspberry Pi 2 v1.1, the
+StarFive VisionFive 2, and the Yanyu STX-R19F
 (Limine on legacy BIOS). `janus` and `janus-build`
 implement the phase 1 commands, plus proxy, DNS, fleet, status, backup,
 deploy, and the connection audit. On the board, `janus deploy` exits 2
 and names `janus-build`. A Waveshare 1.3" OLED HAT on a Raspberry Pi
-Zero 2 W or a Raspberry Pi 3 shows status. From the panel you can refresh
-the proxy, select a node, reboot, or wipe state. A mcuzone UPS on that
+Zero 2 W, a Raspberry Pi 3, or a Raspberry Pi 4 shows status. From the
+panel you can refresh the proxy, select a node, reboot, or wipe state.
+A mcuzone UPS on that
 board can power it off while the cell is discharging.
 
 A development shell exists for people working on the source: from a
@@ -171,8 +173,8 @@ LANs to audit instead.
 
 ## Status panel
 
-A Waveshare 1.3" OLED HAT on a Raspberry Pi Zero 2 W or a Raspberry Pi 3
-shows status. Name the peripheral in the host file:
+A Waveshare 1.3" OLED HAT on a Raspberry Pi Zero 2 W, a Raspberry Pi 3,
+or a Raspberry Pi 4 shows status. Name the peripheral in the host file:
 
 ```
 janus.hardware.peripherals.panel = {

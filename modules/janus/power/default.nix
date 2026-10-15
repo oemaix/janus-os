@@ -8,7 +8,7 @@
 }: let
   hw = config.janus.hardware;
   allow = import ../hardware/allowlist.nix;
-  pi = lib.elem hw.board ["rpi-zero-2w" "rpi3"];
+  pi = lib.elem hw.board ["rpi-zero-2w" "rpi3" "rpi4"];
 
   exposed = lib.filter (name: let
     p = hw.peripherals.${name};
@@ -43,38 +43,45 @@
   addresses = map (name: hw.peripherals.${name}.match.i2cAddress) exposed;
   # The overlay is data. dtc runs on the build machine, and only a
   # Raspberry Pi image installs the file. Another board uses the hwmon
-  # node that already exists.
+  # node that already exists. The mainline trees name the header bus
+  # i2c1 (GPIO 2 and 3) and have no firmware symbol i2c_arm. The
+  # compatible list is the SoC strings those trees actually publish.
   dts = ''
     /dts-v1/;
     /plugin/;
     / {
-        compatible = "brcm,bcm2835";
-    ${lib.concatImapStrings (i: addr: ''
-      fragment@${toString (i - 1)} {
-          target = <&i2c_arm>;
-          __overlay__ {
-              #address-cells = <1>;
-              #size-cells = <0>;
-              ina219@${lib.removePrefix "0x" addr} {
-                  compatible = "ti,ina219";
-                  reg = <${addr}>;
-                  shunt-resistor = <100000>;
-                  status = "okay";
-              };
-          };
-      };
-    '')
-    addresses}
+        compatible = "brcm,bcm2837", "brcm,bcm2711";
+        fragment@0 {
+            target = <&i2c1>;
+            __overlay__ {
+                pinctrl-names = "default";
+                pinctrl-0 = <&i2c1_gpio2>;
+                status = "okay";
+                clock-frequency = <100000>;
+                #address-cells = <1>;
+                #size-cells = <0>;
+                ${lib.concatMapStrings (addr: ''
+        ina219@${lib.removePrefix "0x" addr} {
+            compatible = "ti,ina219";
+            reg = <${addr}>;
+            shunt-resistor = <100000>;
+            status = "okay";
+        };
+      '')
+      addresses}
+            };
+        };
     };
   '';
-  dtbo = pkgs.buildPackages.runCommand "janus-ina219.dtbo" {
-    nativeBuildInputs = [pkgs.buildPackages.dtc];
-  } ''
-    cat > ina219.dts << EOF
-    ${dts}
-    EOF
-    dtc -@ -I dts -O dtb -o "$out" ina219.dts
-  '';
+  dtbo =
+    pkgs.buildPackages.runCommand "janus-ina219.dtbo" {
+      nativeBuildInputs = [pkgs.buildPackages.dtc];
+    } ''
+      cat > ina219.dts << EOF
+      ${dts}
+      EOF
+      dtc -@ -I dts -O dtb -o "$out" ina219.dts
+    '';
 
   conf = ''
     bin	${powerPkg}/bin/janus-power
@@ -108,7 +115,6 @@ in {
       cp ${dtbo} overlays/janus-ina219.dtbo
     '';
     janus.board.configTxt = lib.mkIf pi ''
-      dtparam=i2c_arm=on
       dtoverlay=janus-ina219
     '';
 

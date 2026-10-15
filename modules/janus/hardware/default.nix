@@ -236,9 +236,9 @@ in {
               message = "janus.hardware.peripherals.${name}: an hmi peripheral needs hmi.profile.";
             }
             {
-              assertion = hmi.profile != "waveshare-1.3-oled-hat" || lib.elem cfg.board ["rpi-zero-2w" "rpi3"];
+              assertion = hmi.profile != "waveshare-1.3-oled-hat" || lib.elem cfg.board ["rpi-zero-2w" "rpi3" "rpi4"];
               message = ''
-                janus.hardware.peripherals.${name}: waveshare-1.3-oled-hat uses BCM pins and needs board rpi-zero-2w or rpi3.
+                janus.hardware.peripherals.${name}: waveshare-1.3-oled-hat uses BCM pins and needs board rpi-zero-2w, rpi3, or rpi4.
                 See docs/10 §4.6.
               '';
             }

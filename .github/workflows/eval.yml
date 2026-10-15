@@ -29,9 +29,9 @@ jobs:
             .#checks.x86_64-linux.eval-router \
             .#checks.x86_64-linux.eval-vlan \
             .#checks.x86_64-linux.eval-boards \
+            .#checks.x86_64-linux.eval-boot-slot \
             .#checks.x86_64-linux.eval-rpi2-mbr \
             .#checks.x86_64-linux.eval-tier3-boot \
-            .#checks.x86_64-linux.eval-rpi4 \
             .#checks.x86_64-linux.eval-monitoring \
             .#checks.x86_64-linux.eval-monitoring-collector \
             .#checks.x86_64-linux.eval-monitoring-zone \

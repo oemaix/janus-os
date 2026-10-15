@@ -28,6 +28,46 @@
     runtimeInputs = with pkgs; [gawk jq iproute2 curl systemd coreutils];
     text = builtins.readFile ../../../pkgs/janus-hmi-snapshot.sh;
   };
+  # Mainline trees leave &spi disabled and have no firmware dtparam.
+  # GPIO 7-11 are the header SPI. rohm,dh2228fv is the in-tree spidev
+  # binding, so the node appears as /dev/spidev0.0. The panel clock is 4 MHz.
+  spiDts = ''
+    /dts-v1/;
+    /plugin/;
+    / {
+        compatible = "brcm,bcm2837", "brcm,bcm2711";
+        fragment@0 {
+            target = <&spi>;
+            __overlay__ {
+                pinctrl-names = "default";
+                pinctrl-0 = <&spi0_gpio7>;
+                status = "okay";
+                #address-cells = <1>;
+                #size-cells = <0>;
+                spidev@0 {
+                    compatible = "rohm,dh2228fv";
+                    reg = <0>;
+                    spi-max-frequency = <4000000>;
+                };
+            };
+        };
+        fragment@1 {
+            target-path = "/aliases";
+            __overlay__ {
+                spi0 = "/soc/spi@7e204000";
+            };
+        };
+    };
+  '';
+  spiDtbo =
+    pkgs.buildPackages.runCommand "janus-spi.dtbo" {
+      nativeBuildInputs = [pkgs.buildPackages.dtc];
+    } ''
+      cat > spi.dts << EOF
+      ${spiDts}
+      EOF
+      dtc -@ -I dts -O dtb -o "$out" spi.dts
+    '';
 
   portIface = name: let
     port = net.ports.${name};
@@ -224,9 +264,15 @@ in {
       }
     ];
 
-    boot.kernelModules = lib.mkIf waveshare ["spidev"];
+    boot.kernelModules = lib.mkIf waveshare ["spi-bcm2835" "spidev"];
+    system.build.janusSpiDts = lib.mkIf waveshare spiDts;
+    system.build.janusSpiDtbo = lib.mkIf waveshare spiDtbo;
+    janus.board.bootScript = lib.mkIf waveshare ''
+      mkdir -p overlays
+      cp ${spiDtbo} overlays/janus-spi.dtbo
+    '';
     janus.board.configTxt = lib.mkIf waveshare ''
-      dtparam=spi=on
+      dtoverlay=janus-spi
       gpio=6,19,5,26,13,21,20,16=pu
     '';
 

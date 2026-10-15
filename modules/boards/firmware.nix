@@ -14,6 +14,7 @@
         "rpi-zero-2w"
         "rpi2"
         "rpi3"
+        "rpi4"
       ]
     ) {
       nixpkgs.config.allowUnfreePredicate = pkg: let

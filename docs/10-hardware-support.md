@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-09-29 |
+| Last updated | 2026-10-15 |
 
 ## 1. Terminology
 
@@ -24,7 +24,7 @@
 | Board | SoC / Arch | Ports | Tier | Notes |
 |-------|------------|-------|------|-------|
 | **NanoPi R4S** | RK3399 · aarch64 | 2× 1 GbE (RTL8211E + RTL8111H/PCIe) | 1 | Reference router board. Mainline U-Boot at raw offset (sector 64); GPT. No Wi-Fi. |
-| **Raspberry Pi 4 / 400 / CM4** | BCM2711 · aarch64 | Pi 4: 1× 1 GbE (+ USB 3 NICs). Pi 400: no Ethernet jack. | 2 | Same SoC family. Pi 4 and Pi 400 are not Tier 1. A Pi 400 run does not exercise the Pi 4 port. Firmware needs a FAT boot partition with `config.txt`. |
+| **Raspberry Pi 4 / CM4** (`rpi4`) | BCM2711 · aarch64 | Pi 4: 1× 1 GbE. CM4: that port on the official IO board. USB 3 NICs are peripherals. | 2 | Tier 2 (D-0016). EEPROM firmware, FAT `config.txt`, hybrid MBR so the bootloader finds the GPT boot partition. One `eth0`; the profile does not choose a WAN. The Pi 400 is not a board: it has no Ethernet jack (D-0032). |
 | **Raspberry Pi 3 / 3+** | BCM2837 · aarch64 | 1× 100 MbE (USB 2 shared) | 2 | Low throughput; fine for tunnel-only use behind another router. |
 | **Raspberry Pi Zero 2 W** | BCM2710A1 · aarch64 | Wi-Fi 4 + Bluetooth, no Ethernet | 1 | Owner's lab. 512 MiB RAM. Needs a USB Ethernet peripheral for a wired WAN or LAN. On-board Wi-Fi and Bluetooth need the redistributable closed Broadcom firmware (FR-HW-006). Not a 500-node target. INA219 UPS overlay is part of this board's lab setup (FR-HW-008). |
 | **Libre Computer Le Potato (AML-S905X-CC)** | S905X · aarch64 | 1× 100 MbE | 1 | Owner's lab. Mainline U-Boot with FIP at raw offset; eMMC or SD. Lab peripherals: Fibocom NL668 as USB Ethernet (§4.2), RTL8188CUS as AP (§4.4), CSR Bluetooth. |
@@ -201,8 +201,11 @@ discharging when the capture was taken, and `curr1_input` was negative
 (about −33 mA, shunt about −4 mV, bus about 4.108 V). For that profile a
 negative current means discharge, and shutdown may arm. The Waveshare
 board (`0x43`) has no capture. Its profile exposes nothing and does not
-arm. On a Raspberry Pi the image enables I²C and installs
+arm. On a Raspberry Pi the image installs
 `overlays/janus-ina219.dtbo` (a 0.1 Ω shunt, which matches that capture).
+The overlay matches `brcm,bcm2837` and `brcm,bcm2711` and targets the
+mainline header bus `&i2c1` on GPIO 2 and 3. Those trees have no
+firmware symbol `i2c_arm`.
 
 ### 4.6 Waveshare 1.3" OLED HAT
 
@@ -216,7 +219,9 @@ clock, 10 data, 8 chip select, 24 data/command, 25 reset). I2C is a
 resistor option on the board and is not the profile default, so the HAT
 does not take the INA219 address. It uses the 40-pin header. The profile
 names BCM numbers and applies to Raspberry Pi boards, including the Zero
-2 W. Another board needs its own pin map.
+2 W. Another board needs its own pin map. The image installs
+`overlays/janus-spi.dtbo`, which enables the mainline `&spi` controller
+on GPIO 7–11 and exposes `/dev/spidev0.0`. The panel clock is 4 MHz.
 
 The behaviour is *15 — Panel User Interface*. This profile only binds the
 controls. Left and right move between pages. Up and down move the focused

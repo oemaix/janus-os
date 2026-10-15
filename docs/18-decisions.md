@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-09-30 |
+| Last updated | 2026-10-15 |
 
 A row here is a choice that binds implementation and is not an ADR. The
 cited requirement or design section is the text that binds. An accepted
@@ -36,7 +36,7 @@ Undecided rows are open. Implementation does not invent an answer for them.
 | D-0013 | The OS repository is public. User-facing text is English, then Russian, then Persian. There is no hosted builder. | *00* ?9 |
 | D-0014 | Backup stores what git cannot recreate: the age key, and overrides that have not been pulled. | FR-OPS-011 |
 | D-0015 | `docs/` is the definition suite. `manual/` is the user guide. `llms.txt` points at `ai.md`. | *14*, *16* |
-| D-0016 | Tier 1 is Zero 2 W, Le Potato, NanoPi R4S, and Yanyu STX-R19F. Raspberry Pi 4 and Pi 400 are Tier 2. | *10* |
+| D-0016 | Tier 1 is Zero 2 W, Le Potato, NanoPi R4S, and Yanyu STX-R19F. Raspberry Pi 4 and Compute Module 4 are Tier 2. | *10* |
 | D-0017 | The VLAN model is general. 1.0 implements LAN VLANs. WAN VLAN, the `iptv` role, and IGMP are after 1.0. | FR-NET-005, FR-NET-014, FR-NET-020 |
 | D-0018 | A connection audit log is off unless configured, metadata only, on the state partition. `janus audit stop` pauses it without a rebuild. | FR-MON-007 |
 | D-0019 | RTL8188CUS is a 2.4 GHz access point on in-tree `rtl8192cu`. | *10* ?4.4 |
@@ -52,6 +52,7 @@ Undecided rows are open. Implementation does not invent an answer for them.
 | D-0029 | The Yanyu Janus image uses Limine on legacy BIOS and GPT. The measured OpenWrt install uses GRUB. UEFI and systemd-boot do not apply. | *10* ?3.1, *05* ?2, *09* ?4 |
 | D-0030 | Proxied LAN traffic, other than private destinations and traffic to the router, is marked `0x4a01` and looked up in table 2022. The configured IPv6 fake-IP range is not private, and port 53 is not marked `0x4a01`. While the engine is down and `failMode` is `closed`, that table's default is a blackhole. While the engine is up, the default is `dev tun0`. Engine egress stays mark `0x4a` and is not looked up in table 2022. TCP/53 is redirected to `[::]:5353`. UDP/53 is tproxied there with mark `0x4a02`, looked up in table 2023 (`local default dev lo`), including while the engine is down. Refresh SOCKS listens on `127.0.0.1:2080` and the Clash API on `127.0.0.1:9090`. A rule whose target is `direct` because of a domain list is enforced by the engine, so it drops with the engine; the private-range exception is in nftables and stays direct. This row is the sing-box data plane. | ADR-0011, ADR-0016, *07* |
 | D-0031 | When `janus.proxy.engine` is `xray`, proxied LAN traffic is not marked `0x4a01` and is not looked up in table 2022. It is tproxied to port 12345 with mark `0x4a02` and table 2023. `failMode = closed` installs that rule while the process is down, so a closed port drops the traffic. `failMode = open` installs it only while Xray is up. `tls.insecure` and a Shadowsocks plugin are not rendered; evaluation fails (ADR-0006). | ADR-0006, *07* |
+| D-0032 | Raspberry Pi 400 is not a board. It has no Ethernet jack. The `rpi4` profile is the Pi 4 and the Compute Module 4 on the official IO board. | *10* §3 |
 
 ## 2. Undecided
 
