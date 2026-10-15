@@ -11,6 +11,8 @@
 | Persona | Description | Nix skill | Network skill |
 |---------|-------------|-----------|---------------|
 | **Mei** — home user in mainland China | Wants stable circumvention for the whole household, IPTV from the carrier must keep working, minimal maintenance. Builds on a laptop that has a working tunnel. | Low: copies and edits the example | Medium: knows PPPoE, VLAN for IPTV |
+| **Kirill** — home user in Russia | Same shape as Mei. Domestic services (banks, government, local names) stay direct. The example's China lists would send those the wrong way. | Low | Medium |
+| **Niloofar** — home user in Iran | Same shape as Kirill. Inland names stay direct. She sets a domestic encrypted resolver herself. Anti-filter DNS is not that resolver. | Low | Medium |
 | **Jonas** — NixOS enthusiast | Runs a home lab, wants the router in the same flake as everything else, expects escape hatches to raw NixOS. | High | Medium |
 | **Priya** — small-office operator | Router sits behind a carrier NAT she cannot configure; needs remote access, traffic visibility per VLAN. | Low | High |
 | **Builder** — the project developer | Maintains board profiles, modules, tests, release images. | High | High |
@@ -211,3 +213,13 @@ requirements it drives (see *03 — Requirements*).
   few days, `janus audit stop` ends it without a rebuild. Mei copies the
   log off the router and reads it elsewhere. Payloads are not recorded.
 * **Drives:** FR-MON-007
+
+### UC-21 Select Russia or Iran
+
+* **Actor:** Kirill, Niloofar
+* **Precondition:** *21* is implemented. It is not, until *13* says so.
+* **Flow:** Set `janus.region` to `ru` or `ir`. Do not keep the China
+  rule list or AliDNS beside that setting. For `ir`, set
+  `janus.dns.domestic.resolvers` to an encrypted resolver that answers
+  inland names. Rebuild on the build host and deploy.
+* **Drives:** FR-PRX-026, FR-PRX-027, FR-PRX-028, FR-DNS-012

@@ -54,6 +54,7 @@ Undecided rows are open. Implementation does not invent an answer for them.
 | D-0031 | When `janus.proxy.engine` is `xray`, proxied LAN traffic is not marked `0x4a01` and is not looked up in table 2022. It is tproxied to port 12345 with mark `0x4a02` and table 2023. `failMode = closed` installs that rule while the process is down, so a closed port drops the traffic. `failMode = open` installs it only while Xray is up. `tls.insecure` and a Shadowsocks plugin are not rendered; evaluation fails (ADR-0006). | ADR-0006, *07* |
 | D-0032 | Raspberry Pi 400 is not a board. It has no Ethernet jack. The `rpi4` profile is the Pi 4 and the Compute Module 4 on the official IO board. | *10* §3 |
 | D-0033 | The maintenance page is *20*. Janet serves it and stunnel terminates TLS. The build option includes it, default off. `janus web stop` pauses the listener. Login is a page passphrase. Light and dark are one monochrome layout. | FR-ACC-006, *20* |
+| D-0034 | `janus.region` is `cn` (default), `ru`, or `ir`. It selects a preset of domestic routing, domestic DNS, and the `blockQuic` default. It is not a second proxy implementation. Explicit rules replace the preset. `ir` has no built-in domestic resolver. | *21*, FR-PRX-026 |
 
 ## 2. Undecided
 

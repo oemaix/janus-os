@@ -221,6 +221,8 @@
 
     defaultTarget = "group:Auto";                          # Auto = url-test over everything
 
+    # China domestic rules. Russia and Iran presets are docs/21-reference-regions.md.
+    # janus.region is specified there and is not an option in this tree yet.
     rules = [
       { match = { geosite = [ "private" ]; geoip = [ "private" ]; }; target = "direct"; }
       { match = { geosite = [ "cn" ]; };                               target = "direct"; }

@@ -106,6 +106,11 @@ name, an update schedule, and yields an implicit Group. The option is
 `janus.proxy.subscriptions`. *Avoid:* "relay subscription". The relay is
 the proxy node. The subscription is the list.
 
+**Reference region** — `cn`, `ru`, or `ir`: the censorship network this
+router is built for. It selects the domestic routing and DNS preset in
+*21*. It is not a language and not an exit-node country. The option is
+`janus.region`. Specified, not implemented.
+
 **Rebuild** — Producing a new system closure or Image from the flake and
 deploying it to the Board. Rebuilds happen on the Build host. A rebuild that
 would need to compile or download on the Board is an error.

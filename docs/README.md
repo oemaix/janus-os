@@ -40,6 +40,7 @@ Choices that are not ADRs are *18*. Explanations are *19*.
 | 16 | [Build-host CLI](16-build-host-cli.md) | `janus-build`: the router life cycle on the build host | Developers, manual authors |
 | 15 | [Panel user interface](15-hmi-ui.md) | One interaction model for small and large panels, and for different keys | Developers |
 | 20 | [Maintenance page](20-maintenance-ui.md) | Browser page for status, maintenance actions, and hot overrides | Developers |
+| 21 | [Reference regions](21-reference-regions.md) | China, Russia, and Iran presets for routing and domestic DNS | Developers |
 | 18 | [Decisions](18-decisions.md) | Choices that are not ADRs, decided and undecided | Everyone |
 | 19 | [Questions](19-questions.md) | Short answers that point at the binding document | Everyone |
 | — | [Architecture Decision Records](adr/README.md) | Individual, dated decisions with rationale | Developers |

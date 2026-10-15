@@ -44,6 +44,12 @@ learning path: copy, edit values, build.
 | `journal.maxUse` | str | `"64M"` | |
 | `embedSource` | bool | `true` | Embed the whole flake source tree (`flake.nix`, `flake.lock`, all `.nix` modules) read-only at `/etc/janus/source` (FR-CFG-008). Disable only if the tree contains inline secrets you do not want readable on the device. |
 
+### 1.1 `janus.region`
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `region` | `cn\|ru\|ir` | `cn` | Reference region. Selects the domestic routing and DNS preset in *21*. Not a hot override. Specified, not implemented. |
+
 ## 2. `janus.hardware`
 
 | Option | Type | Default | Description |
@@ -117,12 +123,12 @@ See *06* §7–8: `zones`, `policies`, `rules`, `services`, `portForwards`,
 | `subscriptions.<name>` | submodule | | *07* §3.2 |
 | `nodes.<name>` | submodule | | Manual nodes; protocol-specific submodules `vless`, `trojan`, `shadowsocks`, `hysteria2`, `tuic` |
 | `groups.<name>` | submodule | | *07* §4 |
-| `rules` | list | region-agnostic defaults | *07* §5 |
+| `rules` | list | preset for `janus.region` | *07* §5, *21*. Unset uses the preset. An explicit list replaces it. |
 | `exceptions` | list | private, iptv | `proxy-all` exceptions |
 | `egressWan` | str/null | `null` | Pin engine egress to a WAN |
-| `blockQuic` | bool | `false` | |
+| `blockQuic` | bool | `false`; `true` when `region` is `ru` | *21* |
 | `geodata.refresh` | duration | `"weekly"` | |
-| `geodata.sources` | attrs | community defaults | |
+| `geodata.sources` | attrs | community defaults | Base URLs, plus `tags.<file>` for one rule-set file (*21* §4.3). |
 | `geodata.hashes` | attrs of sha256 | `{}` | Overrides the built-in pins. A referenced tag with no pin is left for the router |
 | `engineSettings` | attrs | `{}` | Raw engine config merged last (escape hatch; unsupported) |
 
@@ -144,9 +150,10 @@ serviceName}`, `tags` (list of strings, matchable). Protocol-specific:
 
 ## 7. `janus.dns`
 
-See *07* §7.2. Default set is safe for the reference environment: carrier
-resolvers `never`, encryption `prefer`, fake-IP `auto`, `ipv6Answers =
-"strip-for-proxied"`, `interceptPlaintext = true`.
+See *07* §7.2. Default set is the `cn` preset: carrier resolvers `never`,
+encryption `prefer`, fake-IP `auto`, `ipv6Answers = "strip-for-proxied"`,
+`interceptPlaintext = true`. `ru` and `ir` replace the domestic fields
+(*21*). `ir` has no built-in domestic resolver.
 
 ## 8. `janus.monitoring`
 

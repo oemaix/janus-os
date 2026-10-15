@@ -141,6 +141,10 @@ Rule evaluation order is list order; the renderer emits engine rules in the
 same order. `direct` means "leave via the normal WAN routing (default
 route)". `block` means reject (TCP RST / ICMP unreachable) at the engine.
 
+The `cn` rows in the example above are the China reference. Russia and Iran
+use the same rule language and the preset in *21*. That preset is specified
+and not implemented.
+
 Terminology (Glossary): the three modes are `bypass`, `rule-based`, and
 `proxy-all`. A rule target may still be `direct`, meaning that one flow
 leaves by the WAN. `proxy-all`
@@ -190,6 +194,7 @@ janus.dns = {
   encryption = "prefer" | "require";
   domestic = { resolvers = [ "https://dns.alidns.com/dns-query" "tls://dot.pub" ];
                domains = [ "geosite:cn" "geosite:geolocation-cn" ]; ecs = "allow"; };
+  # The resolvers and domain sets above are the cn preset. ru and ir: *21*.
   remote   = { resolvers = [ "https://1.1.1.1/dns-query" "https://dns.google/dns-query" ];
                via = "tunnel"; ecs = "strip"; };
   fakeIp   = { enable = "auto"; v4Range = "198.18.0.0/15"; v6Range = "fc00::/18";

@@ -42,3 +42,7 @@ Each question is `Q-nnnn`. The number is assigned once and is not reused.
 | Q-0026 | Which web server serves the maintenance page? | None of nginx, Caddy, or lighttpd. `janus-web` is Janet, and stunnel terminates TLS. The page is one route table in front of `janus`. See *20* §2 and D-0033. |
 | Q-0027 | How does the page log in when root has no password? | With its own passphrase file. SSH stays public-key only. A lost passphrase is replaced over SSH. See *20* §3 and ADR-0007. |
 | Q-0028 | Does the maintenance page have a light and a dark theme? | Yes. One layout; ink and paper swap. The browser stores the choice. See *20* §7. |
+| Q-0029 | Does Russia or Iran need its own proxy implementation? | No. The tunnel, the engine, and fail-closed stay. The reference region swaps domestic lists, domestic resolvers, and the QUIC default. See D-0034 and *21*. |
+| Q-0030 | Is the Russia preset a list called russia/global? | No. Domestic suffixes, `category-ru`, and `geoip:ru` go direct. The default target is the rest. SagerNet does not publish `geosite-ru`. See *21* §4.2. |
+| Q-0031 | Why does the Iran preset not name Shecan or Electro? | Those resolvers answer filtered names. Domestic DNS is only for names that stay direct. The operator sets an encrypted inland resolver. See *21* §4.3. |
+| Q-0032 | Do Russia and Iran need use cases beyond `janus.region`? | The household flow is Mei's. The exceptions are an Iranian resolver, a Russian Telegram rule, and node choice. See *21* §6. |
