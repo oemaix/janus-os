@@ -1,8 +1,10 @@
 # Janus OS
 
-Janus OS does not ship a router system. You build your own, on NixOS:
-an image on one computer, flashed to a small board. The board does not
-build software and does not evaluate Nix.
+Janus OS does not ship a router system. You build your own: an image
+on one computer, flashed to a small board. The image is NixOS. The
+board does not build software and does not evaluate Nix. The computer
+that builds the image needs Nix with flakes. It does not have to run
+NixOS.
 
 The project is public and licensed under the Apache License, Version 2.0.
 
@@ -18,36 +20,89 @@ Zero 2 W or a Raspberry Pi 3 shows status. From the panel you can refresh
 the proxy, select a node, reboot, or wipe state. A mcuzone UPS on that
 board can power it off while the cell is discharging.
 
-A development shell exists for people working on the source: from the
-repository root, run `nix develop`.
+A development shell exists for people working on the source: from a
+clone of this repository, run `nix develop`. Operating a router does
+not need that clone.
+
+## Nix on the build machine
+
+This project is a Nix flake. `nix run` and `nix flake` stay unavailable
+until Nix is configured to allow them.
+
+On a machine that is not NixOS, install Nix first:
+<https://nixos.org/download/>.
+
+A standard install still leaves the Nix command and flakes off. Add
+this line to `/etc/nix/nix.conf`. A single-user install uses
+`~/.config/nix/nix.conf` instead:
+
+```
+experimental-features = nix-command flakes
+```
+
+After editing `/etc/nix/nix.conf`, restart the daemon with
+`sudo systemctl restart nix-daemon`. On NixOS, set the same switch in
+the system configuration and rebuild:
+
+```nix
+nix.settings.experimental-features = [ "nix-command" "flakes" ];
+```
+
+When `nix flake --help` prints usage, this step is already done.
+
+## Create the fleet repository
+
+`janus-build` is not installed on its own. The first command names the
+Janus flake and creates the private directory:
+
+```
+nix run github:oemaix/janus-os#janus-build -- init ./fleet
+```
+
+A local clone is the same command with a directory in place of the
+GitHub flake:
+
+```
+nix run ./janus-os#janus-build -- init ./fleet
+```
+
+`init` takes the new directory, `./fleet`. It does not take a flake
+address. That address is the `nix run` target, and the new repository
+pins the same Janus. Continue inside the fleet repository:
+
+```
+cd fleet
+nix develop
+```
+
+`janus-build` is then on `PATH`.
 
 ## Build and flash
 
-On the build machine:
+In that shell:
 
-1. `janus-build init` creates the private configuration repository.
-2. `janus-build host add` names one board.
-3. The host file sets the board, the WAN, and at least one LAN. Ports
+1. `janus-build host add <host>` names one board.
+2. The host file sets the board, the WAN, and at least one LAN. Ports
    come from the board profile. Commit that host.
-4. `janus-build secret keygen <host>` creates this router's age key.
+3. `janus-build secret keygen <host>` creates this router's age key.
    It writes the public key to `secrets/keys/<host>.pub` and prints the
    private key once. Store that private key in a password manager, such
    as KeePass. The build machine does not keep a copy, and the key does
    not go into git. Do this after the host exists and before the build.
-5. `janus-build secret set <path>` encrypts each credential this host
+4. `janus-build secret set <path>` encrypts each credential this host
    needs: a PPPoE password, a Wi-Fi passphrase, a subscription URL, or a
    manual node. The public key from the previous step must already exist.
-6. `janus-build build <host>` writes `janus-<host>.img`. The image
+5. `janus-build build <host>` writes `janus-<host>.img`. The image
    contains that ciphertext. It does not contain the private key.
-7. Flash that image. The state partition starts empty.
-8. SSH in as root with the key from the host configuration. There is no
+6. Flash that image. The state partition starts empty.
+7. SSH in as root with the key from the host configuration. There is no
    password login.
-9. Install the private key from the password manager, once, with
+8. Install the private key from the password manager, once, with
    `janus-build deploy --age-key <host>` on the build machine.
    (`janus secrets install-age-key` on the router does the same thing.)
    PPPoE, Wi-Fi, and a subscription URL that is a secret stay unavailable
    until this step.
-10. `janus proxy refresh` fills a subscription that came from `urlSecret`.
+9. `janus proxy refresh` fills a subscription that came from `urlSecret`.
     Until the key is installed and that refresh runs, the snapshot is empty.
 
 A host with no encrypted credential can skip the key, `secret set`, and

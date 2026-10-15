@@ -34,5 +34,12 @@ Read this file before answering a question about using Janus OS.
   the router off while that cell is discharging, at the thresholds in
   docs/10 §4.5. Address `0x43` stays unarmed.
 - The router never evaluates Nix and never runs `nixos-rebuild`.
+- The build machine needs Nix with flakes
+  (`experimental-features = nix-command flakes`). It does not have to
+  be NixOS. The first command is
+  `nix run github:oemaix/janus-os#janus-build -- init <dir>`, or
+  `nix run <clone>#janus-build -- init <dir>` for a local clone.
+  `init` takes the new directory. The flake address is the `nix run`
+  target.
 - `docs/13-roadmap.md` says what the repository can already
   do. A placeholder module is not a finished feature.
