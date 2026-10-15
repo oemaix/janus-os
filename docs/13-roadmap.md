@@ -58,11 +58,11 @@ Explanations are *19*. Accepted ADRs are `docs/adr/`.
 ### Phase 4 — Polish
 
 * HMI daemon. The interaction model is *15*. The first profile is the Waveshare 1.3" OLED HAT (*10* §4.6). Implemented; see Progress.
-* Flow export (IPFIX), Prometheus endpoint.
-* VisionFive 2, RPi 2 (Tier 3).
+* Flow export (IPFIX) and a Prometheus endpoint. Implemented; see Progress.
+* VisionFive 2, RPi 2 (Tier 3). Implemented; see Progress.
 * A/B image slots. Implemented; see Progress.
 * Maintenance page limited to status, maintenance actions, and hot overrides.
-* Expand `manual/` (English, Russian, Persian). The operator guide covers build, flash, deploy, audit, A/B slots, and the status panel.
+* Operator manual in English, Russian, and Persian: build, flash, deploy, audit, A/B slots, the status panel, Tier 3 boards, flow export, and the Prometheus endpoint. Implemented; see Progress.
 
 ### Future
 
@@ -80,10 +80,11 @@ tree does not mean that behavior exists. Stubs are not finished features.
 * Flake with `nixosModules.janus`, `nixosModules.boards`, `lib.mkRouter`,
   `templates.default`, and `devShells.default` (`nix develop`).
 * `lib.mkRouter` reads `janus.hardware.board` and returns a NixOS
-  configuration, including `system.build.janusImage`. Phase 1 boards are
-  `x86_64-test`, `yanyu-stx-r19f`, `nanopi-r4s`, `le-potato`, and
-  `rpi-zero-2w`. Any other board throws. It does not return an empty
-  configuration.
+  configuration, including `system.build.janusImage`. Implemented boards
+  are `x86_64-test`, `yanyu-stx-r19f`, `nanopi-r4s`, `le-potato`,
+  `rpi-zero-2w`, `rpi3`, `rpi2`, and `visionfive2`. `rpi4` throws. It
+  does not return an empty configuration. `armv7l` and `riscv64` default
+  to a cross build (`janus.build.strategy`).
 * `janus.*` option types, defaults, and the structural assertions in
   *08* §12. Storage is lowered: partition labels, read-only `/` and
   `/nix`, one read-write `/var`, and `system.etc.overlay` with
@@ -102,9 +103,13 @@ tree does not mean that behavior exists. Stubs are not finished features.
 * Board profiles: `x86_64-test` (virtio, no raw firmware), NanoPi R4S
   (U-Boot at sector 64, `eth0`/`eth1`, no WAN chosen), Le Potato (U-Boot
   FIP, one `eth0`), Raspberry Pi Zero 2 W (FAT `config.txt`, no Ethernet
-  port), Raspberry Pi 3 / 3+ (`rpi3`, FAT `config.txt`, one `eth0`).
+  port), Raspberry Pi 3 / 3+ (`rpi3`, FAT `config.txt`, one `eth0`),
+  Raspberry Pi 2 v1.1 (`rpi2`, 32-bit, hybrid MBR, one `eth0`; a v1.2
+  uses `rpi3`), and StarFive VisionFive 2 (SPL and U-Boot in GPT
+  partitions `2E54B353…` and `BC13C2FF…`, `eth0`/`eth1`, no WAN chosen).
   Yanyu names `lan1`–`lan4` by PCI path and installs Limine
-  (D-0029). The image has not been booted on the lab AMI board.
+  (D-0029). The image has not been booted on the lab AMI board. Tier 3
+  images are not boot-tested here.
 * Image builder: GPT, FAT boot, f2fs root, f2fs store, f2fs state.
   `nix build .#checks.x86_64-linux.vm-x86_64-test` boots that image.
 * Options reference: `nix build .#docs-options`.
@@ -141,6 +146,14 @@ tree does not mean that behavior exists. Stubs are not finished features.
 * A mcuzone INA219 at `0x40` reports the cell in `janus status` and powers
   the router off while the cell is discharging, at the thresholds in *10*
   §4.5. The Waveshare address `0x43` stays unarmed.
+* `janus.monitoring.flows.export.collector` runs softflowd. `ipfix` is
+  NetFlow version 10 and `netflow9` is version 9. The in-memory ring holds
+  8192 flows. `janus.monitoring.interfaces` names WANs, LANs, ports, VLANs,
+  or Wi-Fi networks, and flow export resolves them to kernel interfaces.
+  `janus.monitoring.prometheus.enable` serves node exporter on port 9100
+  for IPv4 and IPv6, plus engine metrics in the textfile collector. That
+  port is accepted only on `prometheus.zones` (default `mgmt`) and dropped
+  on every other interface.
 * `eval-proxy-local` fetches a page on `127.0.0.1` through the rendered
   sing-box Shadowsocks outbound. The fixture server speaks the same method
   and password. The router's firewall mark is not applied on that hop.

@@ -153,11 +153,11 @@ resolvers `never`, encryption `prefer`, fake-IP `auto`, `ipv6Answers =
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `enable` | bool | `true` | Per-interface counters |
-| `interfaces` | list/`"all"` | all WANs + LANs | |
+| `interfaces` | list/`"all"` | all WANs + LANs | WAN, LAN, port, VLAN, or Wi-Fi names. Flow export resolves them to kernel interfaces. |
 | `scope` | enum | `counters` | `counters` `per-host` `flows` |
 | `history.retentionDays` | int | 90 | vnstat retention |
 | `flows.export.{collector, port, protocol}` | attrs | off | IPFIX/NetFlow v9 |
-| `prometheus.{enable, zones}` | attrs | off | node-exporter + engine metrics on `mgmt` |
+| `prometheus.{enable, zones}` | attrs | off | node-exporter + engine metrics. Port 9100 is IPv4 and IPv6, and is confined to `zones` (default `mgmt`). |
 | `audit.enable` | bool | `false` | Include the connection audit log (FR-MON-007). One JSON object per line. Runtime start/stop does not change this. |
 | `audit.retention` | duration | `"7d"` | Cap on the state partition. |
 | `audit.interfaces` | list | proxied LANs | |

@@ -30,6 +30,21 @@ Read this file before answering a question about using Janus OS.
   is a status panel. It runs `janus proxy refresh`, `janus proxy select`,
   `janus reboot`, and `janus reset --state --yes`. It does not edit
   configuration, hot overrides, or secrets.
+- `janus.monitoring.flows.export.collector` exports IPFIX (default, port
+  4739) or NetFlow v9. Null leaves export off. The ring is 8192 flows
+  in memory.
+- `janus.monitoring.flows.export` resolves `janus.monitoring.interfaces`
+  (WAN, LAN, port, VLAN, or Wi-Fi names) to kernel interfaces.
+- `janus.monitoring.prometheus.enable` defaults to false. When set, port
+  9100 serves node exporter and engine metrics on IPv4 and IPv6.
+  `prometheus.zones` defaults to `mgmt` and is the only place that port
+  is accepted.
+- Raspberry Pi 2 v1.1 (`rpi2`) and StarFive VisionFive 2 are Tier 3.
+  `janus.build.strategy` defaults to `cross` for them. `lib.mkRouter`
+  takes `buildSystem`. Pure evaluation defaults it to `x86_64-linux`.
+  `janus-build` on another machine uses that machine's system and refuses
+  a mismatch. A Raspberry Pi 2 v1.2 uses the `rpi3` profile. `rpi4` is
+  not implemented.
 - A mcuzone UPS at I²C `0x40` shows the cell in `janus status` and powers
   the router off while that cell is discharging, at the thresholds in
   docs/10 §4.5. Address `0x43` stays unarmed.

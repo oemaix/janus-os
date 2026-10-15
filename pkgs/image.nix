@@ -40,6 +40,8 @@
   limineBios ? false,
   # Duplicate ROOT and NIX. Partition 5 stays free for the Limine BIOS gap.
   slots ? false,
+  # Raspberry Pi 2 boot ROM reads an MBR FAT partition. docs/05 §2, docs/10 §3.
+  hybridFatMbr ? false,
 }: let
   limineBoot = import ./limine-boot.nix {inherit limine;};
   slotsFlag =
@@ -85,7 +87,7 @@ in
     slots = slotsFlag;
     passthru =
       {
-        inherit slots;
+        inherit slots hybridFatMbr;
         rootBUuid = "4a414e55-5300-4000-8000-000000000006";
         nixBUuid = "4a414e55-5300-4000-8000-000000000007";
       }
@@ -291,6 +293,10 @@ in
 
       ${firmwareInstall}
       ${lib.optionalString limineBios limineBoot.biosPartitionScript}
+      ${lib.optionalString hybridFatMbr ''
+        export boot_start
+        bash ${./hybrid-mbr.sh}
+      ''}
 
       printf 'boot_start_mib=%s\nboot_mib=%s\nstate_start_mib=%s\nstate_mib=%s\n' \
         "$boot_start" "$bootMiB" "$state_start" "$stateMiB" > layout.env

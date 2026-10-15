@@ -546,6 +546,7 @@ in {
         dtbName = boardImage.dtbName or null;
         dtbSource = boardImage.dtbSource or null;
         limineBios = boardImage.limineBios or false;
+        hybridFatMbr = boardImage.hybridFatMbr or false;
         slots = cfg.slots.enable;
       };
 

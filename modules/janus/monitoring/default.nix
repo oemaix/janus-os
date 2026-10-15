@@ -7,7 +7,7 @@
 }: let
   inherit (lib) mkOption types;
 in {
-  imports = [./audit.nix];
+  imports = [./audit.nix ./export.nix];
   options.janus.monitoring = {
     enable = mkOption {
       type = types.bool;
@@ -17,7 +17,11 @@ in {
     interfaces = mkOption {
       type = types.either (types.enum ["all"]) (types.listOf types.str);
       default = "all";
-      description = "Interfaces to count. all means every WAN and LAN.";
+      description = ''
+        Interfaces to count. all means every WAN and LAN.
+        A list names WANs, LANs, ports, VLANs, or Wi-Fi networks from this configuration.
+        Flow export resolves those names to kernel interfaces.
+      '';
     };
     scope = mkOption {
       type = types.enum ["counters" "per-host" "flows"];
@@ -81,8 +85,5 @@ in {
         DailyDays ${toString cfg.history.retentionDays}
       '';
     };
-    warnings = lib.optional (cfg.scope == "flows" || cfg.flows.export.collector != null) ''
-      janus.monitoring flow export is after phase 1.
-    '';
   };
 }

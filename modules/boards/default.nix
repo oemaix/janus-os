@@ -1,7 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# One profile per board. Phase 1 implements the Tier 1 boards in docs/10 §3
-# plus the x86_64-test VM profile. Other names stay in the option enum;
-# lib.mkRouter refuses them.
+# One profile per implemented board. docs/10 §3. lib.mkRouter refuses the rest.
 {lib, ...}: {
   imports = [
     ./firmware.nix
@@ -11,6 +9,8 @@
     ./le-potato.nix
     ./rpi-zero-2w.nix
     ./rpi3.nix
+    ./rpi2.nix
+    ./visionfive2.nix
   ];
 
   options.janus.board.configTxt = lib.mkOption {

@@ -159,6 +159,11 @@ for zones' interfaces and address lists. Stateful defaults: `ct state
 established,related accept`, `ct state invalid drop`. IPv6 follows identical
 zone semantics; ICMPv6 essentials (RA/NS/NA/PMTU) are always allowed.
 
+A service may set `confine = true`. The port is then accepted on the
+named zones and dropped on every other interface, before a zone whose
+`input` is `accept` can open it. Prometheus uses this, so
+`prometheus.zones` is the only path to port 9100.
+
 ## 9. IPv6 policy
 
 The carrier and its regulator can observe far more from IPv6 than from

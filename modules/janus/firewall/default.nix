@@ -125,6 +125,14 @@ in {
             default = null;
             description = "Service port.";
           };
+          confine = mkOption {
+            type = types.bool;
+            default = false;
+            description = ''
+              Drop this port on every interface outside zones.
+              A zone with input = accept does not open it.
+            '';
+          };
         };
       });
       default = {

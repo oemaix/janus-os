@@ -12,6 +12,7 @@
         "nanopi-r4s"
         "le-potato"
         "rpi-zero-2w"
+        "rpi2"
         "rpi3"
       ]
     ) {

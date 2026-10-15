@@ -84,8 +84,8 @@ SSH destinations are `janus.deploy.address`, or the
 | Age key | `janus-build secret keygen <host>` | Creates that host's keypair outside the Nix build. Commits nothing by itself: it writes `secrets/keys/<host>.pub` and prints the private key once on stdout. Refuses to replace an existing public key. |
 | Set a secret | `janus-build secret set <path>` | Reads plaintext on stdin, encrypts to the recipients of that path, and writes ciphertext. Does not keep a plaintext file. |
 | Rewrap a shared secret | `janus-build secret rewrap <path> --from <host>` | Asks a router that can decrypt that file, then encrypts to the current recipient set. |
-| Check | `janus-build check [<host>]` | Evaluates the named host, or every host. Prints assertion failures. Builds nothing. |
-| Build | `janus-build build [<host>]` | Builds `images.<host>` for one host or every host. Prints the image path. |
+| Check | `janus-build check [<host>]` | Evaluates the named host, or every host. Prints assertion failures. Builds nothing. Refuses a cross image whose build machine is not this one. |
+| Build | `janus-build build [<host>]` | Builds `images.<host>` for one host or every host. Prints the image path. On a machine other than x86_64, evaluation is impure so `builtins.currentSystem` is this machine. |
 | Install an image | `janus-build deploy <host>` | Closure deploy, or a state-preserving re-flash (*09* §8). |
 | Push overrides | `janus-build fleet apply` | Committed hot-override projection, over SSH (§4). |
 | Pull overrides | `janus-build fleet pull [<host>]` | Current overrides from one router, or every reachable router, into this repo (§5). |
@@ -253,8 +253,8 @@ not written in that failed run.
 
 | Command | Effect |
 |---------|--------|
-| `janus-build check [<host>]` | Evaluation and assertions only. |
-| `janus-build build [<host>]` | Image build. No host means every host. |
+| `janus-build check [<host>]` | Evaluation and assertions only. Refuses a cross image whose build machine is not this one. |
+| `janus-build build [<host>]` | Image build. No host means every host. A non-x86_64 machine evaluates impurely so `builtins.currentSystem` is that machine. |
 | `janus-build status [<host>]` | One SSH to `janus status` per host. No host means every host. A down host is named; the others are still printed. |
 | `janus-build backup <host>` | Writes the `janus backup` archive to `./backup/<host>-<utc>.tar` and prints the path. Does not commit it. |
 | `janus-build update` | Updates the `janus` flake input only. The user runs `check` and `build` next. |

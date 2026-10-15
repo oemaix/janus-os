@@ -228,6 +228,16 @@ case "$cmd" in
           [ -f "$stamp" ] || continue
           echo "$(basename "$stamp" .stamp) $(cat "$stamp")"
         done
+        for err in /var/lib/janus/subscriptions/*.error; do
+          [ -s "$err" ] || continue
+          echo "$(basename "$err" .error) error: $(cat "$err")"
+        done
+      fi
+      if [ -f /var/lib/janus/geodata/refresh.stamp ]; then
+        echo "Geo: $(cat /var/lib/janus/geodata/refresh.stamp)"
+      fi
+      if [ -s /var/lib/janus/geodata/refresh.error ]; then
+        echo "Geo error: $(cat /var/lib/janus/geodata/refresh.error)"
       fi
       if systemctl is-active --quiet janus-engine.service 2>/dev/null; then
         echo "Engine: active"

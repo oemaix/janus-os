@@ -277,6 +277,12 @@ render_config() {
   rm -f "$nodes" "$work" "$selected"
 }
 
+# A function called from `if` ignores set -e, and so does a subshell it starts.
+# A new bash does not, and die() exits only that bash, so the caller can record it.
+render_or_fail() {
+  bash "$0" render-internal
+}
+
 geo_base() {
   tag=$1
   if printf '%s' "$tag" | grep -q '^geoip-'; then
@@ -331,9 +337,20 @@ geodata_refresh() {
     [ -n "$tag" ] || continue
     download_tag "$tag" || fail=1
   done < <(jq -r '.[]' "$tags")
-  [ "$fail" = 0 ] || die "geo refresh failed"
-  render_config
-  systemctl restart janus-engine.service
+  if [ "$fail" != 0 ]; then
+    printf '%s\n' "geo refresh failed" > /var/lib/janus/geodata/refresh.error
+    die "geo refresh failed"
+  fi
+  if ! render_or_fail; then
+    printf '%s\n' "render after geo refresh failed" > /var/lib/janus/geodata/refresh.error
+    die "render after geo refresh failed"
+  fi
+  if ! systemctl restart janus-engine.service; then
+    printf '%s\n' "engine did not reload after geo refresh" > /var/lib/janus/geodata/refresh.error
+    die "engine did not reload after geo refresh"
+  fi
+  date -u +%Y-%m-%dT%H:%M:%SZ > /var/lib/janus/geodata/refresh.stamp
+  rm -f /var/lib/janus/geodata/refresh.error
 }
 
 subscription_url() {
@@ -362,12 +379,18 @@ subscription_url() {
   printf '%s' "$url"
 }
 
+fail_sub() {
+  mkdir -p /var/lib/janus/subscriptions
+  printf '%s\n' "$*" > "/var/lib/janus/subscriptions/${name}.error"
+  die "$*"
+}
+
 refresh_one() {
   name=$1
   [ -n "$name" ] || die "subscription name is required"
-  jq -e --arg n "$name" 'has($n)' "$meta" >/dev/null || die "subscription ${name} is not in this image"
+  jq -e --arg n "$name" 'has($n)' "$meta" >/dev/null || fail_sub "subscription ${name} is not in this image"
   url=$(subscription_url "$name")
-  [ -n "$url" ] || die "subscription ${name} has no url"
+  [ -n "$url" ] || fail_sub "subscription ${name} has no url"
   fmt=$(jq -r --arg n "$name" '.[$n].format' "$meta")
   via=$(jq -r --arg n "$name" '.[$n].via' "$meta")
   filt=$(jq -r --arg n "$name" '.[$n].nameFilter // empty' "$meta")
@@ -385,26 +408,26 @@ refresh_one() {
   done < <(jq -r --arg n "$name" '.[$n].headers // {} | to_entries[] | "\(.key): \(.value)"' "$meta")
   case "$via" in
     direct)
-      curl "${args[@]}" -- "$url" || die "fetch of ${name} failed"
+      curl "${args[@]}" -- "$url" || fail_sub "fetch of ${name} failed"
       ;;
     tunnel-then-direct)
       curl "${args[@]}" --socks5-hostname 127.0.0.1:2080 -- "$url" \
         || curl "${args[@]}" -- "$url" \
-        || die "fetch of ${name} failed"
+        || fail_sub "fetch of ${name} failed"
       ;;
     *)
-      curl "${args[@]}" --socks5-hostname 127.0.0.1:2080 -- "$url" || die "fetch of ${name} failed"
+      curl "${args[@]}" --socks5-hostname 127.0.0.1:2080 -- "$url" || fail_sub "fetch of ${name} failed"
       ;;
   esac
   norm=(janet "$JANUS_SCRIPT" normalize --format "$fmt" --prefix "$name" --input "$raw" --output "$nodes")
   if [ -n "$filt" ]; then
     norm+=(--filter-kind regex --filter-pattern "$filt")
   fi
-  "${norm[@]}"
+  "${norm[@]}" || fail_sub "normalize of ${name} failed"
   count=$(jq 'length' "$nodes")
   if [ "$count" -lt "$min" ]; then
     rm -f "$raw" "$nodes"
-    die "${name} returned ${count} nodes, minimum is ${min}"
+    fail_sub "${name} returned ${count} nodes, minimum is ${min}"
   fi
   dest="/var/lib/janus/subscriptions/${name}.json"
   if [ -f "$dest" ]; then
@@ -413,14 +436,14 @@ refresh_one() {
   mv "$nodes" "$dest"
   chmod 0600 "$dest"
   rm -f "$raw"
-  if ! render_config; then
+  if ! render_or_fail; then
     if [ -f "${dest}.prev" ]; then
       mv "${dest}.prev" "$dest"
     fi
     if [ -f "${cfg}.prev" ]; then
       mv "${cfg}.prev" "$cfg"
     fi
-    die "render after refreshing ${name} failed"
+    fail_sub "render after refreshing ${name} failed"
   fi
   if ! systemctl restart janus-engine.service; then
     if [ -f "${dest}.prev" ]; then
@@ -430,7 +453,7 @@ refresh_one() {
       mv "${cfg}.prev" "$cfg"
     fi
     systemctl restart janus-engine.service || true
-    die "engine did not reload ${name}"
+    fail_sub "engine did not reload ${name}"
   fi
   date -u +%Y-%m-%dT%H:%M:%SZ > "/var/lib/janus/subscriptions/${name}.stamp"
   rm -f "/var/lib/janus/subscriptions/${name}.error"
@@ -530,6 +553,7 @@ case "$cmd" in
   tun-up) tun_up ;;
   tun-down) tun_down ;;
   render) render_config ;;
+  render-internal) render_config ;;
   refresh)
     if [ -n "${1:-}" ]; then
       refresh_one "$1"
@@ -564,7 +588,7 @@ case "$cmd" in
         echo '{}' > "$previous"
       fi
       write_selection "$group" "$node"
-      if ! render_config; then
+      if ! render_or_fail; then
         cp "$previous" "$sel"
         chmod 0600 "$sel"
         rm -f "$previous"

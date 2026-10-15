@@ -8,6 +8,7 @@
   mk = modules:
     self.lib.mkRouter {
       inherit modules;
+      buildSystem = pkgs.stdenv.hostPlatform.system;
       source = self;
       configRevision = self.rev or "unknown";
       name = "eval";
@@ -215,6 +216,8 @@ in {
     potato = one "le-potato";
     zero = one "rpi-zero-2w";
     rpi = one "rpi3";
+    rpi2 = one "rpi2";
+    vf2 = one "visionfive2";
     plain = mk [base];
     # The boot scripts name store paths. Drop that context so the check
     # evaluates the profiles without building U-Boot or the kernel.
@@ -241,7 +244,131 @@ in {
       echo ${text rpi.config.system.build.janusBoardImage.bootExtra} | grep -q bcm2710-rpi-3-b-plus.dtb
       echo ${text rpi.config.system.build.janusBoardImage.bootExtra} | grep -q '\[pi3\]'
       echo ${text rpi.config.system.build.janusBoardImage.bootExtra} | grep -q '\[pi3+\]'
+      test ${
+        if rpi.config.system.build.janusImage.hybridFatMbr or false
+        then "yes"
+        else "no"
+      } = no
+      test ${lib.escapeShellArg rpi2.config.janus.build.strategy} = cross
+      test ${lib.escapeShellArg rpi2.config.nixpkgs.hostPlatform.system} = armv7l-linux
+      test ${lib.escapeShellArg rpi2.config.nixpkgs.buildPlatform.system} = ${lib.escapeShellArg pkgs.stdenv.hostPlatform.system}
+      test ${lib.escapeShellArg (lib.head (lib.attrNames rpi2.config.janus.network.ports))} = eth0
+      test ${toString rpi2.config.janus.storage.firmwareOffsetMiB} = 0
+      test ${
+        if rpi2.config.system.build.janusImage.hybridFatMbr or false
+        then "yes"
+        else "no"
+      } = yes
+      echo ${text rpi2.config.system.build.janusBoardImage.bootExtra} | grep -q bcm2836-rpi-2-b.dtb
+      echo ${text rpi2.config.system.build.janusBoardImage.bootExtra} | grep -q 'device_tree=bcm2836-rpi-2-b.dtb'
+      if echo ${text rpi2.config.system.build.janusBoardImage.bootExtra} | grep -q arm_64bit; then
+        echo "rpi2 config.txt enables aarch64" >&2
+        exit 1
+      fi
+      test ${lib.escapeShellArg vf2.config.janus.build.strategy} = cross
+      test ${lib.escapeShellArg vf2.config.nixpkgs.hostPlatform.system} = riscv64-linux
+      test ${toString vf2.config.janus.storage.firmwareOffsetMiB} = 7
+      test ${toString (lib.length (lib.attrNames vf2.config.janus.network.ports))} = 2
+      echo ${text vf2.config.system.build.janusBoardImage.firmwareInstall} | grep -q 2E54B353-1271-4842-806F-E436D6AF6985
+      echo ${text vf2.config.system.build.janusBoardImage.firmwareInstall} | grep -q BC13C2FF-59E6-4262-A352-B275FD6F7172
+      echo ${text vf2.config.system.build.janusBoardImage.bootExtra} | grep -q jh7110-starfive-visionfive-2-v1.2a.dtb
+      echo ${text vf2.config.system.build.janusBoardImage.bootExtra} | grep -q jh7110-starfive-visionfive-2-v1.3b.dtb
+      test ${lib.escapeShellArg plain.config.janus.build.strategy} = emulated
       test ${lib.escapeShellArg plain.config.sops.age.keyFile} = /var/lib/janus/secrets/age.key
+      echo ok > "$out"
+    '';
+  eval-rpi2-mbr =
+    pkgs.runCommand "eval-rpi2-mbr" {
+      nativeBuildInputs = [pkgs.gptfdisk];
+    } ''
+      set -eu
+      truncate -s 64M disk.img
+      boot_start=1
+      bootMiB=16
+      sgdisk -o \
+        -n "1:$((boot_start * 2048)):$(((boot_start + bootMiB) * 2048 - 1))" \
+        -c 1:JANUS_BOOT -t 1:EF00 \
+        disk.img >/dev/null
+      export boot_start bootMiB
+      bash ${../pkgs/hybrid-mbr.sh}
+      typebyte=$(od -An -t u1 -j 450 -N 1 disk.img | tr -d '[:space:]')
+      test "$typebyte" = 12
+      start=$(od -An -t u4 -j 454 -N 4 disk.img | tr -d '[:space:]')
+      count=$(od -An -t u4 -j 458 -N 4 disk.img | tr -d '[:space:]')
+      test "$start" = 2048
+      test "$count" = 32768
+      eetype=$(od -An -t u1 -j 466 -N 1 disk.img | tr -d '[:space:]')
+      eestart=$(od -An -t u4 -j 470 -N 4 disk.img | tr -d '[:space:]')
+      eecount=$(od -An -t u4 -j 474 -N 4 disk.img | tr -d '[:space:]')
+      test "$eetype" = 238
+      test "$eestart" = 1
+      test "$eecount" = 2047
+      sig=$(od -An -t x1 -j 510 -N 2 disk.img | tr -d '[:space:]')
+      test "$sig" = 55aa
+      sgdisk -p disk.img | grep -q JANUS_BOOT
+      echo ok > "$out"
+    '';
+  eval-tier3-boot = let
+    board = name:
+      mk [
+        {
+          janus.hardware.board = name;
+          janus.access.ssh.authorizedKeys = [key];
+        }
+      ];
+    rpi2 = board "rpi2";
+    vf2 = board "visionfive2";
+  in
+    pkgs.runCommand "eval-tier3-boot" {
+      nativeBuildInputs = [pkgs.gptfdisk pkgs.gnutar pkgs.xz];
+      passAsFile = ["firmwareInstall"];
+      firmwareInstall = builtins.unsafeDiscardStringContext vf2.config.system.build.janusBoardImage.firmwareInstall;
+    } ''
+      set -eu
+      sec() { echo $(( $1 * 2048 )); }
+      grep -A 12 -F ubootVisionFive2 ${self.inputs.nixpkgs}/pkgs/misc/uboot/default.nix > uboot.slice
+      grep -q u-boot-spl.bin.normal.out uboot.slice
+      grep -q u-boot.itb uboot.slice
+      grep -q u-boot-spl.bin.normal.out "$firmwareInstallPath"
+      grep -q u-boot.itb "$firmwareInstallPath"
+      list_dts() {
+        src=$1
+        shift
+        if [ -d "$src" ]; then
+          for rel in "$@"; do
+            test -f "$src/$rel"
+          done
+        else
+          tar -tf "$src" > listing
+          for rel in "$@"; do
+            grep -q "$rel" listing
+          done
+        fi
+      }
+      list_dts ${rpi2.config.boot.kernelPackages.kernel.src} \
+        arch/arm/boot/dts/broadcom/bcm2836-rpi-2-b.dts
+      list_dts ${vf2.config.boot.kernelPackages.kernel.src} \
+        arch/riscv/boot/dts/starfive/jh7110-starfive-visionfive-2-v1.2a.dts \
+        arch/riscv/boot/dts/starfive/jh7110-starfive-visionfive-2-v1.3b.dts
+      truncate -s 64M disk.img
+      boot_start=8
+      sgdisk -o \
+        -n "1:$(sec "$boot_start"):$(($(sec 24) - 1))" \
+        -c 1:JANUS_BOOT -t 1:EF00 \
+        disk.img >/dev/null
+      dd if=/dev/zero of="$TMPDIR/spl" bs=1024 count=1 status=none
+      dd if=/dev/zero of="$TMPDIR/itb" bs=1024 count=1 status=none
+      sed -e "s|^spl=.*|spl=$TMPDIR/spl|" -e "s|^itb=.*|itb=$TMPDIR/itb|" "$firmwareInstallPath" > install.sh
+      # The image builder inlines this script, so sec stays in scope.
+      . ./install.sh
+      sgdisk -i 8 disk.img > part8
+      sgdisk -i 9 disk.img > part9
+      grep -q 2E54B353-1271-4842-806F-E436D6AF6985 part8
+      grep -q 'First sector: 4096' part8
+      grep -q 'Last sector: 8191' part8
+      grep -q BC13C2FF-59E6-4262-A352-B275FD6F7172 part9
+      grep -q 'First sector: 8192' part9
+      grep -q 'Last sector: 16383' part9
       echo ok > "$out"
     '';
   eval-rpi4 = fail "eval-rpi4" [
@@ -811,6 +938,234 @@ in {
       grep -q 'old cmdline' "$TMPDIR/boot/cmdline.txt"
       echo ok > "$out"
     '';
+  eval-monitoring = let
+    off = mk [base];
+    flows = mk [
+      base
+      {
+        janus.network.wans.main = {
+          uplink = "wan";
+          mode = "dhcp";
+        };
+        janus.network.lans.lan = {
+          members = ["lan"];
+          address = "192.168.10.1";
+          prefixLength = 24;
+        };
+        janus.monitoring.flows.export.collector = "192.0.2.10";
+        janus.monitoring.flows.export.port = 4739;
+        janus.monitoring.prometheus = {
+          enable = true;
+          zones = ["lan"];
+        };
+      }
+    ];
+    netflow = mk [
+      base
+      {
+        janus.network.wans.main = {
+          uplink = "wan";
+          mode = "dhcp";
+        };
+        janus.monitoring.flows.export = {
+          collector = "collector.example";
+          protocol = "netflow9";
+        };
+      }
+    ];
+    scoped = mk [
+      base
+      {janus.monitoring.scope = "flows";}
+    ];
+    named = mk [
+      base
+      {
+        janus.network.wans.main = {
+          uplink = "wan";
+          mode = "dhcp";
+        };
+        janus.network.lans.lan = {
+          members = ["lan"];
+          address = "192.168.10.1";
+          prefixLength = 24;
+        };
+        janus.monitoring.interfaces = ["main" "lan"];
+        janus.monitoring.flows.export.collector = "192.0.2.10";
+      }
+    ];
+    opened = mk [
+      base
+      {
+        janus.network.lans.lan = {
+          members = ["lan"];
+          address = "192.168.10.1";
+          prefixLength = 24;
+        };
+        janus.monitoring.prometheus.enable = true;
+      }
+    ];
+    start = flows.config.systemd.services.janus-flow-export.serviceConfig.ExecStart;
+    namedStart = named.config.systemd.services.janus-flow-export.serviceConfig.ExecStart;
+    metrics = lib.removeSuffix " collect" flows.config.systemd.services.janus-metrics.serviceConfig.ExecStart;
+    rules = flows.config.networking.nftables.tables.janus.content;
+    openedRules = opened.config.networking.nftables.tables.janus.content;
+  in
+    pkgs.runCommand "eval-monitoring" {
+      nativeBuildInputs = [pkgs.jq];
+    } ''
+      set -eu
+      test ${
+        if off.config.services.prometheus.exporters.node.enable
+        then "yes"
+        else "no"
+      } = no
+      test ${
+        if off.config.systemd.services ? janus-flow-export
+        then "yes"
+        else "no"
+      } = no
+      echo ${lib.escapeShellArg (lib.concatStringsSep "\n" scoped.config.warnings)} | grep -q 'flows.export.collector is unset'
+      test ${lib.escapeShellArg flows.config.systemd.services.janus-flow-export.environment.JANUS_FLOW_VERSION} = 10
+      test ${lib.escapeShellArg flows.config.systemd.services.janus-flow-export.environment.JANUS_COLLECTOR} = 192.0.2.10:4739
+      echo ${lib.escapeShellArg start} | grep -q eth0
+      echo ${lib.escapeShellArg start} | grep -q br-lan
+      echo ${lib.escapeShellArg namedStart} | grep -q 'janus-flow-export eth0 br-lan'
+      if echo ${lib.escapeShellArg namedStart} | grep -q 'janus-flow-export main'; then
+        echo "configuration name main was passed to softflowd" >&2
+        exit 1
+      fi
+      test ${lib.escapeShellArg netflow.config.systemd.services.janus-flow-export.environment.JANUS_FLOW_VERSION} = 9
+      test ${
+        if flows.config.services.prometheus.exporters.node.enable
+        then "yes"
+        else "no"
+      } = yes
+      test ${toString flows.config.services.prometheus.exporters.node.port} = 9100
+      test ${lib.escapeShellArg flows.config.services.prometheus.exporters.node.listenAddress} = '[::]'
+      echo ${lib.escapeShellArg (lib.concatStringsSep " " flows.config.services.prometheus.exporters.node.extraFlags)} | grep -q textfile
+      cat > rules.nft <<'EOF'
+      ${rules}
+      EOF
+      grep -q 9100 rules.nft
+      grep -q br-lan rules.nft
+      cat > opened.nft <<'EOF'
+      ${openedRules}
+      EOF
+      grep 'tcp dport 9100 accept' opened.nft | grep -q tailscale0
+      if grep 'tcp dport 9100 accept' opened.nft | grep -q br-lan; then
+        echo "port 9100 is accepted on the LAN" >&2
+        exit 1
+      fi
+      drop=$(grep -n 'tcp dport 9100 drop' opened.nft | head -1 | cut -d: -f1)
+      lan=$(grep -n 'iifname { "br-lan" } accept' opened.nft | head -1 | cut -d: -f1)
+      test -n "$drop"
+      test -n "$lan"
+      test "$drop" -lt "$lan"
+      dir=$TMPDIR/metrics
+      mkdir -p "$dir/subs"
+      printf '%s\n' '2026-01-02T03:04:05Z' > "$dir/subs/main.stamp"
+      printf '%s\n' 'fetch failed' > "$dir/subs/main.error"
+      printf '%s\n' '2026-01-03T00:00:00Z' > "$dir/geo.stamp"
+      printf '%s\n' '{"proxy":{"node":"fallback","default":"fallback"}}' > "$dir/selection.json"
+      jq -n '{proxies:{proxy:{now:"chosen",history:[]},chosen:{history:[{delay:42}]}}}' > "$dir/proxies.json"
+      JANUS_ENGINE_UP=1 \
+        JANUS_SUBSCRIPTION_DIR=$dir/subs \
+        JANUS_GEODATA_STAMP=$dir/geo.stamp \
+        JANUS_GEODATA_ERROR=$dir/no-such-error \
+        JANUS_SELECTION=$dir/selection.json \
+        JANUS_PROXIES=$dir/proxies.json \
+        ${metrics} render > "$dir/metrics.prom"
+      grep -q '^janus_engine_up 1$' "$dir/metrics.prom"
+      grep -q 'janus_subscription_refresh_error{subscription="main"} 1' "$dir/metrics.prom"
+      grep -q "janus_subscription_refresh_timestamp_seconds{subscription=\"main\"} $(date -u -d 2026-01-02T03:04:05Z +%s)" "$dir/metrics.prom"
+      grep -q "janus_geodata_refresh_timestamp_seconds $(date -u -d 2026-01-03T00:00:00Z +%s)" "$dir/metrics.prom"
+      grep -q '^janus_geodata_refresh_error 0$' "$dir/metrics.prom"
+      grep -q 'janus_proxy_selected{group="proxy",node="chosen"} 1' "$dir/metrics.prom"
+      grep -q 'janus_proxy_group_latency_milliseconds{group="proxy",node="chosen"} 42' "$dir/metrics.prom"
+      if grep -q fallback "$dir/metrics.prom"; then
+        echo "selection.json overrode the live engine choice" >&2
+        exit 1
+      fi
+      echo ok > "$out"
+    '';
+  eval-monitoring-collector = fail "eval-monitoring-collector" [
+    base
+    {janus.monitoring.flows.export.collector = "192.0.2.10:4739";}
+  ];
+  eval-monitoring-zone = fail "eval-monitoring-zone" [
+    base
+    {janus.monitoring.prometheus.enable = true;}
+    {janus.monitoring.prometheus.zones = ["missing"];}
+  ];
+  eval-monitoring-iface = fail "eval-monitoring-iface" [
+    base
+    {janus.monitoring.interfaces = ["nope"];}
+  ];
+  eval-refresh-error =
+    pkgs.runCommand "eval-refresh-error" {
+      nativeBuildInputs = [pkgs.jq];
+    } ''
+      set -eu
+      root=$TMPDIR/root
+      mkdir -p "$root/bin" "$root/etc/janus" "$root/var/lib/janus"
+      cat > "$root/bin/janet" << 'EOF'
+      #!/bin/sh
+      exit 1
+      EOF
+      chmod +x "$root/bin/janet"
+      printf '%s\n' '[]' > "$root/etc/janus/geodata-tags.json"
+      printf '%s\n' '{}' > "$root/etc/janus/geodata-sources.json"
+      printf '%s\n' '{}' > "$root/etc/janus/proxy-model.json"
+      printf '%s\n' '[]' > "$root/etc/janus/nodes-manual.json"
+      printf '%s\n' '[]' > "$root/etc/janus/nodes-built.json"
+      {
+        printf '%s\n' 'set -euo pipefail' 'compgen() { return 1; }' 'JANUS_ENGINE=sing-box' 'JANUS_SCRIPT=unused' 'JANUS_FAIL_MODE=closed' 'JANUS_INTERCEPT=0' 'JANUS_DNS_TPROXY=0' 'JANUS_EGRESS_TABLE='
+        sed -e "s|/var/lib/janus|$root/var/lib/janus|g" -e "s|/etc/janus|$root/etc/janus|g" ${../pkgs/janus-engine.sh}
+      } > "$root/run.sh"
+      export PATH="$root/bin:$PATH"
+      if bash "$root/run.sh" geodata-refresh; then
+        echo "geo refresh succeeded despite a failed render" >&2
+        exit 1
+      fi
+      grep -q 'render after geo refresh failed' "$root/var/lib/janus/geodata/refresh.error"
+      echo ok > "$out"
+    '';
+  eval-build-host = pkgs.runCommand "eval-build-host" {} ''
+    set -eu
+    JANUS_BUILD_LIB=1
+    # shellcheck disable=SC1091
+    . ${../pkgs/janus-build.sh}
+    bindir=$TMPDIR/bin
+    mkdir -p "$bindir"
+    cat > "$bindir/uname" << 'EOF'
+    #!/bin/sh
+    printf '%s\n' "$JANUS_UNAME"
+    EOF
+    cat > "$bindir/nix" << 'EOF'
+    #!/bin/sh
+    if [ "$1" = "--impure" ]; then
+      printf '%s\n' impure
+      exit 0
+    fi
+    printf '%s\n' pure
+    exit 0
+    EOF
+    chmod +x "$bindir/uname" "$bindir/nix"
+    export PATH="$bindir:$PATH"
+    export JANUS_UNAME=x86_64
+    test "$(host_nix_system)" = x86_64-linux
+    test "$(nix_fleet eval --raw x)" = pure
+    JANUS_UNAME=aarch64
+    test "$(host_nix_system)" = aarch64-linux
+    test "$(nix_fleet eval --raw x)" = impure
+    if refuse_build_host aarch64-linux potato x86_64-linux >"$TMPDIR/out" 2>"$TMPDIR/err"; then
+      echo "expected a build-host mismatch to fail" >&2
+      exit 1
+    fi
+    grep -q 'this machine is aarch64-linux' "$TMPDIR/err"
+    grep -q "host 'potato' is set to build on x86_64-linux" "$TMPDIR/err"
+    echo ok > "$out"
+  '';
   eval-audit = let
     os = mk [
       base

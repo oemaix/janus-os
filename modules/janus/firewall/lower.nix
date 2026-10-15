@@ -162,11 +162,20 @@
       (iif ifaces "tcp dport ${dport} ct state new drop")
     ]
     else if proto == null
-    then [
-      (iif ifaces "tcp dport ${dport} accept")
-      (iif ifaces "udp dport ${dport} accept")
-    ]
-    else [(iif ifaces "${proto} dport ${dport} accept")])
+    then
+      [
+        (iif ifaces "tcp dport ${dport} accept")
+        (iif ifaces "udp dport ${dport} accept")
+      ]
+      ++ lib.optionals svc.confine [
+        "tcp dport ${dport} drop"
+        "udp dport ${dport} drop"
+      ]
+    else
+      [
+        (iif ifaces "${proto} dport ${dport} accept")
+      ]
+      ++ lib.optional svc.confine "${proto} dport ${dport} drop")
   fw.services);
 
   dhcpOpen = lib.concatMap (n: let

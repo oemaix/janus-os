@@ -125,6 +125,13 @@ router go through hot overrides instead.
 defaulting to `"emulated"` for aarch64 and `"cross"` for the others. Users
 with an aarch64 machine set `"native"`.
 
+`lib.mkRouter` takes `buildSystem`, the machine that runs the compiler.
+Pure flake evaluation has no `builtins.currentSystem`, so the default is
+`x86_64-linux`. `janus-build` on any other machine evaluates the fleet
+flake with `--impure`, which makes `builtins.currentSystem` that machine,
+and refuses the image when the cross build is still aimed at a different
+machine.
+
 ## 5. Build-time fetches
 
 | Data | Mechanism | Purity |

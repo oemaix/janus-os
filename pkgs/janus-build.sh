@@ -35,6 +35,54 @@ require_repo() {
   fi
 }
 
+host_nix_system() {
+  case "$(uname -m)" in
+    x86_64) printf '%s\n' x86_64-linux ;;
+    aarch64) printf '%s\n' aarch64-linux ;;
+    armv7l) printf '%s\n' armv7l-linux ;;
+    riscv64) printf '%s\n' riscv64-linux ;;
+    *)
+      echo "janus-build: this machine ($(uname -m)) is not a supported build host." >&2
+      return 1
+      ;;
+  esac
+}
+
+# Pure flake evaluation has no currentSystem. A fleet flake that writes
+# `builtins.currentSystem or "x86_64-linux"` would then cross-compile a
+# Tier 3 image for x86_64. On any other machine, --impure makes
+# currentSystem this machine. x86_64 stays pure, which is that fallback.
+nix_fleet() {
+  mine=$(host_nix_system) || return 1
+  if [ "$mine" = x86_64-linux ]; then
+    nix "$@"
+  else
+    nix --impure "$@"
+  fi
+}
+
+refuse_build_host() {
+  mine=$1
+  host=$2
+  bp=$3
+  echo "janus-build: this machine is ${mine}, and host '${host}' is set to build on ${bp}." >&2
+  echo "Pass buildSystem = \"${mine}\" to lib.mkRouter. Pure evaluation has no currentSystem and otherwise uses x86_64-linux." >&2
+  return 1
+}
+
+require_build_host() {
+  host=$1
+  mine=$(host_nix_system) || exit 1
+  # buildPlatform defaults to hostPlatform. That is an emulated or native
+  # build, including an aarch64 image built on x86_64. Refuse only a real
+  # cross build aimed at some other machine.
+  bp=$(nix_fleet eval --raw ".#nixosConfigurations.${host}.config.nixpkgs.buildPlatform.system" 2>/dev/null) || return 0
+  hp=$(nix_fleet eval --raw ".#nixosConfigurations.${host}.config.nixpkgs.hostPlatform.system" 2>/dev/null) || return 0
+  if [ "$bp" != "$hp" ] && [ "$bp" != "$mine" ]; then
+    refuse_build_host "$mine" "$host" "$bp" || exit 1
+  fi
+}
+
 list_hosts() {
   one=${1:-}
   if [ -n "$one" ]; then
@@ -55,7 +103,7 @@ list_hosts() {
 }
 
 host_address() {
-  nix eval --raw ".#nixosConfigurations.${1}.config.janus.access.deploy.address"
+  nix_fleet eval --raw ".#nixosConfigurations.${1}.config.janus.access.deploy.address"
 }
 
 ssh_to() {
@@ -85,8 +133,8 @@ slot_fits() {
 deploy_slots() {
   host=$1
   addr=$2
-  meta=$(nix eval --raw ".#nixosConfigurations.${host}.config.environment.etc.\"janus/slots.json\".text")
-  imgs=$(nix build --print-out-paths ".#nixosConfigurations.${host}.config.system.build.janusSlotImages")
+  meta=$(nix_fleet eval --raw ".#nixosConfigurations.${host}.config.environment.etc.\"janus/slots.json\".text")
+  imgs=$(nix_fleet build --print-out-paths ".#nixosConfigurations.${host}.config.system.build.janusSlotImages")
   closure=$(tr -d '[:space:]' < "$imgs/toplevel")
   active=$(ssh_to "$addr" "if [ -f /boot/slot ]; then tr -d '[:space:]' < /boot/slot; else printf a; fi")
   if [ "$active" = b ]; then
@@ -126,12 +174,12 @@ require_clean() {
 }
 
 subscription_secrets() {
-  nix eval --json ".#nixosConfigurations.${1}.config.janus.proxy.subscriptions" \
+  nix_fleet eval --json ".#nixosConfigurations.${1}.config.janus.proxy.subscriptions" \
     | jq -r 'to_entries[] | select(.value.urlSecret != null) | "\(.key) \(.value.urlSecret)"'
 }
 
 wifi_secrets() {
-  nix eval --json ".#nixosConfigurations.${1}.config.janus.network.wifi" \
+  nix_fleet eval --json ".#nixosConfigurations.${1}.config.janus.network.wifi" \
     | jq -r 'to_entries[] | select(.value.passphraseSecret != null) | "\(.key) \(.value.passphraseSecret)"'
 }
 
@@ -535,6 +583,12 @@ EOF
 EOF
 }
 
+if [ "${JANUS_BUILD_LIB:-}" = 1 ]; then
+  # `return` leaves a sourced test. It fails when this file is executed, and then we stop.
+  # shellcheck disable=SC2317
+  return 0 2>/dev/null || exit 0
+fi
+
 cmd=${1:-}
 if [ -z "$cmd" ]; then
   usage
@@ -657,7 +711,8 @@ case "$cmd" in
     require_repo
     host=${1:-}
     if [ -n "$host" ]; then
-      nix eval --raw ".#nixosConfigurations.${host}.config.system.build.toplevel.drvPath"
+      require_build_host "$host"
+      nix_fleet eval --raw ".#nixosConfigurations.${host}.config.system.build.toplevel.drvPath"
       echo
     else
       found=0
@@ -665,7 +720,8 @@ case "$cmd" in
         if [ -d "$dir" ]; then
           found=1
           name=$(basename "$dir")
-          nix eval --raw ".#nixosConfigurations.${name}.config.system.build.toplevel.drvPath"
+          require_build_host "$name"
+          nix_fleet eval --raw ".#nixosConfigurations.${name}.config.system.build.toplevel.drvPath"
           echo
         fi
       done
@@ -678,14 +734,16 @@ case "$cmd" in
     require_repo
     host=${1:-}
     if [ -n "$host" ]; then
-      nix build --print-out-paths ".#nixosConfigurations.${host}.config.system.build.janusImage"
+      require_build_host "$host"
+      nix_fleet build --print-out-paths ".#nixosConfigurations.${host}.config.system.build.janusImage"
     else
       found=0
       for dir in hosts/*; do
         if [ -d "$dir" ]; then
           found=1
           name=$(basename "$dir")
-          nix build --print-out-paths ".#nixosConfigurations.${name}.config.system.build.janusImage"
+          require_build_host "$name"
+          nix_fleet build --print-out-paths ".#nixosConfigurations.${name}.config.system.build.janusImage"
         fi
       done
       if [ "$found" = 0 ]; then
@@ -781,11 +839,12 @@ case "$cmd" in
       printf '%s\n' "$path"
       exit 0
     fi
-    if [ "$(nix eval --json ".#nixosConfigurations.${host}.config.janus.storage.slots.enable")" = true ]; then
+    require_build_host "$host"
+    if [ "$(nix_fleet eval --json ".#nixosConfigurations.${host}.config.janus.storage.slots.enable")" = true ]; then
       deploy_slots "$host" "$addr"
       exit 0
     fi
-    closure=$(nix build --print-out-paths ".#nixosConfigurations.${host}.config.system.build.toplevel")
+    closure=$(nix_fleet build --print-out-paths ".#nixosConfigurations.${host}.config.system.build.toplevel")
     dest=$(ssh_dest "$addr")
     ssh_to "$addr" "mount -o remount,rw /nix; mount -o remount,rw /boot || true"
     if ! NIX_SSHOPTS="-o BatchMode=yes -o ConnectTimeout=8" nix copy --to "ssh://${dest}" "$closure"; then

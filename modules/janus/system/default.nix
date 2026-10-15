@@ -89,9 +89,14 @@ in {
 
   options.janus.build.strategy = mkOption {
     type = types.enum ["native" "emulated" "cross"];
-    default = "emulated";
+    default = let
+      target = (import ../../../lib/boards.nix).${config.janus.hardware.board} or "";
+    in
+      if target == "armv7l-linux" || target == "riscv64-linux"
+      then "cross"
+      else "emulated";
     description = ''
-      How mkRouter builds a foreign system. aarch64 defaults to emulated.
+      How mkRouter builds a foreign system. aarch64 and x86_64 default to emulated.
       armv7l and riscv64 default to cross. An aarch64 build host sets native.
       docs/09 §4.
     '';

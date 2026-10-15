@@ -11,8 +11,9 @@ The project is public and licensed under the Apache License, Version 2.0.
 ## What you can do today
 
 The router image boots in a VM. Image profiles exist for the NanoPi R4S,
-the Le Potato, the Raspberry Pi Zero 2 W, the Raspberry Pi 3 / 3+, and
-the Yanyu STX-R19F (Limine on legacy BIOS). `janus` and `janus-build`
+the Le Potato, the Raspberry Pi Zero 2 W, the Raspberry Pi 3 / 3+, the
+Raspberry Pi 2 v1.1, the StarFive VisionFive 2, and the Yanyu STX-R19F
+(Limine on legacy BIOS). `janus` and `janus-build`
 implement the phase 1 commands, plus proxy, DNS, fleet, status, backup,
 deploy, and the connection audit. On the board, `janus deploy` exits 2
 and names `janus-build`. A Waveshare 1.3" OLED HAT on a Raspberry Pi
@@ -198,6 +199,48 @@ At boot, a discharging cell already below 3.55 V powers off before the
 network starts. Charging, a current within 5 mA of zero, a missing
 sensor, and `power.shutdown.enable = false` leave the router running.
 The Waveshare address `0x43` stays unarmed and shows no readings.
+
+## Tier 3 boards
+
+The Raspberry Pi 2 v1.1 (BCM2836) and the StarFive VisionFive 2 are Tier
+3 profiles. A Raspberry Pi 2 v1.2 is a BCM2837 and uses the Raspberry Pi
+3 profile. These two images are cross-compiled. There is no binary
+cache, so the first build takes a long time. `janus.build.strategy` is
+`cross` for them. The fleet flake passes `buildSystem` to `mkRouter`.
+A pure evaluation has no current system, so the fallback is
+`x86_64-linux`. `janus-build` on another machine evaluates with that
+machine's system, and stops when the image is still set to build
+somewhere else. Set `emulated` only when the build machine can run that
+architecture.
+
+The Pi 2 image is 32-bit. Its boot partition is the FAT filesystem the
+board firmware reads. The VisionFive 2 image puts SPL and U-Boot in the
+GPT partitions the board looks up, then boots from `extlinux.conf`.
+U-Boot picks the device tree for that board revision. Neither profile
+chooses which jack is the WAN.
+
+## Flows and metrics
+
+Flow export is off until `janus.monitoring.flows.export.collector` is a
+hostname or an IPv4 address. The protocol is `ipfix` (the default, port
+4739) or `netflow9`. Janus sends flows for every WAN and every LAN
+bridge. `janus.monitoring.interfaces` names a smaller set of WAN, LAN,
+port, VLAN, or Wi-Fi names from the configuration. Janus resolves those
+names to kernel interfaces such as `eth0`, `ppp-<wan>`, and `br-<lan>`.
+The collector is usually on `mgmt` or a LAN. The export keeps a ring of
+8192 flows in memory. It is not a packet capture.
+
+`janus.monitoring.prometheus.enable = true` listens on port 9100 for
+IPv4 and IPv6. The default zone list is `mgmt`. Traffic to that port is
+accepted on those zones and dropped on every other interface, including
+a LAN whose input policy is accept. `prometheus.zones` changes the
+zones. The endpoint is node exporter plus
+engine metrics: whether the engine is up, the selected node, the last
+delay of that node, the last successful subscription refresh, the last
+Geo refresh, and whether that refresh failed.
+
+`janus.monitoring.scope = "flows"` does not by itself name a collector.
+Set `flows.export.collector` as well.
 
 ## What the board does not do
 

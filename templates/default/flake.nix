@@ -30,6 +30,11 @@
           source = self;
           configRevision = self.rev or "unknown";
           name = name;
+          # Tier 3 boards are cross-compiled. Pure evaluation has no
+          # current system, so this is the usual x86_64 build host.
+          # janus-build on another machine evaluates impurely, and this
+          # expression then becomes that machine.
+          buildSystem = builtins.currentSystem or "x86_64-linux";
           modules = [
             ./common/default.nix
             (hostDir + "/${name}/configuration.nix")
