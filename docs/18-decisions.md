@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-15 |
+| Last updated | 2026-10-16 |
 
 A row here is a choice that binds implementation and is not an ADR. The
 cited requirement or design section is the text that binds. An accepted
@@ -53,6 +53,7 @@ Undecided rows are open. Implementation does not invent an answer for them.
 | D-0030 | Proxied LAN traffic, other than private destinations and traffic to the router, is marked `0x4a01` and looked up in table 2022. The configured IPv6 fake-IP range is not private, and port 53 is not marked `0x4a01`. While the engine is down and `failMode` is `closed`, that table's default is a blackhole. While the engine is up, the default is `dev tun0`. Engine egress stays mark `0x4a` and is not looked up in table 2022. TCP/53 is redirected to `[::]:5353`. UDP/53 is tproxied there with mark `0x4a02`, looked up in table 2023 (`local default dev lo`), including while the engine is down. Refresh SOCKS listens on `127.0.0.1:2080` and the Clash API on `127.0.0.1:9090`. A rule whose target is `direct` because of a domain list is enforced by the engine, so it drops with the engine; the private-range exception is in nftables and stays direct. This row is the sing-box data plane. | ADR-0011, ADR-0016, *07* |
 | D-0031 | When `janus.proxy.engine` is `xray`, proxied LAN traffic is not marked `0x4a01` and is not looked up in table 2022. It is tproxied to port 12345 with mark `0x4a02` and table 2023. `failMode = closed` installs that rule while the process is down, so a closed port drops the traffic. `failMode = open` installs it only while Xray is up. `tls.insecure` and a Shadowsocks plugin are not rendered; evaluation fails (ADR-0006). | ADR-0006, *07* |
 | D-0032 | Raspberry Pi 400 is not a board. It has no Ethernet jack. The `rpi4` profile is the Pi 4 and the Compute Module 4 on the official IO board. | *10* §3 |
+| D-0033 | The maintenance page is *20*. Janet serves it and stunnel terminates TLS. The build option includes it, default off. `janus web stop` pauses the listener. Login is a page passphrase. Light and dark are one monochrome layout. | FR-ACC-006, *20* |
 
 ## 2. Undecided
 

@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-09-29 |
+| Last updated | 2026-10-16 |
 
 Key words MUST / SHOULD / MAY follow RFC 2119. Priority: **P1** required for
 1.0, **P2** planned, **P3** desirable.
@@ -157,6 +157,7 @@ Key words MUST / SHOULD / MAY follow RFC 2119. Priority: **P1** required for
 | FR-ACC-003 | SSH MUST listen on LAN and `mgmt` zones only by default. | P1 |
 | FR-ACC-004 | A `janus` CLI MUST exist on the router for status, group selection, data refresh and diagnostics. | P1 |
 | FR-ACC-005 | A general configuration GUI is out of scope. A later maintenance page MAY expose status, maintenance actions, and the hot-override allowlist, and MUST NOT edit the rest of the configuration. | P3 |
+| FR-ACC-006 | When `janus.access.web.enable` is set, the maintenance page MUST follow *20*. `janus web stop` MUST stop the listener without a rebuild, and `janus web start` MUST start it again. `janus web start` MUST exit 2 when the image was built with the option false. | P3 |
 
 ## 11. Hardware (HW)
 

@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-15 |
+| Last updated | 2026-10-16 |
 
 This file is the implementation plan, the progress of the code, and the
 notes for work that is specified but not started. Choices are *18*.
@@ -61,7 +61,7 @@ Explanations are *19*. Accepted ADRs are `docs/adr/`.
 * Flow export (IPFIX) and a Prometheus endpoint. Implemented; see Progress.
 * VisionFive 2, RPi 2 (Tier 3). Implemented; see Progress.
 * A/B image slots. Implemented; see Progress.
-* Maintenance page limited to status, maintenance actions, and hot overrides.
+* Maintenance page limited to status, maintenance actions, and hot overrides (*20*). Specified. Not implemented.
 * Operator manual in English, Russian, and Persian: build, flash, deploy, audit, A/B slots, the status panel, Tier 3 boards, flow export, and the Prometheus endpoint. Implemented; see Progress.
 
 ### Future

@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-09-23 |
+| Last updated | 2026-10-16 |
 
 ## 1. Problem statement
 
@@ -58,7 +58,7 @@ developer's or user's workstation. The device only carries the results.
 
 * A general web GUI for editing the configuration. 1.0 management is SSH
   and the `janus` CLI. A later page may expose status and the hot-override
-  allowlist only; it is not a second configuration system.
+  allowlist only (*20*); it is not a second configuration system.
 * On-device package installation, Nix evaluation, or `nixos-rebuild` on the
   board. Janus OS is not a package-manager host.
 * A hosted service that accepts a user's configuration and subscription

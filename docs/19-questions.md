@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-15 |
+| Last updated | 2026-10-16 |
 
 These answers explain a choice that already binds somewhere else. The
 cited ADR, requirement, or section is that place. This list does not
@@ -39,3 +39,6 @@ Each question is `Q-nnnn`. The number is assigned once and is not reused.
 | Q-0023 | What happens when the engine is down? | Proxied traffic is dropped. `failMode = "open"` is the override that sends it out the WAN. See ADR-0016. |
 | Q-0024 | Why not one age key for every router, kept on the build host? | That key decrypts the whole household from any SD card. Each router has its own key. The build host keeps the public key and encrypts. See ADR-0022. |
 | Q-0025 | Why is the Raspberry Pi 400 not a board? | It has no Ethernet jack, so a boot there would not exercise the Pi 4 port. See D-0032. |
+| Q-0026 | Which web server serves the maintenance page? | None of nginx, Caddy, or lighttpd. `janus-web` is Janet, and stunnel terminates TLS. The page is one route table in front of `janus`. See *20* §2 and D-0033. |
+| Q-0027 | How does the page log in when root has no password? | With its own passphrase file. SSH stays public-key only. A lost passphrase is replaced over SSH. See *20* §3 and ADR-0007. |
+| Q-0028 | Does the maintenance page have a light and a dark theme? | Yes. One layout; ink and paper swap. The browser stores the choice. See *20* §7. |

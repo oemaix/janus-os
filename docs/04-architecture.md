@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-09-29 |
+| Last updated | 2026-10-16 |
 
 ## 1. Architectural drivers
 
@@ -76,6 +76,7 @@
 | Monitoring | nftables named counters; `vnstat` for history; optional `softflowd` (IPFIX); optional `prometheus-node-exporter` | Data under `/var/lib/janus/monitoring`. |
 | Remote access | Tailscale. Optional WireGuard to a user endpoint | `tailscale0` (and any `wg` interface) joins the `mgmt` zone. SSH only, unless routes or an exit node are set. |
 | Management | OpenSSH; `janus` CLI (shell + Janet) | CLI is the operator UI. |
+| Maintenance page | `janus-web` (Janet) behind stunnel | Optional. Pages and routes are *20*. Off unless `janus.access.web.enable` is set. |
 | HMI | `janus-hmi` daemon | Renders the pages in *15* from the framebuffer size; control events map onto the capabilities in *15*. |
 | Power | `janus-power` | INA219 readings in `janus status`. Early cutoff while the cell is discharging (*10* §4.5). |
 
@@ -178,12 +179,12 @@ janus-os/
 │   │   ├── hmi/              status panel
 │   │   ├── power/            battery readings and cutoff
 │   │   ├── remote-access/
-│   │   ├── access/           ssh, cli
+│   │   ├── access/           ssh, cli, maintenance page
 │   │   └── system/           hostname, time, journald limits
 │   └── boards/               one profile per board
 ├── pkgs/                     janus-cli, janus-tools (Janet), image builder,
 │                             renderers, pinned engines if nixpkgs lags
-├── janet/                    node normalizer, matchers, runtime renderer
+├── janet/                    node normalizer, matchers, runtime renderer, panel, maintenance page
 ├── templates/default/        flake.nix + configuration.nix for users
 ├── tests/                    eval tests, golden files, VM tests
 └── docs/

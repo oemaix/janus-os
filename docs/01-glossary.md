@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-09-23 |
+| Last updated | 2026-10-16 |
 
 Terms are listed alphabetically. Where an informal word is easy to confuse
 with the canonical one, the informal word is marked *avoid*.
@@ -72,6 +72,10 @@ bridge, subnet and policy.
 **Maintenance action** — A runtime operation that does not change
 configuration or hot overrides: refresh proxy subscriptions, refresh Geo
 data, select a proxy node temporarily, restart a WAN, run a DNS self-test.
+
+**Maintenance page** — The optional browser surface in *20*. It calls the
+CLI for status, maintenance actions, and the hot-override allowlist. It
+is not a configuration editor.
 
 **Matcher** — A predicate over a proxy node's name (and optionally other
 attributes) that assigns it to a Group. Kinds: `regex`, `glob`, `peg`.

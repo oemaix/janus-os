@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-09-29 |
+| Last updated | 2026-10-16 |
 
 ## 1. What maintenance is
 
@@ -107,9 +107,12 @@ The tunnel needs its own signals because it fails more often than Ethernet:
 | The same URL is shared by several routers | `janus-build secret set` on that subscription file, commit, `janus-build fleet apply` | one ciphertext file, then each reachable host decrypts and applies it (*12* §1.3) |
 
 `janus status` shows the last success, the last error, and the selected
-node for each group. That is the maintenance surface for 1.0. A small web
-page that only calls these commands is a later option (FR-ACC-005); it
-does not replace the CLI and it does not edit `configuration.nix`.
+node for each group. That is the maintenance surface for 1.0. The
+maintenance page (*20*) calls these commands and the hot-override
+allowlist. It does not replace the CLI and it does not edit
+`configuration.nix`. The image includes it only when
+`janus.access.web.enable` is set. `janus web stop` then pauses the
+listener without a rebuild.
 
 ## 2. Day-0: first deployment
 
@@ -159,6 +162,7 @@ private key on stdin and installs it over SSH. It does not store the key.
 | Logs | `janus logs [unit] [-f]` (journalctl wrapper with Janus units) |
 | Firewall view | `janus fw list` (rendered nftables with zone annotations) |
 | Version/provenance | `janus version --components` (reads `/etc/janus/build.json`) |
+| Maintenance page | `janus web status`. `janus web stop` pauses the listener; `janus web start` brings it back. Exit `2` when the image was built without `janus.access.web.enable` (*20*). |
 | Factory reset | `janus reset --state` (wipes state partition, reboots; seeds from image) |
 | Reboot | `janus reboot` |
 

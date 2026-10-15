@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-09-29 |
+| Last updated | 2026-10-16 |
 
 This is the contract for the on-router `janus` command. Implementation
 follows this file. The user manual will later show the same commands with
@@ -105,7 +105,20 @@ The age key is created on the build host by `janus-build secret keygen <host>` (
 | `janus backup` | Archive to stdout per FR-OPS-011 |
 | `janus restore` | Read an archive on stdin. Requires `--yes`. |
 
-## 7. Stability
+## 7. Maintenance page
 
-Command names and the allowlist keys above are stable for 1.0. Adding a
+The page is *20*. These commands switch the listener. They do not change
+`janus.access.web.enable`.
+
+| Command | Effect |
+|---------|--------|
+| `janus web start` | Start the listener. Exit `2` if `janus.access.web.enable` is false. Exit `1` if the passphrase file is missing or empty. |
+| `janus web stop` | Stop the listener. Does not remove the configuration flag. |
+| `janus web status` | Listening or stopped, port, zones, certificate fingerprint. |
+| `janus web fingerprint` | SHA-256 of the certificate. Exit `2` if the page is not in the image. |
+
+## 8. Stability
+
+Command names and the allowlist keys in §2–§6 are stable for 1.0. The
+`janus web` commands in §7 apply when the page is in the image. Adding a
 key is a documentation change in this file before the code accepts it.

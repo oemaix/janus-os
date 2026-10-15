@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-09-29 |
+| Last updated | 2026-10-16 |
 
 ## 1. Assets
 
@@ -53,6 +53,11 @@
 * `janus` CLI is the only privileged operator tool; runs via `sudo` policies
   scoped to specific systemd units and files (no general shell needed for
   daily tasks, but root shell remains available to the key holder).
+* Maintenance page (*20*): off unless `janus.access.web.enable` is set.
+  TLS only, `lan` and `mgmt` by default, never `wan`. Login is a passphrase
+  file, not the root password, and it does not turn on SSH password
+  authentication. The service user `janus-web` may run only the `janus`
+  argument lists in *20* §6.
 
 ### 4.2 Services
 

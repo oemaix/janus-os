@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-09-29 |
+| Last updated | 2026-10-16 |
 
 This document defines the **shape and semantics** of the `janus.*` option
 tree. The final, exhaustive reference (every option with type, default,
@@ -184,6 +184,10 @@ resolvers `never`, encryption `prefer`, fake-IP `auto`, `ipv6Answers =
 | `ssh.passwordAuthentication` | bool | `false` | Requires ≥1 key regardless |
 | `ssh.rootPasswordFile` | path/null | `null` | Only meaningful with the above |
 | `cli.enable` | bool | `true` | `janus` CLI |
+| `web.enable` | bool | `false` | Include the maintenance page (*20*). Runtime start and stop do not change this. |
+| `web.port` | int | `8443` | TLS only. |
+| `web.zones` | list | `["lan" "mgmt"]` | `wan` fails evaluation. |
+| `web.passphraseFile` | path | — | Required when `web.enable` is true. Not the SSH root password. |
 | `deploy.address` | str | the `nixosConfigurations` attribute name | SSH destination for `janus-build deploy` and `janus-build fleet apply`. |
 
 ## 11. Secrets and hot overrides

@@ -57,6 +57,12 @@
   ];
   # janus.access.ssh.passwordAuthentication = true;       # not recommended
 
+  # Maintenance page (*20*). Included only when enable is set. After that,
+  # janus web stop pauses it without a rebuild. The passphrase is not the
+  # root password, and SSH stays key-only.
+  # janus.access.web.enable = true;
+  # janus.access.web.passphraseFile = "/var/lib/janus/secrets/web-passphrase";
+
   ############################################################################
   # Physical ports
   ############################################################################
