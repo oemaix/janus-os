@@ -447,6 +447,9 @@ in {
               lib.mapAttrs (_: lan: lan.dhcp.staticLeases) cfg.lans
             );
             "janus/lans.json".text = builtins.toJSON lanNames;
+            "janus/lan-nets.json".text = builtins.toJSON (
+              lib.mapAttrs (_: lan: {inherit (lan) address prefixLength;}) cfg.lans
+            );
             "janus/bin/janus-dhcp-hosts" = {
               source = pkgs.writeShellScript "janus-dhcp-hosts" ''
                 set -eu

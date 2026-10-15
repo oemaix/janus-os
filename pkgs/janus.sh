@@ -40,7 +40,7 @@ read_overrides() {
 }
 
 write_overrides() {
-  install -d -m 0700 /var/lib/janus
+  install -d -m 0755 /var/lib/janus
   printf '%s\n' "$1" > "${overrides_file}.new"
   mv "${overrides_file}.new" "$overrides_file"
   chmod 0600 "$overrides_file"
@@ -89,11 +89,54 @@ reload_dhcp() {
 }
 
 lan_exists() {
-  [ -f /etc/janus/lans.json ] && jq -e --arg n "$1" 'index($n) != null' /etc/janus/lans.json >/dev/null
+  [ -f "${JANUS_ETC:-/etc/janus}/lans.json" ] && jq -e --arg n "$1" 'index($n) != null' "${JANUS_ETC:-/etc/janus}/lans.json" >/dev/null
 }
 
 wifi_exists() {
-  [ -f /etc/janus/wifi.json ] && jq -e --arg n "$1" 'has($n)' /etc/janus/wifi.json >/dev/null
+  [ -f "${JANUS_ETC:-/etc/janus}/wifi.json" ] && jq -e --arg n "$1" 'has($n)' "${JANUS_ETC:-/etc/janus}/wifi.json" >/dev/null
+}
+
+ip_int() {
+  case "$1" in
+    *.*.*.*) ;;
+    *) return 1 ;;
+  esac
+  o1=${1%%.*}
+  rest=${1#*.}
+  o2=${rest%%.*}
+  rest=${rest#*.}
+  o3=${rest%%.*}
+  o4=${rest#*.}
+  case "$o4" in
+    *.*) return 1 ;;
+  esac
+  for o in "$o1" "$o2" "$o3" "$o4"; do
+    case "$o" in
+      ""|*[!0-9]*) return 1 ;;
+    esac
+    if [ "$((10#$o))" -gt 255 ]; then
+      return 1
+    fi
+  done
+  printf '%s\n' $(( (10#$o1 << 24) | (10#$o2 << 16) | (10#$o3 << 8) | 10#$o4 ))
+}
+
+ip_in_prefix() {
+  ip=$(ip_int "$1") || return 1
+  base=$(ip_int "$2") || return 1
+  prefix=$3
+  case "$prefix" in
+    ""|*[!0-9]*) return 1 ;;
+  esac
+  if [ "$prefix" -gt 32 ]; then
+    return 1
+  fi
+  if [ "$prefix" -eq 0 ]; then
+    return 0
+  fi
+  shift_bits=$((32 - prefix))
+  mask=$(( ((1 << prefix) - 1) << shift_bits ))
+  [ "$(( (ip & mask) == (base & mask) ))" -eq 1 ]
 }
 
 case "$cmd" in
@@ -107,6 +150,13 @@ case "$cmd" in
       exit 2
     fi
     /etc/janus/bin/janus-audit "${1:-}"
+    ;;
+  web)
+    if [ ! -x /etc/janus/bin/janus-web ]; then
+      echo "janus web is not in this image. Set janus.access.web.enable and rebuild." >&2
+      exit 2
+    fi
+    /etc/janus/bin/janus-web "$@"
     ;;
   proxy)
     sub=${1:-}
@@ -272,14 +322,60 @@ case "$cmd" in
     if [ "${1:-}" != "leases" ]; then
       usage
     fi
-    cat /var/lib/janus/leases/dnsmasq.leases 2>/dev/null || true
+    leases=${JANUS_LEASES:-/var/lib/janus/leases/dnsmasq.leases}
+    if [ ! -f "$leases" ]; then
+      exit 0
+    fi
+    lan_name=${2:-}
+    if [ -z "$lan_name" ]; then
+      cat "$leases"
+      exit 0
+    fi
+    if ! lan_exists "$lan_name"; then
+      echo "LAN ${lan_name} is not in this image." >&2
+      exit 2
+    fi
+    nets="${JANUS_ETC:-/etc/janus}/lan-nets.json"
+    if [ ! -f "$nets" ]; then
+      echo "janus lan leases: this image has no LAN network table." >&2
+      exit 1
+    fi
+    addr=$(jq -r --arg n "$lan_name" '.[$n].address // empty' "$nets")
+    prefix=$(jq -r --arg n "$lan_name" '.[$n].prefixLength // empty' "$nets")
+    if [ -z "$addr" ] || [ -z "$prefix" ]; then
+      echo "LAN ${lan_name} has no IPv4 network in this image." >&2
+      exit 2
+    fi
+    while IFS= read -r line || [ -n "$line" ]; do
+      [ -n "$line" ] || continue
+      rest=${line#* }
+      rest=${rest#* }
+      ip=${rest%% *}
+      if ip_in_prefix "$ip" "$addr" "$prefix"; then
+        printf '%s\n' "$line"
+      fi
+    done < "$leases"
     ;;
   traffic)
     if [ "${1:-}" = "top" ]; then
       echo "janus traffic top needs janus.monitoring.scope = per-host, which is not collected yet." >&2
       exit 2
     fi
-    vnstat ${1:+-i "$1"} || true
+    iface=""
+    period=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --daily) period=d ;;
+        --monthly) period=m ;;
+        *) iface=$1 ;;
+      esac
+      shift
+    done
+    if [ -n "$period" ]; then
+      vnstat ${iface:+-i "$iface"} "-${period}" || true
+    else
+      vnstat ${iface:+-i "$iface"} || true
+    fi
     ;;
   fw)
     if [ "${1:-}" != "list" ]; then

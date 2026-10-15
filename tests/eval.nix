@@ -1646,4 +1646,201 @@ in {
       };
     }
   ];
+  eval-web = let
+    off = mk [base];
+    os = mk [
+      base
+      {
+        janus.system.hostName = "router";
+        janus.network.lans.home = {
+          members = ["lan"];
+          address = "192.168.10.1";
+          prefixLength = 24;
+          zone = "lan";
+        };
+        janus.access.web = {
+          enable = true;
+          passphraseFile = "/var/lib/janus/secrets/web-passphrase";
+        };
+      }
+    ];
+    web = os.config.environment.etc."janus/bin/janus-web".source;
+    run = os.config.environment.etc."janus/bin/janus-web-run".source;
+    spec = os.config.environment.etc."janus/web.json".text;
+    stunnel = os.config.environment.etc."janus/stunnel.conf".text;
+    rules = os.config.networking.nftables.tables.janus.content;
+    tmpfiles = builtins.concatStringsSep "\n" os.config.systemd.tmpfiles.rules;
+    execCondition = let
+      value = os.config.systemd.services.janus-web.serviceConfig.ExecCondition;
+    in
+      if builtins.isList value
+      then builtins.concatStringsSep " " value
+      else toString value;
+    nets = os.config.environment.etc."janus/lan-nets.json".text;
+  in
+    pkgs.runCommand "eval-web" {
+      nativeBuildInputs = [pkgs.janet pkgs.openssl pkgs.jq];
+    } ''
+      set -eu
+      export JANUS_WEB_HTML=${../janet/web.html}
+      test ${
+        if off.config.systemd.services ? janus-web
+        then "yes"
+        else "no"
+      } = no
+      janet ${../janet/web.janet} check
+      printf '%s\n' ${lib.escapeShellArg spec} > web.json
+      jq -e '.enable == true and .port == 8443 and (.san | index("DNS:router")) and (.san | index("IP:192.168.10.1")) and .hostname == "router"' web.json >/dev/null
+      printf '%s\n' ${lib.escapeShellArg stunnel} > stunnel.conf
+      grep -q 'IPV6_V6ONLY=0' stunnel.conf
+      grep -q 'accept = \[::\]:8443' stunnel.conf
+      grep -q 'connect = /run/janus-web/http.sock' stunnel.conf
+      printf '%s\n' ${lib.escapeShellArg rules} > rules.nft
+      grep 'tcp dport 8443 accept' rules.nft | grep -q br-home
+      grep -q 'tcp dport 8443 drop' rules.nft
+      test ${
+        if lib.elem "multi-user.target" os.config.systemd.services.janus-web.wantedBy
+        then "yes"
+        else "no"
+      } = yes
+      test ${lib.escapeShellArg os.config.systemd.services.janus-web.unitConfig.ConditionPathExists} = '!/var/lib/janus/web/paused'
+      test ${lib.escapeShellArg os.config.systemd.services.janus-web.serviceConfig.User} = janus-web
+      printf '%s\n' ${lib.escapeShellArg os.config.systemd.services.janus-web.environment.JANUS_WEB_EXEC} | grep -q janus-web-run
+      printf '%s\n' ${lib.escapeShellArg tmpfiles} | grep -q 'd /var/lib/janus 0755 root root -'
+      printf '%s\n' ${lib.escapeShellArg tmpfiles} | grep -q 'd /var/lib/janus/web 0751 root janus-web-tls -'
+      printf '%s\n' ${lib.escapeShellArg execCondition} | grep -q 'janus-web ready'
+      printf '%s\n' ${lib.escapeShellArg nets} > lan-nets.json
+      jq -e '.home.address == "192.168.10.1" and .home.prefixLength == 24' lan-nets.json >/dev/null
+
+      dir=$TMPDIR/state
+      mkdir -p "$dir"
+      printf 'phrase\n' > "$dir/pass"
+      jq -n --arg pass "$dir/pass" --arg cert "$dir/cert.pem" --arg key "$dir/key.pem" --arg paused "$dir/paused" \
+        '{enable:true, port:8443, zones:["lan","mgmt"], passphraseFile:$pass, cert:$cert, key:$key, paused:$paused, hostname:"router", san:["DNS:router","IP:192.168.10.1"], socket:"/run/janus-web/http.sock"}' > "$dir/web.json"
+      JANUS_WEB_JSON=$dir/web.json ${web} cert
+      test -s "$dir/cert.pem"
+      test "$(stat -c %a "$dir")" = 751
+      test "$(stat -c %a "$dir/cert.pem")" = 644
+      test "$(stat -c %a "$dir/key.pem")" = 640
+      JANUS_WEB_JSON=$dir/web.json ${web} ready
+      fp=$(JANUS_WEB_JSON=$dir/web.json ${web} fingerprint)
+      openssl x509 -in "$dir/cert.pem" -noout -fingerprint -sha256 | grep -q "$fp"
+      jq -n '{enable:false}' > "$dir/off.json"
+      if JANUS_WEB_JSON=$dir/off.json ${web} start; then
+        echo "disabled image should exit 2" >&2
+        exit 1
+      fi
+      : > "$dir/empty"
+      jq -n --arg pass "$dir/empty" '{enable:true, passphraseFile:$pass, paused:"/no/such", cert:"/no/such", key:"/no/such", port:8443, zones:["lan"]}' > "$dir/empty.json"
+      if JANUS_WEB_JSON=$dir/empty.json ${web} start; then
+        echo "empty passphrase should exit 1" >&2
+        exit 1
+      fi
+      if JANUS_WEB_JSON=$dir/empty.json ${web} ready; then
+        echo "empty passphrase should not pass the service condition" >&2
+        exit 1
+      fi
+      touch "$dir/paused"
+      cat > "$dir/systemctl" << 'EOF'
+      #!/bin/sh
+      exit 0
+      EOF
+      chmod +x "$dir/systemctl"
+      JANUS_WEB_JSON=$dir/web.json JANUS_SYSTEMCTL=$dir/systemctl ${web} stop
+      test -f "$dir/paused"
+      JANUS_WEB_JSON=$dir/web.json JANUS_SYSTEMCTL=$dir/systemctl ${web} start
+      test ! -f "$dir/paused"
+      JANUS_WEB_JSON=$dir/web.json JANUS_SYSTEMCTL=$dir/systemctl ${web} status > "$dir/status.out"
+      grep -q 'listener: on' "$dir/status.out"
+      cat > "$dir/systemctl-fail" << 'EOF'
+      #!/bin/sh
+      exit 1
+      EOF
+      chmod +x "$dir/systemctl-fail"
+      if JANUS_WEB_JSON=$dir/web.json JANUS_SYSTEMCTL=$dir/systemctl-fail ${web} stop; then
+        echo "stop should report systemctl failure" >&2
+        exit 1
+      fi
+      test -f "$dir/paused"
+      rm -f "$dir/paused"
+      mkdir -p "$dir/etc"
+      printf '%s\n' '["home","guest"]' > "$dir/etc/lans.json"
+      jq -n '{"home":{"address":"192.168.10.1","prefixLength":24},"guest":{"address":"192.168.11.1","prefixLength":24}}' > "$dir/etc/lan-nets.json"
+      printf '%s\n' '1 aa:bb:cc:dd:ee:ff 192.168.10.50 nas *' > "$dir/leases"
+      printf '%s\n' '1 aa:bb:cc:dd:ee:f0 192.168.11.50 cam *' >> "$dir/leases"
+      wrapper_path=$(sed -n 's/^export PATH="\([^"]*\)".*/\1/p' ${run})
+      janus_bin=$(PATH="$wrapper_path" command -v janus)
+      JANUS_ETC=$dir/etc JANUS_LEASES=$dir/leases "$janus_bin" lan leases home > "$dir/home-leases"
+      grep -q 192.168.10.50 "$dir/home-leases"
+      if grep -q 192.168.11.50 "$dir/home-leases"; then
+        echo "guest lease was included for home" >&2
+        exit 1
+      fi
+      if JANUS_ETC=$dir/etc JANUS_LEASES=$dir/leases "$janus_bin" lan leases missing; then
+        echo "unknown LAN should exit 2" >&2
+        exit 1
+      fi
+
+      mkdir -p "$dir/out"
+      cat > "$dir/janus" << 'EOF'
+      #!/bin/sh
+      printf '%s\n' "$@" > "$JANUS_OUT/args"
+      cat > "$JANUS_OUT/stdin"
+      printf '%s\n' '{"ok":true}'
+      EOF
+      chmod +x "$dir/janus"
+      printf '%s\n' 'https://example.invalid/secret' | JANUS_BIN=$dir/janus JANUS_OUT=$dir/out ${run} override-set proxy.subscriptions.a.url
+      grep -q 'override' "$dir/out/args"
+      grep -q 'proxy.subscriptions.a.url' "$dir/out/args"
+      if grep -q secret "$dir/out/args"; then
+        echo "subscription URL was placed on the command line" >&2
+        exit 1
+      fi
+      grep -q 'https://example.invalid/secret' "$dir/out/stdin"
+      if JANUS_BIN=$dir/janus JANUS_OUT=$dir/out ${run} override-set firewall.x; then
+        echo "off-allowlist key should exit 2" >&2
+        exit 1
+      fi
+      : > "$dir/out/args"
+      : > "$dir/out/stdin"
+      printf '%s\n' 'secret-phrase' | JANUS_BIN=$dir/janus JANUS_OUT=$dir/out ${run} override-set network.wifi.ap.passphrase
+      grep -q 'network.wifi.ap.passphrase' "$dir/out/args"
+      if grep -q secret-phrase "$dir/out/args"; then
+        echo "wifi passphrase was placed on the command line" >&2
+        exit 1
+      fi
+      grep -q secret-phrase "$dir/out/stdin"
+      if JANUS_BIN=$dir/janus JANUS_OUT=$dir/out ${run} override-set 'proxy.subscriptions.a/b.url'; then
+        echo "slash key should exit 2" >&2
+        exit 1
+      fi
+      if JANUS_BIN=$dir/janus JANUS_OUT=$dir/out ${run} override-set network.lans.home.dhcp.staticLeases.nas aa:bb:cc:dd:ee:ff '10.0.0.5,1.2.3.4'; then
+        echo "loose ip should exit 2" >&2
+        exit 1
+      fi
+      JANUS_BIN=$dir/janus JANUS_OUT=$dir/out ${run} override-set network.lans.home.dhcp.staticLeases.nas aa:bb:cc:dd:ee:ff 10.0.0.5
+      grep -q -- '--mac' "$dir/out/args"
+      grep -q 10.0.0.5 "$dir/out/args"
+      echo ok > "$out"
+    '';
+  eval-web-wan = fail "eval-web-wan" [
+    base
+    {
+      janus.access.web.enable = true;
+      janus.access.web.passphraseFile = "/var/lib/janus/secrets/web-passphrase";
+      janus.access.web.zones = ["wan"];
+    }
+  ];
+  eval-web-pass = fail "eval-web-pass" [
+    base
+    {janus.access.web.enable = true;}
+  ];
+  eval-web-zone = fail "eval-web-zone" [
+    base
+    {
+      janus.access.web.enable = true;
+      janus.access.web.passphraseFile = "/var/lib/janus/secrets/web-passphrase";
+      janus.access.web.zones = ["missing"];
+    }
+  ];
 }

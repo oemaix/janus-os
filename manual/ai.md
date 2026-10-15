@@ -23,6 +23,13 @@ Read this file before answering a question about using Janus OS.
 - `janus.monitoring.audit.enable` defaults to false. With it set,
   `janus audit stop` pauses recording without a rebuild. The log is
   JSON Lines of connection metadata on the state partition.
+- `janus.access.web.enable` defaults to false. With it set, and with
+  `janus.access.web.passphraseFile`, the maintenance page listens on
+  port 8443 (TLS only) for the zones in `web.zones` (default `lan` and
+  `mgmt`). `janus web stop` pauses it without a rebuild. The passphrase
+  is not the root password. Compare `janus web fingerprint` with the
+  page before typing it. The page is status, maintenance actions, and
+  the hot-override allowlist.
 - `janus.storage.slots.enable` defaults to false. With it set, deploy
   writes the inactive ROOT and NIX slot and then changes the boot entry.
   The state partition is shared. Confirm with `janus-build deploy --confirm`.

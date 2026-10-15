@@ -61,8 +61,8 @@ Explanations are *19*. Accepted ADRs are `docs/adr/`.
 * Flow export (IPFIX) and a Prometheus endpoint. Implemented; see Progress.
 * VisionFive 2, RPi 2 (Tier 3). Implemented; see Progress.
 * A/B image slots. Implemented; see Progress.
-* Maintenance page limited to status, maintenance actions, and hot overrides (*20*). Specified. Not implemented.
-* Operator manual in English, Russian, and Persian: build, flash, deploy, audit, A/B slots, the status panel, Tier 3 boards, flow export, and the Prometheus endpoint. Implemented; see Progress.
+* Maintenance page limited to status, maintenance actions, and hot overrides (*20*). Implemented; see Progress.
+* Operator manual in English, Russian, and Persian: build, flash, deploy, audit, A/B slots, the status panel, the maintenance page, Tier 3 boards, flow export, and the Prometheus endpoint. Implemented; see Progress.
 
 ### Future
 
@@ -145,6 +145,10 @@ tree does not mean that behavior exists. Stubs are not finished features.
   panel (*15*, *10* §4.6). It runs `janus proxy refresh`, `janus proxy
   select`, `janus reboot`, and `janus reset --state --yes`. It does not
   edit configuration, hot overrides, or secrets.
+* `janus.access.web.enable` includes the maintenance page (*20*). It is
+  off unless set. `janus web stop` pauses the listener without a rebuild.
+  Login is a passphrase file, not the root password. The page calls the
+  allowlisted `janus` commands and does not edit the rest of the configuration.
 * A mcuzone INA219 at `0x40` reports the cell in `janus status` and powers
   the router off while the cell is discharging, at the thresholds in *10*
   §4.5. The Waveshare address `0x43` stays unarmed.

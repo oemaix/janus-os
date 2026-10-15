@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>janus</title>
+<script>
+(function () {
+  var stored = null;
+  try { stored = localStorage.getItem("janus-theme"); } catch (e) { stored = null; }
+  var theme = stored === "light" || stored === "dark"
+    ? stored
+    : (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  document.documentElement.setAttribute("data-theme", theme);
+})();
+</script>
+<style>
+:root {
+  --paper: #ffffff;
+  --ink: #111111;
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  --paper: #111111;
+  --ink: #eeeeee;
+  color-scheme: dark;
+}
+* { border-radius: 0; box-shadow: none; }
+html, body { margin: 0; background: var(--paper); color: var(--ink); }
+body {
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 16px;
+}
+.col { max-width: 40rem; padding: 16px; }
+.bar, .tabs { display: flex; flex-wrap: wrap; align-items: stretch; }
+.bar { border-bottom: 1px solid var(--ink); justify-content: space-between; }
+.brand, .alarm { padding: 8px 12px; }
+button, .tab, input, select, .box {
+  border: 1px solid var(--ink);
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  appearance: none;
+}
+button, .tab { padding: 8px 12px; margin: 0; }
+.tab { margin-left: -1px; }
+button.on, .tab.on { background: var(--ink); color: var(--paper); }
+.box { padding: 12px; margin-top: 12px; }
+.box.alarm { border-width: 2px; }
+.row { display: flex; gap: 16px; align-items: center; border-top: 1px solid var(--ink); padding: 8px 0; }
+.row span:first-child { min-width: 10rem; }
+.value, input, select, pre { font-family: ui-monospace, monospace; }
+input, select { padding: 8px; min-width: 12rem; }
+pre { white-space: pre-wrap; margin: 8px 0 0; }
+button:focus, input:focus, select:focus, .tab:focus { outline: 2px solid var(--ink); outline-offset: 0; }
+.actions { display: flex; flex-wrap: wrap; gap: 0; margin-top: 12px; }
+.actions button { margin-left: -1px; }
+#result { min-height: 1.2em; margin-top: 12px; }
+</style>
+</head>
+<body>
+<div class="col">
+  <div class="bar">
+    <div class="brand">janus</div>
+    <div class="alarm" id="alarm">ok</div>
+    <div>
+      <button type="button" id="theme-light">light</button>
+      <button type="button" id="theme-dark">dark</button>
+    </div>
+  </div>
+  <noscript>this page needs the browser script</noscript>
+  <div id="login" class="box">
+    <div class="row"><span>host</span><span class="value" id="host"></span></div>
+    <div class="row"><span>fingerprint</span><span class="value" id="fp"></span></div>
+    <form id="login-form" action="/login" method="post">
+      <div class="row"><span>passphrase</span><input name="passphrase" type="password" autocomplete="off"></div>
+      <div class="actions"><button type="submit">enter</button></div>
+    </form>
+    <div id="login-msg"></div>
+  </div>
+  <div id="app" hidden>
+    <div class="tabs" id="tabs">
+      <button type="button" class="tab on" data-section="status">status</button>
+      <button type="button" class="tab" data-section="tunnel">tunnel</button>
+      <button type="button" class="tab" data-section="network">network</button>
+      <button type="button" class="tab" data-section="overrides">overrides</button>
+      <button type="button" class="tab" data-section="monitoring">monitoring</button>
+      <button type="button" class="tab" data-section="system">system</button>
+    </div>
+    <div id="result"></div>
+    <section class="box" id="status-box" data-panel="status">
+      <div>status</div>
+      <div id="status-body"></div>
+    </section>
+    <section class="box" id="tunnel-box" data-panel="tunnel" hidden>
+      <div>tunnel</div>
+      <div id="groups"></div>
+      <div class="actions">
+        <button type="button" id="refresh-all">refresh</button>
+        <button type="button" id="refresh-geo">geo</button>
+      </div>
+      <div class="row"><span>subscription</span><select id="sub-name"></select><button type="button" id="refresh-one">refresh</button></div>
+      <div class="row"><span>group</span><input id="sel-group" autocomplete="off"><span>node</span><input id="sel-node" autocomplete="off"><button type="button" id="do-select">select</button></div>
+      <div class="row"><span>group</span><input id="test-group" autocomplete="off"><button type="button" id="do-test">test</button></div>
+      <pre class="value" id="tunnel-out"></pre>
+    </section>
+    <section class="box" id="network-box" data-panel="network" hidden>
+      <div>network</div>
+      <div class="row"><span>wan</span><input id="wan-name" autocomplete="off"><button type="button" id="wan-show">show</button><button type="button" id="wan-restart">restart</button></div>
+      <div class="row"><span>lan</span><select id="lan-name"></select><button type="button" id="lan-leases">leases</button></div>
+      <pre class="value" id="network-out"></pre>
+    </section>
+    <section class="box" id="overrides-box" data-panel="overrides" hidden>
+      <div>overrides</div>
+      <div id="override-rows"></div>
+      <div id="url-forms"></div>
+      <div id="lease-form" class="row"><span>lease</span><select id="lease-lan"></select><input id="lease-host" placeholder="host" autocomplete="off"><input id="lease-mac" placeholder="mac" autocomplete="off"><input id="lease-ip" placeholder="ip" autocomplete="off"><button type="button" id="lease-set">set</button></div>
+      <div id="wifi-forms"></div>
+      <div class="row"><span>unset</span><input id="unset-key" autocomplete="off"><button type="button" id="do-unset">unset</button></div>
+      <pre class="value" id="override-out"></pre>
+    </section>
+    <section class="box" id="monitoring-box" data-panel="monitoring" hidden>
+      <div>monitoring</div>
+      <div class="row"><span>scope</span><span class="value" id="scope-line"></span></div>
+      <div class="row"><span>iface</span><input id="traffic-iface" autocomplete="off">
+        <button type="button" id="traffic-now">traffic</button>
+        <button type="button" id="traffic-daily">daily</button>
+        <button type="button" id="traffic-monthly">monthly</button>
+        <button type="button" id="traffic-top">top</button>
+      </div>
+      <div class="actions">
+        <button type="button" id="dns-stats">stats</button>
+        <button type="button" id="dns-check">check</button>
+        <button type="button" id="dns-flush">flush</button>
+      </div>
+      <div class="row"><span>name</span><input id="dns-name" autocomplete="off"><button type="button" id="dns-query">query</button></div>
+      <div class="row" id="audit-row"><span>audit</span><span class="value" id="audit-line"></span></div>
+      <pre class="value" id="mon-out"></pre>
+    </section>
+    <section class="box" id="system-box" data-panel="system" hidden>
+      <div>system</div>
+      <pre class="value" id="version-out"></pre>
+      <div class="row"><span>reboot</span><input id="reboot-word" autocomplete="off"><button type="button" id="do-reboot">reboot</button></div>
+    </section>
+  </div>
+</div>
+<script>
+var META = __JANUS_META__;
+var current = "status";
+var poll = null;
+
+function theme(name) {
+  document.documentElement.setAttribute("data-theme", name);
+  try { localStorage.setItem("janus-theme", name); } catch (e) {}
+  document.getElementById("theme-light").classList.toggle("on", name === "light");
+  document.getElementById("theme-dark").classList.toggle("on", name === "dark");
+}
+
+function parseBody(text) {
+  try { return JSON.parse(text); } catch (e) { return text; }
+}
+
+function messageOf(text, status) {
+  var data = parseBody(text);
+  if (data && typeof data === "object" && data.message) return data.message;
+  if (status === 200) return "ok";
+  return text || "failed";
+}
+
+function api(method, path, body, mutate) {
+  var opts = {method: method, headers: {}};
+  if (mutate) opts.headers["X-Janus"] = "1";
+  if (body !== null && body !== undefined) {
+    opts.headers["Content-Type"] = "application/json";
+    opts.body = JSON.stringify(body);
+  }
+  return fetch(path, opts).then(function (res) {
+    return res.text().then(function (text) {
+      if (res.status === 401 && path !== "/login") showLogin();
+      return {status: res.status, text: text, data: parseBody(text)};
+    });
+  });
+}
+
+function showLogin() {
+  document.getElementById("login").hidden = false;
+  document.getElementById("app").hidden = true;
+  stopPoll();
+}
+
+function showApp() {
+  document.getElementById("login").hidden = true;
+  document.getElementById("app").hidden = false;
+}
+
+function fault(data) {
+  if (!data || typeof data !== "object") return false;
+  if (Array.isArray(data.wans) && data.wans.some(function (wan) { return wan && wan.up === false; })) return true;
+  if (data.engine === "inactive") return true;
+  if (data.engine && typeof data.engine === "object" && data.engine.active === false) return true;
+  if (data.drift === true || data.drift === "yes") return true;
+  return false;
+}
+
+function addRow(parent, name, value) {
+  var row = document.createElement("div");
+  row.className = "row";
+  var label = document.createElement("span");
+  label.textContent = name;
+  var val = document.createElement("span");
+  val.className = "value";
+  val.textContent = value;
+  row.appendChild(label);
+  row.appendChild(val);
+  parent.appendChild(row);
+}
+
+function renderStatus(el, data) {
+  el.textContent = "";
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    el.textContent = data === undefined || data === null ? "" : String(data);
+    return;
+  }
+  var used = {};
+  if (Array.isArray(data.wans)) {
+    used.wans = true;
+    data.wans.forEach(function (wan) {
+      if (!wan || typeof wan !== "object") return;
+      var state = wan.up === false ? "down" : "up";
+      addRow(el, "wan " + (wan.name || ""), wan.address ? state + "  " + wan.address : state);
+    });
+  }
+  if (Array.isArray(data.lans)) {
+    used.lans = true;
+    data.lans.forEach(function (lan) {
+      if (!lan || typeof lan !== "object") return;
+      addRow(el, "lan " + (lan.name || ""), "leases  " + (lan.leases === undefined ? "" : lan.leases));
+    });
+  }
+  if (Array.isArray(data.groups)) {
+    used.groups = true;
+    data.groups.forEach(function (group) {
+      if (!group || typeof group !== "object") return;
+      addRow(el, "group " + (group.name || ""), group.node ? "node  " + group.node : "");
+    });
+  }
+  ["engine", "refresh", "geo", "drift", "state", "power"].forEach(function (key) {
+    if (data[key] === undefined) return;
+    used[key] = true;
+    var item = data[key];
+    addRow(el, key, item && typeof item === "object" ? JSON.stringify(item) : String(item));
+  });
+  Object.keys(data).forEach(function (key) {
+    if (used[key]) return;
+    var item = data[key];
+    addRow(el, key, item && typeof item === "object" ? JSON.stringify(item) : String(item));
+  });
+}
+
+function setOut(id, res) {
+  var el = document.getElementById(id);
+  if (res.status === 200) {
+    el.textContent = typeof res.data === "string" ? res.data : JSON.stringify(res.data, null, 2);
+    document.getElementById("result").textContent = "ok";
+  } else {
+    el.textContent = "";
+    document.getElementById("result").textContent = messageOf(res.text, res.status);
+  }
+}
+
+function running(btn, work) {
+  var label = btn.textContent;
+  btn.textContent = "running";
+  return work().then(function (res) {
+    btn.textContent = label;
+    return res;
+  }, function (err) {
+    btn.textContent = label;
+    document.getElementById("result").textContent = "failed";
+    throw err;
+  });
+}
+
+function loadStatus() {
+  return api("GET", "/api/status").then(function (res) {
+    if (res.status !== 200) {
+      document.getElementById("result").textContent = messageOf(res.text, res.status);
+      return;
+    }
+    renderStatus(document.getElementById("status-body"), res.data);
+    var bad = fault(res.data);
+    document.getElementById("status-box").classList.toggle("alarm", bad);
+    document.getElementById("alarm").textContent = bad ? "alarm" : "ok";
+    document.getElementById("result").textContent = "ok";
+  });
+}
+
+function stopPoll() {
+  if (poll) clearInterval(poll);
+  poll = null;
+}
+
+function startPoll() {
+  stopPoll();
+  poll = setInterval(function () {
+    if (document.hidden || current !== "status") return;
+    loadStatus();
+  }, 10000);
+}
+
+function showSection(name) {
+  current = name;
+  document.querySelectorAll(".tab").forEach(function (tab) {
+    tab.classList.toggle("on", tab.getAttribute("data-section") === name);
+  });
+  document.querySelectorAll("[data-panel]").forEach(function (panel) {
+    panel.hidden = panel.getAttribute("data-panel") !== name;
+  });
+  if (name === "status") {
+    loadStatus();
+    startPoll();
+  } else {
+    stopPoll();
+  }
+  if (name === "tunnel") {
+    api("GET", "/api/proxy/groups").then(function (res) {
+      if (res.status === 200 && renderGroups(res.data)) {
+        document.getElementById("tunnel-out").textContent = "";
+        document.getElementById("result").textContent = "ok";
+      } else {
+        setOut("tunnel-out", res);
+      }
+    });
+  }
+  if (name === "network") {
+    var lan = document.getElementById("lan-name").value;
+    var leasePath = lan ? "/api/lan/leases?lan=" + encodeURIComponent(lan) : "/api/lan/leases";
+    api("GET", leasePath).then(function (res) { setOut("network-out", res); });
+  }
+  if (name === "overrides") {
+    api("GET", "/api/override").then(function (res) {
+      renderOverrideRows(res.status === 200 ? res.data : null);
+      setOut("override-out", res);
+    });
+  }
+  if (name === "monitoring") {
+    api("GET", "/api/traffic").then(function (res) { setOut("mon-out", res); });
+    if (META.audit) {
+      api("GET", "/api/audit").then(function (res) {
+        document.getElementById("audit-line").textContent = res.status === 200 ? res.text : messageOf(res.text, res.status);
+      });
+    }
+  }
+  if (name === "system") {
+    api("GET", "/api/version").then(function (res) { setOut("version-out", res); });
+  }
+}
+
+function fillSelect(id, values, placeholder) {
+  var sel = document.getElementById(id);
+  sel.textContent = "";
+  if (placeholder) {
+    var empty = document.createElement("option");
+    empty.value = "";
+    empty.textContent = placeholder;
+    sel.appendChild(empty);
+  }
+  values.forEach(function (value) {
+    var opt = document.createElement("option");
+    opt.value = value;
+    opt.textContent = value;
+    sel.appendChild(opt);
+  });
+}
+
+function renderGroups(data) {
+  var el = document.getElementById("groups");
+  el.textContent = "";
+  var proxies = data && data.proxies;
+  if (!proxies || typeof proxies !== "object" || Array.isArray(proxies)) return false;
+  var kinds = {Selector: true, URLTest: true, Fallback: true, LoadBalance: true};
+  var found = false;
+  Object.keys(proxies).forEach(function (name) {
+    var item = proxies[name];
+    if (!item || !kinds[item.type]) return;
+    found = true;
+    var head = document.createElement("div");
+    head.className = "row";
+    var label = document.createElement("span");
+    label.textContent = name;
+    var strategy = document.createElement("span");
+    strategy.className = "value";
+    strategy.textContent = item.type || "";
+    head.appendChild(label);
+    head.appendChild(strategy);
+    el.appendChild(head);
+    var members = document.createElement("div");
+    members.className = "actions";
+    (item.all || []).forEach(function (node) {
+      var button = document.createElement("button");
+      button.type = "button";
+      button.textContent = node;
+      if (node === item.now) button.className = "on";
+      button.addEventListener("click", function () {
+        document.getElementById("sel-group").value = name;
+        document.getElementById("sel-node").value = node;
+        running(button, function () {
+          return api("POST", "/api/proxy/select", {group: name, node: node}, true);
+        }).then(function (res) {
+          setOut("tunnel-out", res);
+          if (res.status === 200) showSection("tunnel");
+        });
+      });
+      members.appendChild(button);
+    });
+    el.appendChild(members);
+  });
+  return found;
+}
+
+function renderOverrideRows(data) {
+  var el = document.getElementById("override-rows");
+  el.textContent = "";
+  (META.subscriptions || []).forEach(function (name) {
+    var key = "proxy.subscriptions." + name + ".url";
+    var state = data && Object.prototype.hasOwnProperty.call(data, key) ? "override" : "image";
+    addRow(el, name, state);
+  });
+  (META.wifi || []).forEach(function (name) {
+    var key = "network.wifi." + name + ".passphrase";
+    var state = data && Object.prototype.hasOwnProperty.call(data, key) ? "override" : "image";
+    addRow(el, name, state);
+  });
+  if (!data || typeof data !== "object") return;
+  Object.keys(data).forEach(function (key) {
+    var item = data[key];
+    if (!item || typeof item !== "object" || Array.isArray(item) || item.mac === undefined) return;
+    addRow(el, key, item.mac + "  " + (item.ip || ""));
+  });
+}
+
+function addUrlForm(name) {
+  var row = document.createElement("div");
+  row.className = "row";
+  var label = document.createElement("span");
+  label.textContent = name;
+  var input = document.createElement("input");
+  input.autocomplete = "off";
+  var button = document.createElement("button");
+  button.type = "button";
+  button.textContent = "set";
+  button.addEventListener("click", function () {
+    running(button, function () {
+      return api("POST", "/api/override", {
+        key: "proxy.subscriptions." + name + ".url",
+        value: input.value
+      }, true);
+    }).then(function (res) {
+      input.value = "";
+      setOut("override-out", res);
+    });
+  });
+  row.appendChild(label);
+  row.appendChild(input);
+  row.appendChild(button);
+  document.getElementById("url-forms").appendChild(row);
+}
+
+function addWifiForm(name) {
+  var row = document.createElement("div");
+  row.className = "row";
+  var label = document.createElement("span");
+  label.textContent = name;
+  var input = document.createElement("input");
+  input.type = "password";
+  input.autocomplete = "off";
+  var button = document.createElement("button");
+  button.type = "button";
+  button.textContent = "set";
+  button.addEventListener("click", function () {
+    running(button, function () {
+      return api("POST", "/api/override", {
+        key: "network.wifi." + name + ".passphrase",
+        value: input.value
+      }, true);
+    }).then(function (res) {
+      input.value = "";
+      setOut("override-out", res);
+    });
+  });
+  row.appendChild(label);
+  row.appendChild(input);
+  row.appendChild(button);
+  document.getElementById("wifi-forms").appendChild(row);
+}
+
+function applyMeta(meta) {
+  META.proxy = meta.proxy;
+  META.subscriptions = meta.subscriptions || [];
+  META.lans = meta.lans || [];
+  META.wifi = meta.wifi || [];
+  META.monitoringScope = meta.monitoringScope || "counters";
+  META.audit = meta.audit;
+  var subs = META.subscriptions;
+  var lans = META.lans.map(function (lan) { return lan.name; });
+  var wifi = META.wifi;
+  document.querySelector('[data-section="tunnel"]').hidden = !META.proxy;
+  document.querySelector('[data-section="overrides"]').hidden = !META.proxy && subs.length === 0 && lans.length === 0 && wifi.length === 0;
+  document.getElementById("audit-row").hidden = !META.audit;
+  document.getElementById("traffic-top").hidden = META.monitoringScope !== "per-host";
+  document.getElementById("scope-line").textContent = META.monitoringScope;
+  document.getElementById("url-forms").textContent = "";
+  document.getElementById("wifi-forms").textContent = "";
+  fillSelect("sub-name", subs, "");
+  fillSelect("lan-name", lans, "");
+  fillSelect("lease-lan", lans, "");
+  subs.forEach(addUrlForm);
+  wifi.forEach(addWifiForm);
+  document.getElementById("lease-form").hidden = lans.length === 0;
+}
+
+function enterApp() {
+  return api("GET", "/api/meta").then(function (res) {
+    if (res.status !== 200 || !res.data || typeof res.data !== "object") {
+      showLogin();
+      return;
+    }
+    applyMeta(res.data);
+    showApp();
+    showSection("status");
+  });
+}
+
+function boot() {
+  theme(document.documentElement.getAttribute("data-theme") || "light");
+  document.getElementById("host").textContent = META.hostname || "";
+  document.getElementById("fp").textContent = META.fingerprint || "";
+  document.getElementById("theme-light").addEventListener("click", function () { theme("light"); });
+  document.getElementById("theme-dark").addEventListener("click", function () { theme("dark"); });
+  document.getElementById("login-form").addEventListener("submit", function (event) {
+    event.preventDefault();
+    var button = event.target.querySelector("button");
+    var input = event.target.querySelector("input");
+    running(button, function () {
+      return fetch("/login", {
+        method: "POST",
+        headers: {"Content-Type": "application/x-www-form-urlencoded"},
+        body: "passphrase=" + encodeURIComponent(input.value)
+      }).then(function (res) {
+        return res.text().then(function (text) {
+          return {status: res.status, text: text};
+        });
+      });
+    }).then(function (res) {
+      input.value = "";
+      if (res.status === 200 || res.status === 303) {
+        document.getElementById("login-msg").textContent = "";
+        enterApp();
+      } else {
+        document.getElementById("login-msg").textContent = messageOf(res.text, res.status);
+      }
+    });
+  });
+  document.querySelectorAll(".tab").forEach(function (tab) {
+    tab.addEventListener("click", function () { showSection(tab.getAttribute("data-section")); });
+  });
+  document.getElementById("refresh-all").addEventListener("click", function () {
+    running(this, function () { return api("POST", "/api/proxy/refresh", {}, true); })
+      .then(function (res) { setOut("tunnel-out", res); });
+  });
+  document.getElementById("refresh-one").addEventListener("click", function () {
+    var name = document.getElementById("sub-name").value;
+    running(this, function () { return api("POST", "/api/proxy/refresh", {name: name}, true); })
+      .then(function (res) { setOut("tunnel-out", res); });
+  });
+  document.getElementById("refresh-geo").addEventListener("click", function () {
+    running(this, function () { return api("POST", "/api/proxy/geodata/refresh", {}, true); })
+      .then(function (res) { setOut("tunnel-out", res); });
+  });
+  document.getElementById("do-select").addEventListener("click", function () {
+    running(this, function () {
+      return api("POST", "/api/proxy/select", {
+        group: document.getElementById("sel-group").value,
+        node: document.getElementById("sel-node").value
+      }, true);
+    }).then(function (res) { setOut("tunnel-out", res); });
+  });
+  document.getElementById("do-test").addEventListener("click", function () {
+    running(this, function () {
+      return api("POST", "/api/proxy/test", {group: document.getElementById("test-group").value}, true);
+    }).then(function (res) { setOut("tunnel-out", res); });
+  });
+  document.getElementById("wan-show").addEventListener("click", function () {
+    var name = document.getElementById("wan-name").value;
+    running(this, function () { return api("GET", "/api/wan/show?name=" + encodeURIComponent(name)); })
+      .then(function (res) { setOut("network-out", res); });
+  });
+  document.getElementById("wan-restart").addEventListener("click", function () {
+    running(this, function () {
+      return api("POST", "/api/wan/restart", {name: document.getElementById("wan-name").value}, true);
+    }).then(function (res) { setOut("network-out", res); });
+  });
+  document.getElementById("lan-leases").addEventListener("click", function () {
+    var name = document.getElementById("lan-name").value;
+    var path = name ? "/api/lan/leases?lan=" + encodeURIComponent(name) : "/api/lan/leases";
+    running(this, function () { return api("GET", path); })
+      .then(function (res) { setOut("network-out", res); });
+  });
+  document.getElementById("lease-set").addEventListener("click", function () {
+    var lan = document.getElementById("lease-lan").value;
+    var host = document.getElementById("lease-host").value;
+    running(this, function () {
+      return api("POST", "/api/override", {
+        key: "network.lans." + lan + ".dhcp.staticLeases." + host,
+        mac: document.getElementById("lease-mac").value,
+        ip: document.getElementById("lease-ip").value
+      }, true);
+    }).then(function (res) {
+      document.getElementById("lease-mac").value = "";
+      document.getElementById("lease-ip").value = "";
+      setOut("override-out", res);
+    });
+  });
+  document.getElementById("do-unset").addEventListener("click", function () {
+    running(this, function () {
+      return api("POST", "/api/override/unset", {key: document.getElementById("unset-key").value}, true);
+    }).then(function (res) { setOut("override-out", res); });
+  });
+  document.getElementById("traffic-now").addEventListener("click", function () {
+    var iface = document.getElementById("traffic-iface").value;
+    var path = iface ? "/api/traffic?iface=" + encodeURIComponent(iface) : "/api/traffic";
+    running(this, function () { return api("GET", path); }).then(function (res) { setOut("mon-out", res); });
+  });
+  document.getElementById("traffic-daily").addEventListener("click", function () {
+    var iface = document.getElementById("traffic-iface").value;
+    var path = "/api/traffic?period=daily" + (iface ? "&iface=" + encodeURIComponent(iface) : "");
+    running(this, function () { return api("GET", path); }).then(function (res) { setOut("mon-out", res); });
+  });
+  document.getElementById("traffic-monthly").addEventListener("click", function () {
+    var iface = document.getElementById("traffic-iface").value;
+    var path = "/api/traffic?period=monthly" + (iface ? "&iface=" + encodeURIComponent(iface) : "");
+    running(this, function () { return api("GET", path); }).then(function (res) { setOut("mon-out", res); });
+  });
+  document.getElementById("traffic-top").addEventListener("click", function () {
+    running(this, function () { return api("GET", "/api/traffic/top"); }).then(function (res) { setOut("mon-out", res); });
+  });
+  document.getElementById("dns-stats").addEventListener("click", function () {
+    running(this, function () { return api("GET", "/api/dns/stats"); }).then(function (res) { setOut("mon-out", res); });
+  });
+  document.getElementById("dns-check").addEventListener("click", function () {
+    running(this, function () { return api("POST", "/api/dns/check", {}, true); }).then(function (res) { setOut("mon-out", res); });
+  });
+  document.getElementById("dns-flush").addEventListener("click", function () {
+    running(this, function () { return api("POST", "/api/dns/flush", {}, true); }).then(function (res) { setOut("mon-out", res); });
+  });
+  document.getElementById("dns-query").addEventListener("click", function () {
+    running(this, function () {
+      return api("POST", "/api/dns/query", {name: document.getElementById("dns-name").value}, true);
+    }).then(function (res) { setOut("mon-out", res); });
+  });
+  document.getElementById("do-reboot").addEventListener("click", function () {
+    running(this, function () {
+      return api("POST", "/api/reboot", {confirm: document.getElementById("reboot-word").value}, true);
+    }).then(function (res) { setOut("version-out", res); });
+  });
+  document.addEventListener("visibilitychange", function () {
+    if (!document.hidden && current === "status" && !document.getElementById("app").hidden) loadStatus();
+  });
+  api("GET", "/api/status").then(function (res) {
+    if (res.status === 200) enterApp();
+    else showLogin();
+  });
+}
+
+boot();
+</script>
+</body>
+</html>

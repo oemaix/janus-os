@@ -43,7 +43,8 @@ the passphrase or the certificate. The CLI keeps working while the
 listener is stopped.
 
 `janus web start` with a missing or empty passphrase file exits `1` and
-does not listen.
+does not listen. The service condition is the same check, so boot does
+not restart the unit.
 
 ## 2. Listener
 
@@ -64,10 +65,14 @@ The firewall accepts `web.port` on `web.zones` and drops it on every
 other interface, the same confinement as the Prometheus port (*06*).
 
 The certificate is created on first start when it is absent:
-`/var/lib/janus/web/cert.pem` and `key.pem`, mode `0600`. It is
-self-signed. The subject is the hostname. Subject alternative names are
-the hostname and each configured LAN address. The certificate is not in
-the Nix store. There is no ACME client.
+`/var/lib/janus/web/cert.pem` and `key.pem`. The directory is mode
+`0751`, owner `root`, group `janus-web-tls`, so the page user can walk
+in and read the certificate. The certificate is mode `0644`. The key is
+mode `0640` and readable by group `janus-web-tls` only. `/var/lib/janus`
+stays mode `0755` so that directory remains reachable. The certificate
+is self-signed. The subject is the hostname. Subject alternative names
+are the hostname and each configured LAN address. The certificate is
+not in the Nix store. There is no ACME client.
 
 The operator compares the fingerprint on the login box with
 `janus web fingerprint` over SSH before typing the passphrase.
@@ -163,7 +168,10 @@ it.
 The HTML is one file from the Nix store: `GET /` and `GET /login`. No
 other static path exists. The file embeds its script and its style.
 Nothing is fetched from the network. There is no package registry and no
-web font.
+web font. The login document carries the hostname and the certificate
+fingerprint. Subscription names, LAN addresses, Wi-Fi names, and the
+other image facts are `GET /api/meta`, which requires the session cookie
+and runs no `janus` command.
 
 Every API path runs one fixed argument list. The server does not build a
 shell command. Names and keys are checked against the allowlist shapes
@@ -171,6 +179,7 @@ before exec; the CLI checks again.
 
 | Request | Command |
 |---------|---------|
+| `GET /api/meta` | No command. Image facts other than the login fingerprint. |
 | `GET /api/status` | `janus --json status` |
 | `GET /api/proxy/groups` | `janus --json proxy groups` |
 | `POST /api/proxy/refresh` | `janus --json proxy refresh [name]` |

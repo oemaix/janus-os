@@ -41,6 +41,26 @@ in {
       default = true;
       description = "Install the janus command (docs/14).";
     };
+    web.enable = mkOption {
+      type = types.bool;
+      default = false;
+      description = "Include the maintenance page (docs/20). Runtime start and stop do not change this.";
+    };
+    web.port = mkOption {
+      type = types.port;
+      default = 8443;
+      description = "TLS port for the maintenance page.";
+    };
+    web.zones = mkOption {
+      type = types.listOf types.str;
+      default = ["lan" "mgmt"];
+      description = "Zones that may open the maintenance page. wan is refused.";
+    };
+    web.passphraseFile = mkOption {
+      type = types.nullOr types.str;
+      default = null;
+      description = "Passphrase file for the maintenance page. A string path, not a Nix path, so the secret is not copied into the store. Required when web.enable is true. Not the SSH root password.";
+    };
     deploy.address = mkOption {
       type = types.str;
       default = config.janus.system.hostName;
@@ -48,6 +68,8 @@ in {
       description = "SSH destination for janus-build deploy and janus-build fleet apply.";
     };
   };
+
+  imports = [./web.nix];
 
   config = {
     assertions = [

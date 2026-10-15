@@ -8,3 +8,5 @@ The same file runs at image build and on the router. Do not start this
 in Go.
 
 `hmi.janet` is the panel model in docs/15.
+
+`web.janet` is the maintenance page in docs/20.

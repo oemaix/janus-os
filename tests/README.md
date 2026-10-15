@@ -20,7 +20,8 @@ CI runs the eval checks and the options document
 
 `limine-bios` runs the image builder's Limine scripts on a GPT disk with
 FAT32 and checks that QEMU BIOS loads the kernel file. `eval-router` checks the generated nftables masquerade, the DHCP client,
-dnsmasq, OpenSSH, and vnstat. `eval-hmi` checks the panel model, the
+dnsmasq, OpenSSH, and vnstat. `eval-web` checks the maintenance page model, the TLS listener, and the
+runtime pause. `eval-hmi` checks the panel model, the
 Waveshare binding, and `janus reset --state` without `--yes`. It compiles
 the panel and the SPI overlay for the machine running the check. `eval-boot-slot` checks that a Raspberry Pi `config.txt` follows slot B
 onto `initrd-b` and back. `eval-power` checks the cell

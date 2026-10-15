@@ -2,7 +2,8 @@
 
 The VM image boots. The phase 1 router core is in the tree, and so are
 the proxy, DNS policy, fleet commands, closure deploy, the connection
-audit log, A/B image slots, the Waveshare 1.3" status panel, battery
+audit log, the maintenance page, A/B image slots, the Waveshare 1.3"
+status panel, battery
 shutdown for the mcuzone UPS, IPFIX export, a Prometheus endpoint, and
 Tier 3 profiles for the Raspberry Pi 2 and the VisionFive 2, and a
 Tier 2 profile for the Raspberry Pi 4 and Compute Module 4. What is
@@ -43,5 +44,6 @@ The `janus.*` options are specified in
 `janus-build` implements `init`, `host add`, `secret`, `check`, `build`,
 `update`, `fleet`, `status`, `backup`, and `deploy`. `janus` implements
 the router status, WAN, lease, firewall, age-key, proxy, DNS, backup,
-and hot-override commands. On the board, `janus deploy` exits 2 and
+and hot-override commands, and `janus web` when the maintenance page is
+in the image. On the board, `janus deploy` exits 2 and
 names `janus-build`.

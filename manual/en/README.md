@@ -16,7 +16,8 @@ Raspberry Pi 4 and Compute Module 4, the Raspberry Pi 2 v1.1, the
 StarFive VisionFive 2, and the Yanyu STX-R19F
 (Limine on legacy BIOS). `janus` and `janus-build`
 implement the phase 1 commands, plus proxy, DNS, fleet, status, backup,
-deploy, and the connection audit. On the board, `janus deploy` exits 2
+deploy, and the connection audit. With `janus.access.web.enable` and a
+passphrase file, the image serves a maintenance page on port 8443. On the board, `janus deploy` exits 2
 and names `janus-build`. A Waveshare 1.3" OLED HAT on a Raspberry Pi
 Zero 2 W, a Raspberry Pi 3, or a Raspberry Pi 4 shows status. From the
 panel you can refresh the proxy, select a node, reboot, or wipe state.
@@ -170,6 +171,25 @@ Payloads are not stored, and the board does not analyse the log.
 
 An empty interface list audits the proxied LANs. `audit.interfaces` names
 LANs to audit instead.
+
+## Maintenance page
+
+The page is off unless the image sets `janus.access.web.enable = true`
+and `janus.access.web.passphraseFile` to a secret file. After that image
+boots, the page listens on port 8443, TLS only, on the `lan` and `mgmt`
+zones. `janus web stop` pauses it without a rebuild. `janus web start`
+turns it back on. If the image was built without the switch, `janus web
+start` exits 2. An empty passphrase file makes `janus web start` exit 1.
+
+Open `https://<lan-address>:8443/`. The certificate is self-signed.
+Compare the fingerprint on the page with `janus web fingerprint` before
+typing the passphrase. The passphrase is not the root password, and SSH
+stays key-only.
+
+The page shows status, tunnel actions, WAN and leases, the hot-override
+allowlist, traffic and DNS, and reboot. It does not edit the rest of the
+configuration. It does not factory-reset, and it does not show a secret
+that is already stored.
 
 ## Status panel
 
