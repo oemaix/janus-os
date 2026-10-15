@@ -7,7 +7,7 @@
 | Last updated | 2026-10-16 |
 
 This document is the preset that makes one Janus router practical in
-mainland China, Russia, or Iran. It is not implemented. *13* records that.
+mainland China, Russia, or Iran. The module is `modules/janus/region.nix`.
 The choice is D-0034.
 
 A total outage of the international link is out of scope. No client
@@ -21,7 +21,7 @@ The five proposed changes collapse to one option and a table of data.
 |----------|----------|
 | Replace China/global lists with Russia/global or Iran/global | The split stays. Domestic names and domestic addresses go direct. Everything else follows `defaultTarget`. There is no list named global. `geosite:ru` and `geosite:ir` are not files on the SagerNet source this tree already uses. |
 | Domestic DNS in the country of use | Yes. The preset names the resolvers. AliDNS is the China preset only. |
-| A different routing template | Yes. One ordered list per reference region. The engine, the matchers, and the rule language stay. |
+| A different routing template | Yes. One ordered list per reference region, written in the example. An unset `janus.proxy.rules` stays empty. |
 | A different implementation per censorship system | No. Active probing, DNS pollution, SNI filtering, and protocol-class throttling are met by the controls Janus already has (REALITY, uTLS, split DNS, fail-closed, QUIC policy). A second renderer would rot. |
 | An explicit target region `cn`, `ru`, or `ir` | Yes. `janus.region`. |
 
@@ -41,19 +41,21 @@ janus.region = "cn" | "ru" | "ir";   # default "cn"
 * The default `cn` keeps today's China DNS defaults and the China
   reference in the example.
 
-Explicit configuration wins, and it wins as a whole:
+`janus.proxy.rules` is empty when unset. The module does not insert the
+lists in §4. The example writes the `cn` list and comments out `ru` and
+`ir`, so changing region is also changing that list. Private addresses
+still stay direct in nftables (D-0030). A private *name* stays direct only
+when the written list says so.
 
-* An explicit `janus.proxy.rules` list replaces the preset rule list. It
-  is not merged with the preset.
+Explicit DNS and QUIC settings win as a whole:
+
 * An explicit `janus.dns.domestic.resolvers`, `domestic.domains`, or
   `fakeIp.exclude` replaces that field of the preset.
 * An explicit `janus.proxy.blockQuic` replaces the preset default.
 
-If `region` is `ru` or `ir` and an explicit rule or domestic domain entry
-still mentions `cn` or `geolocation-cn`, evaluation warns. The build does
-not fail: a user may add a China rule on purpose. The warning exists
-because copying the example and only changing `region` leaves Chinese
-direct rules in place.
+Evaluation does not compare the written rule list with `janus.region`.
+A list for one country beside a region for another is the list the user
+wrote.
 
 ## 3. Shared behavior
 
@@ -68,13 +70,16 @@ These do not vary by region:
 * Fake-IP stays `auto`.
 * Carrier resolvers stay `never`.
 
-The region changes only the domestic half of split routing, the domestic
-resolvers, the fake-IP exclusions that match that half, and the `blockQuic`
-default.
+The region changes the domestic resolvers, the fake-IP exclusions that
+match the domestic names, and the `blockQuic` default. The routing list
+changes only when the configuration writes it.
 
 ## 4. Presets
 
-Rule order in every preset:
+The lists in this section are the example templates. They are not applied
+while `janus.proxy.rules` is unset.
+
+Rule order in every template:
 
 1. `geosite:private` and `geoip:private` → `direct`
 2. Domestic suffixes → `direct`
@@ -167,30 +172,17 @@ already sends those names through the tunnel. Putting one of them in
 operator sets an encrypted resolver (DoH or DoT) that returns inland
 addresses for inland names. Plaintext ISP DNS does not satisfy
 FR-DNS-004. An empty `domestic.resolvers` with `region = "ir"` fails
-evaluation and names this distinction. It does not suggest a URL.
+evaluation when the proxy is enabled, and names this distinction. It
+does not suggest a URL. With the proxy off, the empty list is kept.
 
-## 5. Work to do
+## 5. Implementation
 
-Not started. When it is done, the code follows this document.
-
-* `janus.region` on the module, default `cn`, enum `cn`, `ru`, `ir`.
-* Default rules, domestic DNS fields, fake-IP exclusions, and `blockQuic`
-  come from the preset unless the option is set.
-* The `cn` default rule list grows the domestic rows in §4.1. Today the
-  module default is only private networks, and the example carries the
-  China rows. After this change, an unset `rules` list is the preset.
-* Per-tag Geo data URL as in §4.3, plus a sha256 pin for `geosite-ir`
-  measured at implementation time.
-* Assertion: `region = "ir"` and empty `domestic.resolvers`.
-* Warning: `ru` or `ir` combined with a `cn` or `geolocation-cn` entry.
-* Example: set `janus.region = "cn"` and do not repeat the China lists, so
-  switching the region is the edit. A comment shows the expanded `cn` list.
-* Eval tests: `ru` renders `category-ru`, the Yandex resolvers, and
-  `blockQuic`; `ir` without resolvers fails; `ir` with a resolver
-  references the Chocolate4U URL; an explicit rule list is not merged.
-
-The manual stays unchanged until the option exists. User-facing text
-describes what the router already does.
+`modules/janus/region.nix` applies domestic DNS and `blockQuic`. It does
+not write `janus.proxy.rules`. Per-tag URLs and the pins for the preset
+files, including Chocolate4U `geosite-ir`, are in
+`modules/janus/proxy/lower.nix`. The pins were measured on 2026-10-16.
+The example writes the `cn` list and comments out `ru` and `ir`.
+`eval-region-ru` checks that an unset rule list stays empty.
 
 ## 6. Use cases the preset does not change
 
@@ -203,11 +195,10 @@ What remains different is small, and it is not another subsystem.
 
 * **Iran, one more setting.** `region = "ir"` is not enough. Domestic
   resolvers are empty until the operator sets them (§4.3).
-* **Russia, Telegram.** The preset sends Telegram to `defaultTarget`, so it
-  is proxied, which is what China and often Iran want. In Russia Telegram
-  is usually left direct. That is one extra rule, not a region value. An
-  explicit `rules` list replaces the preset, so the domestic rows have to
-  be copied into that list. The preset does not grow a Telegram exception.
+* **Russia, Telegram.** The `ru` template sends Telegram to `defaultTarget`,
+  so it is proxied, which is what China and often Iran want. In Russia
+  Telegram is usually left direct. That is one extra row in the written
+  list, not a region value. The template does not grow a Telegram exception.
 * **Names outside the country suffix.** `vk.com` and other Russian services
   on `.com` are direct only when `category-ru` contains them. Iranian shops
   and payment names on `.com` are direct only because the Chocolate4U list
@@ -217,8 +208,8 @@ What remains different is small, and it is not another subsystem.
   path through the relay. There is no sanctions switch.
 * **The node, not the region.** A REALITY `serverName` that is itself
   blocked is a bad node in that country. A relay whose transport is QUIC
-  is a poor fit where QUIC is throttled. `blockQuic` only rejects QUIC
-  from LAN clients; it does not rewrite the node's protocol.
+  is a poor fit where QUIC is throttled. `blockQuic` rejects QUIC that
+  did not match a direct rule. It does not rewrite the node's protocol.
 * **Protocols this preset does not add.** FR-PRX-001 stays the list.
   A subscription that is only a WireGuard variant is out of scope for
   `janus.region`. Adding one would be a new protocol decision.

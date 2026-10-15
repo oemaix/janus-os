@@ -117,6 +117,14 @@ Option names are in
 `janus-build check <host>` evaluates the configuration without building
 the image.
 
+`janus.region` is `cn` (the default), `ru`, or `ir`. It chooses the
+domestic resolver and, for `ru`, rejects QUIC that did not match a
+direct rule unless `janus.proxy.blockQuic` is set. Routing rules stay empty until the
+configuration writes them. The example has the `cn` list, with `ru` and
+`ir` commented beside it. `ir` has no built-in domestic resolver: set
+`janus.dns.domestic.resolvers` to an encrypted resolver for inland names.
+Changing the region is a rebuild, not a hot override.
+
 ## Day to day
 
 `janus status` on the board reports the running system. Subscription

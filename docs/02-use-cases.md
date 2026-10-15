@@ -217,9 +217,8 @@ requirements it drives (see *03 — Requirements*).
 ### UC-21 Select Russia or Iran
 
 * **Actor:** Kirill, Niloofar
-* **Precondition:** *21* is implemented. It is not, until *13* says so.
-* **Flow:** Set `janus.region` to `ru` or `ir`. Do not keep the China
-  rule list or AliDNS beside that setting. For `ir`, set
+* **Flow:** Set `janus.region` to `ru` or `ir` and replace the rule list
+  with the matching template in the example. For `ir`, set
   `janus.dns.domestic.resolvers` to an encrypted resolver that answers
   inland names. Rebuild on the build host and deploy.
 * **Drives:** FR-PRX-026, FR-PRX-027, FR-PRX-028, FR-DNS-012

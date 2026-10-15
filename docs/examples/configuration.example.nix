@@ -163,6 +163,14 @@
   };
 
   ############################################################################
+  # Reference region: cn (mainland China), ru (Russia), ir (Iran).
+  # docs/21-reference-regions.md. ir also sets janus.dns.domestic.resolvers.
+  # Changing this is a rebuild. It is not a hot override.
+  ############################################################################
+
+  janus.region = "cn";
+
+  ############################################################################
   # Proxy (circumvention)
   ############################################################################
 
@@ -221,21 +229,42 @@
 
     defaultTarget = "group:Auto";                          # Auto = url-test over everything
 
-    # China domestic rules. Russia and Iran presets are docs/21-reference-regions.md.
-    # janus.region is specified there and is not an option in this tree yet.
+    # Unset rules stay empty, and traffic follows defaultTarget.
+    # This list is the cn template (docs/21 §4). For ru or ir, replace it
+    # with the commented list and set janus.region to match.
     rules = [
       { match = { geosite = [ "private" ]; geoip = [ "private" ]; }; target = "direct"; }
-      { match = { geosite = [ "cn" ]; };                               target = "direct"; }
-      { match = { geoip   = [ "cn" ]; };                               target = "direct"; }
+      { match = { geosite = [ "cn" "geolocation-cn" ]; };              target = "direct"; }
+      { match = { geoip = [ "cn" ]; };                                 target = "direct"; }
       { match = { geosite = [ "category-ads-all" ]; };                 target = "block"; }
 
-      /* { match = { geosite = [ "telegram" ]; geoip = [ "telegram" ]; }; target = "group:Telegram"; } */
-      /* { match = { domainSuffix = [ "gemini.google.com" "generativelanguage.googleapis.com" ]; }; target = "group:Gemini"; } */
-      /* { match = { domainSuffix = [ "anthropic.com" "claude.ai" ]; };  target = "group:Claude"; } */
-      /* { match = { geosite = [ "netflix" ]; };                          target = "group:Netflix"; } */
-      /* { match = { geosite = [ "youtube" ]; };                          target = "group:YouTube"; } */
-      /* { match = { geosite = [ "github" ]; };                           target = "group:GitHub"; } */
+      # Usage templates. sing-box rejects strategy fallback (ADR-0006).
+      # { match = { geosite = [ "telegram" ]; geoip = [ "telegram" ]; }; target = "group:Telegram"; }
+      # { match = { domainSuffix = [ "gemini.google.com" "generativelanguage.googleapis.com" ]; }; target = "group:Gemini"; }
+      # { match = { domainSuffix = [ "anthropic.com" "claude.ai" ]; };  target = "group:Claude"; }
+      # { match = { geosite = [ "netflix" ]; };                          target = "group:Netflix"; }
+      # { match = { geosite = [ "youtube" ]; };                          target = "group:YouTube"; }
+      # { match = { geosite = [ "github" ]; };                           target = "group:GitHub"; }
     ];
+
+    # Russia. Replace rules above. Also set janus.region = "ru".
+    # rules = [
+    #   { match = { geosite = [ "private" ]; geoip = [ "private" ]; }; target = "direct"; }
+    #   { match = { domainSuffix = [ "ru" "su" "xn--p1ai" ]; };        target = "direct"; }
+    #   { match = { geosite = [ "category-ru" ]; };                    target = "direct"; }
+    #   { match = { geoip = [ "ru" ]; };                               target = "direct"; }
+    #   { match = { geosite = [ "category-ads-all" ]; };               target = "block"; }
+    # ];
+
+    # Iran. Replace rules above. Also set janus.region = "ir" and
+    # janus.dns.domestic.resolvers.
+    # rules = [
+    #   { match = { geosite = [ "private" ]; geoip = [ "private" ]; }; target = "direct"; }
+    #   { match = { domainSuffix = [ "ir" ]; };                        target = "direct"; }
+    #   { match = { geosite = [ "ir" ]; };                             target = "direct"; }
+    #   { match = { geoip = [ "ir" ]; };                               target = "direct"; }
+    #   { match = { geosite = [ "category-ads-all" ]; };               target = "block"; }
+    # ];
   };
 
   ############################################################################
@@ -245,7 +274,7 @@
   janus.dns = {
     carrierResolvers = "never";
     encryption       = "prefer";
-    domestic.resolvers = [ "https://dns.alidns.com/dns-query" "https://doh.pub/dns-query" ];
+    # domestic.resolvers and domestic.domains follow janus.region.
     remote.resolvers   = [ "https://1.1.1.1/dns-query" "https://dns.google/dns-query" ];
     fakeIp.enable      = "auto";
     ipv6Answers        = "strip-for-proxied";

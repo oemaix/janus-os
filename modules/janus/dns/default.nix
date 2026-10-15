@@ -21,13 +21,13 @@ in {
     };
     domestic.resolvers = mkOption {
       type = types.listOf types.str;
-      default = ["https://dns.alidns.com/dns-query" "tls://dot.pub"];
-      description = "Domestic resolvers.";
+      defaultText = "the resolvers for janus.region (docs/21); empty for ir";
+      description = "Domestic resolvers. Unset, these follow janus.region. ir has none until this list is set.";
     };
     domestic.domains = mkOption {
       type = types.listOf types.str;
-      default = ["geosite:cn" "geosite:geolocation-cn"];
-      description = "Names sent to the domestic resolvers.";
+      defaultText = "the domestic names for janus.region (docs/21)";
+      description = "Names sent to the domestic resolvers. Unset, these follow janus.region.";
     };
     domestic.ecs = mkOption {
       type = types.enum ["allow" "strip"];
@@ -66,8 +66,8 @@ in {
     };
     fakeIp.exclude = mkOption {
       type = types.listOf types.str;
-      default = ["geosite:cn" "*.lan" "geosite:private"];
-      description = "Names that receive real answers.";
+      defaultText = "the domestic names for janus.region, plus *.lan and geosite:private";
+      description = "Names that receive real answers. Unset, these follow janus.region.";
     };
     ipv6Answers = mkOption {
       type = types.enum ["keep" "strip-for-proxied" "strip-all"];

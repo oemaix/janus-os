@@ -20,6 +20,11 @@ Read this file before answering a question about using Janus OS.
   On the board, `janus deploy` exits 2 and names `janus-build`. Hot
   overrides cover an existing subscription URL, a static lease on an
   existing LAN, and an existing Wi-Fi passphrase.
+- `janus.region` is `cn` (default), `ru`, or `ir`. It selects domestic DNS
+  and the `blockQuic` default. That reject follows direct rules; it is
+  not a drop of every UDP/443. `janus.proxy.rules` stays empty until
+  written. The example has the `cn`, `ru`, and `ir` lists. `ir` requires
+  `janus.dns.domestic.resolvers`. The region is not a hot override.
 - `janus.monitoring.audit.enable` defaults to false. With it set,
   `janus audit stop` pauses recording without a rebuild. The log is
   JSON Lines of connection metadata on the state partition.

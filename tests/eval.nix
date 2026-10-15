@@ -506,7 +506,11 @@ in {
       grep -q 'priority -200' ${markFile}
       grep -q 'dport 853 reject' ${markFile}
       grep -q '1.1.1.1' ${markFile}
-      grep -q 'udp dport 443 reject' ${markFile}
+      if grep -q 'udp dport 443 reject' ${markFile}; then
+        echo "QUIC is dropped for every LAN destination" >&2
+        exit 1
+      fi
+      jq -e 'any(.route.rules[]; .network == "udp" and .port == [443] and .action == "reject")' ${engine} >/dev/null
       if grep -q 'hook forward' ${markFile}; then
         echo "DoT and DoH rejects are still on the forward hook" >&2
         exit 1
@@ -521,7 +525,6 @@ in {
       test -s ${geo}/geosite-private.srs
       test -s ${geo}/geosite-cn.srs
       test -s ${geo}/geosite-geolocation-cn.srs
-      test -s ${geo}/geoip-private.srs
       grep -a -F -q 'dest}.partial' ${proxyBin}
       if grep -a -F -q 'rm -f "/var/lib/janus/geodata/' ${proxyBin}; then
         echo "geo refresh deletes the live rule set" >&2
@@ -1843,4 +1846,92 @@ in {
       janus.access.web.zones = ["missing"];
     }
   ];
+  eval-region-ru = let
+    os = mk [
+      base
+      {
+        janus.region = "ru";
+        janus.proxy.enable = true;
+      }
+    ];
+    model = os.config.environment.etc."janus/proxy-model.json".source;
+  in
+    pkgs.runCommand "eval-region-ru" {
+      nativeBuildInputs = [pkgs.jq];
+    } ''
+      jq -e '.blockQuic == true' ${model} >/dev/null
+      jq -e '.dns.domestic.resolvers == ["https://common.dot.dns.yandex.net/dns-query","tls://common.dot.dns.yandex.net"]' ${model} >/dev/null
+      jq -e '.dns.domestic.domains == ["ru","su","xn--p1ai","geosite:category-ru"]' ${model} >/dev/null
+      jq -e '.rules | length == 0' ${model} >/dev/null
+      echo ok > "$out"
+    '';
+  eval-region-ir = let
+    os = mk [
+      base
+      {
+        janus.region = "ir";
+        janus.dns.domestic.resolvers = ["https://dns.example.ir/dns-query"];
+        janus.proxy.enable = true;
+      }
+    ];
+    model = os.config.environment.etc."janus/proxy-model.json".source;
+    sources = os.config.environment.etc."janus/geodata-sources.json".text;
+    engine = os.config.system.build.janusEngineConfig;
+  in
+    pkgs.runCommand "eval-region-ir" {
+      nativeBuildInputs = [pkgs.jq];
+    } ''
+      jq -e '.blockQuic == false' ${model} >/dev/null
+      jq -e '.dns.domestic.resolvers == ["https://dns.example.ir/dns-query"]' ${model} >/dev/null
+      jq -e '.dns.domestic.domains == ["ir","geosite:ir"]' ${model} >/dev/null
+      jq -e '.rules | length == 0' ${model} >/dev/null
+      jq -e '.geodataSources.tags["geosite-ir"] | test("Chocolate4U/Iran-sing-box-rules")' ${model} >/dev/null
+      echo ${lib.escapeShellArg sources} | grep -q 'Chocolate4U/Iran-sing-box-rules/rule-set/geosite-ir.srs'
+      jq -e '.route.rule_set[] | select(.tag == "geosite-ir") | .url | test("Chocolate4U/Iran-sing-box-rules")' ${engine} >/dev/null
+      echo ok > "$out"
+    '';
+  eval-region-ir-off = pass "eval-region-ir-off" [
+    base
+    {janus.region = "ir";}
+  ];
+  eval-region-ir-empty = fail "eval-region-ir-empty" [
+    base
+    {
+      janus.region = "ir";
+      janus.proxy.enable = true;
+    }
+  ];
+  eval-region-replace = let
+    os = mk [
+      base
+      {
+        janus.region = "ru";
+        janus.proxy.enable = true;
+        janus.proxy.rules = [
+          {
+            match.geosite = ["cn"];
+            target = "direct";
+          }
+        ];
+      }
+    ];
+    model = os.config.environment.etc."janus/proxy-model.json".source;
+    engine = os.config.system.build.janusEngineConfig;
+  in
+    pkgs.runCommand "eval-region-replace" {
+      nativeBuildInputs = [pkgs.jq];
+    } ''
+      jq -e '.rules | length == 1 and .[0].match.geosite == ["cn"]' ${model} >/dev/null
+      if jq -e 'any(.rules[]; .match.geosite == ["category-ru"])' ${model} >/dev/null; then
+        echo "explicit rules were merged with the ru preset" >&2
+        exit 1
+      fi
+      jq -e '
+        .route.rules as $r
+        | ($r | to_entries | map(select(any((.value.rule_set // [])[]; . == "geosite-cn"))) | .[0].key) as $direct
+        | ($r | to_entries | map(select(.value.network == "udp" and .value.action == "reject")) | .[0].key) as $quic
+        | ($direct != null) and ($quic != null) and ($direct < $quic)
+      ' ${engine} >/dev/null
+      echo ok > "$out"
+    '';
 }

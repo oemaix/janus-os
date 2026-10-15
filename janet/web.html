@@ -48,7 +48,7 @@ button.on, .tab.on { background: var(--ink); color: var(--paper); }
 .box { padding: 12px; margin-top: 12px; }
 .box.alarm { border-width: 2px; }
 .row { display: flex; gap: 16px; align-items: center; border-top: 1px solid var(--ink); padding: 8px 0; }
-.row span:first-child { min-width: 10rem; }
+.row span:first-child, .row label { min-width: 10rem; }
 .value, input, select, pre { font-family: ui-monospace, monospace; }
 input, select { padding: 8px; min-width: 12rem; }
 pre { white-space: pre-wrap; margin: 8px 0 0; }
@@ -73,7 +73,7 @@ button:focus, input:focus, select:focus, .tab:focus { outline: 2px solid var(--i
     <div class="row"><span>host</span><span class="value" id="host"></span></div>
     <div class="row"><span>fingerprint</span><span class="value" id="fp"></span></div>
     <form id="login-form" action="/login" method="post">
-      <div class="row"><span>passphrase</span><input name="passphrase" type="password" autocomplete="off"></div>
+      <div class="row"><label for="passphrase">passphrase</label><input id="passphrase" name="passphrase" type="password" autocomplete="off"></div>
       <div class="actions"><button type="submit">enter</button></div>
     </form>
     <div id="login-msg"></div>

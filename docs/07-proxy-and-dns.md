@@ -162,8 +162,9 @@ themselves when `via = "direct"`).
   into interception. The engine binds to no specific WAN by default;
   `janus.proxy.egressWan = "<wan>"` pins it.
 * QUIC (UDP 443) to proxied destinations is passed through the tunnel by
-  default; `janus.proxy.blockQuic = true` rejects it so clients fall back to
-  TCP where the tunnel handles it better.
+  default. `janus.proxy.blockQuic = true` rejects it after the direct
+  rules, in the engine, so a flow that matched `direct` keeps QUIC.
+  nftables does not drop every UDP/443 from the LAN.
 * Per-LAN opt-out (`proxied = false`) and per-rule `sourceLan` cover mixed
   households (FR-PRX-023).
 
@@ -256,8 +257,7 @@ the build host) and refreshes them with Geo data.
   tag referenced anywhere (rules, DNS sets, exclusions). Unreferenced
   categories are not shipped (slimness). A tag is fetched at build time
   when it has a sha256 pin (`janus.proxy.geodata.hashes`, which overrides
-  the built-in pins for `geosite-private`, `geosite-cn`, and
-  `geosite-geolocation-cn`). The sing-geoip rule-set branch does not
+  the built-in pins, including the reference-region tags in *21*). The sing-geoip rule-set branch does not
   publish `geoip-private`, so Janus compiles that set from the private
   ranges. A referenced tag with no pin is copied from the image when the
   image has it, and otherwise downloaded on the router.
@@ -267,6 +267,8 @@ the build host) and refreshes them with Geo data.
   leaves the previous file in place.
 * Source repositories are configurable (`janus.proxy.geodata.sources`),
   defaulting to the widely used community sets for the chosen engine.
+  `geodata.sources.tags.<file>` is the full URL of one rule-set file.
+  The `ir` preset uses that for Chocolate4U `geosite-ir` (*21* §4.3).
 
 ## 9. Operator interface
 

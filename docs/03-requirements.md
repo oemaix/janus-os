@@ -111,7 +111,7 @@ Key words MUST / SHOULD / MAY follow RFC 2119. Priority: **P1** required for
 | FR-PRX-024 | Geo data MUST be embedded at build and refreshable at runtime as data. | P1 |
 | FR-PRX-025 | Rule sets in the engine's native compiled format SHOULD be used for performance. | P2 |
 | FR-PRX-026 | `janus.region` MUST be `cn` (default), `ru`, or `ir`. It selects the preset in *21*. Any other value MUST fail evaluation. The region MUST NOT be a hot override. | P1 |
-| FR-PRX-027 | When `janus.proxy.rules` is unset, the rule list MUST be the *21* preset for `janus.region`. An explicit list MUST replace that preset and MUST NOT be merged with it. `blockQuic` MUST default to true for `ru` and false for `cn` and `ir`, unless set. | P1 |
+| FR-PRX-027 | When `janus.proxy.rules` is unset, the rule list MUST be empty. The example MUST ship the three lists in *21* §4, with `cn` active and `ru` and `ir` commented. The module MUST NOT insert a list because `janus.region` is set. `blockQuic` MUST default to true for `ru` and false for `cn` and `ir`, unless set. | P1 |
 | FR-PRX-028 | A Geo rule-set tag MUST be fetchable from a per-tag URL (`janus.proxy.geodata.sources.tags`) so one tag can leave the SagerNet base. The `ir` preset's domain set MUST be the Chocolate4U `geosite-ir` file named in *21* §4.3. | P1 |
 
 ## 7. DNS (DNS)
@@ -129,7 +129,7 @@ Key words MUST / SHOULD / MAY follow RFC 2119. Priority: **P1** required for
 | FR-DNS-009 | DNS MUST be implemented by the selected proxy engine. A second DNS stack (mosdns, chinadns-ng, or a standalone forwarder that owns policy) MUST NOT be required. | P1 |
 | FR-DNS-010 | Fake-IP MUST be a user-facing choice: `auto` (default), `on`, or `off`, independent of which engine is selected. | P1 |
 | FR-DNS-011 | `janus dns check` MUST probe the live arrangement for leaks and poisoning: foreign name answered with a bogus or domestic-only address, domestic name failing closed, plaintext DNS bypass, unexpected AAAA on a proxied name. The command reports; it does not change policy. | P1 |
-| FR-DNS-012 | Domestic resolvers, domestic domain sets, and fake-IP exclusions MUST follow the *21* preset unless that option is set. `region = "ir"` with an empty `domestic.resolvers` MUST fail evaluation. A `ru` or `ir` configuration that still names `cn` or `geolocation-cn` MUST warn at evaluation. | P1 |
+| FR-DNS-012 | Domestic resolvers, domestic domain sets, and fake-IP exclusions MUST follow the *21* preset unless that option is set. `region = "ir"` with an empty `domestic.resolvers` MUST fail evaluation when `janus.proxy.enable` is true, and MUST evaluate when the proxy is off. | P1 |
 
 ## 8. Monitoring (MON)
 

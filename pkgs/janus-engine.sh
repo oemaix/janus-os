@@ -292,15 +292,25 @@ geo_base() {
   fi
 }
 
+geo_url() {
+  tag=$1
+  specific=$(jq -r --arg t "$tag" '.tags[$t] // empty' "$sources")
+  if [ -n "$specific" ]; then
+    printf '%s\n' "$specific"
+    return
+  fi
+  printf '%s/%s.srs\n' "$(geo_base "$tag")" "$tag"
+}
+
 download_tag() {
   tag=$1
   dest="/var/lib/janus/geodata/${tag}.srs"
-  base=$(geo_base "$tag")
+  url=$(geo_url "$tag")
   curl_args=(-fsSL --retry 2 --max-time 60 -o "${dest}.partial")
   if [ -d /sys/class/net/tun0 ]; then
     curl_args+=(--socks5-hostname 127.0.0.1:2080)
   fi
-  if ! curl "${curl_args[@]}" -- "${base}/${tag}.srs"; then
+  if ! curl "${curl_args[@]}" -- "$url"; then
     rm -f "${dest}.partial"
     echo "janus: geo download failed for ${tag}" >&2
     return 1

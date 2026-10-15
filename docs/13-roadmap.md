@@ -123,6 +123,10 @@ tree does not mean that behavior exists. Stubs are not finished features.
 * `janet/janus.janet` normalizes share links, Clash, and sing-box, matches
   with regex, glob, and PEG, and renders sing-box or Xray. The image
   build runs `sing-box check` or `xray run -test`.
+* `janus.region` is `cn` (default), `ru`, or `ir` (*21*, D-0034). It
+  selects domestic DNS and the `blockQuic` default. `janus.proxy.rules`
+  stays empty until written. The example has the three lists. `ir`
+  requires `janus.dns.domestic.resolvers`.
 * `janus.proxy.enable` installs the selected engine and redirects LAN DNS
   to it. sing-box marks proxied LAN traffic into table 2022 (D-0030).
   Xray tproxies that traffic to port 12345 (D-0031).
@@ -170,10 +174,6 @@ tree does not mean that behavior exists. Stubs are not finished features.
 
 ## 3. Notes for later implementation
 
-* Reference regions (`janus.region`, *21*, D-0034) are specified and not
-  implemented. Do not treat the China lists in the example as coverage of
-  Russia or Iran. The manual does not mention `janus.region` until the
-  option exists.
 * Accepted ADRs bind. They are listed in `docs/adr/` and are not restated here.
 * Undecided choices, if any, are *18* §2. Do not invent an answer for one.
 * The Yanyu profile names `lan1`–`lan4` by PCI address (*10* §3.1). It

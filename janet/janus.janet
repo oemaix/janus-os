@@ -764,6 +764,18 @@
       (array/push tags (string "geosite-" (string/slice name 8)))))
   (distinct tags))
 
+(defn rule-set-url [model tag]
+  (def sources (or (get model "geodataSources") @{}))
+  (def tags (or (get sources "tags") @{}))
+  (def specific (get tags tag))
+  (if specific
+    specific
+    (let [base
+          (if (string/has-prefix? "geoip-" tag)
+            (or (get sources "geoip") "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set")
+            (or (get sources "geosite") "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set"))]
+      (string base "/" tag ".srs"))))
+
 (defn render [model nodes rule-set-mode]
   (def outbounds @[])
   (each node nodes (array/push outbounds (outbound-for-node node)))
@@ -840,10 +852,11 @@
   (def rules @[
     @{:action "sniff"}
     @{:port @[53] :action "hijack-dns"}])
-  (when (get model "blockQuic")
-    (array/push rules @{:network "udp" :port @[443] :action "reject"}))
   (each rule (or (get model "rules") @[])
     (array/push rules (one-rule rule)))
+  # After direct rules, so a domestic QUIC flow is not rejected.
+  (when (get model "blockQuic")
+    (array/push rules @{:network "udp" :port @[443] :action "reject"}))
   (def final-target (or (get model "defaultTarget") "group:Auto"))
   (when (= final-target "block")
     (array/push rules @{:action "reject"}))
@@ -852,7 +865,7 @@
     (array/push sets
       (if (= rule-set-mode "local")
         @{:type "local" :tag tag :format "binary" :path (string "/var/lib/janus/geodata/" tag ".srs")}
-        @{:type "remote" :tag tag :format "binary" :url (string "https://raw.githubusercontent.com/SagerNet/" (if (string/has-prefix? "geoip-" tag) "sing-geoip" "sing-geosite") "/rule-set/" tag ".srs")})))
+        @{:type "remote" :tag tag :format "binary" :url (rule-set-url model tag)})))
   (def final
     (if (= final-target "block") "direct" (or (rule-outbound final-target) "Auto")))
   @{
@@ -996,6 +1009,8 @@
     @{:type "field" :inboundTag @["dns-tcp" "dns-udp4" "dns-udp6"] :outboundTag "dns-out"}])
   (each rule (or (get model "rules") @[])
     (array/push rules (xray-rule model rule)))
+  (when (get model "blockQuic")
+    (array/push rules @{:type "field" :network "udp" :port "443" :outboundTag "block"}))
   (def final-target (or (get model "defaultTarget") "group:Auto"))
   (def final (xray-dispatch model final-target))
   (def catch @{:type "field" :network "tcp,udp"})
@@ -1028,7 +1043,10 @@
         :settings @{:address "127.0.0.1"}}
       @{:tag "tproxy-in" :listen "0.0.0.0" :port 12345 :protocol "dokodemo-door"
         :settings @{:network "tcp,udp" :followRedirect true}
-        :sniffing @{:enabled true :destOverride (if fake-on @["fakedns" "http" "tls"] @["http" "tls"])}
+        :sniffing @{:enabled true :destOverride
+                    (array/concat
+                      (if fake-on @["fakedns" "http" "tls"] @["http" "tls"])
+                      (if (get model "blockQuic") @["quic"] @[]))}
         :streamSettings @{:sockopt @{:tproxy "tproxy"}}}
       # TCP/53 is redirected. UDP/53 is tproxied, one socket per family.
       @{:tag "dns-tcp" :listen "::" :port 5353 :protocol "dokodemo-door"

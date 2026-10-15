@@ -15,6 +15,7 @@
     ./remote-access
     ./access
     ./system
+    ./region.nix
     ./secrets.nix
     ./deploy.nix
   ];

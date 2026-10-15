@@ -402,17 +402,8 @@ in {
           };
         };
       });
-      default = [
-        {
-          match.geosite = ["private"];
-          target = "direct";
-        }
-        {
-          match.geoip = ["private"];
-          target = "direct";
-        }
-      ];
-      description = "Ordered routing rules. The default is the region-agnostic private-network exception.";
+      default = [];
+      description = "Ordered routing rules. Unset is an empty list, and traffic follows defaultTarget. The example ships the cn, ru, and ir lists.";
     };
     exceptions = mkOption {
       type = types.listOf types.str;
@@ -426,8 +417,8 @@ in {
     };
     blockQuic = mkOption {
       type = types.bool;
-      default = false;
-      description = "Reject QUIC so clients fall back to TCP.";
+      defaultText = "true when janus.region is ru, otherwise false";
+      description = "Reject QUIC that did not match a direct rule, so clients fall back to TCP. The ru preset defaults this to true.";
     };
     geodata.refresh = mkOption {
       type = types.str;
@@ -437,7 +428,7 @@ in {
     geodata.sources = mkOption {
       type = types.attrs;
       default = {};
-      description = "Geo data sources. Empty uses the release defaults.";
+      description = "Geo data sources. Empty uses the release defaults. tags.<file> is the full URL of one rule-set file and replaces the base URL for that file.";
     };
     geodata.hashes = mkOption {
       type = types.attrsOf types.str;

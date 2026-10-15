@@ -48,7 +48,7 @@ learning path: copy, edit values, build.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `region` | `cn\|ru\|ir` | `cn` | Reference region. Selects the domestic routing and DNS preset in *21*. Not a hot override. Specified, not implemented. |
+| `region` | `cn\|ru\|ir` | `cn` | Reference region. Selects the domestic routing and DNS preset in *21*. Not a hot override. |
 
 ## 2. `janus.hardware`
 
@@ -123,7 +123,7 @@ See *06* §7–8: `zones`, `policies`, `rules`, `services`, `portForwards`,
 | `subscriptions.<name>` | submodule | | *07* §3.2 |
 | `nodes.<name>` | submodule | | Manual nodes; protocol-specific submodules `vless`, `trojan`, `shadowsocks`, `hysteria2`, `tuic` |
 | `groups.<name>` | submodule | | *07* §4 |
-| `rules` | list | preset for `janus.region` | *07* §5, *21*. Unset uses the preset. An explicit list replaces it. |
+| `rules` | list | `[]` | *07* §5, *21*. Empty until written. The example has the `cn`, `ru`, and `ir` lists. |
 | `exceptions` | list | private, iptv | `proxy-all` exceptions |
 | `egressWan` | str/null | `null` | Pin engine egress to a WAN |
 | `blockQuic` | bool | `false`; `true` when `region` is `ru` | *21* |

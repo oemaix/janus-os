@@ -113,6 +113,9 @@
       forwarders = dns.forwarders;
       bogusAnswers = dns.bogusAnswers;
     };
+    geodataSources = {
+      inherit (sources) geosite geoip tags;
+    };
   };
 
   nodeOf = name: n: {
@@ -241,29 +244,49 @@
   geoips = lib.unique (lib.concatMap (rule: rule.match.geoip or []) model.rules);
   geoTags = map (n: "geosite-${n}") geosites ++ map (n: "geoip-${n}") geoips;
 
+  userSources = cfg.geodata.sources;
   sources =
     {
       geosite = "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set";
       geoip = "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set";
     }
-    // cfg.geodata.sources;
+    // removeAttrs userSources ["tags"]
+    // {
+      tags =
+        {
+          geosite-ir = "https://raw.githubusercontent.com/Chocolate4U/Iran-sing-box-rules/rule-set/geosite-ir.srs";
+        }
+        // (userSources.tags or {});
+    };
 
-  # Pins are the rule-set files as of 2026-10-13. geodata.hashes overrides them.
+  tagUrl = tag:
+    if sources.tags ? ${tag}
+    then sources.tags.${tag}
+    else "${
+      if lib.hasPrefix "geoip-" tag
+      then sources.geoip
+      else sources.geosite
+    }/${tag}.srs";
+
+  # Pins are the rule-set files as of 2026-10-13, plus the preset tags
+  # measured on 2026-10-16 (docs/21). geodata.hashes overrides them.
   # sing-geoip's rule-set branch has no geoip-private.srs, so that tag is compiled below.
   defaultPins = {
     geosite-private = "sha256-JgSRJD4CZuW6VD9QnKfxOwfW9MLCat4/Z13eoWYfMhM=";
     geosite-cn = "sha256-fl7aoxVpGOu3MmKfe0qz8DBAuZQEVkOPl2wgRgM/wVw=";
     geosite-geolocation-cn = "sha256-zVOuqBkm1GscCqE5rffd/u10s9aRO0oBSDspbk6K9Ng=";
+    geosite-category-ads-all = "sha256-hOLteWF6SSyxra8ovwxZoaQq+FSrk1YFuoTg3ro4bIg=";
+    geosite-category-ru = "sha256-VGyEFyPfZ0BxmHqQ4yGtjF8OnOD8DuRgwlj1R9MIaFc=";
+    geosite-ir = "sha256-SuD3qQ/D8Vau+PKihJU3LOuuv4vrNch2+xcF+nhHb4I=";
+    geoip-cn = "sha256-ga2lyv2dgxrcSHdvKc3+VclxPZKHyu753pJe8w9mzOQ=";
+    geoip-ru = "sha256-vcpc20TNzwlAAB5ZUjhoIqb0/6iyyO6gA0Cqb1hcf50=";
+    geoip-ir = "sha256-Q6AiIGYZPBTzQ8hV29j2djNRFsBAfEtGTeXz7SIemxc=";
   };
   pins = defaultPins // cfg.geodata.hashes;
   pinned = lib.filterAttrs (tag: _: builtins.elem tag geoTags) pins;
   fetched = lib.mapAttrs (tag: hash:
     pkgs.fetchurl {
-      url = "${
-        if lib.hasPrefix "geoip-" tag
-        then sources.geoip
-        else sources.geosite
-      }/${tag}.srs";
+      url = tagUrl tag;
       sha256 = hash;
     })
   pinned;
@@ -378,9 +401,6 @@
     '')
     (lib.optionalString dns.blockKnownDoH ''
       iifname { ${bridgeSet} } ip daddr { ${lib.concatStringsSep ", " doh} } tcp dport 443 reject
-    '')
-    (lib.optionalString cfg.blockQuic ''
-      iifname { ${bridgeSet} } udp dport 443 reject
     '')
   ]);
 in {
