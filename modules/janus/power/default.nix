@@ -41,29 +41,37 @@
   };
 
   addresses = map (name: hw.peripherals.${name}.match.i2cAddress) exposed;
-  dtbo = pkgs.runCommand "janus-ina219.dtbo" {nativeBuildInputs = [pkgs.dtc];} ''
-    cat > ina219.dts << EOF
+  # The overlay is data. dtc runs on the build machine, and only a
+  # Raspberry Pi image installs the file. Another board uses the hwmon
+  # node that already exists.
+  dts = ''
     /dts-v1/;
     /plugin/;
     / {
         compatible = "brcm,bcm2835";
     ${lib.concatImapStrings (i: addr: ''
-        fragment@${toString (i - 1)} {
-            target = <&i2c_arm>;
-            __overlay__ {
-                #address-cells = <1>;
-                #size-cells = <0>;
-                ina219@${lib.removePrefix "0x" addr} {
-                    compatible = "ti,ina219";
-                    reg = <${addr}>;
-                    shunt-resistor = <100000>;
-                    status = "okay";
-                };
-            };
-        };
-      '')
-      addresses}
+      fragment@${toString (i - 1)} {
+          target = <&i2c_arm>;
+          __overlay__ {
+              #address-cells = <1>;
+              #size-cells = <0>;
+              ina219@${lib.removePrefix "0x" addr} {
+                  compatible = "ti,ina219";
+                  reg = <${addr}>;
+                  shunt-resistor = <100000>;
+                  status = "okay";
+              };
+          };
+      };
+    '')
+    addresses}
     };
+  '';
+  dtbo = pkgs.buildPackages.runCommand "janus-ina219.dtbo" {
+    nativeBuildInputs = [pkgs.buildPackages.dtc];
+  } ''
+    cat > ina219.dts << EOF
+    ${dts}
     EOF
     dtc -@ -I dts -O dtb -o "$out" ina219.dts
   '';
@@ -93,6 +101,7 @@ in {
       '';
 
     boot.kernelModules = ["ina2xx"] ++ lib.optionals pi ["i2c-bcm2835"];
+    system.build.janusIna219Dts = lib.mkIf pi dts;
     system.build.janusIna219Dtbo = lib.mkIf pi dtbo;
     janus.board.bootScript = lib.mkIf pi ''
       mkdir -p overlays

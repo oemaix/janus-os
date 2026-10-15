@@ -37,6 +37,7 @@ jobs:
             .#checks.x86_64-linux.eval-hmi-profile \
             .#checks.x86_64-linux.eval-hmi-key \
             .#checks.x86_64-linux.eval-power \
+            .#checks.x86_64-linux.eval-power-x86 \
             .#checks.x86_64-linux.eval-power-unarmed \
             .#checks.x86_64-linux.eval-power-low \
             .#checks.x86_64-linux.eval-power-arm \

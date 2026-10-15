@@ -21,8 +21,11 @@ CI runs the eval checks and the options document
 `limine-bios` runs the image builder's Limine scripts on a GPT disk with
 FAT32 and checks that QEMU BIOS loads the kernel file. `eval-router` checks the generated nftables masquerade, the DHCP client,
 dnsmasq, OpenSSH, and vnstat. `eval-hmi` checks the panel model, the
-Waveshare binding, and `janus reset --state` without `--yes`. `eval-power`
-checks the cell cutoff. `eval-proxy-local` fetches a page through the
+Waveshare binding, and `janus reset --state` without `--yes`. It compiles
+the panel for the machine running the check. `eval-power` checks the cell
+cutoff and compiles the Raspberry Pi overlay with that machine's `dtc`.
+`eval-power-x86` keeps the INA219 on `x86_64-test` and does not install a
+device-tree overlay. `eval-proxy-local` fetches a page through the
 rendered Shadowsocks outbound and a server on `127.0.0.1`. `cli-usage`
 and `cli-init` cover the phase 1 commands. Golden files for the engines
 are still absent.

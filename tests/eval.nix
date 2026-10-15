@@ -909,9 +909,18 @@ in {
         };
       }
     ];
-    conf = os.config.environment.etc."janus/hmi-panel.conf".text;
+    # The Pi image carries an aarch64 panel. This check compiles and runs
+    # the same sources for the machine evaluating it.
+    conf = builtins.unsafeDiscardStringContext os.config.environment.etc."janus/hmi-panel.conf".text;
+    start = builtins.unsafeDiscardStringContext os.config.systemd.services.janus-hmi-panel.serviceConfig.ExecStart;
     boot = builtins.unsafeDiscardStringContext os.config.system.build.janusBoardImage.bootExtra;
     janus = self.packages.${pkgs.stdenv.hostPlatform.system}.janus-cli;
+    panel = pkgs.callPackage ../pkgs/hmi-panel.nix {};
+    snap = pkgs.writeShellApplication {
+      name = "janus-hmi-snapshot";
+      runtimeInputs = with pkgs; [gawk jq iproute2 curl systemd coreutils];
+      text = builtins.readFile ../pkgs/janus-hmi-snapshot.sh;
+    };
   in
     pkgs.runCommand "eval-hmi" {
       nativeBuildInputs = [pkgs.janet];
@@ -935,12 +944,10 @@ in {
         then "yes"
         else "no"
       } = yes
-      printf '%s\n' ${lib.escapeShellArg os.config.systemd.services.janus-hmi-panel.serviceConfig.ExecStart} > unit
+      printf '%s\n' ${lib.escapeShellArg start} > unit
       grep -q '/bin/janus-hmi ' unit
-      panel=$(awk -F '\t' '$1=="bin" && $2=="panel" {print $3}' conf)
-      snap=$(awk -F '\t' '$1=="bin" && $2=="snapshot" {print $3}' conf)
-      "$panel" --self-test
-      "$snap" conf > snap.out
+      ${panel}/bin/janus-hmi-panel --self-test
+      ${snap}/bin/janus-hmi-snapshot conf > snap.out
       grep -q $'uptime\t' snap.out
       grep -q $'tunnel-error\t0' snap.out
       set +e
@@ -994,12 +1001,20 @@ in {
         };
       }
     ];
-    conf = os.config.environment.etc."janus/power.conf".text;
+    conf = builtins.unsafeDiscardStringContext os.config.environment.etc."janus/power.conf".text;
     boot = builtins.unsafeDiscardStringContext os.config.system.build.janusBoardImage.bootExtra;
-    dtbo = os.config.system.build.janusIna219Dtbo;
+    dts = pkgs.writeText "ina219.dts" os.config.system.build.janusIna219Dts;
+    powerBin = pkgs.writeShellApplication {
+      name = "janus-power";
+      runtimeInputs = with pkgs; [gawk coreutils systemd];
+      text = builtins.readFile ../pkgs/janus-power.sh;
+    };
   in
-    pkgs.runCommand "eval-power" {} ''
-      test -s ${dtbo}
+    pkgs.runCommand "eval-power" {
+      nativeBuildInputs = [pkgs.dtc];
+    } ''
+      dtc -@ -I dts -O dtb -o overlay.dtbo ${dts}
+      test -s overlay.dtbo
       cat > conf << 'ENDCONF'
       ${conf}
       ENDCONF
@@ -1042,7 +1057,7 @@ in {
         then "yes"
         else "no"
       } = yes
-      bin=$(awk -F '\t' '$1=="bin" { print $2 }' conf)
+      bin=${powerBin}/bin/janus-power
       field() {
         printf '%s\n' "$1" | awk -F '\t' -v k="$2" '$1 == k { print $2 }'
       }
@@ -1175,6 +1190,44 @@ in {
       echo ok > "$out"
     '';
 
+  eval-power-x86 = let
+    os = mk [
+      base
+      {
+        janus.hardware.peripherals.ups = {
+          class = "power";
+          match.i2cAddress = "0x40";
+        };
+      }
+    ];
+    boot = builtins.unsafeDiscardStringContext (os.config.system.build.janusBoardImage.bootExtra or "");
+    conf = os.config.environment.etc."janus/power.conf".text;
+  in
+    pkgs.runCommand "eval-power-x86" {} ''
+      test ${
+        if (builtins.tryEval os.config.system.build.janusIna219Dtbo).success
+        then "yes"
+        else "no"
+      } = no
+      cat > conf << 'ENDCONF'
+      ${conf}
+      ENDCONF
+      grep -q $'sign\tnegative' conf
+      grep -q $'armed\t1' conf
+      cat > boot << 'ENDBOOT'
+      ${boot}
+      ENDBOOT
+      if grep -q dtoverlay=janus-ina219 boot; then
+        echo "x86 image installed an INA219 overlay" >&2
+        exit 1
+      fi
+      test ${
+        if lib.elem "multi-user.target" os.config.systemd.services.janus-power-guard.wantedBy
+        then "yes"
+        else "no"
+      } = yes
+      echo ok > "$out"
+    '';
   eval-power-low = fail "eval-power-low" [
     base
     {
