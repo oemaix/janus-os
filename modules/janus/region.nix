@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# janus.region selects the domestic routing and DNS preset. docs/21, D-0034.
+# janus.region selects domestic DNS and the blockQuic default. docs/21, D-0034.
 {
   config,
   lib,
@@ -45,7 +45,7 @@ in {
   options.janus.region = mkOption {
     type = types.enum ["cn" "ru" "ir"];
     default = "cn";
-    description = "Reference region. Selects the domestic routing and DNS preset in docs/21. Not a hot override.";
+    description = "Reference region. Selects domestic DNS and the blockQuic default in docs/21. Routing rules stay empty until written. Not a hot override.";
   };
 
   config = {

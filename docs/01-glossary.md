@@ -107,9 +107,9 @@ name, an update schedule, and yields an implicit Group. The option is
 the proxy node. The subscription is the list.
 
 **Reference region** — `cn`, `ru`, or `ir`: the censorship network this
-router is built for. It selects the domestic routing and DNS preset in
-*21*. It is not a language and not an exit-node country. The option is
-`janus.region`.
+router is built for. It selects domestic DNS and the `blockQuic` default
+in *21*. Routing rules stay empty until written. It is not a language
+and not an exit-node country. The option is `janus.region`.
 
 **Rebuild** — Producing a new system closure or Image from the flake and
 deploying it to the Board. Rebuilds happen on the Build host. A rebuild that

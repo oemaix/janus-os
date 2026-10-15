@@ -120,8 +120,9 @@ developer's or user's workstation. The device only carries the results.
 
 Janus OS is a public project. The reference environments are censored
 networks, with mainland China first and Iran and Russia explicitly welcome.
-The tunnel is the same in all three. The shipped domestic preset is China.
-Russia and Iran use the preset in *21*.
+The tunnel is the same in all three. Domestic DNS and the QUIC default
+follow `janus.region`, and the default is China. The routing lists are
+the example templates in *21*.
 The repository itself stays free of credentials, subscription URLs, and
 vendor tokens.
 

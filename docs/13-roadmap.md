@@ -125,8 +125,8 @@ tree does not mean that behavior exists. Stubs are not finished features.
   build runs `sing-box check` or `xray run -test`.
 * `janus.region` is `cn` (default), `ru`, or `ir` (*21*, D-0034). It
   selects domestic DNS and the `blockQuic` default. `janus.proxy.rules`
-  stays empty until written. The example has the three lists. `ir`
-  requires `janus.dns.domestic.resolvers`.
+  stays empty until written. The example has the three lists. With the
+  proxy enabled, `ir` requires `janus.dns.domestic.resolvers`.
 * `janus.proxy.enable` installs the selected engine and redirects LAN DNS
   to it. sing-box marks proxied LAN traffic into table 2022 (D-0030).
   Xray tproxies that traffic to port 12345 (D-0031).

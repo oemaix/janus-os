@@ -22,7 +22,7 @@ in {
     domestic.resolvers = mkOption {
       type = types.listOf types.str;
       defaultText = "the resolvers for janus.region (docs/21); empty for ir";
-      description = "Domestic resolvers. Unset, these follow janus.region. ir has none until this list is set.";
+      description = "Domestic resolvers. Unset, these follow janus.region. ir is empty until this list is set. With the proxy enabled, that empty list fails evaluation.";
     };
     domestic.domains = mkOption {
       type = types.listOf types.str;

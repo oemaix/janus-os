@@ -48,7 +48,7 @@ learning path: copy, edit values, build.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `region` | `cn\|ru\|ir` | `cn` | Reference region. Selects the domestic routing and DNS preset in *21*. Not a hot override. |
+| `region` | `cn\|ru\|ir` | `cn` | Reference region. Selects domestic DNS and the `blockQuic` default in *21*. Routing rules stay empty until written. Not a hot override. |
 
 ## 2. `janus.hardware`
 
@@ -153,7 +153,8 @@ serviceName}`, `tags` (list of strings, matchable). Protocol-specific:
 See *07* §7.2. Default set is the `cn` preset: carrier resolvers `never`,
 encryption `prefer`, fake-IP `auto`, `ipv6Answers = "strip-for-proxied"`,
 `interceptPlaintext = true`. `ru` and `ir` replace the domestic fields
-(*21*). `ir` has no built-in domestic resolver.
+(*21*). `ir` has no built-in domestic resolver. With the proxy enabled,
+an empty list fails evaluation.
 
 ## 8. `janus.monitoring`
 

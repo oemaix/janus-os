@@ -88,10 +88,13 @@ Rule order in every template:
 5. `geosite:category-ads-all` → `block`
 
 The default target is unchanged (`group:Auto` unless the user set it).
-Domestic names are the same set in routing, in `domestic.domains`, and in
-`fakeIp.exclude`, so a name that goes direct is also resolved on the
-domestic resolver. A suffix in `domestic.domains` is already rendered as
-a domain suffix. Fake-IP exclusion writes the same suffix as `*.example`.
+Each template uses the same domestic names as `domestic.domains`.
+`fakeIp.exclude` is those names, written as `*.example` for a suffix,
+plus `*.lan` and `geosite:private`. A suffix in `domestic.domains` is
+already rendered as a domain suffix. With the matching list written, a
+domestic name is resolved on the domestic resolver and leaves direct.
+With `janus.proxy.rules` empty, the module still resolves that name
+domestically, and the connection follows `defaultTarget`.
 
 Tags below are the category passed to `geosite:` / `geoip:`. The file name
 is `geosite-<tag>.srs` or `geoip-<tag>.srs`, which is the rule this tree
@@ -108,8 +111,9 @@ already uses.
 | `blockQuic` | `false` |
 | Source | SagerNet sing-geosite and sing-geoip, as today |
 
-`geolocation-cn` is on the DNS domestic set today and is on the routing
-preset as well, so those names are not resolved inland and then proxied.
+`geolocation-cn` is on the DNS domestic set, and on the `cn` list in the
+example. Copying that list is what keeps those names from being resolved
+inland and then sent through the tunnel.
 
 ### 4.2 `ru`
 
@@ -141,7 +145,7 @@ user can set `blockQuic = false`.
 | Suffixes | `ir` |
 | GeoSite | `ir` |
 | GeoIP | `ir` |
-| Domestic resolvers | none. Evaluation fails until the user sets them. |
+| Domestic resolvers | none. With the proxy enabled, evaluation fails until the user sets them. |
 | `blockQuic` | `false` |
 | GeoSite source | Chocolate4U `geosite-ir.srs` |
 | GeoIP source | SagerNet sing-geoip `geoip-ir.srs` |
@@ -152,18 +156,18 @@ and `geosite-ir.srs` is not published there (404). Chocolate4U
 list this preset uses. `geoip-ir.srs` on sing-geoip is about 13 KiB and
 stays the address list.
 
-`geodata.sources` today is one base URL for every GeoSite tag. The `ir`
-file does not live on that base. Implementation adds a per-tag URL,
-`janus.proxy.geodata.sources.tags.<file>`, which replaces
-`<base>/<file>.srs` for that file only. The built-in value is:
+One base URL still covers every other GeoSite tag. `geosite-ir` does not
+live on that base. `janus.proxy.geodata.sources.tags.<file>` is the full
+URL of one rule-set file and replaces `<base>/<file>.srs` for that file.
+The built-in value is:
 
 ```
 geosite-ir = "https://raw.githubusercontent.com/Chocolate4U/Iran-sing-box-rules/rule-set/geosite-ir.srs";
 ```
 
 The tag is fetched only when the configuration references `geosite:ir`.
-The implementation records its sha256 next to the other built-in pins.
-This document does not invent that hash.
+Its sha256 pin is in `modules/janus/proxy/lower.nix`, measured on
+2026-10-16.
 
 There is no built-in Iranian resolver. Shecan, Electro, Begzar, and 403
 are anti-filter resolvers: they answer names the filter blocks. Janus

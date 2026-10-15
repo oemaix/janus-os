@@ -89,9 +89,11 @@ requirements it drives (see *03 — Requirements*).
 ### UC-07 Rule-based routing with domestic bypass
 
 * **Actor:** Mei
-* **Flow:** Set traffic mode `rule-based`. Rules: `geosite:cn` and
-  `geoip:cn` → `direct`; `geosite:netflix` → group `Streaming`;
-  `geosite:category-ads` → `block`; default → group `Auto`.
+* **Flow:** Set traffic mode `rule-based` and write the rules. The
+  example's `cn` list sends `geosite:cn`, `geosite:geolocation-cn`, and
+  `geoip:cn` → `direct`, and `geosite:category-ads-all` → `block`.
+  `geosite:netflix` → group `Streaming` is a commented usage template.
+  Default → group `Auto`. `janus.region` does not write this list.
 * **Drives:** FR-PRX-020..025
 
 ### UC-08 DNS that does not trust the carrier

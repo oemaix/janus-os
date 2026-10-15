@@ -118,12 +118,14 @@ Option names are in
 the image.
 
 `janus.region` is `cn` (the default), `ru`, or `ir`. It chooses the
-domestic resolver and, for `ru`, rejects QUIC that did not match a
-direct rule unless `janus.proxy.blockQuic` is set. Routing rules stay empty until the
-configuration writes them. The example has the `cn` list, with `ru` and
-`ir` commented beside it. `ir` has no built-in domestic resolver: set
-`janus.dns.domestic.resolvers` to an encrypted resolver for inland names.
-Changing the region is a rebuild, not a hot override.
+domestic resolver. For `ru`, `janus.proxy.blockQuic` defaults to true
+and rejects QUIC that did not match a direct rule. Set it to false to
+keep QUIC. Routing rules stay empty until the configuration writes
+them. The example has the `cn` list, with `ru` and `ir` commented
+beside it. `ir` has no built-in domestic resolver: set
+`janus.dns.domestic.resolvers` to an encrypted resolver for inland
+names when the proxy is enabled. Changing the region is a rebuild, not
+a hot override.
 
 ## Day to day
 

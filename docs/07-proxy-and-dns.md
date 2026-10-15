@@ -141,9 +141,9 @@ Rule evaluation order is list order; the renderer emits engine rules in the
 same order. `direct` means "leave via the normal WAN routing (default
 route)". `block` means reject (TCP RST / ICMP unreachable) at the engine.
 
-The `cn` rows in the example above are the China reference. Russia and Iran
-use the same rule language and the preset in *21*. That preset is specified
-and not implemented.
+The block above is the rule language. The China, Russia, and Iran lists
+are the templates in the example and in *21* §4. `janus.region` does not
+insert them. An unset `janus.proxy.rules` stays empty.
 
 Terminology (Glossary): the three modes are `bypass`, `rule-based`, and
 `proxy-all`. A rule target may still be `direct`, meaning that one flow
