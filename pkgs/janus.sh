@@ -413,19 +413,28 @@ case "$cmd" in
     sub=${1:-}
     case "$sub" in
       install-age-key)
-        install -d -m 0700 /var/lib/janus/secrets
-        cat > /var/lib/janus/secrets/age.key
-        chmod 0600 /var/lib/janus/secrets/age.key
+        # JANUS_SECRETS_DIR overrides the directory in tests. On the router it is /var/lib/janus/secrets.
+        secrets_dir=${JANUS_SECRETS_DIR:-/var/lib/janus/secrets}
+        install -d -m 0700 "$secrets_dir"
+        cat > "${secrets_dir}/age.key"
+        chmod 0600 "${secrets_dir}/age.key"
         if systemctl cat sops-install-secrets.service >/dev/null 2>&1; then
           systemctl restart sops-install-secrets.service
-          systemctl list-units --failed --no-legend --plain --type=service \
-            | while read -r unit _extra; do
-                case "$unit" in
-                  janus-pppoe-*.service|janus-hostapd-*.service)
-                    systemctl restart "$unit" || true
-                    ;;
-                esac
-              done
+          failed=$(systemctl list-units --failed --no-legend --plain --type=service)
+          printf '%s\n' "$failed" | while read -r unit _extra; do
+            case "$unit" in
+              janus-pppoe-*.service|janus-hostapd-*.service)
+                systemctl restart "$unit" || true
+                ;;
+            esac
+          done
+          # The listener is janus-web-tls and it stops when janus-web restarts, so the page unit comes last.
+          case "$failed" in
+            *janus-web.service*|*janus-web-tls.service*)
+              systemctl restart janus-web.service || true
+              systemctl restart janus-web-tls.service || true
+              ;;
+          esac
         fi
         ;;
       put)

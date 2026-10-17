@@ -195,7 +195,7 @@ in {
     system = pkgs.stdenv.hostPlatform.system;
   in
     pkgs.runCommand "cli-init" {
-      nativeBuildInputs = [self.packages.${system}.janus-build];
+      nativeBuildInputs = [self.packages.${system}.janus-build pkgs.age];
     } ''
       export HOME=$TMPDIR
       janus-build init "$TMPDIR/fleet"
@@ -207,6 +207,24 @@ in {
       janus-build secret keygen potato > "$TMPDIR/age.key"
       test -s secrets/keys/potato.pub
       grep -q age1 secrets/keys/potato.pub
+      if printf '%s\n' x | janus-build secret set secrets/nope/potato.yaml; then
+        echo "unknown secret path should exit 2" >&2
+        exit 1
+      fi
+      printf '%s\n' 'page-secret' | janus-build secret set secrets/web/potato.yaml
+      test -s secrets/web/potato.yaml
+      if grep -q page-secret secrets/web/potato.yaml; then
+        echo "maintenance passphrase was stored in plaintext" >&2
+        exit 1
+      fi
+      age -d -i "$TMPDIR/age.key" -o "$TMPDIR/web-pass" secrets/web/potato.yaml
+      printf '%s\n' 'page-secret' | cmp - "$TMPDIR/web-pass"
+      janus-build host add other
+      janus-build secret keygen other > "$TMPDIR/other.key"
+      if age -d -i "$TMPDIR/other.key" -o "$TMPDIR/stolen" secrets/web/potato.yaml; then
+        echo "maintenance passphrase was readable by another host" >&2
+        exit 1
+      fi
       echo ok > "$out"
     '';
   eval-boards = let
@@ -2204,7 +2222,7 @@ in {
       } = no
       janet ${../janet/web.janet} check
       printf '%s\n' ${lib.escapeShellArg spec} > web.json
-      jq -e '.enable == true and .port == 8443 and (.san | index("DNS:router")) and (.san | index("IP:192.168.10.1")) and .hostname == "router"' web.json >/dev/null
+      jq -e '.enable == true and .port == 8443 and .passphraseFile == "/var/lib/janus/secrets/web-passphrase" and (.san | index("DNS:router")) and (.san | index("IP:192.168.10.1")) and .hostname == "router"' web.json >/dev/null
       printf '%s\n' ${lib.escapeShellArg stunnel} > stunnel.conf
       grep -q 'IPV6_V6ONLY=0' stunnel.conf
       grep -q 'accept = \[::\]:8443' stunnel.conf
@@ -2348,6 +2366,77 @@ in {
   eval-web-pass = fail "eval-web-pass" [
     base
     {janus.access.web.enable = true;}
+  ];
+  cli-age-key =
+    pkgs.runCommand "cli-age-key" {} ''
+      set -eu
+      dir=$TMPDIR/root
+      mkdir -p "$dir/bin" "$dir/secrets"
+      cat > "$dir/bin/systemctl" << 'EOF'
+      #!/bin/sh
+      printf '%s\n' "$*" >> "$JANUS_LOG"
+      if [ "$1" = list-units ]; then
+        printf '%s\n' 'janus-web-tls.service loaded failed'
+        printf '%s\n' 'janus-pppoe-main.service loaded failed'
+        printf '%s\n' 'janus-web.service loaded failed'
+        printf '%s\n' 'janus-hostapd-home.service loaded failed'
+      fi
+      exit 0
+      EOF
+      chmod +x "$dir/bin/systemctl"
+      printf '%s\n' 'AGE-SECRET-KEY-1test' | JANUS_SECRETS_DIR="$dir/secrets" JANUS_LOG="$dir/log" PATH="$dir/bin:$PATH" bash ${../pkgs/janus.sh} secrets install-age-key
+      printf '%s\n' 'AGE-SECRET-KEY-1test' | cmp - "$dir/secrets/age.key"
+      awk '
+        $1 == "restart" && $2 == "sops-install-secrets.service" { sops = NR }
+        $1 == "restart" && $2 == "janus-pppoe-main.service" { pppoe = NR }
+        $1 == "restart" && $2 == "janus-hostapd-home.service" { ap = NR }
+        $1 == "restart" && $2 == "janus-web.service" { web = NR }
+        $1 == "restart" && $2 == "janus-web-tls.service" { tls = NR }
+        END {
+          if (!(sops && pppoe && ap && web && tls && sops < pppoe && sops < ap && web < tls)) exit 1
+        }
+      ' "$dir/log"
+      echo ok > "$out"
+    '';
+  eval-web-sops = let
+    os = mk [
+      base
+      {
+        sops.secrets.web-router.sopsFile = ./fixtures/sops-placeholder;
+        janus.access.web = {
+          enable = true;
+          passphraseSecret = "web-router";
+        };
+      }
+    ];
+    spec = os.config.environment.etc."janus/web.json".text;
+    requires = os.config.systemd.services.janus-web.requires or [];
+    after = os.config.systemd.services.janus-web.after or [];
+  in
+    pkgs.runCommand "eval-web-sops" {
+      nativeBuildInputs = [pkgs.jq];
+    } ''
+      set -eu
+      printf '%s\n' ${lib.escapeShellArg spec} > web.json
+      jq -e '.passphraseFile == "/run/secrets/web-router"' web.json >/dev/null
+      printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " requires)} | grep -q sops-install-secrets.service
+      printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " after)} | grep -q sops-install-secrets.service
+      echo ok > "$out"
+    '';
+  eval-web-secret = fail "eval-web-secret" [
+    base
+    {
+      janus.access.web.enable = true;
+      janus.access.web.passphraseSecret = "missing";
+    }
+  ];
+  eval-web-both = fail "eval-web-both" [
+    base
+    {
+      janus.access.web.enable = true;
+      janus.access.web.passphraseSecret = "web-eval";
+      janus.access.web.passphraseFile = "/var/lib/janus/secrets/web-passphrase";
+    }
   ];
   eval-web-zone = fail "eval-web-zone" [
     base

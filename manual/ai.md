@@ -11,7 +11,8 @@ Read this file before answering a question about using Janus OS.
   contains ciphertext and not that key. After boot, `janus-build deploy
   --age-key` or `janus secrets install-age-key` installs it.
   `install-age-key` restarts `sops-install-secrets` when that unit
-  exists. A `urlSecret` subscription stays an empty snapshot until
+  exists, then failed PPPoE and Wi-Fi units, then `janus-web` and
+  `janus-web-tls` when either page unit failed. A `urlSecret` subscription stays an empty snapshot until
   `janus proxy refresh`.
 - Router commands are `docs/14-cli.md`. Build-host commands are
   `docs/16-build-host-cli.md`. `janus.*` options are
@@ -64,6 +65,8 @@ Read this file before answering a question about using Janus OS.
   `janus audit stop` pauses recording without a rebuild. The log is
   JSON Lines of connection metadata on the state partition.
 - `janus.access.web.enable` defaults to false. With it set, and with
+  `janus.access.web.passphraseSecret` (one line in
+  `secrets/web/<host>.yaml`, encrypted to that host) or
   `janus.access.web.passphraseFile`, the maintenance page listens on
   port 8443 (TLS only) for the zones in `web.zones` (default `lan` and
   `mgmt`). `janus web stop` pauses it without a rebuild. The passphrase

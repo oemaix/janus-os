@@ -54,10 +54,11 @@
   scoped to specific systemd units and files (no general shell needed for
   daily tasks, but root shell remains available to the key holder).
 * Maintenance page (*20*): off unless `janus.access.web.enable` is set.
-  TLS only, `lan` and `mgmt` by default, never `wan`. Login is a passphrase
-  file, not the root password, and it does not turn on SSH password
-  authentication. The service user `janus-web` may run only the `janus`
-  argument lists in *20* §6.
+  TLS only, `lan` and `mgmt` by default, never `wan`. Login is a passphrase,
+  not the root password, and it does not turn on SSH password
+  authentication. The passphrase is a per-host sops file (§4.3). The
+  service user `janus-web` may run only the `janus` argument lists in
+  *20* §6.
 
 ### 4.2 Services
 
@@ -90,14 +91,16 @@ public keys and cannot decrypt the files.
 
 The repo is the ciphertext a boot can decrypt. It is not the plaintext
 credential store. A changed Wi-Fi passphrase, PPPoE password, Tailscale
-auth key, or subscription URL is supplied again through `janus-build
-secret set`. Boot-time activation decrypts into `/run/secrets` (tmpfs).
+auth key, subscription URL, or maintenance-page passphrase is supplied
+again through `janus-build secret set`. Boot-time activation decrypts
+into `/run/secrets` (tmpfs).
 The Nix store holds ciphertext only. The private key is not a build
 output.
 
 A file under `subscription/` or `nodes/` is encrypted to every host that
 references it. Any of those routers can read it. A file under `wifi/`,
-`pppoe/`, `tailscale/`, or `wireguard/` is encrypted to that host only.
+`pppoe/`, `tailscale/`, `wireguard/`, or `web/` is encrypted to that
+host only.
 
 | Secret | In sops | Notes |
 |--------|---------|-------|
@@ -106,6 +109,7 @@ references it. Any of those routers can read it. A file under `wifi/`,
 | Subscription URL | yes | The node list is volatile data; the URL usually embeds a token and is not. A hot override may replace the URL on the board (mode `0600`) until the user updates sops. |
 | Manual node credentials (UUID, password, REALITY keys) | yes | |
 | WireGuard private key, mesh auth key | yes | |
+| Maintenance page passphrase | yes | One line in `secrets/web/<host>.yaml`, encrypted to that host (ADR-0023). Not the SSH root password. `passphraseFile` remains for a file created on the board. |
 | SSH host keys | no | Generated on first boot, stored under `/var/lib/janus/etc`. Not the age key. |
 | Age private key | no | One per router, on that router's state partition. The build host does not keep it. Whoever has the SD card can read it and the ciphertext encrypted to that router. Disk encryption is not in scope (see §5). |
 

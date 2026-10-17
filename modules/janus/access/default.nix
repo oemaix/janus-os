@@ -56,10 +56,19 @@ in {
       default = ["lan" "mgmt"];
       description = "Zones that may open the maintenance page. wan is refused.";
     };
+    web.passphraseSecret = mkOption {
+      type = types.nullOr types.str;
+      default = null;
+      description = ''
+        sops secret name for the maintenance page. The file is one line at
+        `secrets/web/<host>.yaml`, encrypted to that host (ADR-0023).
+        Not the SSH root password.
+      '';
+    };
     web.passphraseFile = mkOption {
       type = types.nullOr types.str;
       default = null;
-      description = "Passphrase file for the maintenance page. A string path, not a Nix path, so the secret is not copied into the store. Required when web.enable is true. Not the SSH root password.";
+      description = "Passphrase file on the state partition, from `janus secrets put`. A string path, not a Nix path, so the secret is not copied into the store. Not the SSH root password.";
     };
     deploy.address = mkOption {
       type = types.str;

@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-16 |
+| Last updated | 2026-10-17 |
 
 The maintenance page is the browser surface deferred by ADR-0007 and
 bounded by FR-ACC-005 and D-0012. It calls the `janus` commands in *14*.
@@ -20,9 +20,12 @@ It does not replace SSH, and it does not edit `configuration.nix`.
 | `janus.access.web.enable` | bool | `false` | Include the page, the listener, and the firewall hole in the image. |
 | `janus.access.web.port` | int | `8443` | TLS port. |
 | `janus.access.web.zones` | list | `["lan" "mgmt"]` | Zones that may open the port. |
-| `janus.access.web.passphraseFile` | path | — | Required when `enable` is true. One line. A sops file or a file from `janus secrets put`. |
+| `janus.access.web.passphraseSecret` | str | — | sops secret name. One line in `secrets/web/<host>.yaml`, encrypted to that host (ADR-0023). |
+| `janus.access.web.passphraseFile` | path | — | File from `janus secrets put`. |
 
-Evaluation fails when `enable` is true and `passphraseFile` is null.
+When `enable` is true, exactly one of `passphraseSecret` and
+`passphraseFile` is set. Evaluation fails when neither is set, when
+both are set, and when `passphraseSecret` is not a `sops.secrets` name.
 Evaluation fails when `zones` contains `wan`. `guest` and `iot` are
 reached only when the list names them.
 
@@ -89,9 +92,11 @@ secret from `janus.access.ssh.rootPasswordFile`. Setting the page does
 not enable SSH password authentication.
 
 The browser has no SSH key, so the key is not the page login. A person
-who still has the key and has lost the passphrase replaces the file over
-SSH (`janus secrets put` or a new sops file and a rebuild). Losing both
-means a new image, the same outcome as losing the key.
+who still has the key and has lost the passphrase runs `janus-build
+secret set secrets/web/<host>.yaml`, commits, and deploys. `janus secrets
+put` remains when the new passphrase must not enter git; that path is
+`passphraseFile`. Losing both the key and the passphrase means a new
+image, the same outcome as losing the key.
 
 The login box has the hostname, the certificate fingerprint, one field
 `passphrase`, and the button `enter`. There is no username and no second

@@ -222,7 +222,7 @@ janus-os/
 |---------|--------|-----|
 | Base OS | NixOS stable, flakes | 0001 |
 | Deployment model | Image-based, no on-device Nix; hot overrides for day-to-day edits | 0002, 0017 |
-| Secrets | sops-nix + age, one key per router, build host encrypts only | 0014, 0022 |
+| Secrets | sops-nix + age, one key per router, build host encrypts only | 0014, 0022, 0023 |
 | DNS policy | Inside the proxy engine, with a leak/poison check | 0019 |
 | User repo | Local git required; remote optional; many hosts per repo | 0018, 0021 |
 | Storage | One partition per FS, f2fs, ro root/store | 0003 |

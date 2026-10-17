@@ -3,10 +3,19 @@
 {
   config,
   lib,
+  options,
   pkgs,
   ...
 }: let
   cfg = config.janus.access.web;
+  passPath =
+    if
+      cfg.passphraseSecret
+      != null
+      && (options ? sops)
+      && config.sops.secrets ? ${cfg.passphraseSecret}
+    then config.sops.secrets.${cfg.passphraseSecret}.path
+    else cfg.passphraseFile;
   janusCmd = pkgs.writeShellApplication {
     name = "janus";
     runtimeInputs = with pkgs; [jq iproute2 nftables vnstat coreutils systemd util-linux gnutar];
@@ -40,8 +49,16 @@ in {
     assertions =
       [
         {
-          assertion = cfg.passphraseFile != null;
-          message = "janus.access.web.enable requires janus.access.web.passphraseFile.";
+          assertion = cfg.passphraseFile != null || cfg.passphraseSecret != null;
+          message = "janus.access.web.enable requires janus.access.web.passphraseSecret or janus.access.web.passphraseFile.";
+        }
+        {
+          assertion = cfg.passphraseFile == null || cfg.passphraseSecret == null;
+          message = "janus.access.web has both passphraseFile and passphraseSecret.";
+        }
+        {
+          assertion = cfg.passphraseSecret == null || (options ? sops && config.sops.secrets ? ${cfg.passphraseSecret});
+          message = "janus.access.web.passphraseSecret is not a sops.secrets name.";
         }
         {
           assertion = cfg.zones != [];
@@ -88,7 +105,7 @@ in {
       enable = true;
       port = cfg.port;
       zones = cfg.zones;
-      passphraseFile = cfg.passphraseFile;
+      passphraseFile = passPath;
       cert = "/var/lib/janus/web/cert.pem";
       key = "/var/lib/janus/web/key.pem";
       socket = "/run/janus-web/http.sock";
@@ -147,8 +164,12 @@ in {
     systemd.services.janus-web = {
       description = "Maintenance page";
       wantedBy = ["multi-user.target"];
-      after = ["janus-web-cert.service" "network-online.target"];
-      requires = ["janus-web-cert.service"];
+      after =
+        ["janus-web-cert.service" "network-online.target"]
+        ++ lib.optional (cfg.passphraseSecret != null) "sops-install-secrets.service";
+      requires =
+        ["janus-web-cert.service"]
+        ++ lib.optional (cfg.passphraseSecret != null) "sops-install-secrets.service";
       unitConfig.ConditionPathExists = "!/var/lib/janus/web/paused";
       environment = {
         JANUS_WEB_JSON = "/etc/janus/web.json";
@@ -169,7 +190,7 @@ in {
         RestartSec = "2s";
         TimeoutStartSec = "10s";
         ExecCondition = ["${webCmd}/bin/janus-web ready"];
-        LoadCredential = "passphrase:${cfg.passphraseFile}";
+        LoadCredential = lib.optional (passPath != null) "passphrase:${passPath}";
         ProtectSystem = "strict";
         ProtectHome = true;
         PrivateTmp = true;

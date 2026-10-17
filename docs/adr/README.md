@@ -27,4 +27,5 @@ An accepted ADR is the record. It is not copied into *18*.
 | [0019](0019-dns-inside-the-engine.md) | DNS policy inside the proxy engine | Accepted |
 | [0020](0020-keep-janet-not-go.md) | Keep Janet; do not move tooling into Go | Accepted |
 | [0021](0021-local-git-multi-host-config.md) | Local git mandatory; one repo, many routers | Accepted; refines 0018 |
-| [0022](0022-per-host-age-keys.md) | Per-host age keys; the build host encrypts only | Accepted; refines 0014 |
+| [0022](0022-per-host-age-keys.md) | Per-host age keys; the build host encrypts only | Accepted; refines 0014; secret-file list refined by 0023 |
+| [0023](0023-maintenance-passphrase-sops.md) | Maintenance page passphrase is a per-host sops file | Accepted; refines 0022 |

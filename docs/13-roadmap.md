@@ -99,6 +99,7 @@ tree does not mean that behavior exists. Stubs are not finished features.
   key path is `/var/lib/janus/secrets/age.key`. sops-nix decrypts to
   `/run/secrets` at activation. A PPPoE `passwordSecret` is YAML with
   `username` and `password`. A Wi-Fi `passphraseSecret` is one line.
+  A maintenance-page `passphraseSecret` is one line in `secrets/web/<host>.yaml`.
   `janus-hostapd-<name>` reads a runtime passphrase file.
 * Board profiles: `x86_64-test` (virtio, no raw firmware), NanoPi R4S
   (U-Boot at sector 64, `eth0`/`eth1`, no WAN chosen), Le Potato (U-Boot
@@ -156,7 +157,7 @@ tree does not mean that behavior exists. Stubs are not finished features.
   edit configuration, hot overrides, or secrets.
 * `janus.access.web.enable` includes the maintenance page (*20*). It is
   off unless set. `janus web stop` pauses the listener without a rebuild.
-  Login is a passphrase file, not the root password. The page calls the
+  Login is a per-host sops passphrase (`secrets/web/<host>.yaml`), not the root password. The page calls the
   allowlisted `janus` commands and does not edit the rest of the configuration.
 * A mcuzone INA219 at `0x40` reports the cell in `janus status` and powers
   the router off while the cell is discharging, at the thresholds in *10*

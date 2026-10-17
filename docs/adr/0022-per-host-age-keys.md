@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | Accepted |
+| Status | Accepted; the secret-file list is refined by ADR-0023 |
 | Date | 2026-09-29 |
 | Affects | 03 FR-SEC-002, FR-OPS-008, FR-OPS-010, FR-OPS-012, 08 §11, 11 §4.3, 12 §1–2 and §7, 14 §3–4, 16 §2 and §4–5; refines ADR-0014 and the secret-file sentence of ADR-0018 and ADR-0021 |
 

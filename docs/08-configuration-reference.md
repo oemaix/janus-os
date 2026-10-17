@@ -218,7 +218,8 @@ learned WAN address as the domestic server.
 | `web.enable` | bool | `false` | Include the maintenance page (*20*). Runtime start and stop do not change this. |
 | `web.port` | int | `8443` | TLS only. |
 | `web.zones` | list | `["lan" "mgmt"]` | `wan` fails evaluation. |
-| `web.passphraseFile` | path | — | Required when `web.enable` is true. Not the SSH root password. |
+| `web.passphraseSecret` | str | — | sops secret name. One line in `secrets/web/<host>.yaml`, encrypted to that host (ADR-0023). Not the SSH root password. |
+| `web.passphraseFile` | path | — | File from `janus secrets put`. When `web.enable` is true, exactly one of this and `passphraseSecret` is set. |
 | `deploy.address` | str | the `nixosConfigurations` attribute name | SSH destination for `janus-build deploy` and `janus-build fleet apply`. |
 
 ## 11. Secrets and hot overrides
@@ -235,12 +236,13 @@ secrets/tailscale/potato.yaml
 secrets/wireguard/potato/uplink.yaml
 secrets/subscription/vendor-a.yaml   # proxy subscription URL
 secrets/nodes/manual-a.yaml          # manual proxy-node credential
+secrets/web/potato.yaml              # maintenance page passphrase
 ```
 
-`wifi`, `pppoe`, `tailscale`, and `wireguard` are encrypted to that
-host only. A proxy subscription file and a manual proxy-node file are
-encrypted to every host that references the file. A PPPoE file holds the
-username and the password together. The other files hold one value.
+`wifi`, `pppoe`, `tailscale`, `wireguard`, and `web` are encrypted to
+that host only. A proxy subscription file and a manual proxy-node file
+are encrypted to every host that references the file. A PPPoE file holds
+the username and the password together. The other files hold one value.
 
 ```nix
 sops.age.keyFile = "/var/lib/janus/secrets/age.key";
@@ -248,6 +250,8 @@ sops.secrets.wifi-potato-home.sopsFile = ./secrets/wifi/potato/home.yaml;
 janus.network.wifi.home.passphraseSecret = "wifi-potato-home";
 janus.network.wans.main.pppoe.passwordSecret = "pppoe-potato-main";
 janus.proxy.subscriptions.providerA.urlSecret = "subscription-vendor-a";
+sops.secrets.web-potato.sopsFile = ./secrets/web/potato.yaml;
+janus.access.web.passphraseSecret = "web-potato";
 ```
 
 `janus-build secret keygen` creates the keypair outside the image build.

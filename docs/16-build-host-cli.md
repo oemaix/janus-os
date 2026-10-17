@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-09-29 |
+| Last updated | 2026-10-17 |
 
 `janus-build` runs on the build host. After the fleet repo exists, every
 command runs in that repo. The router command stays `janus` (*14*). The
@@ -141,6 +141,7 @@ secrets/tailscale/<host>.yaml
 secrets/wireguard/<host>/<name>.yaml
 secrets/subscription/<vendor>.yaml   # proxy subscription URL
 secrets/nodes/<name>.yaml            # manual proxy-node credential
+secrets/web/<host>.yaml              # maintenance page passphrase, one line
 ```
 
 A host path is encrypted to `secrets/keys/<host>.pub`. A proxy

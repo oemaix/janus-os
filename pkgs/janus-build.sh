@@ -669,7 +669,7 @@ case "$cmd" in
           secrets/wifi/*/*|secrets/pppoe/*/*|secrets/wireguard/*/*)
             host=$(echo "$path" | cut -d/ -f3)
             ;;
-          secrets/tailscale/*)
+          secrets/tailscale/*|secrets/web/*)
             host=$(basename "$path" .yaml)
             ;;
           secrets/subscription/*|secrets/nodes/*)

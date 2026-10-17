@@ -96,8 +96,9 @@ In that shell:
    as KeePass. The build machine does not keep a copy, and the key does
    not go into git. Do this after the host exists and before the build.
 4. `janus-build secret set <path>` encrypts each credential this host
-   needs: a PPPoE password, a Wi-Fi passphrase, a subscription URL, or a
-   manual node. The public key from the previous step must already exist.
+   needs: a PPPoE password, a Wi-Fi passphrase, a subscription URL, a
+   manual node, or the maintenance-page passphrase. The public key from
+   the previous step must already exist.
 5. `janus-build build <host>` writes `janus-<host>.img`. The image
    contains that ciphertext. It does not contain the private key.
 6. Flash that image. The state partition starts empty.
@@ -106,8 +107,8 @@ In that shell:
 8. Install the private key from the password manager, once, with
    `janus-build deploy --age-key <host>` on the build machine.
    (`janus secrets install-age-key` on the router does the same thing.)
-   PPPoE, Wi-Fi, and a subscription URL that is a secret stay unavailable
-   until this step.
+   PPPoE, Wi-Fi, a subscription URL that is a secret, and the
+   maintenance-page passphrase stay unavailable until this step.
 9. `janus proxy refresh` fills a subscription that came from `urlSecret`.
     Until the key is installed and that refresh runs, the snapshot is empty.
 
@@ -242,8 +243,11 @@ LANs to audit instead.
 ## Maintenance page
 
 The page is off unless the image sets `janus.access.web.enable = true`
-and `janus.access.web.passphraseFile` to a secret file. After that image
-boots, the page listens on port 8443, TLS only, on the `lan` and `mgmt`
+and `janus.access.web.passphraseSecret`. That secret is one line in
+`secrets/web/<host>.yaml`, encrypted to this router only.
+`passphraseFile` remains for a file placed on the board with
+`janus secrets put`. After that image boots, the page listens on port
+8443, TLS only, on the `lan` and `mgmt`
 zones. `janus web stop` pauses it without a rebuild. `janus web start`
 turns it back on. If the image was built without the switch, `janus web
 start` exits 2. An empty passphrase file makes `janus web start` exit 1.

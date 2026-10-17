@@ -84,7 +84,7 @@ the build host does that (*16* §5).
 
 | Command | Effect |
 |---------|--------|
-| `janus secrets install-age-key` | Read this router's age private key on stdin into `/var/lib/janus/secrets/age.key` (mode `0600`) and restart units that decrypt secrets |
+| `janus secrets install-age-key` | Read this router's age private key on stdin into `/var/lib/janus/secrets/age.key` (mode `0600`). Restart `sops-install-secrets`, then failed PPPoE and Wi-Fi units, then `janus-web` and `janus-web-tls` when either page unit failed. |
 | `janus secrets put <name>` | Read a secret on stdin for a value that will not enter git |
 
 The age key is created on the build host by `janus-build secret keygen <host>` (*16*). This command installs the private key. It does not generate one. The build host does not keep a copy.
