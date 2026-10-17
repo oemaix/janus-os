@@ -27,7 +27,7 @@ Explanations are *19*. Accepted ADRs are `docs/adr/`.
   NAT, port forwards, IPv6 modes `disabled`/`ula-only`/`delegated`.
 * SSH key-only, `janus` CLI as specified in *14*.
 * `janus-build init`, `secret`, `check`, `build`, and `update` (*16*).
-* sops-nix age key install path for PPPoE and Wi-Fi secrets.
+* sops-nix and age for every credential in FR-SEC-002: PPPoE, Wi-Fi, a subscription URL, a manual node, WireGuard, the Tailscale auth key, and the maintenance-page passphrase.
 * Boards (Tier 1): NanoPi R4S, Raspberry Pi Zero 2 W, Le Potato,
   Yanyu STX-R19F. 
 * Monitoring: counters + vnstat. The connection audit is FR-MON-007.
@@ -98,14 +98,15 @@ tree does not mean that behavior exists. Stubs are not finished features.
   *16* (`init`, `host add`, `secret keygen`, `secret set`, `check`,
   `build`, `update`, and the router status commands). The age private
   key path is `/var/lib/janus/secrets/age.key`. sops-nix decrypts to
-  `/run/secrets` at activation. `janus-build secret set` writes a sops
-  document: one-line credentials under the `value` key, a PPPoE file
-  and a node file as YAML. A Wi-Fi `passphraseSecret`, a
-  maintenance-page `passphraseSecret`, a Tailscale `authKeySecret`, and a
-  subscription `urlSecret` read that plaintext. `janus-wifi-secret-<name>`
+  `/run/secrets` at activation. Every credential in FR-SEC-002 is one
+  sops file from `janus-build secret set`: one-line credentials under
+  the `value` key, and a PPPoE file or a node file as YAML. Wi-Fi,
+  the maintenance page, Tailscale, a subscription URL, and PPPoE name
+  that secret, and the module sets its key. `janus-wifi-secret-<name>`
   checks the passphrase file and waits for `sops-install-secrets`.
-  `janus-hostapd-<name>` waits for that check. WireGuard and node files
-  have no secret-name option, so the fleet sets `sops.secrets.<name>.key`.
+  `janus-hostapd-<name>` waits for that check. WireGuard and a manual
+  node stay file paths. The fleet sets `sops.secrets.<name>.key` to
+  `value` or `""`. `secret rewrap` is not implemented.
 * Board profiles: `x86_64-test` (virtio, no raw firmware), NanoPi R4S
   (U-Boot at sector 64, `eth0`/`eth1`, no WAN chosen), Le Potato (U-Boot
   FIP, one `eth0`), Raspberry Pi Zero 2 W (FAT `config.txt`, no Ethernet
