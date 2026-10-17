@@ -68,6 +68,7 @@ Explanations are *19*. Accepted ADRs are `docs/adr/`.
 
 * WAN VLAN, the `iptv` role, and IGMP proxy (*06*, FR-NET-003, FR-NET-020).
 * Optional local configuration wizard, a front end for the build-host commands in *16*. No hosted build service.
+* A check that a destination refuses the exit because the address is in Iran, China, or Russia, for example Gemini. A country guessed from the node name, and a connect check (ping, TCP, or a handshake), do not show that refusal.
 
 ## 2. Progress
 

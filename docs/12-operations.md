@@ -173,8 +173,8 @@ All subcommands are also usable non-interactively (JSON output with
 
 | Timer | Default | Purpose |
 |-------|---------|---------|
-| `janus-proxy-refresh-<name>` | per subscription (`6h`) | Fetch, validate, reload. The template unit is `janus-proxy-refresh@.service`. |
-| `janus-geodata-refresh` | weekly | Geo rule sets |
+| `janus-proxy-refresh-<name>` | per subscription (`6h`) | Fetch, validate, reload. The template unit is `janus-proxy-refresh@.service`. A subscription with `enable = false` has no timer (D-0044). |
+| `janus-geodata-refresh` | weekly | Geo rule sets. The schedule may be a five-field cron whose day-of-week is a list, such as `0 4 * * 2,4,6` (D-0044). |
 | `janus-wan-health` | 30 s after boot, then the WAN interval (`10s`) | WAN health and backup failover. Engine restart is the unit's own `Restart=`. |
 | `janus-metrics` | 60 s | Engine metrics text, when Prometheus is on |
 | vnstat | `SaveInterval` 15 min | Persist interface counters. There is no `janus-monitoring-save` unit. |

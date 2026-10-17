@@ -31,6 +31,10 @@ learning path: copy, edit values, build.
   `janus.security.allowInlineSecrets`. Wi-Fi SSID is a normal string.
   See *11 — Security*.
 * Durations: `"30m"`, `"6h"`, `"1d"`, or a 5-field cron expression.
+  For `janus.proxy.subscriptions.<name>.refresh` and
+  `janus.proxy.geodata.refresh`, the day-of-month and the month are `*`.
+  The day-of-week may be `*` or a list such as `2,4,6`. `0` and `7` are
+  Sunday, and `1` is Monday (D-0044).
 
 ## 1. `janus.system`
 
@@ -127,7 +131,7 @@ See *06* §7–8: `zones`, `policies`, `rules`, `services`, `portForwards`,
 | `exceptions` | list | private, iptv | `proxy-all` exceptions. A LAN inherits this list. |
 | `egressWan` | str/null | `null` | Pin engine egress to a WAN |
 | `blockQuic` | bool | `false`; `true` when `janus.system.region` is `ru` | *21* |
-| `geodata.refresh` | duration | `"weekly"` | |
+| `geodata.refresh` | duration | `"weekly"` | `Nh`, `Nm`, `weekly`, `daily`, `hourly`, or a five-field cron. Day-of-week may be a list such as `2,4,6` (D-0044). |
 | `geodata.sources` | attrs | community defaults | Base URLs, plus `tags.<file>` for one rule-set file (*21* §4.3). |
 | `geodata.hashes` | attrs of sha256 | `{}` | Overrides the built-in pins. A referenced tag with no pin is left for the router |
 | `engineSettings` | attrs | `{}` | Raw engine config merged last (escape hatch; unsupported) |

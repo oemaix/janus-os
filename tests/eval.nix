@@ -1472,6 +1472,190 @@ in {
       };
     }
   ];
+  eval-refresh-dow = let
+    os = mk [
+      base
+      {
+        janus.access.web = {
+          enable = true;
+          passphraseFile = "/var/lib/janus/secrets/web-passphrase";
+        };
+        janus.proxy = {
+          enable = true;
+          geodata.refresh = "0 4 * * 2,4,6";
+          subscriptions.a = {
+            urlSecret = "subscription/a";
+            refresh = "0 4 * * *";
+          };
+          subscriptions.b = {
+            urlSecret = "subscription/b";
+            enable = false;
+          };
+          subscriptions.c = {
+            urlSecret = "subscription/c";
+            refresh = "30 3 * * 1,5";
+          };
+          subscriptions.d = {
+            urlSecret = "subscription/d";
+            refresh = "0 0 * * 0,7";
+          };
+        };
+      }
+    ];
+    model = os.config.environment.etc."janus/proxy-model.json".source;
+  in
+    pkgs.runCommand "eval-refresh-dow" {
+      nativeBuildInputs = [pkgs.jq];
+    } ''
+      test ${lib.escapeShellArg os.config.systemd.timers.janus-proxy-refresh-a.timerConfig.OnCalendar} = '*-*-* 04:00:00'
+      test ${lib.escapeShellArg os.config.systemd.timers.janus-proxy-refresh-c.timerConfig.OnCalendar} = 'Mon,Fri *-*-* 03:30:00'
+      test ${lib.escapeShellArg os.config.systemd.timers.janus-proxy-refresh-d.timerConfig.OnCalendar} = 'Sun *-*-* 00:00:00'
+      test ${lib.escapeShellArg os.config.systemd.timers.janus-geodata-refresh.timerConfig.OnCalendar} = 'Tue,Thu,Sat *-*-* 04:00:00'
+      test ${
+        if os.config.systemd.timers ? "janus-proxy-refresh-b"
+        then "yes"
+        else "no"
+      } = no
+      test ${lib.escapeShellArg os.config.janus.proxy.subscriptions.b.urlSecret} = subscription/b
+      test ${
+        if os.config.janus.proxy.subscriptions.b.enable
+        then "yes"
+        else "no"
+      } = no
+      echo ${lib.escapeShellArg os.config.environment.etc."janus/subscriptions.json".text} \
+        | jq -e 'has("a") and has("c") and has("d") and (has("b") | not)' >/dev/null
+      echo ${lib.escapeShellArg os.config.environment.etc."janus/web.json".text} \
+        | jq -e '.subscriptions == ["a","c","d"]' >/dev/null
+      jq -e '.subscriptionNames == ["a","c","d"]' ${model} >/dev/null
+      echo ok > "$out"
+    '';
+  eval-refresh-dow-bad = fail "eval-refresh-dow-bad" [
+    base
+    {
+      janus.proxy.enable = true;
+      janus.proxy.geodata.refresh = "0 4 * * 8";
+    }
+  ];
+  eval-refresh-dom = fail "eval-refresh-dom" [
+    base
+    {
+      janus.proxy.enable = true;
+      janus.proxy.geodata.refresh = "0 4 1 * *";
+    }
+  ];
+  eval-subscription-dropped-group = let
+    modules = [
+      base
+      {
+        janus.proxy = {
+          enable = true;
+          subscriptions.b = {
+            urlSecret = "subscription/b";
+            enable = false;
+          };
+          groups.UseB = {
+            fromSubscriptions = ["b"];
+            match.kind = "regex";
+            match.pattern = ".";
+          };
+        };
+      }
+    ];
+    messages = lib.concatMapStringsSep "\n" (a: a.message) (
+      lib.filter (a: !a.assertion) (mk modules).config.assertions
+    );
+  in
+    pkgs.runCommand "eval-subscription-dropped-group" {} ''
+      echo ${lib.escapeShellArg messages} | grep -F -q "janus.proxy.groups.UseB.fromSubscriptions names 'b', which is not an enabled subscription on this router."
+      if [ "${
+        if (bad modules).success
+        then "yes"
+        else "no"
+      }" = yes ]; then
+        echo "expected evaluation to fail" >&2
+        exit 1
+      fi
+      echo ok > "$out"
+    '';
+  eval-subscription-dropped-member = let
+    modules = [
+      base
+      {
+        janus.proxy = {
+          enable = true;
+          subscriptions.b = {
+            urlSecret = "subscription/b";
+            enable = false;
+          };
+          groups.UseB = {
+            members = ["sub:b"];
+          };
+        };
+      }
+    ];
+    messages = lib.concatMapStringsSep "\n" (a: a.message) (
+      lib.filter (a: !a.assertion) (mk modules).config.assertions
+    );
+  in
+    pkgs.runCommand "eval-subscription-dropped-member" {} ''
+      echo ${lib.escapeShellArg messages} | grep -F -q "janus.proxy.groups.UseB.members names 'sub:b', which is not an enabled subscription on this router."
+      if [ "${
+        if (bad modules).success
+        then "yes"
+        else "no"
+      }" = yes ]; then
+        echo "expected evaluation to fail" >&2
+        exit 1
+      fi
+      echo ok > "$out"
+    '';
+  eval-subscription-cache =
+    pkgs.runCommand "eval-subscription-cache" {
+      nativeBuildInputs = [pkgs.bash pkgs.jq pkgs.coreutils];
+    } ''
+      set -eu
+      root=$TMPDIR/root
+      mkdir -p "$root/bin" "$root/etc/janus" "$root/var/lib/janus/subscriptions"
+      cat > "$root/bin/janet" << 'EOF'
+      #!/bin/sh
+      nodes=""
+      out=""
+      prev=""
+      for arg in "$@"; do
+        if [ "$prev" = "--nodes" ]; then
+          nodes=$arg
+        fi
+        if [ "$prev" = "--output" ]; then
+          out=$arg
+        fi
+        prev=$arg
+      done
+      cp "$nodes" "$JANUS_NODES_OUT"
+      printf '%s\n' '{}' > "$out"
+      exit 0
+      EOF
+      cat > "$root/bin/sing-box" << 'EOF'
+      #!/bin/sh
+      exit 0
+      EOF
+      chmod +x "$root/bin/janet" "$root/bin/sing-box"
+      printf '%s\n' '{"a":{"format":"auto"}}' > "$root/etc/janus/subscriptions.json"
+      printf '%s\n' '{}' > "$root/etc/janus/proxy-model.json"
+      printf '%s\n' '[]' > "$root/etc/janus/nodes-manual.json"
+      printf '%s\n' '[{"name":"a/built"}]' > "$root/etc/janus/nodes-built.json"
+      printf '%s\n' '[{"name":"a/live"}]' > "$root/var/lib/janus/subscriptions/a.json"
+      printf '%s\n' '[{"name":"b/stale"}]' > "$root/var/lib/janus/subscriptions/b.json"
+      {
+        printf '%s\n' 'set -euo pipefail' 'JANUS_ENGINE=sing-box' 'JANUS_SCRIPT=unused' 'JANUS_FAIL_MODE=closed' 'JANUS_INTERCEPT=0' 'JANUS_DNS_TPROXY=0' 'JANUS_EGRESS_TABLE=' 'JANUS_NODES_OUT='"$TMPDIR/nodes.json"
+        sed -e "s|/var/lib/janus|$root/var/lib/janus|g" -e "s|/etc/janus|$root/etc/janus|g" ${../pkgs/janus-engine.sh}
+      } > "$root/run.sh"
+      export PATH="$root/bin:$PATH"
+      export JANUS_NODES_OUT=$TMPDIR/nodes.json
+      bash "$root/run.sh" render
+      jq -e '[.[].name] == ["a/live"]' "$TMPDIR/nodes.json" >/dev/null
+      test -s "$root/var/lib/janus/subscriptions/b.json"
+      echo ok > "$out"
+    '';
   janet-normalizer =
     pkgs.runCommand "janet-normalizer" {
       nativeBuildInputs = [pkgs.janet pkgs.sing-box pkgs.jq pkgs.coreutils];

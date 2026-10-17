@@ -76,9 +76,10 @@ on sing-box and TPROXY on xray (D-0031). Both still intercept.
 
 ```
 janus.proxy.subscriptions.<name> = {
+  enable       = true;                             # false: this router does not use it (D-0044)
   url          = "https://…";
   format       = "auto" | "share-links" | "clash" | "sing-box";
-  refresh      = "6h" | "30m" | "0 */6 * * *" | "never";
+  refresh      = "6h" | "30m" | "0 */6 * * *" | "0 4 * * 2,4,6";
   userAgent    = "clash.meta";                     # many providers key on UA
   headers      = { };
   via          = "tunnel" | "direct" | "tunnel-then-direct";  # runtime fetch path
@@ -92,6 +93,22 @@ The Node normalizer (Janet) converts every format into canonical node JSON
 and rejects unknown protocols with a listed reason. Build-time fetch is an
 impure derivation by default (`--impure` documented) or a fixed-output
 derivation when `snapshot.hash` is set.
+
+`enable` defaults to true. `false` on one router drops that subscription
+from the snapshot, the refresh timer, and the engine. `url` or `urlSecret`
+stays set, so the host still names the secret file and remains a recipient
+(D-0044). A cache file already at
+`/var/lib/janus/subscriptions/<name>.json` is loaded only when `<name>` is
+enabled in this image. The file stays on disk. A fleet declares every vendor in `common/` and sets `enable =
+false` in the host file for the vendors that router does not take. A group
+that names a disabled subscription fails evaluation. An empty
+`fromSubscriptions` means every enabled subscription.
+
+`refresh` and `geodata.refresh` accept `Nh`, `Nm`, `weekly`, `daily`,
+`hourly`, or a five-field cron expression. The day-of-month and the month
+are `*`. The day-of-week may be `*` or a comma-separated list such as
+`2,4,6` or `1,5`. `0` and `7` are Sunday, and `1` is Monday. `0 4 * * 2,4,6`
+is 04:00 on Tuesday, Thursday, and Saturday.
 
 ### 3.3 Refresh semantics
 
@@ -115,7 +132,7 @@ service unit prefers the runtime copy when present and valid.
 ```
 janus.proxy.groups.<name> = {
   # membership — exactly one of:
-  fromSubscriptions = [ "provA" ];          # scope for matchers (default: all subscriptions)
+  fromSubscriptions = [ "provA" ];          # scope for matchers (default: every enabled subscription)
   match  = { kind = "regex" | "glob" | "peg"; pattern = "…"; caseInsensitive = true; };
   members = [ "node:manual-jp1" "group:JP" "sub:provA" ];   # manual list; may nest
 
@@ -139,7 +156,7 @@ Matcher kinds:
 Groups are computed at build time (for the snapshot) and recomputed at every
 refresh by the same Janet code, guaranteeing identical semantics.
 
-Implicit groups: every subscription is a group `sub:<name>` with strategy
+Implicit groups: every enabled subscription is a group `sub:<name>` with strategy
 `url-test` unless overridden. `fallback` fails evaluation on both engines.
 `load-balance` is xray only (§2.1).
 

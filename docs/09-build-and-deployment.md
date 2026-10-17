@@ -46,7 +46,7 @@ router file. `janus-build init` writes the tree below and adds no host
 ```text
 flake.nix                      # one nixosConfigurations.<name> per hosts/<name>/
 flake.lock
-common/default.nix             # imported for every host; a shared proxy subscription goes here
+common/default.nix             # imported for every host; a shared proxy subscription goes here. A host sets enable = false to drop one (D-0044)
 hosts/<name>/configuration.nix # this router only
 hosts/<name>/overrides.nix     # fleet pull writes static leases here
 secrets/                       # one ciphertext file per credential (ADR-0022)

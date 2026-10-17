@@ -8,6 +8,7 @@
 }: let
   inherit (lib) mkOption types;
   cfg = config.janus.proxy;
+  schedule = import ./schedule.nix {inherit lib;};
 
   secretOk = value: value == null || config.janus.security.allowInlineSecrets;
   dns = config.janus.dns;
@@ -117,6 +118,11 @@ in {
     subscriptions = mkOption {
       type = types.attrsOf (types.submodule {
         options = {
+          enable = mkOption {
+            type = types.bool;
+            default = true;
+            description = "Use this subscription on this router. False keeps url or urlSecret, so the host still names the secret, and drops the snapshot, the timer, and the nodes.";
+          };
           url = mkOption {
             type = types.nullOr types.str;
             default = null;
@@ -135,7 +141,7 @@ in {
           refresh = mkOption {
             type = types.str;
             default = "6h";
-            description = "Refresh interval (Nh, Nm, weekly, daily, hourly) or a five-field cron expression whose day fields are *.";
+            description = "Refresh interval (Nh, Nm, weekly, daily, hourly) or a five-field cron expression. The day-of-month and month are *. The day-of-week may be * or a list such as 2,4,6. 0 and 7 are Sunday.";
           };
           userAgent = mkOption {
             type = types.nullOr types.str;
@@ -358,7 +364,7 @@ in {
           fromSubscriptions = mkOption {
             type = types.listOf types.str;
             default = [];
-            description = "Subscriptions this matcher applies to. Empty means all.";
+            description = "Subscriptions this matcher applies to. Empty means every enabled subscription.";
           };
           match.kind = mkOption {
             type = types.nullOr (types.enum ["regex" "glob" "peg"]);
@@ -490,7 +496,7 @@ in {
     geodata.refresh = mkOption {
       type = types.str;
       default = "weekly";
-      description = "Geo data refresh interval (Nh, Nm, weekly, daily, hourly) or a five-field cron expression whose day fields are *.";
+      description = "Geo data refresh interval (Nh, Nm, weekly, daily, hourly) or a five-field cron expression. The day-of-month and month are *. The day-of-week may be * or a list such as 2,4,6. 0 and 7 are Sunday.";
     };
     geodata.sources = mkOption {
       type = types.attrs;
@@ -535,6 +541,45 @@ in {
         message = "janus.proxy.subscriptions.${name} must set exactly one of url or urlSecret.";
       })
       cfg.subscriptions
+      ++ [
+        (let
+          err = schedule.scheduleError cfg.geodata.refresh;
+        in {
+          assertion = err == null;
+          message =
+            if err == null
+            then "janus.proxy.geodata.refresh"
+            else "janus.proxy.geodata.refresh: ${err}";
+        })
+      ]
+      ++ lib.mapAttrsToList (name: sub: let
+        err = schedule.scheduleError sub.refresh;
+      in {
+        assertion = err == null;
+        message =
+          if err == null
+          then "janus.proxy.subscriptions.${name}.refresh"
+          else "janus.proxy.subscriptions.${name}.refresh: ${err}";
+      })
+      cfg.subscriptions
+      ++ lib.concatLists (lib.mapAttrsToList (name: group:
+        map (sub: {
+          assertion = cfg.subscriptions ? ${sub} && cfg.subscriptions.${sub}.enable;
+          message = "janus.proxy.groups.${name}.fromSubscriptions names '${sub}', which is not an enabled subscription on this router.";
+        })
+        group.fromSubscriptions)
+      cfg.groups)
+      ++ lib.concatLists (lib.mapAttrsToList (name: group:
+        lib.concatMap (member:
+          lib.optional (lib.hasPrefix "sub:" member) {
+            assertion = let
+              sub = lib.removePrefix "sub:" member;
+            in
+              cfg.subscriptions ? ${sub} && cfg.subscriptions.${sub}.enable;
+            message = "janus.proxy.groups.${name}.members names '${member}', which is not an enabled subscription on this router.";
+          })
+        group.members)
+      cfg.groups)
       ++ lib.concatMap (
         name: let
           sub = cfg.subscriptions.${name};

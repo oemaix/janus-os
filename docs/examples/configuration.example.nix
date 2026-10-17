@@ -238,7 +238,8 @@
         refresh = "6h";
         via = "tunnel-then-direct";
       };
-      # providerB = { url = "..."; refresh = "0 4 * * *"; };
+      # providerB = { url = "..."; refresh = "0 4 * * 2,4,6"; }; # 04:00 Tue, Thu, Sat
+      # On one router in a fleet: janus.proxy.subscriptions.providerC.enable = false;
     };
 
     # Manually defined nodes (optional).

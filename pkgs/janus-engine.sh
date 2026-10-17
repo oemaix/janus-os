@@ -159,10 +159,25 @@ merge_nodes() {
   ensure_dirs
   out=$(mktemp)
   runtime=$(mktemp)
-  if compgen -G '/var/lib/janus/subscriptions/*.json' >/dev/null; then
-    jq -s 'add' /var/lib/janus/subscriptions/*.json > "$runtime"
-  else
-    echo '[]' > "$runtime"
+  echo '[]' > "$runtime"
+  # subscriptions.json lists the enabled subscriptions in this image.
+  # A cache left on the state partition for a subscription this router
+  # dropped is not a node source (D-0044).
+  if [ -f "$meta" ] && compgen -G '/var/lib/janus/subscriptions/*.json' >/dev/null; then
+    picked=$(mktemp -d)
+    count=0
+    for file in /var/lib/janus/subscriptions/*.json; do
+      name=${file##*/}
+      name=${name%.json}
+      if jq -e --arg name "$name" 'has($name)' "$meta" >/dev/null; then
+        cp "$file" "$picked/$count.json"
+        count=$((count + 1))
+      fi
+    done
+    if [ "$count" -gt 0 ]; then
+      jq -s 'add' "$picked"/*.json > "$runtime"
+    fi
+    rm -rf "$picked"
   fi
   jq -s '
     (.[0] + .[1]) as $base

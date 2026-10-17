@@ -13,7 +13,13 @@ Read this file before answering a question about using Janus OS.
   `install-age-key` restarts `sops-install-secrets` when that unit
   exists, then failed PPPoE and Wi-Fi units, then `janus-web` and
   `janus-web-tls` when either page unit failed. A `urlSecret` subscription stays an empty snapshot until
-  `janus proxy refresh`.
+  `janus proxy refresh`. `subscriptions.<name>.enable` defaults to true.
+  False on one host drops that subscription's nodes, snapshot, and timer,
+  and keeps `url` or `urlSecret` so the host still names the secret file
+  (D-0044). `refresh` and `geodata.refresh` accept a five-field cron whose
+  day-of-week is `*` or a list such as `2,4,6`. `0` and `7` are Sunday.
+  The day-of-month and the month stay `*`. A destination that refuses an
+  exit from Iran, China, or Russia is future work (*13*).
 - Router commands are `docs/14-cli.md`. Build-host commands are
   `docs/16-build-host-cli.md`. `janus.*` options are
   `docs/08-configuration-reference.md`. Phase 1 commands exist, and so

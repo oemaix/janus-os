@@ -112,7 +112,7 @@ in {
       paused = "/var/lib/janus/web/paused";
       hostname = config.janus.system.hostName;
       inherit san;
-      subscriptions = lib.attrNames config.janus.proxy.subscriptions;
+      subscriptions = lib.attrNames (lib.filterAttrs (_: sub: sub.enable) config.janus.proxy.subscriptions);
       inherit lans;
       wifi = lib.attrNames config.janus.network.wifi;
       proxy = config.janus.proxy.enable;

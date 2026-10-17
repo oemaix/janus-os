@@ -26,6 +26,7 @@
         board = config.janus.hardware.board;
         subscriptions =
           lib.mapAttrs (_: sub: {
+            enable = sub.enable;
             format = sub.format;
             via = sub.via;
             refresh = sub.refresh;

@@ -205,6 +205,12 @@ back into the private repository. `janus-build fleet apply` pushes the
 committed subscription URL, Wi-Fi passphrase, and leases. Anything else
 in that commit is left for a deploy.
 
+A shared subscription stays in `common/`. On one router,
+`janus.proxy.subscriptions.<name>.enable = false` keeps the secret and
+drops the nodes. A refresh schedule may end with a day list:
+`0 4 * * 2,4,6` is 04:00 on Tuesday, Thursday, and Saturday. `0` and `7`
+are Sunday.
+
 ## Install a new system
 
 Reflash `janus-<host>.img` when the partition layout changes.

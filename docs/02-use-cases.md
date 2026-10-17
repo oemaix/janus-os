@@ -220,6 +220,19 @@ requirements it drives (see *03 — Requirements*).
   URL itself should be written into that shared file.
 * **Drives:** FR-CFG-010, FR-CFG-011, FR-OPS-012, ADR-0021
 
+### UC-22 One fleet, a subset of the subscriptions
+
+* **Actor:** Jonas
+* **Flow:** `common/default.nix` declares subscriptions A, B, and C, each
+  with a `urlSecret`. Every host imports that file, so each ciphertext
+  stays encrypted to every router. `hosts/one` sets
+  `subscriptions.C.enable = false`. `hosts/two` sets
+  `subscriptions.B.enable = false`. Router one refreshes A and B. Router
+  two refreshes A and C. A router that sets neither uses all three. A
+  group that names a disabled subscription fails evaluation. A refresh
+  of `0 4 * * 2,4,6` runs at 04:00 on Tuesday, Thursday, and Saturday.
+* **Drives:** D-0044, FR-CFG-011
+
 ### UC-20 Log a LAN device for a few days
 
 * **Actor:** Mei

@@ -31,29 +31,7 @@
     mask = (shift prefix - 1) * (shift (32 - prefix));
   in "${formatIpv4 (builtins.bitAnd ip mask)}/${toString prefix}";
 
-  onCalendar = s: let
-    parts = lib.splitString " " s;
-    pad = v:
-      if v == "*"
-      then "*"
-      else if lib.stringLength v < 2
-      then "0${v}"
-      else v;
-  in
-    if s == "weekly" || s == "daily" || s == "hourly"
-    then s
-    else if lib.match "[0-9]+h" s != null
-    then "00/${lib.removeSuffix "h" s}:00:00"
-    else if lib.match "[0-9]+m" s != null
-    then "*:0/${lib.removeSuffix "m" s}:00"
-    else if
-      lib.length parts
-      == 5
-      && builtins.elemAt parts 2 == "*"
-      && builtins.elemAt parts 3 == "*"
-      && builtins.elemAt parts 4 == "*"
-    then "*-*-* ${pad (builtins.elemAt parts 1)}:${pad (builtins.elemAt parts 0)}:00"
-    else throw "janus interval '${s}' is not Nh, Nm, weekly, daily, hourly, or a five-field cron expression with wildcards in the day fields.";
+  onCalendar = (import ./schedule.nix {inherit lib;}).onCalendar;
 
   wanIndex = lib.listToAttrs (lib.imap0 (i: n: {
     name = n;
@@ -178,7 +156,7 @@
       cfg.groups;
     rules = map expandRule cfg.rules;
     lans = lanViews;
-    subscriptionNames = lib.attrNames cfg.subscriptions;
+    subscriptionNames = lib.attrNames enabledSubscriptions;
     dns = {
       carrierResolvers = dns.carrierResolvers;
       encryption = dns.encryption;
@@ -270,7 +248,7 @@
     pkgs.runCommand "janus-nodes-built.json" {
       nativeBuildInputs = [pkgs.jq];
     } ''
-      jq -s 'add' ${manualNodes} ${lib.concatMapStringsSep " " (name: snapshotNodes name cfg.subscriptions.${name}) (lib.attrNames cfg.subscriptions)} > "$out"
+      jq -s 'add' ${manualNodes} ${lib.concatMapStringsSep " " (name: snapshotNodes name enabledSubscriptions.${name}) (lib.attrNames enabledSubscriptions)} > "$out"
     '';
 
   modelFile = pkgs.writeText "janus-proxy-model.json" (builtins.toJSON model);
@@ -405,7 +383,9 @@
     cfg.nodes
   );
 
-  inlineUrls = lib.filterAttrs (_: sub: sub.url != null && config.janus.security.allowInlineSecrets) cfg.subscriptions;
+  enabledSubscriptions = lib.filterAttrs (_: sub: sub.enable) cfg.subscriptions;
+
+  inlineUrls = lib.filterAttrs (_: sub: sub.url != null && config.janus.security.allowInlineSecrets) enabledSubscriptions;
 
   waitClock = pkgs.writeShellScript "janus-wait-clock" ''
     ${pkgs.coreutils}/bin/timeout 90 ${pkgs.systemd}/bin/systemd-time-wait-sync || true
@@ -457,7 +437,7 @@
       nameFilter = sub.nameFilter;
       urlSecret = sub.urlSecret;
     })
-    cfg.subscriptions;
+    enabledSubscriptions;
 
   doh = [
     "1.1.1.1"
@@ -737,7 +717,7 @@ in {
             Unit = "janus-proxy-refresh@${name}.service";
           };
         })
-      cfg.subscriptions
+      enabledSubscriptions
       // {
         janus-geodata-refresh = {
           wantedBy = ["timers.target"];
