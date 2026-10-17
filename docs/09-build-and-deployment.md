@@ -87,10 +87,12 @@ host's directory, or under `common/` when every host imports them.
 This template is a **separate git repository** from Janus OS. The user
 clones nothing of the OS for day-to-day use. The first command is
 `nix run github:oemaix/janus-os#janus-build -- init <dir>` (*16* §0).
-`inputs.janus.url` pins the Janus that provided that `janus-build`. They
-do not fork Janus OS per router, and they do not keep one branch per
-device inside the OS repo. A second router is `janus-build host add <name>`
-in this same repo.
+`inputs.janus.url` is the train branch of the Janus that provided that
+`janus-build` (`main`, or `X.Y`). `flake.lock` records the commit.
+`janus-build update` follows the branch. Another train is
+`janus-build update --train` (ADR-0024, §10). They do not fork Janus OS
+per router, and they do not keep one branch per device inside the OS repo.
+A second router is `janus-build host add <name>` in this same repo.
 
 A **local** git repository is mandatory (FR-CFG-010). Flakes skip
 uncommitted files, so the sequence is edit, commit, `nix build`. A
@@ -278,9 +280,47 @@ says so and does not resize the table.
 
 ## 10. Release
 
-* Semantic versioning; each release pins one nixpkgs release branch commit
-  and one version each of sing-box, Xray, Geo data.
-* Release artifacts: images for Tier-1 boards with the template
-  configuration, `SHA256SUMS`, options reference HTML, changelog.
-* Users are expected to *rebuild* rather than download images, but stock
-  images make first contact easy.
+Versions and trains are ADR-0024. A train is the branch `janus-build
+update` follows. A version is a tag on that branch.
+
+| Name | Role |
+|------|------|
+| `main` | Development train. The file `train` in this repository contains `main`. |
+| `X.Y` | Release train, major.minor, no leading zeros. End users follow this branch. The file `train` on that branch contains `X.Y`. |
+| `vX.Y.Z` | Immutable tag. The tip of branch `X.Y` is always one of these tags. |
+| `X.Y-<topic>` | Short-lived branch for a bugfix or a backport, cut from the tip of `X.Y`. Not a train. |
+
+There is no `X.Y-dev` branch. Maintenance of train `1.3` is
+`1.3-<topic>`, for example `1.3-dhcp-lease`. The `train` file on that
+branch stays `1.3`. The branch merges into `1.3` as the commit tagged
+`v1.3.N`. `janus-build update` on a fleet that follows `1.3` then moves
+to that tag. A standing `1.3-dev` would be a second line, and an update
+would deliver commits that are not tagged.
+
+* **Patch** (`v1.3.4`): same train, same Nixpkgs stable branch. The pinned
+  Nixpkgs commit may advance. Fleets on `1.3` take it with
+  `janus-build update`.
+* **Minor** (`v1.4.0`): new branch `1.4`. New options, and it may move to
+  the next Nixpkgs stable. An existing fleet changes with
+  `janus-build update --train 1.4`.
+* **Major** (`v2.0.0`): new branch `2.0`. Removed options, or an image
+  layout that is not a closure deploy.
+
+Cutting train `1.3` is a commit on branch `1.3` that sets `train` to
+`1.3` and is tagged `v1.3.0`. `main` keeps `main`. Nix does not expose
+the fetched ref to the flake, so `init` reads this file rather than the
+branch name.
+
+`inputs.janus.url` is `github:oemaix/janus-os/<train>`. `flake.lock`
+holds the commit. The lock's `original` names the branch and has no
+`rev`, which is what lets `nix flake update janus` move. A dirty tree
+has no revision; `init` writes a `path:` URL, and `--train` joins a
+branch later.
+
+Each release pins one nixpkgs release-branch commit and one version each
+of sing-box, Xray, and Geo data. Release artifacts are images for Tier-1
+boards with the template configuration, `SHA256SUMS`, the options
+reference HTML, and a changelog. Users are expected to rebuild rather
+than download images, but stock images make first contact easy. The
+image records a git revision in `build.json`. The version to compare
+with the changelog is the tag on that revision.

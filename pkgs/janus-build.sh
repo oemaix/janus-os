@@ -583,6 +583,103 @@ EOF
 EOF
 }
 
+# ADR-0024. A train is main or MAJOR.MINOR. A tag, a patch, and a topic
+# branch are not trains.
+train_ok() {
+  name=$1
+  case "$name" in
+    main) return 0 ;;
+  esac
+  major=${name%%.*}
+  minor=${name#*.}
+  if [ "$major" = "$name" ] || [ -z "$major" ] || [ -z "$minor" ] || [ "$minor" != "${minor%%.*}" ]; then
+    return 1
+  fi
+  case "$major$minor" in
+    *[!0-9]*) return 1 ;;
+  esac
+  case "$major" in
+    0 | [1-9]*) ;;
+    *) return 1 ;;
+  esac
+  case "$minor" in
+    0 | [1-9]*) ;;
+    *) return 1 ;;
+  esac
+  case "$major" in
+    0?*) return 1 ;;
+  esac
+  case "$minor" in
+    0?*) return 1 ;;
+  esac
+  return 0
+}
+
+set_janus_url() {
+  url=$1
+  if [ ! -f flake.nix ]; then
+    echo "flake.nix is missing." >&2
+    exit 1
+  fi
+  if ! grep -q 'inputs\.janus\.url' flake.nix; then
+    echo "flake.nix has no inputs.janus.url." >&2
+    exit 1
+  fi
+  sed -i -E "s|(inputs\\.janus\\.url[[:space:]]*=[[:space:]]*\")[^\"]*(\";)|\\1${url}\\2|" flake.nix
+}
+
+# Lock the commit this janus-build came from. original names the branch
+# and has no rev, so a later `nix flake update janus` can move.
+write_janus_lock() {
+  ref=${JANUS_URL#github:oemaix/janus-os/}
+  jq --arg ref "$ref" \
+    --arg rev "$JANUS_REV" \
+    --arg nar "$JANUS_NAR" \
+    --argjson modified "$JANUS_MODIFIED" \
+    '
+      def prefix_follows($rootInputs):
+        if (type == "object") and has("inputs") then
+          .inputs |= with_entries(
+            .value as $v
+            | if ($v | type) == "array" and (($rootInputs | index($v[0])) != null)
+              then .value = (["janus"] + $v)
+              else .
+              end
+          )
+        else .
+        end;
+      . as $up
+      | ($up.nodes.root.inputs | keys_unsorted) as $rootInputs
+      | ($up.nodes | del(.root) | with_entries(.value |= prefix_follows($rootInputs)))
+      | . + {
+          janus: {
+            inputs: $up.nodes.root.inputs,
+            locked: {
+              lastModified: $modified,
+              narHash: $nar,
+              owner: "oemaix",
+              repo: "janus-os",
+              rev: $rev,
+              type: "github"
+            },
+            original: {
+              owner: "oemaix",
+              ref: $ref,
+              repo: "janus-os",
+              type: "github"
+            }
+          },
+          root: {
+            inputs: {
+              janus: "janus",
+              nixpkgs: ["janus", "nixpkgs"]
+            }
+          }
+        }
+      | {nodes: ., root: "root", version: 7}
+    ' "$JANUS_UPSTREAM_LOCK" > flake.lock
+}
+
 if [ "${JANUS_BUILD_LIB:-}" = 1 ]; then
   # `return` leaves a sourced test. It fails when this file is executed, and then we stop.
   # shellcheck disable=SC2317
@@ -609,7 +706,6 @@ case "$cmd" in
     mkdir -p "$dir"
     cp -a -- "$TEMPLATE/." "$dir/"
     chmod -R u+w "$dir"
-    sed -i "s|github:oemaix/janus-os|$JANUS_URL|" "$dir/flake.nix"
     hosts=""
     while [ "${1:-}" = "--host" ]; do
       shift
@@ -618,6 +714,10 @@ case "$cmd" in
     done
     (
       cd "$dir"
+      set_janus_url "$JANUS_URL"
+      if [ -n "$JANUS_REV" ]; then
+        write_janus_lock
+      fi
       for name in $hosts; do
         write_host "$name"
       done
@@ -753,7 +853,18 @@ case "$cmd" in
     ;;
   update)
     require_repo
-    nix flake update janus
+    if [ $# -eq 0 ]; then
+      nix flake update janus
+    elif [ $# -eq 2 ] && [ "$1" = "--train" ]; then
+      if ! train_ok "$2"; then
+        echo "Train '$2' must be main or MAJOR.MINOR." >&2
+        exit 2
+      fi
+      set_janus_url "github:oemaix/janus-os/$2"
+      nix flake update janus
+    else
+      usage
+    fi
     ;;
   fleet)
     require_repo

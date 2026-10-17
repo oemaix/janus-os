@@ -14,6 +14,14 @@
     systems = ["x86_64-linux" "aarch64-linux"];
     forAllSystems = f:
       nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
+    train = let
+      raw = nixpkgs.lib.stringTrim (builtins.readFile ./train);
+      ok = raw == "main" || builtins.match "(0|[1-9][0-9]*)[.](0|[1-9][0-9]*)" raw != null;
+    in
+      if ok
+      then raw
+      else throw "The train file must contain main or MAJOR.MINOR, not '${raw}'.";
+    pinned = self ? rev && self.rev != null;
   in {
     nixosModules.janus = ./modules/janus;
     nixosModules.boards = ./modules/boards;
@@ -31,10 +39,17 @@
       import ./pkgs {
         inherit pkgs;
         template = ./templates/default;
+        upstreamLock = ./flake.lock;
         janusUrl =
-          if self ? rev && self.rev != null
-          then "github:oemaix/janus-os/${self.rev}"
+          if pinned
+          then "github:oemaix/janus-os/${train}"
           else "path:${self.outPath}";
+        janusRev =
+          if pinned
+          then self.rev
+          else "";
+        janusNar = self.sourceInfo.narHash or "";
+        janusModified = self.sourceInfo.lastModified or 0;
       }
       // {
         docs-options = let

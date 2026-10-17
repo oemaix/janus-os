@@ -34,10 +34,15 @@ nix run github:oemaix/janus-os#janus-build -- init ./fleet
 
 That fetch is not a working copy the operator maintains. `init` then
 creates `./fleet` from the template bundled with that same `janus-build`
-(*09* §3):
+(*09* §3, ADR-0024):
 
-* `nix flake init` of that template. `inputs.janus.url` is the flake this
-  `janus-build` came from, so the repo and the tool pin the same Janus.
+* Copy that template. `inputs.janus.url` is the train branch recorded in
+  the `train` file of this `janus-build` (`main`, or `X.Y`). `flake.lock`
+  records the commit, and its `original` names the branch without a
+  `rev`. A dirty tree has no commit, so the URL is a `path:` of that
+  tree. A clean commit that is not on `github:oemaix/janus-os` still
+  gets the branch URL; evaluation fails until that commit is pushed,
+  or until `--train` joins a branch.
 * `git init` and an initial commit when the directory is not already a
   repository.
 * The command refuses when the directory already contains `flake.nix`.
@@ -56,7 +61,11 @@ files, so the next step is a commit, then `janus-build secret keygen potato`.
 
 `nix develop` in the fleet repo puts that repo's `janus-build` on `PATH`.
 `nix run .#janus-build -- <args>` is the same program without the shell.
-Both follow `inputs.janus`. `janus-build update` moves that pin.
+Both follow `inputs.janus`. `janus-build update` moves the lock along the
+branch in the URL. `janus-build update --train <train>` rewrites the URL
+to `github:oemaix/janus-os/<train>` and then updates the lock. `<train>`
+is `main` or `X.Y`. A tag, a patch number, a commit, and a topic branch
+such as `1.3-dhcp-lease` are refused. Neither form builds or deploys.
 
 Cloning Janus OS and running `nix develop` there is how someone changes
 Janus itself. That shell also contains `janus-build`. `init` from it
@@ -91,7 +100,7 @@ SSH destinations are `janus.deploy.address`, or the
 | Pull overrides | `janus-build fleet pull [<host>]` | Current overrides from one router, or every reachable router, into this repo (§5). |
 | Look | `janus-build status [<host>]` | SSH `janus status` on one host or every host. |
 | Save a router | `janus-build backup <host>` | SSH `janus backup` and write the archive on the build host. |
-| New Janus pin | `janus-build update` | `nix flake update janus`. Does not build or deploy. |
+| New Janus pin | `janus-build update [--train <train>]` | `nix flake update janus`. `--train` rewrites `inputs.janus.url` to that train first (§0). Does not build or deploy. |
 
 A later local wizard is a front end for `init` and `host add`. It is
 not a hosted builder (*00* §4, *13* Future). Until it exists, those two
@@ -258,7 +267,7 @@ not written in that failed run.
 | `janus-build build [<host>]` | Image build. No host means every host. A non-x86_64 machine evaluates impurely so `builtins.currentSystem` is that machine. |
 | `janus-build status [<host>]` | One SSH to `janus status` per host. No host means every host. A down host is named; the others are still printed. |
 | `janus-build backup <host>` | Writes the `janus backup` archive to `./backup/<host>-<utc>.tar` and prints the path. Does not commit it. |
-| `janus-build update` | Updates the `janus` flake input only. The user runs `check` and `build` next. |
+| `janus-build update [--train <train>]` | Updates the `janus` flake input only. Without `--train`, the URL stays and the lock follows that branch. `--train` changes the train (§0). The user runs `check` and `build` next. |
 
 `status` and `backup` do not grow a second implementation of those
 reports. The report is the router command.

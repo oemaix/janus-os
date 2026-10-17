@@ -74,7 +74,10 @@ nix run ./janus-os#janus-build -- init ./fleet
 
 `init` takes the new directory, `./fleet`. It does not take a flake
 address. That address is the `nix run` target, and the new repository
-pins the same Janus. Continue inside the fleet repository:
+pins the same Janus: a branch in `inputs.janus.url` (`main`, or a
+release train such as `1.3`) and a commit in `flake.lock`.
+`janus-build update` follows that branch. Another train is
+`janus-build update --train 1.3`. Continue inside the fleet repository:
 
 ```
 cd fleet

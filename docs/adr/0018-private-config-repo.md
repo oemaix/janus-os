@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | Accepted; the `secrets.yaml` sentence is refined by ADR-0022 |
+| Status | Accepted; the `secrets.yaml` sentence is refined by ADR-0022; the release pin is refined by ADR-0024 |
 | Date | 2026-09-23 |
 | Affects | 00 §4 and §9, 09 §3 |
 

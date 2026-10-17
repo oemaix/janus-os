@@ -108,6 +108,10 @@ Read this file before answering a question about using Janus OS.
   `nix run github:oemaix/janus-os#janus-build -- init <dir>`, or
   `nix run <clone>#janus-build -- init <dir>` for a local clone.
   `init` takes the new directory. The flake address is the `nix run`
-  target.
+  target. The fleet records a train branch in `inputs.janus.url` and
+  the commit in `flake.lock`. `janus-build update` follows that branch.
+  `janus-build update --train <train>` switches train (`main` or
+  `MAJOR.MINOR`). Tags are `vMAJOR.MINOR.PATCH`. A bugfix or backport
+  is a short-lived `X.Y-<topic>` branch, not a train and not `X.Y-dev`.
 - `docs/13-roadmap.md` says what the repository can already
   do. A placeholder module is not a finished feature.

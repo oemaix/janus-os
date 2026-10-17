@@ -195,13 +195,54 @@ in {
     system = pkgs.stdenv.hostPlatform.system;
   in
     pkgs.runCommand "cli-init" {
-      nativeBuildInputs = [self.packages.${system}.janus-build pkgs.age];
+      nativeBuildInputs = [self.packages.${system}.janus-build pkgs.age pkgs.jq];
     } ''
       export HOME=$TMPDIR
       janus-build init "$TMPDIR/fleet"
       test -f "$TMPDIR/fleet/flake.nix"
       test -d "$TMPDIR/fleet/.git"
+      url=$(sed -n 's/.*inputs\.janus\.url = "\([^"]*\)".*/\1/p' "$TMPDIR/fleet/flake.nix")
+      case "$url" in
+        github:oemaix/janus-os/*)
+          ref=''${url#github:oemaix/janus-os/}
+          case "$ref" in
+            main | [0-9]*) ;;
+            *)
+              echo "janus url is not a train: $url" >&2
+              exit 1
+              ;;
+          esac
+          if [ ''${#ref} -eq 40 ] && ! echo "$ref" | grep -q '[^0-9a-f]'; then
+            echo "janus url is a commit: $url" >&2
+            exit 1
+          fi
+          jq -e --arg ref "$ref" '
+            .nodes.janus.original.ref == $ref
+            and (.nodes.janus.original | has("rev") | not)
+            and (.nodes.janus.locked.rev | test("^[0-9a-f]{40}$"))
+          ' "$TMPDIR/fleet/flake.lock" >/dev/null
+          ;;
+        path:*) ;;
+        *)
+          echo "unexpected janus url: $url" >&2
+          exit 1
+          ;;
+      esac
       cd "$TMPDIR/fleet"
+      if janus-build update --train 1.3-dev; then
+        echo "a topic branch was accepted as a train" >&2
+        exit 1
+      fi
+      if janus-build update --train v1.3.0; then
+        echo "a tag was accepted as a train" >&2
+        exit 1
+      fi
+      if janus-build update --train 1.3.0; then
+        echo "a patch version was accepted as a train" >&2
+        exit 1
+      fi
+      now=$(sed -n 's/.*inputs\.janus\.url = "\([^"]*\)".*/\1/p' flake.nix)
+      test "$now" = "$url"
       janus-build host add potato
       test -f hosts/potato/configuration.nix
       janus-build secret keygen potato > "$TMPDIR/age.key"

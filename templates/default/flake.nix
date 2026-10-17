@@ -4,6 +4,7 @@
 # lib.mkRouter reads janus.hardware.board and builds the image.
 # `nix develop` here is the operator shell: janus-build only.
 {
+  # janus-build init sets this to the train branch and writes flake.lock.
   inputs.janus.url = "github:oemaix/janus-os";
   inputs.nixpkgs.follows = "janus/nixpkgs";
 

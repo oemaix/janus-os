@@ -71,8 +71,11 @@ nix run ./janus-os#janus-build -- init ./fleet
 ```
 
 `init` پوشه تازه، یعنی `./fleet`، را می‌گیرد. نشانی flake را نمی‌گیرد.
-آن نشانی هدف `nix run` است و مخزن تازه همان Janus را pin می‌کند. کار
-را درون مخزن ناوگان ادامه دهید:
+آن نشانی هدف `nix run` است و مخزن تازه همان Janus را pin می‌کند: یک
+برنچ در `inputs.janus.url` (`main`، یا یک خط انتشار مانند `1.3`) و یک
+کامیت در `flake.lock`. `janus-build update` همان برنچ را دنبال می‌کند.
+خط دیگر با `janus-build update --train 1.3` انتخاب می‌شود. کار را درون
+مخزن ناوگان ادامه دهید:
 
 ```
 cd fleet
