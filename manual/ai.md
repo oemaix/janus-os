@@ -20,11 +20,46 @@ Read this file before answering a question about using Janus OS.
   On the board, `janus deploy` exits 2 and names `janus-build`. Hot
   overrides cover an existing subscription URL, a static lease on an
   existing LAN, and an existing Wi-Fi passphrase.
-- `janus.region` is `cn` (default), `ru`, or `ir`. It selects domestic DNS
+- `janus.system.region` is `cn` (default), `ru`, or `ir`. It selects domestic DNS
   and the `blockQuic` default. That reject follows direct rules; it is
   not a drop of every UDP/443. `janus.proxy.rules` stays empty until
   written. The example has the `cn`, `ru`, and `ir` lists. `ir` requires
   `janus.dns.domestic.resolvers`. The region is not a hot override.
+- Each LAN inherits `janus.proxy.mode`, `rules`, `defaultTarget`,
+  `exceptions`, and `janus.dns` (D-0042). A set `proxy.rules` replaces
+  the inherited list. Nodes, groups, subscriptions, and `failMode` stay
+  on the router. One engine matches the LAN by source. `bypass` is not
+  intercepted; unset DNS then sends every recursive name to the domestic
+  encrypted resolvers. `rule-based` is split. `proxy-all` fake-IPs names
+  it will proxy. `dns.recursive = false` is hosts and leases only. A
+  bypass LAN that sets fake-IP on, or sets `remote.resolvers`, fails
+  evaluation. Fake-IP is for a name that LAN will proxy, including the
+  default target when that target is a group (D-0037). `ipv6Answers`
+  defaults to `strip-for-proxied` (D-0038). `janus.dns.bootstrap` is an
+  optional list of IP literals; unset, the region preset supplies it and
+  nothing is resolved at build time (D-0040). `janus dns check` probes
+  one domestic name and one foreign name per LAN, on the router. It does
+  not impersonate a LAN client (D-0041). sing-box renders this per LAN.
+  xray 26 routes each LAN by source and applies one shared DNS policy.
+  Evaluation fails when the LANs do not share that policy. `listen.lans`
+  defaults to `all`: those LANs are told to use the router. `encryption`
+  defaults to `prefer`. `domestic.ecs` defaults to `allow` and
+  `remote.ecs` to `strip`. The cache holds 4096 answers and sing-box
+  writes a 60-second TTL. xray 26 has no cache size or minimum TTL.
+  Neither engine attaches a client subnet: sing-box 1.13 disables the
+  DNS cache when a query carries one, and xray 26 has no such field.
+  Each resolver list queries its first address. sing-box has no DNS
+  failover group. xray 26 does not stably match one name on two servers.
+  `carrierResolvers = "fallback-only"` is that limit. `domestic-only`
+  uses the first learned WAN address. A blocked name is a DNS reject on
+  sing-box. xray sends the lookup to a closed port on the router, and
+  the client receives the failure. Tell the user to keep `sing-box`
+  unless they need xray. Different DNS policies per LAN, including a
+  `bypass` LAN beside a `rule-based` LAN, Hysteria2, TUIC,
+  `tls.insecure`, a Shadowsocks plugin, or a cache other than 4096 and
+  60 all stay on sing-box. xray is for `load-balance` or for xray nodes
+  when every LAN shares one DNS policy. `fallback` fails on both engines.
+  The choice is `docs/07-proxy-and-dns.md` §2.1.
 - `janus.monitoring.audit.enable` defaults to false. With it set,
   `janus audit stop` pauses recording without a rebuild. The log is
   JSON Lines of connection metadata on the state partition.

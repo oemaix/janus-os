@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-09-26 |
+| Last updated | 2026-10-17 |
 
 ## 1. Substrate
 
@@ -71,6 +71,8 @@ Semantics:
 * **`default`** WAN installs the default route (metric ordering when several
   `default`s exist). **`backup`** installs a higher-metric default route and
   becomes active when health checks of all lower-metric defaults fail.
+  An unset metric is 100 plus the WAN index, or 1100 plus the index for
+  a backup, so a backup stays above every default (D-0036).
   **`iptv`** installs *no* default route; it exists to receive multicast and
   the carrier's IPTV subnet; `janus.network.igmpProxy` binds it to LANs.
   **`custom`** installs only what `routes` says (policy routing table per
@@ -98,9 +100,10 @@ janus.network.lans.<name> = {
                ula = "fd00:..."|"auto"; ra = { managed; other; rdnss = "router"; };
                dhcpv6 = { enable; }; subnetId = 1; };
   zone     = "lan";              # firewall zone (default = lan name)
-  proxied  = true;               # subject to traffic mode (default true)
+  proxy    = { mode, rules, defaultTarget, exceptions };  # unset inherits; D-0042
+  dns      = { ... };           # same shape as janus.dns; unset inherits
   nat      = { enable = true; hairpin = true; };
-  isolation = false;             # bridge port isolation for guest LANs
+  isolation = false;             # bridge port isolation inside this LAN
 };
 ```
 
@@ -108,12 +111,24 @@ Each LAN is a Linux bridge `br-<name>`. Bridging a Wi-Fi AP means the
 `hostapd` interface is a bridge member. Static leases feed both DHCP and
 local DNS (FR-NET-012).
 
+`proxy.mode` is `bypass`, `rule-based`, or `proxy-all`. Unset, it is
+`janus.proxy.mode`. Unset `proxy.rules`, `defaultTarget`, and `exceptions`
+inherit the router values. A set rule list replaces them. `dns` inherits
+`janus.dns` the same way. `dns.recursive = false` answers hosts and leases
+only. `isolation` is bridge port isolation inside one LAN. It is not the
+firewall rule between zones (D-0039, D-0042). `bypass` is not intercepted.
+`rule-based` and `proxy-all` are.
+
 ## 6. DHCP server and RA
 
 dnsmasq serves DHCP only (ADR-0009). It is not a DNS policy engine.
 Per-LAN scopes, static leases, custom options, and a lease file on `/var`
 are its job. Lease hostnames are exported for DNS. RA is provided by
-networkd (`IPv6SendRA=`) with the prefix from PD or ULA.
+networkd (`IPv6SendRA=`) with the prefix from PD or ULA. A LAN in
+`janus.dns.listen.lans` is told to use the router: DHCPv4 option 6 carries
+the LAN's IPv4 address, `ula-only` names the ULA, and `delegated` names
+the router's IPv6 link-local (`DNS=_link_local`). The delegated address
+itself is assigned at runtime, and an IPv4 literal is not an RDNSS address.
 
 ## 7. NAT and port forwarding
 
@@ -159,10 +174,20 @@ for zones' interfaces and address lists. Stateful defaults: `ct state
 established,related accept`, `ct state invalid drop`. IPv6 follows identical
 zone semantics; ICMPv6 essentials (RA/NS/NA/PMTU) are always allowed.
 
+The default policy list is `lan → wan` accept (FR-FW-002). The
+`guest → wan` row above is an extra policy, so a guest LAN can use the
+Internet without reaching `lan`. A zone with no policy to `wan`, such as
+`iot`, has no WAN path. There is no implicit forward between LAN zones.
+`wan → *` stays drop. Assigning `policies` replaces this default list, so
+a written list that should keep the owner's Internet includes the
+`lan → wan` row.
+
 A service may set `confine = true`. The port is then accepted on the
 named zones and dropped on every other interface, before a zone whose
 `input` is `accept` can open it. Prometheus uses this, so
-`prometheus.zones` is the only path to port 9100.
+`prometheus.zones` is the only path to port 9100. The DNS service
+defaults to the `lan` zone. A guest or IoT zone queries the router only
+after that zone is added to `services.dns.zones`.
 
 ## 9. IPv6 policy
 
@@ -177,8 +202,8 @@ IPv6. Janus therefore treats IPv6 as a *policy*, not a checkbox:
 | `ula-only` | RA with ULA prefix, no default route advertised. Hosts talk IPv6 internally; Internet is IPv4-only (through tunnel). |
 | `delegated` | Global prefix from WAN PD is advertised. Requires **tunnel-aware** handling: (a) IPv6 flows from proxied LANs are intercepted and subject to the same rules as IPv4 (FR-NET-033); (b) AAAA handling follows DNS policy (fake-IP or remote resolution); (c) RA advertises stable-privacy + temporary addresses (`IPv6PrivacyExtensions=kernel` on the router; RA flags do not control hosts, so the docs state the host-side expectation) ; (d) optional `npt66` (network prefix translation) to hide the delegated prefix's stability. |
 
-Default LAN IPv6 mode: `delegated` when the traffic mode is `bypass`;
-`disabled` when the traffic mode is `rule-based` or `proxy-all`. An
+Default LAN IPv6 mode follows that LAN's `proxy.mode`: `delegated` when
+it is `bypass`; `disabled` when it is `rule-based` or `proxy-all`. An
 assertion warns when `delegated` is combined with `rule-based` or
 `proxy-all` and IPv6 interception is not enabled. `direct` is a rule
 target, not a traffic mode.
@@ -211,7 +236,8 @@ Client (STA) mode as a WAN uplink is out of scope for 1.0.
 
 The network layer provides two hooks used by *07 — Proxy and DNS*:
 
-* an nftables set `janus_proxied_src` of LAN subnets with `proxied = true`;
+* an nftables set `janus_proxied_src` of LAN subnets whose `proxy.mode` is
+  `rule-based` or `proxy-all`;
 * a fwmark (`0x4a`) and routing table reserved for engine egress so that
   tunnel packets bypass the interception path and honor the WAN routing
   tables above.

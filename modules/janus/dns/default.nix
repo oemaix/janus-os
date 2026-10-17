@@ -17,22 +17,28 @@ in {
     encryption = mkOption {
       type = types.enum ["prefer" "require"];
       default = "prefer";
-      description = "Encrypted resolver policy.";
+      description = "prefer allows a plaintext resolver. require accepts only https://, tls://, and quic:// for resolvers that answer clients. Bootstrap addresses stay plaintext.";
     };
     domestic.resolvers = mkOption {
       type = types.listOf types.str;
-      defaultText = "the resolvers for janus.region (docs/21); empty for ir";
-      description = "Domestic resolvers. Unset, these follow janus.region. ir is empty until this list is set. With the proxy enabled, that empty list fails evaluation.";
+      defaultText = "the resolvers for janus.system.region (docs/21); empty for ir";
+      description = "Domestic resolvers. Unset, these follow janus.system.region. ir is empty until this list is set. With the proxy enabled, that empty list fails evaluation.";
+    };
+    domestic.probe = mkOption {
+      type = types.str;
+      internal = true;
+      defaultText = "the probe name for janus.system.region";
+      description = "Name janus dns check resolves as domestic. Unset, this follows janus.system.region.";
     };
     domestic.domains = mkOption {
       type = types.listOf types.str;
-      defaultText = "the domestic names for janus.region (docs/21)";
-      description = "Names sent to the domestic resolvers. Unset, these follow janus.region.";
+      defaultText = "the domestic names for janus.system.region (docs/21)";
+      description = "Names sent to the domestic resolvers. Unset, these follow janus.system.region.";
     };
     domestic.ecs = mkOption {
       type = types.enum ["allow" "strip"];
       default = "allow";
-      description = "EDNS client subnet for domestic resolvers.";
+      description = "Recorded policy. Neither engine attaches a client subnet. sing-box 1.13 disables the DNS cache for any query that carries one, including 0.0.0.0/0. xray 26 has no client-subnet field. The resolver sees the source address of the query.";
     };
     remote.resolvers = mkOption {
       type = types.listOf types.str;
@@ -47,7 +53,7 @@ in {
     remote.ecs = mkOption {
       type = types.enum ["allow" "strip"];
       default = "strip";
-      description = "EDNS client subnet for remote resolvers.";
+      description = "Recorded policy. Neither engine attaches a client subnet. sing-box 1.13 disables the DNS cache for any query that carries one, including 0.0.0.0/0. xray 26 has no client-subnet field. The resolver sees the source address of the query.";
     };
     fakeIp.enable = mkOption {
       type = types.either types.bool (types.enum ["auto"]);
@@ -66,13 +72,23 @@ in {
     };
     fakeIp.exclude = mkOption {
       type = types.listOf types.str;
-      defaultText = "the domestic names for janus.region, plus *.lan and geosite:private";
-      description = "Names that receive real answers. Unset, these follow janus.region.";
+      defaultText = "the domestic names for janus.system.region, plus *.lan and geosite:private";
+      description = "Names that receive real answers. Unset, these follow janus.system.region.";
     };
     ipv6Answers = mkOption {
       type = types.enum ["keep" "strip-for-proxied" "strip-all"];
       default = "strip-for-proxied";
-      description = "How AAAA answers are handled.";
+      description = "How AAAA answers are handled. strip-for-proxied withholds a globally routable AAAA from a proxied name. An address in the IPv6 fake-IP range is not a leak.";
+    };
+    bootstrap = mkOption {
+      type = types.listOf types.str;
+      defaultText = "the addresses for janus.system.region (docs/21); empty for ir";
+      description = "IP addresses used only to resolve DoH and DoT hostnames. Unset, these follow janus.system.region. The build does not look the hostnames up.";
+    };
+    recursive = mkOption {
+      type = types.bool;
+      default = true;
+      description = "Ask upstream resolvers. False answers only hosts and static leases.";
     };
     interceptPlaintext = mkOption {
       type = types.bool;
@@ -81,8 +97,8 @@ in {
     };
     blockDoT = mkOption {
       type = types.bool;
-      default = false;
-      description = "Reject DNS over TLS (port 853) from LANs.";
+      default = true;
+      description = "Reject DNS over TLS (port 853) from LANs. Default on (docs/11 §4.4).";
     };
     blockKnownDoH = mkOption {
       type = types.bool;
@@ -107,12 +123,12 @@ in {
     cache.size = mkOption {
       type = types.int;
       default = 4096;
-      description = "DNS cache entries.";
+      description = "sing-box DNS cache capacity. xray 26 has no size; a value other than 4096 fails evaluation.";
     };
     cache.minTtl = mkOption {
       type = types.int;
       default = 60;
-      description = "Minimum TTL in seconds.";
+      description = "TTL sing-box writes on each routed answer. It has no floor-only TTL. 0 leaves the upstream TTL. xray 26 has no such field; a value other than 60 fails evaluation.";
     };
   };
 }

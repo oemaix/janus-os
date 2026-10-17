@@ -61,10 +61,92 @@
   }) (lib.attrNames net.wans));
   wanTable = name: 100 + wanIndex.${name};
 
-  proxiedLans = lib.filter (n: net.lans.${n}.proxied) (lib.attrNames net.lans);
-  intercept = cfg.mode != "bypass" && proxiedLans != [];
+  pick = local: parent:
+    if local == null
+    then parent
+    else local;
+
+  normMatch = match: {
+    domains = match.domains or [];
+    domainSuffix = match.domainSuffix or [];
+    geosite = match.geosite or [];
+    geoip = match.geoip or [];
+    ipCidr = match.ipCidr or [];
+    port = match.port or [];
+    protocol = match.protocol or null;
+    sourceLan = match.sourceLan or [];
+    sourceIp = match.sourceIp or [];
+  };
+
+  normRule = rule: {
+    match = normMatch (rule.match or {});
+    target = rule.target;
+  };
+
+  leaseHosts = lanName: lan:
+    lib.mapAttrs' (host: lease: {
+      name = "${host}.${lan.domain}";
+      value = lease.ip;
+    })
+    lan.dhcp.staticLeases;
+
+  lanView = name: lan: let
+    mode =
+      if lan.proxy.mode == null
+      then cfg.mode
+      else lan.proxy.mode;
+    rules =
+      if lan.proxy.rules == null
+      then cfg.rules
+      else map normRule lan.proxy.rules;
+    exceptions =
+      if lan.proxy.exceptions == null
+      then cfg.exceptions
+      else lan.proxy.exceptions;
+    exceptionRules = lib.optionals (mode == "proxy-all") (map (tag: {
+        match = normMatch {geosite = [tag];};
+        target = "direct";
+      })
+      exceptions);
+  in {
+    inherit name mode;
+    cidr = cidr lan.address lan.prefixLength;
+    address = lan.address;
+    inbound = "dns-lan-${name}";
+    defaultTarget =
+      if lan.proxy.defaultTarget == null
+      then cfg.defaultTarget
+      else lan.proxy.defaultTarget;
+    rules = map expandRule (exceptionRules ++ rules);
+    dns = {
+      recursive = pick lan.dns.recursive dns.recursive;
+      domestic = {
+        resolvers = pick lan.dns.domestic.resolvers dns.domestic.resolvers;
+        domains = pick lan.dns.domestic.domains dns.domestic.domains;
+      };
+      remote = {
+        resolvers = pick lan.dns.remote.resolvers dns.remote.resolvers;
+        via = pick lan.dns.remote.via dns.remote.via;
+      };
+      fakeIp = {
+        enable = pick lan.dns.fakeIp.enable dns.fakeIp.enable;
+        v4Range = pick lan.dns.fakeIp.v4Range dns.fakeIp.v4Range;
+        v6Range = pick lan.dns.fakeIp.v6Range dns.fakeIp.v6Range;
+        exclude = pick lan.dns.fakeIp.exclude dns.fakeIp.exclude;
+      };
+      ipv6Answers = pick lan.dns.ipv6Answers dns.ipv6Answers;
+      hosts = dns.hosts // (pick lan.dns.hosts {}) // (leaseHosts name lan);
+      forwarders = pick lan.dns.forwarders dns.forwarders;
+      bootstrap = pick lan.dns.bootstrap dns.bootstrap;
+    };
+  };
+
+  lanViews = lib.mapAttrsToList lanView net.lans;
+  proxiedLans = lib.filter (n: net.lans.${n}.internal.intercept) (lib.attrNames net.lans);
+  intercept = proxiedLans != [];
   bridges = map (n: "br-${n}") proxiedLans;
-  dnsTproxy = dns.interceptPlaintext && bridges != [];
+  dnsBridges = map (n: "br-${n}") (lib.attrNames net.lans);
+  dnsTproxy = dns.interceptPlaintext && dnsBridges != [];
   q = s: ''"${s}"'';
 
   expandRule = rule:
@@ -78,12 +160,6 @@
             ++ map (lan: cidr net.lans.${lan}.address net.lans.${lan}.prefixLength) rule.match.sourceLan;
         };
     };
-
-  exceptionRules = lib.optionals (cfg.mode == "proxy-all") (map (name: {
-      match.geosite = [name];
-      target = "direct";
-    })
-    cfg.exceptions);
 
   model = {
     mode = cfg.mode;
@@ -100,7 +176,8 @@
         emptyFallback = g.emptyFallback;
       })
       cfg.groups;
-    rules = exceptionRules ++ map expandRule cfg.rules;
+    rules = map expandRule cfg.rules;
+    lans = lanViews;
     subscriptionNames = lib.attrNames cfg.subscriptions;
     dns = {
       carrierResolvers = dns.carrierResolvers;
@@ -112,6 +189,12 @@
       hosts = dns.hosts;
       forwarders = dns.forwarders;
       bogusAnswers = dns.bogusAnswers;
+      bootstrap = dns.bootstrap;
+      recursive = dns.recursive;
+      cache = {
+        size = dns.cache.size;
+        minTtl = dns.cache.minTtl;
+      };
     };
     geodataSources = {
       inherit (sources) geosite geoip tags;
@@ -228,20 +311,25 @@
     }
   '';
 
+  ruleGeosite = rules: lib.concatMap (rule: rule.match.geosite or []) rules;
+  geoNames = names:
+    lib.concatMap (name:
+      if lib.hasPrefix "geosite:" name
+      then [(lib.removePrefix "geosite:" name)]
+      else [])
+    names;
+  viewRules = lib.concatMap (view: view.rules) lanViews;
   geosites = lib.unique (
-    lib.concatMap (rule: rule.match.geosite or []) model.rules
-    ++ lib.concatMap (name:
-      if lib.hasPrefix "geosite:" name
-      then [(lib.removePrefix "geosite:" name)]
-      else [])
-    dns.domestic.domains
-    ++ lib.concatMap (name:
-      if lib.hasPrefix "geosite:" name
-      then [(lib.removePrefix "geosite:" name)]
-      else [])
-    dns.fakeIp.exclude
+    ruleGeosite model.rules
+    ++ ruleGeosite viewRules
+    ++ geoNames dns.domestic.domains
+    ++ geoNames dns.fakeIp.exclude
+    ++ lib.concatMap (view: geoNames view.dns.domestic.domains ++ geoNames view.dns.fakeIp.exclude) lanViews
   );
-  geoips = lib.unique (lib.concatMap (rule: rule.match.geoip or []) model.rules);
+  geoips = lib.unique (
+    lib.concatMap (rule: rule.match.geoip or []) model.rules
+    ++ lib.concatMap (rule: rule.match.geoip or []) viewRules
+  );
   geoTags = map (n: "geosite-${n}") geosites ++ map (n: "geoip-${n}") geoips;
 
   userSources = cfg.geodata.sources;
@@ -319,6 +407,10 @@
 
   inlineUrls = lib.filterAttrs (_: sub: sub.url != null && config.janus.security.allowInlineSecrets) cfg.subscriptions;
 
+  waitClock = pkgs.writeShellScript "janus-wait-clock" ''
+    ${pkgs.coreutils}/bin/timeout 90 ${pkgs.systemd}/bin/systemd-time-wait-sync || true
+  '';
+
   helper = pkgs.writeShellApplication {
     name = "janus-proxy";
     runtimeInputs = with pkgs;
@@ -332,6 +424,7 @@
       ''
         JANUS_SCRIPT=${janetScript}
         JANUS_ENGINE=${cfg.engine}
+        JANUS_DIG=${pkgs.bind}/bin/dig
         JANUS_FAIL_MODE=${cfg.failMode}
         ${lib.optionalString (cfg.engine == "xray") "XRAY_LOCATION_ASSET=${xrayAssets}"}
         ${lib.optionalString (cfg.engine == "xray" && cfg.failMode == "open" && intercept) "JANUS_XRAY_NFT=/etc/janus/xray-open.nft"}
@@ -381,6 +474,7 @@
   privateV6 = "::1/128, fe80::/10, ff00::/8";
   fakeV6 = dns.fakeIp.v6Range;
   bridgeSet = lib.concatMapStringsSep ", " q bridges;
+  dnsBridgeSet = lib.concatMapStringsSep ", " q dnsBridges;
 
   markRules =
     if bridges == []
@@ -396,13 +490,38 @@
     '';
 
   guardRules = lib.concatStringsSep "\n" (lib.filter (s: s != "") [
-    (lib.optionalString dns.blockDoT ''
-      iifname { ${bridgeSet} } meta l4proto { tcp, udp } th dport 853 reject
+    (lib.optionalString (dns.blockDoT && dnsBridgeSet != "") ''
+      iifname { ${dnsBridgeSet} } meta l4proto { tcp, udp } th dport 853 reject
     '')
-    (lib.optionalString dns.blockKnownDoH ''
-      iifname { ${bridgeSet} } ip daddr { ${lib.concatStringsSep ", " doh} } tcp dport 443 reject
+    (lib.optionalString (dns.blockKnownDoH && dnsBridgeSet != "") ''
+      iifname { ${dnsBridgeSet} } ip daddr { ${lib.concatStringsSep ", " doh} } tcp dport 443 reject
     '')
   ]);
+
+  xrayNameOnly = rule: let
+    m = rule.match or {};
+  in
+    (
+      (m.domains or [])
+      != []
+      || (m.domainSuffix or []) != []
+      || (m.geosite or []) != []
+    )
+    && (m.geoip or []) == []
+    && (m.ipCidr or []) == []
+    && (m.port or []) == []
+    && (m.protocol or null) == null;
+
+  xrayDnsKey = view: {
+    inherit (view) mode defaultTarget;
+    dns = lib.removeAttrs view.dns ["hosts"];
+    nameRules = map (rule: {
+      domains = rule.match.domains or [];
+      domainSuffix = rule.match.domainSuffix or [];
+      geosite = rule.match.geosite or [];
+      inherit (rule) target;
+    }) (lib.filter xrayNameOnly view.rules);
+  };
 in {
   options.janus.proxy.failMode = lib.mkOption {
     type = lib.types.enum ["closed" "open"];
@@ -411,7 +530,29 @@ in {
   };
 
   config = lib.mkIf cfg.enable {
-    environment.systemPackages = [pkgs.janet pkgs.sing-box pkgs.curl pkgs.age pkgs.jq];
+    assertions =
+      lib.optionals (cfg.engine == "xray" && lib.length lanViews > 1) (
+        let
+          head = builtins.head lanViews;
+        in
+          map (view: {
+            assertion = xrayDnsKey view == xrayDnsKey head;
+            message = "janus.network.lans.${view.name} does not share a DNS policy with ${head.name}. xray 26 has one DNS module and matches names, not sources.";
+          })
+          lanViews
+      )
+      ++ lib.optionals (cfg.engine == "xray") (
+        lib.concatMap (a:
+          lib.concatMap (b:
+            lib.concatMap (name:
+              lib.optional (a.dns.hosts ? ${name} && b.dns.hosts ? ${name} && a.dns.hosts.${name} != b.dns.hosts.${name}) {
+                assertion = false;
+                message = "xray has one hosts table, and ${name} is ${a.dns.hosts.${name}} on ${a.name} and ${b.dns.hosts.${name}} on ${b.name}.";
+              }) (lib.attrNames a.dns.hosts))
+          lanViews)
+        lanViews
+      );
+    environment.systemPackages = [pkgs.janet pkgs.sing-box pkgs.curl pkgs.age pkgs.jq pkgs.bind];
     boot.kernel.sysctl = lib.mkIf intercept {
       "net.ipv4.conf.all.rp_filter" = lib.mkDefault 2;
       "net.ipv4.conf.default.rp_filter" = lib.mkDefault 2;
@@ -433,6 +574,23 @@ in {
           carrierResolvers = dns.carrierResolvers;
           encryption = dns.encryption;
           bogusAnswers = dns.bogusAnswers;
+          domesticProbe = dns.domestic.probe;
+          fakeIpV4 = dns.fakeIp.v4Range;
+          lans =
+            map (view: {
+              name = view.name;
+              address = view.address;
+              mode = view.mode;
+              recursive = view.dns.recursive;
+              ipv6Answers = view.dns.ipv6Answers;
+              fakeIp =
+                if view.dns.fakeIp.enable == false
+                then false
+                else if view.dns.fakeIp.enable == true
+                then view.mode != "bypass"
+                else view.mode != "bypass";
+            })
+            lanViews;
         };
         "janus/bin/janus-proxy".source = "${helper}/bin/janus-proxy";
         "janus/password-files.json".text = builtins.toJSON passwordFiles;
@@ -452,8 +610,14 @@ in {
         '';
       };
 
+    users.users.janus-engine = {
+      isSystemUser = true;
+      group = "janus-engine";
+    };
+    users.groups.janus-engine = {};
+
     systemd.tmpfiles.rules = [
-      "d /var/lib/janus/engine 0700 root root -"
+      "d /var/lib/janus/engine 2750 root janus-engine -"
       "d /var/lib/janus/geodata 0755 root root -"
       "d /var/lib/janus/subscriptions 0700 root root -"
     ];
@@ -467,6 +631,10 @@ in {
         Type = "oneshot";
         RemainAfterExit = true;
         ExecStart = "${helper}/bin/janus-proxy intercept-up";
+        ProtectSystem = "strict";
+        ProtectHome = true;
+        PrivateTmp = true;
+        NoNewPrivileges = true;
       };
     };
 
@@ -474,7 +642,14 @@ in {
       description = "Install inline subscription URLs";
       wantedBy = ["multi-user.target"];
       before = ["janus-engine.service" "janus-proxy-refresh@.service"];
-      serviceConfig.Type = "oneshot";
+      serviceConfig = {
+        Type = "oneshot";
+        ProtectSystem = "strict";
+        ProtectHome = true;
+        PrivateTmp = true;
+        NoNewPrivileges = true;
+        ReadWritePaths = "/var/lib/janus";
+      };
       script = ''
         umask 077
         mkdir -p /var/lib/janus/subscription-urls
@@ -484,17 +659,47 @@ in {
       '';
     };
 
+    systemd.services.janus-engine-prepare = {
+      description = "Render the proxy engine configuration";
+      wantedBy = ["multi-user.target"];
+      before = ["janus-engine.service"];
+      after = ["network-pre.target" "janus-subscription-urls.service"];
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        ProtectSystem = "strict";
+        ProtectHome = true;
+        PrivateTmp = true;
+        NoNewPrivileges = true;
+        ReadWritePaths = "/var/lib/janus";
+        ExecStart = [
+          waitClock
+          "${helper}/bin/janus-proxy geodata-missing"
+          "${helper}/bin/janus-proxy render"
+        ];
+      };
+    };
+
     systemd.services.janus-engine = {
       description = "Janus proxy engine";
       wantedBy = ["multi-user.target"];
       wants = ["network-online.target"];
-      after = ["network-online.target" "janus-intercept.service"];
+      after = ["network-online.target" "janus-intercept.service" "janus-engine-prepare.service"];
+      requires = ["janus-engine-prepare.service"];
       serviceConfig = {
         Type = "simple";
-        ExecStartPre = [
-          "${helper}/bin/janus-proxy geodata-missing"
-          "${helper}/bin/janus-proxy render"
-        ];
+        User = "janus-engine";
+        Group = "janus-engine";
+        AmbientCapabilities = "CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_NET_RAW";
+        CapabilityBoundingSet = "CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_NET_RAW";
+        DeviceAllow = "/dev/net/tun rw";
+        NoNewPrivileges = true;
+        ProtectSystem = "strict";
+        ProtectHome = true;
+        PrivateTmp = true;
+        ReadWritePaths = "/var/lib/janus/engine";
+        RestrictAddressFamilies = "AF_INET AF_INET6 AF_NETLINK AF_UNIX";
+        SystemCallFilter = "@system-service @network-io";
         ExecStart =
           if cfg.engine == "xray"
           then "${pkgs.xray}/bin/xray run -c /var/lib/janus/engine/config.json"
@@ -513,6 +718,11 @@ in {
       serviceConfig = {
         Type = "oneshot";
         ExecStart = "${helper}/bin/janus-proxy refresh %i";
+        ProtectSystem = "strict";
+        ProtectHome = true;
+        PrivateTmp = true;
+        NoNewPrivileges = true;
+        ReadWritePaths = "/var/lib/janus";
       };
     };
 
@@ -523,6 +733,7 @@ in {
           timerConfig = {
             OnCalendar = onCalendar sub.refresh;
             Persistent = true;
+            RandomizedDelaySec = "10min";
             Unit = "janus-proxy-refresh@${name}.service";
           };
         })
@@ -533,6 +744,7 @@ in {
           timerConfig = {
             OnCalendar = onCalendar cfg.geodata.refresh;
             Persistent = true;
+            RandomizedDelaySec = "10min";
             Unit = "janus-geodata-refresh.service";
           };
         };
@@ -543,12 +755,17 @@ in {
       serviceConfig = {
         Type = "oneshot";
         ExecStart = "${helper}/bin/janus-proxy geodata-refresh";
+        ProtectSystem = "strict";
+        ProtectHome = true;
+        PrivateTmp = true;
+        NoNewPrivileges = true;
+        ReadWritePaths = "/var/lib/janus";
       };
     };
 
-    janus.firewall.hooks = lib.mkIf (dns.interceptPlaintext && bridges != []) {
+    janus.firewall.hooks = lib.mkIf (dns.interceptPlaintext && dnsBridges != []) {
       preroutingRaw = ''
-        iifname { ${bridgeSet} } meta l4proto tcp th dport 53 redirect to :5353
+        iifname { ${dnsBridgeSet} } meta l4proto tcp th dport 53 redirect to :5353
       '';
       inputExtra = ''
         tcp dport 5353 accept
@@ -586,7 +803,7 @@ in {
       content = ''
         chain dns-udp {
           type filter hook prerouting priority mangle; policy accept;
-          iifname { ${bridgeSet} } meta l4proto udp th dport 53 meta mark set 0x00004a02 tproxy to :5353
+          iifname { ${dnsBridgeSet} } meta l4proto udp th dport 53 meta mark set 0x00004a02 tproxy to :5353
         }
       '';
     };

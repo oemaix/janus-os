@@ -35,15 +35,17 @@ What already exists, and what is still a placeholder, is
 The manual is [English](manual/en/README.md),
 [Russian](manual/ru/README.md), and
 [Persian](manual/fa/README.md). It starts with installing Nix, enabling
-flakes, and `nix run github:oemaix/janus-os#janus-build -- init`.
+flakes, and `nix run github:oemaix/janus-os#janus-build -- init <dir>`.
+Keep sing-box when LANs need different DNS policies. The full choice is
+[docs/07-proxy-and-dns.md](docs/07-proxy-and-dns.md) §2.1.
 Router commands are specified in [docs/14-cli.md](docs/14-cli.md).
 Build-host commands are specified in
 [docs/16-build-host-cli.md](docs/16-build-host-cli.md).
 The `janus.*` options are specified in
 [docs/08-configuration-reference.md](docs/08-configuration-reference.md).
-`janus-build` implements `init`, `host add`, `secret`, `check`, `build`,
-`update`, `fleet`, `status`, `backup`, and `deploy`. `janus` implements
-the router status, WAN, lease, firewall, age-key, proxy, DNS, backup,
-and hot-override commands, and `janus web` when the maintenance page is
-in the image. On the board, `janus deploy` exits 2 and
-names `janus-build`.
+`janus-build` implements `init`, `host add`, `secret keygen`, `secret set`,
+`check`, `build`, `update`, `fleet`, `status`, `backup`, and `deploy`.
+`janus` implements the router status, WAN, lease, firewall, age-key,
+proxy, DNS, backup, and hot-override commands, `janus audit` when the
+audit is in the image, and `janus web` when the maintenance page is in
+the image. On the board, `janus deploy` exits 2 and names `janus-build`.

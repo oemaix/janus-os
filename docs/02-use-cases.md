@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-09-29 |
+| Last updated | 2026-10-17 |
 
 ## 1. Personas
 
@@ -57,8 +57,17 @@ requirements it drives (see *03 — Requirements*).
 * **Actor:** Priya
 * **Flow:** Define `lan`, `guest`, `iot` LANs on VLANs of one trunk port;
   each gets its own subnet, DHCP range, static leases and firewall zone.
-  Guest and IoT may reach WAN but not each other or `lan`.
-* **Drives:** FR-NET-010..016, FR-FW-*
+  Zones do not forward to each other. The zone named `lan` accepts to WAN
+  by default. Guest reaches WAN only when a policy accepts `guest → wan`,
+  which the example comments in so guests use the Internet and still cannot
+  see `lan`. IoT has no such policy, so it has no WAN path. `lan` inherits
+  `rule-based` and the household DNS policy. `guest` sets
+  `proxy.mode = "bypass"`: every recursive name from the domestic encrypted
+  resolvers, not the carrier and not the tunnel. `iot` sets `bypass` and
+  `dns.recursive = false`. An `ai` LAN sets `proxy-all` and reuses the
+  same groups. Nodes and groups stay on the router. A LAN's rules replace
+  the inherited list when set.
+* **Drives:** FR-NET-010..016, FR-FW-*, FR-DNS-014
 
 ### UC-04 Publish an internal service
 
@@ -93,16 +102,20 @@ requirements it drives (see *03 — Requirements*).
   example's `cn` list sends `geosite:cn`, `geosite:geolocation-cn`, and
   `geoip:cn` → `direct`, and `geosite:category-ads-all` → `block`.
   `geosite:netflix` → group `Streaming` is a commented usage template.
-  Default → group `Auto`. `janus.region` does not write this list.
+  Default → group `Auto`. `janus.system.region` does not write this list.
 * **Drives:** FR-PRX-020..025
 
 ### UC-08 DNS that does not trust the carrier
 
 * **Actor:** Mei
-* **Flow:** Domestic domains resolve via a domestic public encrypted
-  resolver (CDN-friendly); everything else resolves through the tunnel via
-  encrypted DNS or fake-IP; the carrier's DHCP/PPPoE-provided resolvers are
-  ignored (or used only as an explicit fallback).
+* **Flow:** On the owner's `rule-based` LAN, domestic domains resolve via
+  a domestic public encrypted resolver (CDN-friendly). A name that LAN will
+  proxy, including one that follows a group default target, is a fake-IP or
+  resolves through the tunnel. A guest `bypass` LAN resolves every recursive
+  name on the domestic encrypted resolvers and does not use the tunnel. A
+  `proxy-all` LAN fake-IPs the names it will proxy. The carrier's
+  DHCP/PPPoE resolvers are ignored (or used only as an explicit fallback).
+  A proxied name does not receive a globally routable AAAA.
 * **Drives:** FR-DNS-*
 
 ### UC-09 Change WAN and LAN port assignment
@@ -184,11 +197,12 @@ requirements it drives (see *03 — Requirements*).
 ### UC-18 Check that DNS is not poisoned
 
 * **Actor:** Mei
-* **Flow:** `janus dns check` probes a domestic name, a foreign name, and a
-  name commonly forged by pollution. It reports where each query went and
-  whether the answer is usable. Mei switches `fakeIp.enable` only if an
+* **Flow:** `janus dns check` runs on the router. For each LAN it probes
+  one domestic name from the region and one foreign name. It reports where
+  each query went and whether the answer is usable. It does not pretend to
+  be a phone on that LAN. Mei switches `fakeIp.enable` only if an
   application breaks, not as a debugging guess.
-* **Drives:** FR-DNS-010, FR-DNS-011
+* **Drives:** FR-DNS-010, FR-DNS-011, D-0041
 
 ### UC-19 Several routers, one subscription
 
@@ -219,7 +233,7 @@ requirements it drives (see *03 — Requirements*).
 ### UC-21 Select Russia or Iran
 
 * **Actor:** Kirill, Niloofar
-* **Flow:** Set `janus.region` to `ru` or `ir` and replace the rule list
+* **Flow:** Set `janus.system.region` to `ru` or `ir` and replace the rule list
   with the matching template in the example. For `ir`, set
   `janus.dns.domestic.resolvers` to an encrypted resolver that answers
   inland names. Rebuild on the build host and deploy.

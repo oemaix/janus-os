@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-16 |
+| Last updated | 2026-10-17 |
 
 ## 1. Architectural drivers
 
@@ -70,7 +70,7 @@
 | WWAN | `usb_modeswitch` + networkd for Ethernet modes; `qmicli` / `mbimcli` for QMI and MBIM | ADR-0015. ModemManager is not used. |
 | DHCPv4 server, RA | dnsmasq (DHCP only); networkd RA | ADR-0009. Leases persisted on the state partition. |
 | Firewall / NAT | nftables | Single ruleset generated from zones, rules, forwards, tproxy/tun redirection. |
-| Proxy engine | sing-box (default) or Xray | Runs as an unprivileged user with `CAP_NET_ADMIN`/`CAP_NET_BIND_SERVICE`; TUN or TPROXY inbound. |
+| Proxy engine | sing-box (default) or Xray | `janus-engine` runs as `janus-engine` with `CAP_NET_ADMIN`, `CAP_NET_BIND_SERVICE`, and `CAP_NET_RAW`. A root oneshot renders the configuration, because that step reads secret files. TUN or TPROXY inbound. |
 | DNS | Engine's DNS server (sing-box: built-in; Xray: built-in) exposed on LAN; optional local forwarder for hosts/static leases | Avoids a second resolver daemon where possible. |
 | Data refresh | `janus-refresh-subscriptions.timer`, `janus-refresh-geodata.timer` | Fetch via engine SOCKS inbound, validate, atomic rename, `systemctl reload`. |
 | Monitoring | nftables named counters; `vnstat` for history; optional `softflowd` (IPFIX); optional `prometheus-node-exporter` | Data under `/var/lib/janus/monitoring`. |
@@ -101,11 +101,21 @@ Rule        { match: { domains, geosite, ipCidr, geoip, port, protocol,
 
 DnsPolicy   { domesticResolver, remoteResolver, carrierResolvers: never|
               fallback-only|domestic-only, encryption: prefer|require,
-              fakeIp: { enabled, range, exclude }, domesticDomains: [set…] }
+              fakeIp: { enabled, range, exclude }, domesticDomains: [set…],
+              bootstrap: [ip…], recursive: bool }
+
+LanPolicy   { mode: bypass|rule-based|proxy-all,
+              rules: [Rule], defaultTarget, exceptions: [Rule],
+              dns: DnsPolicy }
 ```
 
+Each LAN has a `LanPolicy`. Unset fields inherit the router policy
+(D-0042). `bootstrap` is IP literals, not a build-time lookup (D-0040).
 Renderers consume this model. Anything the target engine cannot express is
-an evaluation-time assertion, not a silent drop.
+an evaluation-time assertion, not a silent drop. sing-box renders D-0037
+through D-0042 per LAN, plus ECS and the DNS cache. xray 26 has one DNS
+module, so LANs that do not share a DNS policy fail evaluation. Which
+engine to keep is *07* §2.1.
 
 ## 5. Key runtime flows
 

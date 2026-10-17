@@ -11,7 +11,7 @@
   names =
     if cfg.audit.interfaces != []
     then cfg.audit.interfaces
-    else lib.filter (n: lans.${n}.proxied) (lib.attrNames lans);
+    else lib.filter (n: lans.${n}.internal.intercept) (lib.attrNames lans);
   cidrs = map (n: "${lans.${n}.address}/${toString lans.${n}.prefixLength}") names;
   auditPkg = pkgs.writeShellApplication {
     name = "janus-audit";
@@ -54,6 +54,11 @@ in {
         ExecStart = "${auditPkg}/bin/janus-audit record";
         Restart = "on-failure";
         RestartSec = "2s";
+        ProtectSystem = "strict";
+        ProtectHome = true;
+        PrivateTmp = true;
+        NoNewPrivileges = true;
+        ReadWritePaths = "/var/lib/janus/audit";
       };
     };
   };

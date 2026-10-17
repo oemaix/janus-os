@@ -135,7 +135,9 @@ The state partition is mounted with `noatime`, `lazytime` and f2fs
 * `layout.partitions.<label>.{size, fsType, mountPoint, readOnly, options}`
   with defaults as in §2;
 * `state.minimumSize`, `state.onCorruption`;
-* `readOnlyFs = "f2fs" | "erofs" | "squashfs"` shortcut for ro partitions;
+* `readOnlyFs = "f2fs" | "erofs" | "squashfs"`. `f2fs` is the implemented
+  value. `erofs` and `squashfs` are reserved names and fail evaluation
+  until the image builder can populate them (D-0035);
 * `journal.persistent`, `journal.maxUse`.
 
 Assertions: `/`, `/nix` MUST be `readOnly = true`; exactly one partition
@@ -145,3 +147,6 @@ MUST mount `/var` rw; no overlay-on-shared-partition option exists.
 
 * Encrypted state partition (LUKS) — possible, low priority on a router
   without a keyboard.
+* `readOnlyFs = "erofs"` or `"squashfs"` for the read-only partitions.
+  The names are reserved. The image builder populates f2fs and FAT
+  (D-0035).

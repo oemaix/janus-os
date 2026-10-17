@@ -10,6 +10,73 @@
   cfg = config.janus.proxy;
 
   secretOk = value: value == null || config.janus.security.allowInlineSecrets;
+  dns = config.janus.dns;
+  lans = config.janus.network.lans;
+
+  pick = local: parent:
+    if local == null
+    then parent
+    else local;
+
+  resolverHost = url: let
+    stripped =
+      if lib.hasPrefix "https://" url
+      then lib.removePrefix "https://" url
+      else if lib.hasPrefix "tls://" url
+      then lib.removePrefix "tls://" url
+      else if lib.hasPrefix "quic://" url
+      then lib.removePrefix "quic://" url
+      else if lib.hasPrefix "udp://" url
+      then lib.removePrefix "udp://" url
+      else url;
+    noPath = lib.head (lib.splitString "/" stripped);
+  in
+    if lib.hasPrefix "[" noPath
+    then lib.removeSuffix "]" (lib.removePrefix "[" (lib.head (lib.splitString "]" noPath)))
+    else lib.head (lib.splitString ":" noPath);
+
+  encryptedUrl = url:
+    lib.hasPrefix "https://" url || lib.hasPrefix "tls://" url || lib.hasPrefix "quic://" url;
+
+  needsBootstrap = url:
+    encryptedUrl url
+    && builtins.match "[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+" (resolverHost url) == null
+    && !lib.hasInfix ":" (resolverHost url);
+
+  lanMode = lan:
+    if lan.proxy.mode == null
+    then cfg.mode
+    else lan.proxy.mode;
+
+  lanRules = lan:
+    if lan.proxy.rules == null
+    then cfg.rules
+    else lan.proxy.rules;
+
+  lanUrls = lan:
+    (pick lan.dns.domestic.resolvers dns.domestic.resolvers)
+    ++ lib.optionals (lanMode lan != "bypass") (pick lan.dns.remote.resolvers dns.remote.resolvers)
+    ++ lib.concatLists (lib.attrValues (pick lan.dns.forwarders dns.forwarders));
+
+  bootViews =
+    if lans == {}
+    then [
+      {
+        name = "router";
+        bootstrap = dns.bootstrap;
+        urls =
+          dns.domestic.resolvers
+          ++ lib.optionals (cfg.mode != "bypass") dns.remote.resolvers
+          ++ lib.concatLists (lib.attrValues dns.forwarders);
+      }
+    ]
+    else
+      lib.mapAttrsToList (name: lan: {
+        inherit name;
+        bootstrap = pick lan.dns.bootstrap dns.bootstrap;
+        urls = lanUrls lan;
+      })
+      lans;
 
   targetOk = target: let
     group =
@@ -40,7 +107,7 @@ in {
     mode = mkOption {
       type = types.enum ["bypass" "rule-based" "proxy-all"];
       default = "rule-based";
-      description = "Traffic mode.";
+      description = "Default traffic mode. A LAN inherits this unless it sets proxy.mode.";
     };
     defaultTarget = mkOption {
       type = types.str;
@@ -417,7 +484,7 @@ in {
     };
     blockQuic = mkOption {
       type = types.bool;
-      defaultText = "true when janus.region is ru, otherwise false";
+      defaultText = "true when janus.system.region is ru, otherwise false";
       description = "Reject QUIC that did not match a direct rule, so clients fall back to TCP. The ru preset defaults this to true.";
     };
     geodata.refresh = mkOption {
@@ -522,6 +589,43 @@ in {
           message = "janus.proxy.rules sourceLan '${lan}' is not a LAN.";
         })
         rule.match.sourceLan)
-      cfg.rules;
+      cfg.rules
+      ++ lib.concatMap (name: let
+        lan = lans.${name};
+      in
+        lib.concatMap (rule:
+          map (src: {
+            assertion = src == name;
+            message = "LAN ${name} inherits a rule whose sourceLan is ${src}. Put that rule on ${src}.proxy.rules. A shared list is inherited by every LAN.";
+          }) (rule.match.sourceLan or []))
+        (lanRules lan)) (lib.attrNames lans)
+      ++ lib.mapAttrsToList (name: lan: {
+        assertion = lanMode lan != "bypass" || lan.dns.fakeIp.enable != true;
+        message = "janus.network.lans.${name} is bypass and dns.fakeIp.enable is true. A bypass LAN is not intercepted, so a fake-IP has nowhere to go.";
+      })
+      lans
+      ++ lib.mapAttrsToList (name: lan: {
+        assertion = lanMode lan != "bypass" || lan.dns.remote.resolvers == null;
+        message = "janus.network.lans.${name} is bypass and dns.remote.resolvers is set. A bypass LAN resolves every recursive name on the domestic resolvers.";
+      })
+      lans
+      ++ map (view: {
+        assertion = !cfg.enable || view.bootstrap != [] || !lib.any needsBootstrap view.urls;
+        message = "A DoH, DoT, or DoQ hostname is configured and janus.dns.bootstrap is empty for ${view.name}. Set IP addresses for that lookup. The build does not resolve the hostname.";
+      })
+      bootViews
+      ++ lib.concatMap (view:
+        map (url: {
+          assertion = !cfg.enable || dns.encryption != "require" || encryptedUrl url;
+          message = "janus.dns.encryption is require, and ${view.name} uses ${url}. Use https://, tls://, or quic://. Bootstrap addresses stay plaintext.";
+        })
+        view.urls)
+      bootViews
+      ++ [
+        {
+          assertion = !cfg.enable || cfg.engine != "xray" || (dns.cache.size == 4096 && dns.cache.minTtl == 60);
+          message = "xray 26 has no DNS cache size or minimum TTL. Leave janus.dns.cache at 4096 and 60, or use sing-box.";
+        }
+      ];
   };
 }

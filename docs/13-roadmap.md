@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-16 |
+| Last updated | 2026-10-17 |
 
 This file is the implementation plan, the progress of the code, and the
 notes for work that is specified but not started. Choices are *18*.
@@ -123,7 +123,7 @@ tree does not mean that behavior exists. Stubs are not finished features.
 * `janet/janus.janet` normalizes share links, Clash, and sing-box, matches
   with regex, glob, and PEG, and renders sing-box or Xray. The image
   build runs `sing-box check` or `xray run -test`.
-* `janus.region` is `cn` (default), `ru`, or `ir` (*21*, D-0034). It
+* `janus.system.region` is `cn` (default), `ru`, or `ir` (*21*, D-0034). It
   selects domestic DNS and the `blockQuic` default. `janus.proxy.rules`
   stays empty until written. The example has the three lists. With the
   proxy enabled, `ir` requires `janus.dns.domestic.resolvers`.
@@ -176,6 +176,25 @@ tree does not mean that behavior exists. Stubs are not finished features.
 
 * Accepted ADRs bind. They are listed in `docs/adr/` and are not restated here.
 * Undecided choices, if any, are *18* §2. Do not invent an answer for one.
+* sing-box renders D-0037 through D-0042: fake-IP for names that LAN
+  will proxy, `strip-for-proxied` per name, one policy per LAN, region
+  bootstrap addresses, and `janus dns check` once per LAN. xray 26 routes
+  each LAN by source and uses the same DNS decision for one shared policy.
+  A household whose LANs do not share that DNS policy fails evaluation.
+  `listen.lans` defaults to `all` and is DHCP option 6 plus RA DNS.
+  `encryption` defaults to `prefer`; `require` accepts only DoH, DoT, and
+  DoQ for client resolvers.   `domestic.ecs` defaults to `allow` and `remote.ecs` to `strip`. Neither
+  engine attaches a client subnet. sing-box 1.13 disables the DNS cache
+  for any query that carries one, and xray 26 has no client-subnet field.
+  `cache.size` defaults to 4096 and `cache.minTtl` to 60. sing-box uses
+  those as capacity and as the TTL it writes. xray 26 has neither knob,
+  so another value fails evaluation. Each resolver list queries its first
+  address. sing-box has one server per DNS rule and no failover group.
+  xray 26 does not stably match one name on two servers. `fallback-only`
+  is that limit and does not add a carrier server. `domestic-only` puts
+  the first learned WAN address in front of the domestic list. A delegated
+  RA names the IPv6 link-local. Which engine to keep, including different
+  DNS policies per LAN, is *07* §2.1.
 * The Yanyu profile names `lan1`–`lan4` by PCI address (*10* §3.1). It
   does not pick which jack is WAN. Limine on that image has not been
   booted on the lab AMI board.

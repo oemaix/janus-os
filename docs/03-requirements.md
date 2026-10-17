@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-16 |
+| Last updated | 2026-10-17 |
 
 Key words MUST / SHOULD / MAY follow RFC 2119. Priority: **P1** required for
 1.0, **P2** planned, **P3** desirable.
@@ -104,14 +104,14 @@ Key words MUST / SHOULD / MAY follow RFC 2119. Priority: **P1** required for
 | FR-PRX-013 | Group selection strategies MUST include `manual` (fixed default with SSH override), `url-test`, `fallback`, `load-balance`. | P1 |
 | FR-PRX-014 | The example configuration MUST ship region templates (JP, US, HK, EU, UK, SG, IN) and commented-out usage templates (Telegram, Gemini, Claude, Netflix, …). | P1 |
 | FR-PRX-015 | An empty group (matcher matched nothing) MUST be a warning at build time and a runtime fallback to `direct` or a configured alternative, never a crash. | P1 |
-| FR-PRX-020 | A traffic mode master switch MUST exist: `bypass`, `rule-based`, `proxy-all`. | P1 |
+| FR-PRX-020 | A traffic mode MUST be `bypass`, `rule-based`, or `proxy-all`. `janus.proxy.mode` is the default a LAN inherits. | P1 |
 | FR-PRX-021 | Routing rules MUST be an ordered list of predicate → target, where predicates include domain (exact/suffix/keyword/regex), GeoSite category, IP CIDR, GeoIP country, destination port, source LAN, source IP, transport protocol, and targets include a group, `direct`, `block`. | P1 |
-| FR-PRX-022 | Transparent interception MUST cover TCP and UDP from all LANs designated as proxied, for IPv4 and IPv6. | P1 |
-| FR-PRX-023 | Per-LAN opt-out of proxying MUST be supported. | P2 |
+| FR-PRX-022 | Transparent interception MUST cover TCP and UDP from every LAN whose mode is `rule-based` or `proxy-all`, for IPv4 and IPv6. A `bypass` LAN MUST NOT be intercepted. | P1 |
+| FR-PRX-023 | Each LAN MUST be able to set `proxy.mode`, `proxy.rules`, `proxy.defaultTarget`, and `proxy.exceptions`. Unset inherits the router value. A set rule list MUST replace the inherited list and MUST NOT be appended. Nodes, groups, subscriptions, and `failMode` stay on the router. One engine applies every LAN. | P1 |
 | FR-PRX-024 | Geo data MUST be embedded at build and refreshable at runtime as data. | P1 |
 | FR-PRX-025 | Rule sets in the engine's native compiled format SHOULD be used for performance. | P2 |
-| FR-PRX-026 | `janus.region` MUST be `cn` (default), `ru`, or `ir`. It selects the preset in *21*. Any other value MUST fail evaluation. The region MUST NOT be a hot override. | P1 |
-| FR-PRX-027 | When `janus.proxy.rules` is unset, the rule list MUST be empty. The example MUST ship the three lists in *21* §4, with `cn` active and `ru` and `ir` commented. The module MUST NOT insert a list because `janus.region` is set. `blockQuic` MUST default to true for `ru` and false for `cn` and `ir`, unless set. | P1 |
+| FR-PRX-026 | `janus.system.region` MUST be `cn` (default), `ru`, or `ir`. It selects the preset in *21*. Any other value MUST fail evaluation. The region MUST NOT be a hot override. | P1 |
+| FR-PRX-027 | When `janus.proxy.rules` is unset, the rule list MUST be empty. The example MUST ship the three lists in *21* §4, with `cn` active and `ru` and `ir` commented. The module MUST NOT insert a list because `janus.system.region` is set. `blockQuic` MUST default to true for `ru` and false for `cn` and `ir`, unless set. | P1 |
 | FR-PRX-028 | A Geo rule-set tag MUST be fetchable from a per-tag URL (`janus.proxy.geodata.sources.tags`) so one tag can leave the SagerNet base. The `ir` preset's domain set MUST be the Chocolate4U `geosite-ir` file named in *21* §4.3. | P1 |
 
 ## 7. DNS (DNS)
@@ -122,14 +122,16 @@ Key words MUST / SHOULD / MAY follow RFC 2119. Priority: **P1** required for
 | FR-DNS-002 | Carrier-provided resolvers (from DHCP/PPPoE) MUST NOT be used by default; a policy option MUST allow `never`, `fallback-only`, `domestic-only`. | P1 |
 | FR-DNS-003 | Split resolution MUST be supported: domestic domain sets → domestic resolver; everything else → remote resolver via tunnel or fake-IP. | P1 |
 | FR-DNS-004 | Encrypted transports (DoH, DoT, DoQ) MUST be supported for both domestic and remote resolvers, with a policy `prefer` or `require`. | P1 |
-| FR-DNS-005 | Fake-IP for proxied domains MUST be supported and be the default in `rule-based` mode, with an exclusion list. | P1 |
-| FR-DNS-006 | DNS pollution defenses MUST include: never sending foreign domains to domestic/carrier resolvers, ignoring answers from unexpected sources, and optional answer sanity checks (bogus IP list). | P1 |
+| FR-DNS-005 | Fake-IP for names the router will proxy MUST be supported and be the default in `rule-based` and `proxy-all`. That set is a rule whose target is a group, and the default target when that target is a group. A `direct` rule uses the domestic resolver. A `block` rule is rejected and is not a fake-IP. An exclusion list MUST exist. `proxy-all` exceptions are not fake-IP. | P1 |
+| FR-DNS-006 | A name that a LAN will proxy MUST NOT be sent to a domestic or carrier resolver. Answers from unexpected sources MUST be ignored. An optional bogus-address list MUST be supported. A `bypass` LAN is FR-DNS-014: it sends recursive names to its domestic resolvers on purpose. | P1 |
 | FR-DNS-007 | Local overrides (hosts entries, per-domain forwarders) and static-lease hostnames MUST be supported. | P2 |
 | FR-DNS-008 | EDNS Client Subnet handling MUST be configurable to protect privacy while allowing CDN accuracy for domestic resolvers. | P3 |
 | FR-DNS-009 | DNS MUST be implemented by the selected proxy engine. A second DNS stack (mosdns, chinadns-ng, or a standalone forwarder that owns policy) MUST NOT be required. | P1 |
-| FR-DNS-010 | Fake-IP MUST be a user-facing choice: `auto` (default), `on`, or `off`, independent of which engine is selected. | P1 |
-| FR-DNS-011 | `janus dns check` MUST probe the live arrangement for leaks and poisoning: foreign name answered with a bogus or domestic-only address, domestic name failing closed, plaintext DNS bypass, unexpected AAAA on a proxied name. The command reports; it does not change policy. | P1 |
+| FR-DNS-010 | Fake-IP MUST be a user-facing choice: `auto` (default), `true`, or `false`, independent of which engine is selected. | P1 |
+| FR-DNS-011 | `janus dns check` MUST run on the router and MUST NOT impersonate a LAN client. It MAY report whether the plaintext port-53 redirect is installed. It MUST NOT claim that a LAN host cannot reach another resolver. It MUST apply the two-name probe to each LAN's effective policy. For `rule-based` and `proxy-all`, with fake-IP on, the domestic answer MUST be a real address outside the bogus list, and the foreign answer MUST be a fake-IP or a remote answer that is not bogus and was not taken from the domestic resolver. For `bypass`, both answers MUST be real addresses from that LAN's resolvers, and a foreign answer in the bogus list MUST fail. Under `strip-for-proxied` or `strip-all`, a proxied name MUST NOT have a globally routable AAAA. The command reports; it does not change policy. | P1 |
 | FR-DNS-012 | Domestic resolvers, domestic domain sets, and fake-IP exclusions MUST follow the *21* preset unless that option is set. `region = "ir"` with an empty `domestic.resolvers` MUST fail evaluation when `janus.proxy.enable` is true, and MUST evaluate when the proxy is off. | P1 |
+| FR-DNS-013 | `janus.dns.bootstrap` MUST be a list of IP addresses, used only to look up DoH and DoT hostnames. When unset, it MUST follow the *21* preset. The build MUST NOT resolve those hostnames, and no timer MUST refresh the list. An encrypted resolver whose host is a name, with an empty list, MUST fail evaluation. | P1 |
+| FR-DNS-014 | Each LAN's DNS policy MUST inherit `janus.dns` when unset, and a set `dns` MUST have that same shape and override the inherited fields. The LAN's mode picks the unmatched path: `rule-based` is split, `proxy-all` answers a proxied name with fake-IP or the remote resolver, and `bypass` sends every recursive name to the domestic encrypted resolvers. `dns.recursive = false` MUST answer only hosts and static leases. A `bypass` LAN that sets `fakeIp.enable = true`, or sets `remote.resolvers`, MUST fail evaluation. A name the LAN will proxy MUST NOT be answered by the domestic resolver. | P1 |
 
 ## 8. Monitoring (MON)
 

@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-15 |
+| Last updated | 2026-10-17 |
 
 ## 1. Principles
 
@@ -139,7 +139,10 @@ machine.
 | nixpkgs, Janus, engines | flake inputs, fixed hashes | pure |
 | Geo data | `fetchurl` with version pin + hash from Janus release metadata; `janus.proxy.geodata.pin = "latest"` switches to impure | pure by default |
 | Subscription snapshot | impure derivation (`__impure = true` or `--impure` with `builtins.fetchurl`) unless `snapshot.hash` is set (then fixed-output) | impure by default |
-| DoH/DoT bootstrap IPs | resolved at eval time on build host (impure) or set explicitly | impure by default |
+
+DoH and DoT hostnames are not resolved at build time. `janus.dns.bootstrap`
+is a list of IP literals. Unset, it follows the region preset (D-0040).
+There is no refresh timer for those addresses.
 
 The build fails with a clear message if a subscription cannot be fetched
 and no previous snapshot is cached (`janus.proxy.subscriptions.<n>.

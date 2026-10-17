@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-16 |
+| Last updated | 2026-10-17 |
 
 Terms are listed alphabetically. Where an informal word is easy to confuse
 with the canonical one, the informal word is marked *avoid*.
@@ -80,10 +80,11 @@ is not a configuration editor.
 **Matcher** — A predicate over a proxy node's name (and optionally other
 attributes) that assigns it to a Group. Kinds: `regex`, `glob`, `peg`.
 
-**Mode (traffic mode)** — The master switch for how LAN traffic is handled by
-the proxy layer: `bypass` (nothing tunneled), `rule-based` (routing rules
-decide), `proxy-all` (everything except explicit exceptions is tunneled).
-*Avoid:* "global".
+**Mode (traffic mode)** — How one LAN's traffic is handled by the proxy
+layer: `bypass` (nothing tunneled), `rule-based` (routing rules decide),
+`proxy-all` (everything except explicit exceptions is tunneled).
+`janus.proxy.mode` is the value a LAN inherits when it does not set its
+own (D-0042). *Avoid:* "global".
 
 **Peripheral** — A supported add-on device attached to a Board: Wi-Fi
 dongle, USB NIC, WWAN (4G/5G) dongle, Bluetooth dongle, HMI (LCD/e-ink with
@@ -109,7 +110,7 @@ the proxy node. The subscription is the list.
 **Reference region** — `cn`, `ru`, or `ir`: the censorship network this
 router is built for. It selects domestic DNS and the `blockQuic` default
 in *21*. Routing rules stay empty until written. It is not a language
-and not an exit-node country. The option is `janus.region`.
+and not an exit-node country. The option is `janus.system.region`.
 
 **Rebuild** — Producing a new system closure or Image from the flake and
 deploying it to the Board. Rebuilds happen on the Build host. A rebuild that

@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-16 |
+| Last updated | 2026-10-17 |
 
 This document defines the **shape and semantics** of the `janus.*` option
 tree. The final, exhaustive reference (every option with type, default,
@@ -43,11 +43,6 @@ learning path: copy, edit values, build.
 | `journal.persistent` | bool | `false` | Persist journal to state partition (capped). |
 | `journal.maxUse` | str | `"64M"` | |
 | `embedSource` | bool | `true` | Embed the whole flake source tree (`flake.nix`, `flake.lock`, all `.nix` modules) read-only at `/etc/janus/source` (FR-CFG-008). Disable only if the tree contains inline secrets you do not want readable on the device. |
-
-### 1.1 `janus.region`
-
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
 | `region` | `cn\|ru\|ir` | `cn` | Reference region. Selects domestic DNS and the `blockQuic` default in *21*. Routing rules stay empty until written. Not a hot override. |
 
 ## 2. `janus.hardware`
@@ -94,14 +89,18 @@ fsType, mountPoint, readOnly, options}`, `readOnlyFs`, `state.minimumSize`,
 ### 4.3 `wans.<name>`
 
 See *06 — Networking* §4 for the full shape. Mandatory: `uplink`, `mode`.
-Defaults: `role = "default"`, `metric = 100 + index`, `ipv6.mode =
-"disabled"`, `healthCheck.enable = (role == "backup" || >1 default WANs)`.
+Defaults: `role = "default"`, `metric = 100 + index` (`1100 + index` when
+`role` is `backup`), `ipv6.mode = "disabled"`, `healthCheck.enable =
+(role == "backup" || >1 default WANs)`.
 
 ### 4.4 `lans.<name>`
 
 See *06* §5. Mandatory: `members`, `address`, `prefixLength`. Defaults:
 `dhcp.enable = true`, range = `.100`–`.199`, `zone = <name>`,
-`proxied = true`, `ipv6.mode` per traffic mode (*06* §9), `nat.enable = true`.
+`ipv6.mode` follows that LAN's traffic mode (*06* §9), `nat.enable = true`.
+`proxy.mode`, `proxy.rules`, `proxy.defaultTarget`, and `proxy.exceptions`
+inherit `janus.proxy` when unset (*07* §5, D-0042). `dns` inherits
+`janus.dns`. `dns.recursive` defaults to `true`.
 
 ### 4.5 `wifi.<name>`, `igmpProxy`
 
@@ -117,16 +116,17 @@ See *06* §7–8: `zones`, `policies`, `rules`, `services`, `portForwards`,
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `enable` | bool | `false` | |
-| `engine` | `sing-box\|xray` | `sing-box` | |
-| `mode` | `bypass\|rule-based\|proxy-all` | `rule-based` | Traffic mode |
+| `failMode` | `closed\|open` | `closed` | When the engine is down, `closed` drops proxied LAN traffic and `open` sends it out the WAN (ADR-0016). |
+| `engine` | `sing-box\|xray` | `sing-box` | Keep sing-box when LANs need different DNS. The other reasons to switch are *07* §2.1. |
+| `mode` | `bypass\|rule-based\|proxy-all` | `rule-based` | Default traffic mode. A LAN inherits it (*07* §5, D-0042). |
 | `defaultTarget` | target | `"group:Auto"` | |
 | `subscriptions.<name>` | submodule | | *07* §3.2 |
 | `nodes.<name>` | submodule | | Manual nodes; protocol-specific submodules `vless`, `trojan`, `shadowsocks`, `hysteria2`, `tuic` |
 | `groups.<name>` | submodule | | *07* §4 |
-| `rules` | list | `[]` | *07* §5, *21*. Empty until written. The example has the `cn`, `ru`, and `ir` lists. |
-| `exceptions` | list | private, iptv | `proxy-all` exceptions |
+| `rules` | list | `[]` | Inherited by a LAN that does not set `proxy.rules`. A set LAN list replaces this one. *07* §5, *21*. Empty until written. The example has the `cn`, `ru`, and `ir` lists. |
+| `exceptions` | list | private, iptv | `proxy-all` exceptions. A LAN inherits this list. |
 | `egressWan` | str/null | `null` | Pin engine egress to a WAN |
-| `blockQuic` | bool | `false`; `true` when `region` is `ru` | *21* |
+| `blockQuic` | bool | `false`; `true` when `janus.system.region` is `ru` | *21* |
 | `geodata.refresh` | duration | `"weekly"` | |
 | `geodata.sources` | attrs | community defaults | Base URLs, plus `tags.<file>` for one rule-set file (*21* §4.3). |
 | `geodata.hashes` | attrs of sha256 | `{}` | Overrides the built-in pins. A referenced tag with no pin is left for the router |
@@ -152,9 +152,32 @@ serviceName}`, `tags` (list of strings, matchable). Protocol-specific:
 
 See *07* §7.2. Default set is the `cn` preset: carrier resolvers `never`,
 encryption `prefer`, fake-IP `auto`, `ipv6Answers = "strip-for-proxied"`,
-`interceptPlaintext = true`. `ru` and `ir` replace the domestic fields
-(*21*). `ir` has no built-in domestic resolver. With the proxy enabled,
-an empty list fails evaluation.
+`interceptPlaintext = true`, `blockDoT = true`. `ru` and `ir` replace the
+domestic fields (*21*). `ir` has no built-in domestic resolver. With the
+proxy enabled, an empty list fails evaluation.
+
+`bootstrap` is a list of IP addresses for DoH and DoT hostnames (D-0040).
+Unset, it follows the region: `cn` is `223.5.5.5` and `223.6.6.6`, `ru` is
+`77.88.8.8` and `77.88.8.1`, `ir` is empty. An explicit list replaces that.
+The build does not look the hostnames up. A name with an empty list fails
+evaluation. `recursive` defaults to `true`. A LAN's `dns` inherits the fields that
+exist on that submodule (*07* §7.2, D-0042). `listen.lans`, `encryption`,
+`domestic.ecs`, `remote.ecs`, and `cache` stay on the router.
+
+`listen.lans` defaults to `all`: those LANs are told, by DHCP option 6 and
+by RA, to use the router. A delegated RA names the IPv6 link-local. `encryption`
+defaults to `prefer`. `require` accepts only DoH, DoT, and DoQ for a
+resolver that answers a client. The engine queries the first address in
+each resolver list. sing-box 1.13 has one server per DNS rule and no
+failover group. xray 26 does not stably share one name across two servers.
+`domestic.ecs` defaults to `allow` and `remote.ecs` to `strip`. Neither
+value attaches a client subnet: sing-box 1.13 would disable the DNS cache,
+and xray 26 has no such field. `cache.size` defaults to 4096 and
+`cache.minTtl` to 60. sing-box uses them as the cache capacity and as the
+TTL it writes on each routed answer. xray 26 has neither knob, so another
+value fails evaluation. `carrierResolvers = "fallback-only"` is not
+available for the same one-server limit. `domestic-only` uses the first
+learned WAN address as the domestic server.
 
 ## 8. `janus.monitoring`
 
@@ -188,9 +211,9 @@ an empty list fails evaluation.
 |--------|------|---------|-------------|
 | `ssh.authorizedKeys` | list str | — (≥1 required) | FR-ACC-001 |
 | `ssh.port` | int | 22 | |
-| `ssh.zones` | list | `["lan" "mgmt"]` | |
-| `ssh.passwordAuthentication` | bool | `false` | Requires ≥1 key regardless |
-| `ssh.rootPasswordFile` | path/null | `null` | Only meaningful with the above |
+| `ssh.zones` | list | `["lan" "mgmt"]` | Sets `janus.firewall.services.ssh` unless that service is set directly. |
+| `ssh.passwordAuthentication` | bool | `false` | Requires ≥1 key and `ssh.rootPasswordFile`. |
+| `ssh.rootPasswordFile` | path/null | `null` | Hash file on the state partition. Applied at boot. Not a plaintext password. |
 | `cli.enable` | bool | `true` | `janus` CLI |
 | `web.enable` | bool | `false` | Include the maintenance page (*20*). Runtime start and stop do not change this. |
 | `web.port` | int | `8443` | TLS only. |

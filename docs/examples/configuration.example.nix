@@ -14,15 +14,16 @@
 #
 # Lines starting with "#" are comments. Blocks between "/*" and "*/" are
 # commented-out templates you can enable by removing the markers.
-
-{ config, lib, ... }:
-
 {
+  config,
+  lib,
+  ...
+}: {
   ############################################################################
   # Hardware
   ############################################################################
 
-  janus.hardware.board = "nanopi-r4s";                     # CHANGE ME: rpi4 | nanopi-r4s | ...
+  janus.hardware.board = "nanopi-r4s"; # CHANGE ME: rpi4 | nanopi-r4s | ...
 
   janus.hardware.peripherals = {
     # A USB Ethernet adapter as an extra port.
@@ -49,11 +50,11 @@
 
   janus.system = {
     hostName = "janus";
-    timeZone = "Asia/Shanghai";                            # CHANGE ME
+    timeZone = "Asia/Shanghai"; # CHANGE ME
   };
 
   janus.access.ssh.authorizedKeys = [
-    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA... you@laptop"   # CHANGE ME (required)
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA... you@laptop" # CHANGE ME (required)
   ];
   # janus.access.ssh.passwordAuthentication = true;       # not recommended
 
@@ -69,8 +70,8 @@
   # The board profile provides default names; override here to swap ports.
 
   janus.network.ports = {
-    wan = { device = "eth0"; };                            # swap these two lines to swap WAN/LAN
-    lan = { device = "eth1"; };
+    wan = {device = "eth0";}; # swap these two lines to swap WAN/LAN
+    lan = {device = "eth1";};
   };
 
   # WAN VLAN and IPTV are specified but not part of 1.0. See docs/06 §3.
@@ -83,14 +84,14 @@
   janus.network.wans = {
     main = {
       uplink = "wan";
-      mode   = "pppoe";                                    # CHANGE ME: dhcp | static | pppoe
-      role   = "default";
+      mode = "pppoe"; # CHANGE ME: dhcp | static | pppoe
+      role = "default";
       pppoe = {
-        username     = "user@carrier";                     # CHANGE ME
-        passwordFile = "/var/lib/janus/secrets/pppoe";     # provisioned once over SSH
-        ipv6         = true;
+        username = "user@carrier"; # CHANGE ME
+        passwordFile = "/var/lib/janus/secrets/pppoe"; # provisioned once over SSH
+        ipv6 = true;
       };
-      ipv6.mode = "passthrough";                           # IPv6CP + DHCPv6-PD on the PPPoE link
+      ipv6.mode = "passthrough"; # IPv6CP + DHCPv6-PD on the PPPoE link
     };
 
     # After 1.0: IPTV on a WAN VLAN, no default route.
@@ -101,7 +102,8 @@
     #   dhcp.vendorClass = "IPTV_RG";
     # };
 
-    /* Backup uplink through the ncm dongle declared above. No APN.
+    /*
+       Backup uplink through the ncm dongle declared above. No APN.
     lte = {
       uplink = "lte0";
       mode   = "wwan";
@@ -117,29 +119,62 @@
 
   janus.network.lans = {
     home = {
-      members      = [ "lan" ];
-      address      = "192.168.10.1";
+      members = ["lan"];
+      address = "192.168.10.1";
       prefixLength = 24;
-      domain       = "home.lan";
+      domain = "home.lan";
       dhcp = {
         rangeStart = "192.168.10.100";
-        rangeEnd   = "192.168.10.199";
+        rangeEnd = "192.168.10.199";
         staticLeases = {
-          nas     = { mac = "aa:bb:cc:dd:ee:01"; ip = "192.168.10.5"; };
-          printer = { mac = "aa:bb:cc:dd:ee:02"; ip = "192.168.10.6"; };
+          nas = {
+            mac = "aa:bb:cc:dd:ee:01";
+            ip = "192.168.10.5";
+          };
+          printer = {
+            mac = "aa:bb:cc:dd:ee:02";
+            ip = "192.168.10.6";
+          };
         };
       };
-      ipv6.mode = "disabled";                              # safest when tunneling; see docs/06
-      proxied   = true;
+      ipv6.mode = "disabled"; # safest when tunneling; see docs/06
+      # proxy.mode is unset, so home inherits janus.proxy.mode (rule-based).
     };
 
-    /* A guest network on VLAN 20 of the LAN port, isolated from "home".
+    /*
+       D-0042. These stay commented because the VLANs and the firewall
+       policies below are commented too. home inherits janus.proxy.mode
+       and janus.dns. A set proxy.rules replaces the inherited list. Bind
+       the same Nix list to reuse it. Nodes and groups stay on janus.proxy.
+
+       Guest: bypass. Unset dns sends every recursive name to the domestic
+       encrypted resolvers, not the carrier and not the tunnel.
+       Add "guest" to services.dns.zones, and a guest → wan policy below.
     guest = {
       members      = [ "lan.20" ];   # requires janus.network.vlans.guest-vlan = { port = "lan"; id = 20; };
       address      = "192.168.20.1";
       prefixLength = 24;
-      isolation    = true;
-      proxied      = false;          # guests get plain carrier Internet
+      isolation    = true;           # bridge port isolation inside this LAN
+      proxy.mode   = "bypass";
+    };
+
+    Agents: proxy-all, same groups as home. Needs agents → wan.
+    ai = {
+      members      = [ "lan.40" ];
+      address      = "192.168.40.1";
+      prefixLength = 24;
+      proxy.mode   = "proxy-all";
+    };
+
+    IoT on VLAN 30. No iot → wan policy, so this zone has no WAN path.
+    recursive = false answers hosts and leases only.
+    iot = {
+      members      = [ "lan.30" ];
+      address      = "192.168.30.1";
+      prefixLength = 24;
+      proxy.mode   = "bypass";
+      dns.recursive = false;
+      nat.enable   = false;
     };
     */
   };
@@ -152,13 +187,25 @@
   ############################################################################
 
   janus.firewall = {
-    # Defaults already: lan -> wan accept, wan -> anything drop, guest -> lan drop.
+    # Default policy is lan → wan accept. Other zones have no WAN path until
+    # a policy accepts it, and zones do not forward to each other. Assigning
+    # policies replaces the default, so keep the lan row.
+    # policies = [
+    #   { from = "lan"; to = "wan"; action = "accept"; }
+    #   { from = "guest"; to = "wan"; action = "accept"; }  # guests use the Internet
+    #   { from = "ai"; to = "wan"; action = "accept"; }     # agents use the tunnel
+    # ];
+    # iot is absent, so that zone has no WAN path.
+    # services.dns.zones defaults to [ "lan" ]. Add guest and iot so they
+    # can ask the router.
     portForwards = {
-      /* nas-https = {
+      /*
+         nas-https = {
         protocol = "tcp"; externalPort = 443;
         to = { host = "192.168.10.5"; port = 443; };
         hairpin = true;
-      }; */
+      };
+      */
     };
   };
 
@@ -168,7 +215,7 @@
   # Changing this is a rebuild. It is not a hot override.
   ############################################################################
 
-  janus.region = "cn";
+  janus.system.region = "cn";
 
   ############################################################################
   # Proxy (circumvention)
@@ -176,38 +223,82 @@
 
   janus.proxy = {
     enable = true;
-    engine = "sing-box";                                   # or "xray"
-    mode   = "rule-based";                                 # bypass | rule-based | proxy-all
+    engine = "sing-box"; # keep this when LANs differ in DNS (docs/07 §2.1)
+    mode = "rule-based"; # default every LAN inherits (D-0042)
 
     subscriptions = {
       providerA = {
-        url     = "https://example.invalid/sub?token=...";  # CHANGE ME
+        url = "https://example.invalid/sub?token=..."; # CHANGE ME
         refresh = "6h";
-        via     = "tunnel-then-direct";
+        via = "tunnel-then-direct";
       };
       # providerB = { url = "..."; refresh = "0 4 * * *"; };
     };
 
     # Manually defined nodes (optional).
     nodes = {
-      /* my-vps = {
+      /*
+         my-vps = {
         protocol = "vless";
         server   = "203.0.113.10"; port = 443;
         vless    = { uuid = "00000000-0000-0000-0000-000000000000"; flow = "xtls-rprx-vision"; };
         tls      = { enable = true; serverName = "www.example.com"; utls = "chrome";
                      reality = { publicKey = "..."; shortId = "abcd"; }; };
-      }; */
+      };
+      */
     };
 
     # Region groups by name matching. Each is a url-test group over all subscriptions.
     groups = {
-      JP = { match = { kind = "regex"; pattern = "japan|jp|日本|🇯🇵"; }; strategy = "url-test"; };
-      US = { match = { kind = "regex"; pattern = "united states|\\bus\\b|usa|美国|🇺🇸"; }; strategy = "url-test"; };
-      HK = { match = { kind = "regex"; pattern = "hong ?kong|\\bhk\\b|香港|🇭🇰"; }; strategy = "url-test"; };
-      SG = { match = { kind = "regex"; pattern = "singapore|\\bsg\\b|新加坡|🇸🇬"; }; strategy = "url-test"; };
-      UK = { match = { kind = "regex"; pattern = "united kingdom|britain|\\buk\\b|英国|🇬🇧"; }; strategy = "url-test"; };
-      EU = { match = { kind = "regex"; pattern = "germany|france|netherlands|德国|法国|荷兰|🇩🇪|🇫🇷|🇳🇱"; }; strategy = "url-test"; };
-      IN = { match = { kind = "regex"; pattern = "india|\\bin\\b|印度|🇮🇳"; }; strategy = "url-test"; };
+      JP = {
+        match = {
+          kind = "regex";
+          pattern = "japan|jp|日本|🇯🇵";
+        };
+        strategy = "url-test";
+      };
+      US = {
+        match = {
+          kind = "regex";
+          pattern = "united states|\\bus\\b|usa|美国|🇺🇸";
+        };
+        strategy = "url-test";
+      };
+      HK = {
+        match = {
+          kind = "regex";
+          pattern = "hong ?kong|\\bhk\\b|香港|🇭🇰";
+        };
+        strategy = "url-test";
+      };
+      SG = {
+        match = {
+          kind = "regex";
+          pattern = "singapore|\\bsg\\b|新加坡|🇸🇬";
+        };
+        strategy = "url-test";
+      };
+      UK = {
+        match = {
+          kind = "regex";
+          pattern = "united kingdom|britain|\\buk\\b|英国|🇬🇧";
+        };
+        strategy = "url-test";
+      };
+      EU = {
+        match = {
+          kind = "regex";
+          pattern = "germany|france|netherlands|德国|法国|荷兰|🇩🇪|🇫🇷|🇳🇱";
+        };
+        strategy = "url-test";
+      };
+      IN = {
+        match = {
+          kind = "regex";
+          pattern = "india|\\bin\\b|印度|🇮🇳";
+        };
+        strategy = "url-test";
+      };
 
       # Glob example: all nodes whose name starts with "Premium".
       # Premium = { match = { kind = "glob"; pattern = "Premium*"; }; };
@@ -217,26 +308,52 @@
       #   pattern = ''(* (not (any (if-not "x0.5" 1)) "x0.5") (any (if-not "JP" 1)) "JP")''; }; };
 
       # Usage groups — templates. Uncomment together with the matching rule below.
-      # sing-box rejects strategy fallback and load-balance (ADR-0006). Those
-      # templates wait for the xray renderer.
-      /* Telegram = { members = [ "group:SG" "group:HK" ]; strategy = "fallback"; }; */
-      /* Gemini   = { members = [ "group:US" ];            strategy = "url-test"; }; */
-      /* Claude   = { members = [ "group:US" "group:JP" ]; strategy = "fallback"; }; */
-      /* Netflix  = { members = [ "group:JP" "group:SG" ]; strategy = "manual"; default = "group:JP"; }; */
-      /* YouTube = { members = [ "group:US" "group:JP" ]; strategy = "url-test"; }; */
-      /* GitHub  = { members = [ "group:US" "group:SG" ]; strategy = "url-test"; }; */
+      # fallback fails on both engines. load-balance is xray only (docs/07 §2.1).
+      /*
+      Telegram = { members = [ "group:SG" "group:HK" ]; strategy = "fallback"; };
+      */
+      /*
+      Gemini   = { members = [ "group:US" ];            strategy = "url-test"; };
+      */
+      /*
+      Claude   = { members = [ "group:US" "group:JP" ]; strategy = "fallback"; };
+      */
+      /*
+      Netflix  = { members = [ "group:JP" "group:SG" ]; strategy = "manual"; default = "group:JP"; };
+      */
+      /*
+      YouTube = { members = [ "group:US" "group:JP" ]; strategy = "url-test"; };
+      */
+      /*
+      GitHub  = { members = [ "group:US" "group:SG" ]; strategy = "url-test"; };
+      */
     };
 
-    defaultTarget = "group:Auto";                          # Auto = url-test over everything
+    defaultTarget = "group:Auto"; # Auto = url-test over everything
 
     # Unset rules stay empty, and traffic follows defaultTarget.
     # This list is the cn template (docs/21 §4). For ru or ir, replace it
-    # with the commented list and set janus.region to match.
+    # with the commented list and set janus.system.region to match.
     rules = [
-      { match = { geosite = [ "private" ]; geoip = [ "private" ]; }; target = "direct"; }
-      { match = { geosite = [ "cn" "geolocation-cn" ]; };              target = "direct"; }
-      { match = { geoip = [ "cn" ]; };                                 target = "direct"; }
-      { match = { geosite = [ "category-ads-all" ]; };                 target = "block"; }
+      {
+        match = {
+          geosite = ["private"];
+          geoip = ["private"];
+        };
+        target = "direct";
+      }
+      {
+        match = {geosite = ["cn" "geolocation-cn"];};
+        target = "direct";
+      }
+      {
+        match = {geoip = ["cn"];};
+        target = "direct";
+      }
+      {
+        match = {geosite = ["category-ads-all"];};
+        target = "block";
+      }
 
       # Usage templates. sing-box rejects strategy fallback (ADR-0006).
       # { match = { geosite = [ "telegram" ]; geoip = [ "telegram" ]; }; target = "group:Telegram"; }
@@ -247,7 +364,7 @@
       # { match = { geosite = [ "github" ]; };                           target = "group:GitHub"; }
     ];
 
-    # Russia. Replace rules above. Also set janus.region = "ru".
+    # Russia. Replace rules above. Also set janus.system.region = "ru".
     # rules = [
     #   { match = { geosite = [ "private" ]; geoip = [ "private" ]; }; target = "direct"; }
     #   { match = { domainSuffix = [ "ru" "su" "xn--p1ai" ]; };        target = "direct"; }
@@ -256,7 +373,7 @@
     #   { match = { geosite = [ "category-ads-all" ]; };               target = "block"; }
     # ];
 
-    # Iran. Replace rules above. Also set janus.region = "ir" and
+    # Iran. Replace rules above. Also set janus.system.region = "ir" and
     # janus.dns.domestic.resolvers.
     # rules = [
     #   { match = { geosite = [ "private" ]; geoip = [ "private" ]; }; target = "direct"; }
@@ -273,12 +390,16 @@
 
   janus.dns = {
     carrierResolvers = "never";
-    encryption       = "prefer";
-    # domestic.resolvers and domestic.domains follow janus.region.
-    remote.resolvers   = [ "https://1.1.1.1/dns-query" "https://dns.google/dns-query" ];
-    fakeIp.enable      = "auto";
-    ipv6Answers        = "strip-for-proxied";
-    blockDoT           = true;
+    encryption = "prefer";
+    # domestic.resolvers and domestic.domains follow janus.system.region.
+    remote.resolvers = ["https://1.1.1.1/dns-query" "https://dns.google/dns-query"];
+    fakeIp.enable = "auto";
+    ipv6Answers = "strip-for-proxied";
+    blockDoT = true;
+    # bootstrap follows janus.system.region when unset (D-0040):
+    # cn 223.5.5.5 and 223.6.6.6; ru 77.88.8.8 and 77.88.8.1; ir empty.
+    # The build does not look hostnames up.
+    # bootstrap = [ "223.5.5.5" "223.6.6.6" ];
   };
 
   ############################################################################
@@ -286,18 +407,20 @@
   ############################################################################
 
   janus.monitoring = {
-    enable     = true;
-    interfaces = [ "main" "home" ];
-    scope      = "counters";
+    enable = true;
+    interfaces = ["main" "home"];
+    scope = "counters";
   };
 
-  /* janus.remoteAccess.tailscale = {
+  /*
+     janus.remoteAccess.tailscale = {
     enable      = true;
     authKeyFile = "/var/lib/janus/secrets/tailscale-authkey";
     # loginServer = "https://headscale.example.com";
     # advertiseRoutes = [ "192.168.10.0/24" ];
     # exitNode = true;
-  }; */
+  };
+  */
 
   ############################################################################
   # Escape hatch: plain NixOS options are allowed.

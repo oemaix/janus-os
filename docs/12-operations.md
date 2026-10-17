@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-16 |
+| Last updated | 2026-10-17 |
 
 ## 1. What maintenance is
 
@@ -154,7 +154,7 @@ private key on stdin and installs it over SSH. It does not store the key.
 | Traffic counters | `janus traffic [iface] [--daily\|--monthly]` |
 | Live top talkers | `janus traffic top` (requires `scope = per-host`) |
 | DNS diagnostics | `janus dns query <name>`, `janus dns flush`, `janus dns stats` |
-| DNS leak / poison check | `janus dns check` |
+| DNS leak / poison check | `janus dns check` (on the router, once per LAN: one domestic name and one foreign name; it does not impersonate a LAN client) |
 | Set a hot override on the router | `janus override set <key> <value>`; `janus override diff`; later `janus-build fleet pull` (leases), or `janus-build fleet pull --with-secrets` when the credential itself should be written back |
 | Push committed overrides | `janus-build fleet apply [<host>]` (*16*) |
 | Router status from the build host | `janus-build status [<host>]` |
@@ -173,15 +173,16 @@ All subcommands are also usable non-interactively (JSON output with
 
 | Timer | Default | Purpose |
 |-------|---------|---------|
-| `janus-refresh-subscriptions@<name>` | per subscription (`6h`) | Fetch, validate, reload |
-| `janus-refresh-geodata` | weekly | Same for Geo data |
-| `janus-refresh-bootstrap` | weekly | Refresh DoH/DoT bootstrap IPs |
-| `janus-healthcheck` | 1 min | WAN health, failover, engine liveness (restart with backoff), DNS self-test |
-| `janus-monitoring-save` | 15 min | Persist counters |
+| `janus-proxy-refresh-<name>` | per subscription (`6h`) | Fetch, validate, reload. The template unit is `janus-proxy-refresh@.service`. |
+| `janus-geodata-refresh` | weekly | Geo rule sets |
+| `janus-wan-health` | 30 s after boot, then the WAN interval (`10s`) | WAN health and backup failover. Engine restart is the unit's own `Restart=`. |
+| `janus-metrics` | 60 s | Engine metrics text, when Prometheus is on |
+| vnstat | `SaveInterval` 15 min | Persist interface counters. There is no `janus-monitoring-save` unit. |
 | `fstrim` | weekly | Discard on f2fs partitions |
 
-Timers use `Persistent=true` so a missed run executes after boot, and
-`RandomizedDelaySec` to avoid thundering herds against providers.
+Subscription and Geo refresh timers set `Persistent=true` and
+`RandomizedDelaySec=10min`, so a missed run executes after boot and
+providers are not hit at the same moment.
 
 ## 5. Failure handling
 

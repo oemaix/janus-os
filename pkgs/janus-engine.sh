@@ -199,13 +199,16 @@ carrier_model() {
     return 0
   fi
   if [ "$mode" = domestic-only ]; then
+    # One DNS rule names one server. The first learned address becomes that
+    # server. sing-box has no failover group, and xray 26 does not stably
+    # share one name across two servers.
     jq --rawfile ips "$ips" '
-      .dns.domestic.resolvers += ([$ips | split("\n")[] | select(length > 0) | "udp://" + .] | unique)
+      .dns.domestic.resolvers =
+        ([$ips | split("\n")[] | select(length > 0) | "udp://" + .] | unique)
+        + .dns.domestic.resolvers
     ' "$src" > "$dst"
   elif [ "$mode" = fallback-only ]; then
-    jq --rawfile ips "$ips" '
-      .dns.remote.resolvers += ([$ips | split("\n")[] | select(length > 0) | "udp://" + .] | unique)
-    ' "$src" > "$dst"
+    echo "janus: fallback-only is not available. sing-box has no DNS failover group, and xray 26 does not stably match one name on two servers. The carrier addresses stay unused." >&2
   fi
   rm -f "$ips"
 }
@@ -273,7 +276,12 @@ render_config() {
     cp -a "$cfg" "${cfg}.prev"
   fi
   mv "$out" "$cfg"
-  chmod 0600 "$cfg"
+  if grep -q '^janus-engine:' /etc/group 2>/dev/null; then
+    chgrp janus-engine "$cfg"
+    chmod 0640 "$cfg"
+  else
+    chmod 0600 "$cfg"
+  fi
   rm -f "$nodes" "$work" "$selected"
 }
 
@@ -493,13 +501,116 @@ write_selection() {
   tmp=$(mktemp)
   jq --arg g "$group" --arg n "$node" --argjson d "$image" '.[$g] = {node:$n, default:$d}' "$current" > "$tmp"
   mv "$tmp" "$sel"
-  chmod 0600 "$sel"
+  if grep -q '^janus-engine:' /etc/group 2>/dev/null; then
+    chgrp janus-engine "$sel"
+    chmod 0640 "$sel"
+  else
+    chmod 0600 "$sel"
+  fi
 }
 
 report() {
   printf '%s %s\n' "$1" "$2"
   if [ "$1" = fail ]; then
     check_fail=1
+  fi
+}
+
+is_bogus() {
+  answer=$1
+  bogus=0
+  while IFS= read -r bad; do
+    [ -n "$bad" ] || continue
+    if printf '%s' "$answer" | grep -q "$bad"; then
+      bogus=1
+    fi
+  done < <(jq -r '.bogusAnswers[]?' "$policy")
+  [ "$bogus" = 1 ]
+}
+
+is_fake_v4() {
+  printf '%s' "$1" | grep -q '198\.1[89]\.'
+}
+
+is_global_aaaa() {
+  printf '%s' "$1" | grep -Eq ':[0-9a-fA-F]' || return 1
+  printf '%s' "$1" | grep -Eq '(^|[^0-9a-fA-F:])fc0[0-3]:' && return 1
+  return 0
+}
+
+ask_lan() {
+  address=$1
+  name=$2
+  qtype=$3
+  if [ -n "$address" ] && [ -n "${JANUS_DIG:-}" ]; then
+    "$JANUS_DIG" +short +time=2 +tries=1 "@${address}" "$name" "$qtype" || true
+  else
+    resolve_name "$name" "$qtype"
+  fi
+}
+
+check_one_lan() {
+  name=$1
+  address=$2
+  mode=$3
+  recursive=$4
+  fake=$5
+  strip=$6
+  probe=$(jq -r '.domesticProbe // "www.baidu.com"' "$policy")
+  foreign=$(ask_lan "$address" example.com A)
+  domestic=$(ask_lan "$address" "$probe" A)
+  if [ "$recursive" = false ]; then
+    if [ -n "$foreign" ] || [ -n "$domestic" ]; then
+      report fail "${name} resolved a name while dns.recursive is false"
+    else
+      report pass "${name} answers only local names"
+    fi
+    return
+  fi
+  if [ "$mode" = bypass ] || [ "$fake" = false ]; then
+    if [ -z "$foreign" ]; then
+      report fail "${name} foreign name example.com was not answered"
+    elif is_fake_v4 "$foreign"; then
+      report fail "${name} foreign name example.com was a fake-IP"
+    elif is_bogus "$foreign"; then
+      report fail "${name} foreign name example.com matched a bogus answer"
+    else
+      report pass "${name} foreign name example.com was a real answer"
+    fi
+    if [ -z "$domestic" ]; then
+      report fail "${name} domestic name ${probe} was not answered"
+    elif is_fake_v4 "$domestic"; then
+      report fail "${name} domestic name ${probe} was a fake-IP"
+    else
+      report pass "${name} domestic name ${probe} was a real answer"
+    fi
+  else
+    if is_fake_v4 "$foreign"; then
+      report pass "${name} foreign name example.com answered from the fake-IP range"
+    elif [ -z "$foreign" ]; then
+      report fail "${name} foreign name example.com was not answered"
+    elif is_bogus "$foreign"; then
+      report fail "${name} foreign name example.com matched a bogus answer"
+    else
+      report fail "${name} foreign name example.com was not a fake-IP"
+    fi
+    if [ -z "$domestic" ]; then
+      report fail "${name} domestic name ${probe} was not answered"
+    elif is_fake_v4 "$domestic"; then
+      report fail "${name} domestic name ${probe} was a fake-IP"
+    elif is_bogus "$domestic"; then
+      report fail "${name} domestic name ${probe} matched a bogus answer"
+    else
+      report pass "${name} domestic name ${probe} was a real answer"
+    fi
+  fi
+  if [ "$strip" = strip-all ] || [ "$strip" = strip-for-proxied ]; then
+    aaaa=$(ask_lan "$address" example.com AAAA)
+    if is_global_aaaa "$aaaa"; then
+      report fail "${name} AAAA for example.com was globally routable"
+    else
+      report pass "${name} AAAA for example.com was not globally routable"
+    fi
   fi
 }
 
@@ -514,40 +625,19 @@ dns_check() {
   else
     report pass "plaintext interception is disabled in the policy"
   fi
-  foreign=$(resolve_name example.com A)
-  if [ -z "$foreign" ]; then
-    report fail "foreign name example.com was not answered"
-  elif printf '%s' "$foreign" | grep -q '198\.18\.'; then
-    report pass "foreign name example.com answered from the fake-IP range"
+  count=$(jq '.lans | length' "$policy")
+  if [ "$count" = 0 ]; then
+    check_one_lan router "" "$(jq -r '.mode // "rule-based"' "$policy")" true "$(jq -r '.fakeIp // false' "$policy")" "$(jq -r '.ipv6Answers' "$policy")"
   else
-    bogus=0
-    while IFS= read -r bad; do
-      [ -n "$bad" ] || continue
-      if printf '%s' "$foreign" | grep -q "$bad"; then
-        bogus=1
-      fi
-    done < <(jq -r '.bogusAnswers[]?' "$policy")
-    if [ "$bogus" = 1 ]; then
-      report fail "foreign name example.com matched a bogus answer"
-    else
-      report pass "foreign name example.com was not a listed bogus answer"
-    fi
-  fi
-  domestic=$(resolve_name www.baidu.com A)
-  if [ -z "$domestic" ]; then
-    report fail "domestic name www.baidu.com was not answered"
-  elif printf '%s' "$domestic" | grep -q '198\.18\.'; then
-    report fail "domestic name www.baidu.com was answered with a fake-IP"
-  else
-    report pass "domestic name www.baidu.com was not a fake-IP"
-  fi
-  if [ "$(jq -r '.ipv6Answers' "$policy")" = strip-all ]; then
-    aaaa=$(resolve_name example.com AAAA)
-    if printf '%s' "$aaaa" | grep -Eq ':[0-9a-fA-F]'; then
-      report fail "AAAA for example.com was present while ipv6Answers is strip-all"
-    else
-      report pass "AAAA for example.com is stripped"
-    fi
+    while IFS= read -r row; do
+      check_one_lan \
+        "$(printf '%s' "$row" | jq -r '.name')" \
+        "$(printf '%s' "$row" | jq -r '.address')" \
+        "$(printf '%s' "$row" | jq -r '.mode')" \
+        "$(printf '%s' "$row" | jq -r '.recursive')" \
+        "$(printf '%s' "$row" | jq -r '.fakeIp')" \
+        "$(printf '%s' "$row" | jq -r '.ipv6Answers')"
+    done < <(jq -c '.lans[]' "$policy")
   fi
   [ "$check_fail" = 0 ]
 }

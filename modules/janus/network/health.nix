@@ -121,6 +121,10 @@ in {
       serviceConfig = {
         Type = "oneshot";
         ExecStart = script;
+        ProtectSystem = "strict";
+        ProtectHome = true;
+        PrivateTmp = true;
+        NoNewPrivileges = true;
       };
     };
     systemd.timers.janus-wan-health = {

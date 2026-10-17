@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-16 |
+| Last updated | 2026-10-17 |
 
 ## 1. Assets
 
@@ -66,8 +66,13 @@
   `CapabilityBoundingSet` limited to `CAP_NET_ADMIN`/`CAP_NET_RAW`/
   `CAP_NET_BIND_SERVICE` where needed, `RestrictAddressFamilies`,
   `SystemCallFilter=@system-service`).
-* The proxy engine gets `CAP_NET_ADMIN` (TUN) and `CAP_NET_BIND_SERVICE`;
-  its `StateDirectory` is the only writable path.
+* The proxy engine runs as `janus-engine` with `CAP_NET_ADMIN` (TUN),
+  `CAP_NET_BIND_SERVICE`, and `CAP_NET_RAW`. It may write only
+  `/var/lib/janus/engine`. A root oneshot renders the configuration,
+  because that step reads secret files, then the engine reads the result.
+  The engine waits up to 90 s for time sync and then starts anyway.
+* `janus-persist-etc` and `janus-deploy-rollback` are not sandboxed.
+  They bind-mount state into `/etc` and remount `/boot` or `/nix`.
 * No telemetry: engines' and tools' reporting features are compiled out or
   disabled (FR-SEC-011); NTP and Geo/subscription refresh are the only
   router-initiated outbound connections besides user tunnels.
@@ -136,7 +141,10 @@ not document two first-class paths.
 * LAN default `disabled` when tunneling; `delegated` requires tunnel-aware
   interception; optional NPTv6 to hide prefix stability from remote sites.
 * AAAA stripping for proxied domains prevents hosts from preferring a direct
-  IPv6 path around the tunnel.
+  IPv6 path around the tunnel. The default `strip-for-proxied` withholds a
+  globally routable AAAA from a proxied name. An address in the IPv6
+  fake-IP range is not that leak. A direct name keeps a real AAAA.
+  `keep` allows the leak (D-0038).
 * Documentation states clearly that host-side privacy extensions are the
   host's choice; Janus can only avoid handing hosts a global prefix.
 

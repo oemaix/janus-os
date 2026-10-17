@@ -141,7 +141,7 @@ in {
     readOnlyFs = mkOption {
       type = types.enum ["f2fs" "erofs" "squashfs"];
       default = "f2fs";
-      description = "Filesystem for the read-only partitions. The builder populates f2fs.";
+      description = "Filesystem for the read-only partitions. f2fs is implemented. erofs and squashfs are reserved and fail evaluation (D-0035).";
     };
     state.minimumSize = mkOption {
       type = types.str;
@@ -181,7 +181,7 @@ in {
       }
       {
         assertion = cfg.readOnlyFs == "f2fs";
-        message = "janus.storage.readOnlyFs: the image builder populates f2fs and FAT (docs/09 §6).";
+        message = "janus.storage.readOnlyFs: the image builder populates f2fs and FAT. erofs and squashfs are reserved (D-0035, docs/05 §9).";
       }
       {
         assertion = lib.all (p: p.fsType == "f2fs" || p.fsType == "vfat") parts;
@@ -447,6 +447,11 @@ in {
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;
+        ProtectSystem = "strict";
+        ProtectHome = true;
+        PrivateTmp = true;
+        NoNewPrivileges = true;
+        ReadWritePaths = "/var/lib/janus";
       };
       script = ''
         set -eu

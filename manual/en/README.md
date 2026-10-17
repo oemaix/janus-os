@@ -117,7 +117,7 @@ Option names are in
 `janus-build check <host>` evaluates the configuration without building
 the image.
 
-`janus.region` is `cn` (the default), `ru`, or `ir`. It chooses the
+`janus.system.region` is `cn` (the default), `ru`, or `ir`. It chooses the
 domestic resolver. For `ru`, `janus.proxy.blockQuic` defaults to true
 and rejects QUIC that did not match a direct rule. Set it to false to
 keep QUIC. Routing rules stay empty until the configuration writes
@@ -126,6 +126,61 @@ beside it. `ir` has no built-in domestic resolver: set
 `janus.dns.domestic.resolvers` to an encrypted resolver for inland
 names when the proxy is enabled. Changing the region is a rebuild, not
 a hot override.
+
+Each LAN inherits `janus.proxy.mode`, the rule list, and `janus.dns`. It
+overrides any of them. A set rule list replaces the inherited one. Nodes
+and groups stay shared. `bypass` is not sent into the tunnel: every
+recursive name uses the domestic encrypted resolvers. `rule-based` follows
+that LAN's rules. `proxy-all` tunnels everything except its exceptions. A
+name that LAN will proxy gets a fake-IP, including a name that matches no
+rule and follows a default target that is a group. A direct name uses the
+domestic resolver. `ipv6Answers` defaults to `strip-for-proxied`: a proxied
+name does not get a globally routable IPv6 address. An address in the
+fake-IP IPv6 range is not a leak. `dns.recursive = false` answers only
+hosts and leases, for a LAN with no path to the WAN. DoH and DoT hostnames
+are resolved from `janus.dns.bootstrap`, a list of addresses. When unset,
+the region supplies it: China `223.5.5.5` and `223.6.6.6`, Russia
+`77.88.8.8` and `77.88.8.1`, Iran empty. The image does not look these
+names up at build time. `janus dns check` asks one domestic name and one
+foreign name per LAN, on the router. It does not pretend to be a LAN
+device. sing-box does this per LAN. xray routes each LAN by source and
+uses one shared DNS policy. Every LAN is told to use the router unless
+`listen.lans` names a smaller set. `encryption` defaults to `prefer`.
+The engine queries the first address in each resolver list. sing-box has
+one server per DNS rule and no failover group. xray does not stably match
+one name on two servers. Neither engine attaches a client subnet: sing-box
+would disable its DNS cache, and xray has no such field. The cache holds
+4096 answers, and sing-box sets each answer's TTL to 60 seconds. xray has
+no cache size or minimum TTL. A blocked name is a DNS reject on sing-box.
+xray has no reject code, so the lookup fails on the router. The client
+does not receive `127.0.0.1` as the address of that name.
+
+## Which engine
+
+`janus.proxy.engine` defaults to `sing-box`. Leave it there unless you
+have a reason below.
+
+Stay on sing-box when:
+
+- Your LANs do not share one DNS policy. A guest LAN on `bypass` and a
+  home LAN on `rule-based` is that case. xray has one DNS module, and
+  evaluation fails.
+- You use Hysteria2, TUIC, a node with `tls.insecure`, or a Shadowsocks
+  plugin.
+- The DNS cache must differ from 4096 entries and a 60-second TTL.
+
+Use xray when:
+
+- You want the group strategy `load-balance`. sing-box cannot express
+  that group.
+- Your nodes are written for xray, and every LAN can share one DNS
+  policy.
+
+The group strategy `fallback` fails on both engines. `url-test` and
+`manual` work on both. On xray, `janus proxy select` rewrites the
+configuration. On sing-box it uses the API of the running process. A
+second resolver address is not a failover on either engine. `carrierResolvers
+= "fallback-only"` does not add one.
 
 ## Day to day
 

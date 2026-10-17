@@ -131,6 +131,10 @@ in {
           ExecStart = "${flowPkg}/bin/janus-flow-export ${lib.escapeShellArgs exportIfaces}";
           Restart = "on-failure";
           RestartSec = "5s";
+          ProtectSystem = "strict";
+          ProtectHome = true;
+          PrivateTmp = true;
+          NoNewPrivileges = true;
         };
       };
     })
@@ -177,6 +181,11 @@ in {
         serviceConfig = {
           Type = "oneshot";
           ExecStart = "${metricsPkg}/bin/janus-metrics collect";
+          ProtectSystem = "strict";
+          ProtectHome = true;
+          PrivateTmp = true;
+          NoNewPrivileges = true;
+          ReadWritePaths = "/var/lib/janus/monitoring";
         };
       };
 

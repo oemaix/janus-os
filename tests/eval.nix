@@ -109,12 +109,15 @@ in {
           members = ["lan"];
           address = "192.168.10.1";
           prefixLength = 24;
+          ipv6.mode = "delegated";
         };
       }
     ];
     rules = os.config.networking.nftables.tables.janus.content;
     dhcp = os.config.systemd.network.networks."40-wan-main".networkConfig.DHCP;
     range = builtins.head os.config.services.dnsmasq.settings.dhcp-range;
+    dnsOpt = builtins.head os.config.services.dnsmasq.settings.dhcp-option;
+    raDns = os.config.systemd.network.networks."50-lan-lan".ipv6SendRAConfig.DNS;
   in
     pkgs.runCommand "eval-router" {} ''
       cat > rules.nft <<'EOF'
@@ -124,6 +127,9 @@ in {
       grep -q 192.168.10.0/24 rules.nft
       test ${lib.escapeShellArg dhcp} = ipv4
       echo ${lib.escapeShellArg range} | grep -q 192.168.10.100
+      echo ${lib.escapeShellArg range} | grep -q 'set:janus-lan,'
+      echo ${lib.escapeShellArg dnsOpt} | grep -q 'tag:janus-lan,option:dns-server,192.168.10.1'
+      test ${lib.escapeShellArg raDns} = _link_local
       printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " os.config.systemd.services.dnsmasq.wants)} | grep -F -q 'sys-subsystem-net-devices-br\x2dlan.device'
       if printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " os.config.systemd.services.dnsmasq.wants)} | grep -F -q network-online.target; then
         echo "dnsmasq still waits for the WAN" >&2
@@ -455,6 +461,7 @@ in {
         };
         janus.dns.blockDoT = true;
         janus.dns.blockKnownDoH = true;
+        janus.dns.encryption = "require";
         janus.proxy = {
           enable = true;
           blockQuic = true;
@@ -480,7 +487,7 @@ in {
     nat = os.config.networking.nftables.tables.janus.content;
     geo = os.config.environment.etc."janus/geodata".source;
     proxyBin = os.config.environment.etc."janus/bin/janus-proxy".source;
-    pre = os.config.systemd.services.janus-engine.serviceConfig.ExecStartPre;
+    pre = os.config.systemd.services.janus-engine-prepare.serviceConfig.ExecStart;
     preText = pkgs.writeText "exec-start-pre" (
       if builtins.isList pre
       then lib.concatStringsSep "\n" pre
@@ -511,6 +518,17 @@ in {
         exit 1
       fi
       jq -e 'any(.route.rules[]; .network == "udp" and .port == [443] and .action == "reject")' ${engine} >/dev/null
+      jq -e '.dns.cache_capacity == 4096' ${engine} >/dev/null
+      jq -e '[.dns.servers[] | select(.tag | startswith("domestic-lan-"))] | length == 1' ${engine} >/dev/null
+      jq -e '[.dns.servers[] | select(.tag | startswith("remote-lan-"))] | length == 1' ${engine} >/dev/null
+      jq -e '[.dns.servers[] | select(.tag | startswith("bootstrap-"))] | length == 1' ${engine} >/dev/null
+      jq -e 'any(.dns.servers[]; .tag == "domestic-lan-0" and .server == "dns.alidns.com")' ${engine} >/dev/null
+      if jq -e 'any(.dns.servers[]; .server == "dot.pub")' ${engine} >/dev/null; then
+        echo "the second domestic resolver is still queried" >&2
+        exit 1
+      fi
+      jq -e 'any(.dns.rules[]; .server == "domestic-lan-0" and .rewrite_ttl == 60 and .client_subnet == null)' ${engine} >/dev/null
+      jq -e 'any(.dns.rules[]; .server == "remote-lan-0" and .rewrite_ttl == 60 and .client_subnet == null)' ${engine} >/dev/null
       if grep -q 'hook forward' ${markFile}; then
         echo "DoT and DoH rejects are still on the forward hook" >&2
         exit 1
@@ -532,6 +550,241 @@ in {
       fi
       echo ok > "$out"
     '';
+  eval-proxy-lans = let
+    os = mk [
+      base
+      {
+        janus.network.vlans.guest-vlan = {
+          port = "lan";
+          id = 20;
+        };
+        janus.network.vlans.iot-vlan = {
+          port = "lan";
+          id = 30;
+        };
+        janus.network.lans.home = {
+          members = ["lan"];
+          address = "192.168.10.1";
+          prefixLength = 24;
+        };
+        janus.network.lans.guest = {
+          members = ["lan.20"];
+          address = "192.168.20.1";
+          prefixLength = 24;
+          proxy.mode = "bypass";
+        };
+        janus.network.lans.iot = {
+          members = ["lan.30"];
+          address = "192.168.30.1";
+          prefixLength = 24;
+          proxy.mode = "bypass";
+          dns.recursive = false;
+        };
+        janus.dns.listen.lans = ["home"];
+        janus.proxy = {
+          enable = true;
+          nodes.demo = {
+            protocol = "vless";
+            server = "203.0.113.10";
+            port = 443;
+            vless.uuid = "b831381d-6324-4d53-ad4f-8cda48b30811";
+            tls.enable = true;
+            tls.serverName = "www.example.com";
+            tls.insecure = true;
+          };
+          rules = [
+            {
+              match.domains = ["blocked.example"];
+              target = "block";
+            }
+            {
+              match.domains = ["proxy.example"];
+              target = "group:Auto";
+            }
+          ];
+        };
+      }
+    ];
+    engine = os.config.system.build.janusEngineConfig;
+    mark = os.config.networking.nftables.tables.janus_intercept.content;
+    nat = os.config.networking.nftables.tables.janus.content;
+    policy = os.config.environment.etc."janus/dns-policy.json".text;
+    markFile = pkgs.writeText "mark.nft" mark;
+    natFile = pkgs.writeText "nat.nft" nat;
+    dnsOpts = lib.concatStringsSep "\n" os.config.services.dnsmasq.settings.dhcp-option;
+    guestRa = os.config.systemd.network.networks."50-lan-guest".ipv6SendRAConfig.EmitDNS or false;
+  in
+    pkgs.runCommand "eval-proxy-lans" {
+      nativeBuildInputs = [pkgs.sing-box pkgs.jq];
+    } ''
+      sing-box check -c ${engine}
+      jq -e 'any(.dns.servers[]; .type == "udp" and .server == "223.5.5.5")' ${engine} >/dev/null
+      jq -e 'any(.inbounds[]; .tag == "dns-lan-guest" and .listen == "192.168.20.1" and .listen_port == 53 and .network == "udp")' ${engine} >/dev/null
+      jq -e 'any(.inbounds[]; .tag == "dns-lan-guest-tcp" and .listen == "192.168.20.1" and .network == "tcp")' ${engine} >/dev/null
+      jq -e '.route.final == "direct"' ${engine} >/dev/null
+      jq -e '
+        .dns.rules as $r
+        | ($r | to_entries | map(select(.value.domain == ["blocked.example"] and .value.action == "reject" and .value.source_ip_cidr == ["192.168.10.0/24"])) | .[0].key) as $block
+        | ($r | to_entries | map(select(.value.domain == ["proxy.example"] and .value.server == "fakeip" and .value.source_ip_cidr == ["192.168.10.0/24"])) | .[0].key) as $fake
+        | ($r | to_entries | map(select(.value.query_type == ["AAAA"] and .value.action == "reject" and .value.source_ip_cidr == ["192.168.10.0/24"] and .value.domain == null)) | .[0].key) as $aaaa
+        | ($block != null) and ($fake != null) and ($aaaa != null) and ($block < $aaaa) and ($fake < $aaaa)
+      ' ${engine} >/dev/null
+      jq -e 'any(.dns.rules[]; .source_ip_cidr == ["192.168.20.0/24"] and .server == "domestic-guest-0" and .action == "route")' ${engine} >/dev/null
+      if jq -e 'any(.dns.rules[]; .source_ip_cidr == ["192.168.20.0/24"] and .server == "fakeip")' ${engine} >/dev/null; then
+        echo "bypass guest received a fake-IP" >&2
+        exit 1
+      fi
+      if jq -e 'any(.route.rules[]; .source_ip_cidr == ["192.168.20.0/24"])' ${engine} >/dev/null; then
+        echo "bypass guest entered the route table" >&2
+        exit 1
+      fi
+      jq -e 'any(.dns.rules[]; .source_ip_cidr == ["192.168.30.0/24"] and .action == "reject")' ${engine} >/dev/null
+      echo ${lib.escapeShellArg policy} | jq -e '.lans[] | select(.name == "home") | .mode == "rule-based" and .fakeIp == true' >/dev/null
+      echo ${lib.escapeShellArg policy} | jq -e '.lans[] | select(.name == "guest") | .mode == "bypass" and .fakeIp == false' >/dev/null
+      echo ${lib.escapeShellArg policy} | jq -e '.lans[] | select(.name == "iot") | .recursive == false and .address == "192.168.30.1"' >/dev/null
+      grep -q '192.168.10.0/24' ${natFile}
+      if grep -q '192.168.20.0/24' ${natFile}; then
+        echo "bypass guest is in janus_proxied_src" >&2
+        exit 1
+      fi
+      grep 'meta mark set 0x00004a01' ${markFile} | grep -q 'br-home'
+      if grep 'meta mark set 0x00004a01' ${markFile} | grep -q 'br-guest'; then
+        echo "bypass guest is marked into table 2022" >&2
+        exit 1
+      fi
+      grep 'redirect to :5353' ${natFile} | grep -q 'br-guest'
+      grep 'redirect to :5353' ${natFile} | grep -q 'br-iot'
+      echo ${lib.escapeShellArg dnsOpts} | grep -q 'tag:janus-home,option:dns-server,192.168.10.1'
+      if echo ${lib.escapeShellArg dnsOpts} | grep -q 192.168.20.1; then
+        echo "guest is told to use the router" >&2
+        exit 1
+      fi
+      test ${
+        if guestRa
+        then "yes"
+        else "no"
+      } = no
+      echo ok > "$out"
+    '';
+  eval-proxy-bypass-fakeip = fail "eval-proxy-bypass-fakeip" [
+    base
+    {
+      janus.network.lans.lan = {
+        members = ["lan"];
+        address = "192.168.10.1";
+        prefixLength = 24;
+        proxy.mode = "bypass";
+        dns.fakeIp.enable = true;
+      };
+      janus.proxy.enable = true;
+    }
+  ];
+  eval-proxy-bypass-remote = fail "eval-proxy-bypass-remote" [
+    base
+    {
+      janus.network.lans.lan = {
+        members = ["lan"];
+        address = "192.168.10.1";
+        prefixLength = 24;
+        proxy.mode = "bypass";
+        dns.remote.resolvers = ["https://dns.google/dns-query"];
+      };
+      janus.proxy.enable = true;
+    }
+  ];
+  eval-proxy-xray-lan = fail "eval-proxy-xray-lan" [
+    base
+    {
+      janus.network.vlans.guest-vlan = {
+        port = "lan";
+        id = 20;
+      };
+      janus.network.lans.home = {
+        members = ["lan"];
+        address = "192.168.10.1";
+        prefixLength = 24;
+      };
+      janus.network.lans.guest = {
+        members = ["lan.20"];
+        address = "192.168.20.1";
+        prefixLength = 24;
+        proxy.mode = "bypass";
+      };
+      janus.proxy = {
+        enable = true;
+        engine = "xray";
+      };
+    }
+  ];
+  eval-proxy-bootstrap-empty = fail "eval-proxy-bootstrap-empty" [
+    base
+    {
+      janus.network.lans.lan = {
+        members = ["lan"];
+        address = "192.168.10.1";
+        prefixLength = 24;
+        dns.bootstrap = [];
+      };
+      janus.proxy.enable = true;
+    }
+  ];
+  eval-dns-require-plain = fail "eval-dns-require-plain" [
+    base
+    {
+      janus.network.lans.lan = {
+        members = ["lan"];
+        address = "192.168.10.1";
+        prefixLength = 24;
+      };
+      janus.dns.encryption = "require";
+      janus.dns.domestic.resolvers = ["223.5.5.5"];
+      janus.dns.bootstrap = ["223.5.5.5"];
+      janus.proxy.enable = true;
+    }
+  ];
+  eval-dns-listen-unknown = fail "eval-dns-listen-unknown" [
+    base
+    {janus.dns.listen.lans = ["nope"];}
+  ];
+  eval-dns-xray-cache = fail "eval-dns-xray-cache" [
+    base
+    {
+      janus.proxy = {
+        enable = true;
+        engine = "xray";
+      };
+      janus.dns.cache.size = 1024;
+    }
+  ];
+  eval-proxy-sourcelan = fail "eval-proxy-sourcelan" [
+    base
+    {
+      janus.network.vlans.guest-vlan = {
+        port = "lan";
+        id = 20;
+      };
+      janus.network.lans.home = {
+        members = ["lan"];
+        address = "192.168.10.1";
+        prefixLength = 24;
+      };
+      janus.network.lans.guest = {
+        members = ["lan.20"];
+        address = "192.168.20.1";
+        prefixLength = 24;
+      };
+      janus.proxy = {
+        enable = true;
+        rules = [
+          {
+            match.domains = ["shared.example"];
+            match.sourceLan = ["guest"];
+            target = "direct";
+          }
+        ];
+      };
+    }
+  ];
   eval-proxy-password = let
     os = mk [
       base
@@ -706,7 +959,12 @@ in {
       jq -e 'any(.routing.rules[]; (["dns-tcp","dns-udp4","dns-udp6"] - (.inboundTag // [])) == [])' ${engine} >/dev/null
       jq -e '.inbounds[] | select(.tag == "api" and .port == 8080)' ${engine} >/dev/null
       jq -e '.outbounds[] | select(.protocol == "dns" and .tag == "dns-out")' ${engine} >/dev/null
-      jq -e 'any(.routing.rules[]; (.domain // []) | index("full:example.com"))' ${engine} >/dev/null
+      jq -e 'any(.routing.rules[]; ((.domain // []) | index("full:example.com")) and .source == ["192.168.10.0/24"] and .outboundTag == "direct")' ${engine} >/dev/null
+      jq -e '.dns.queryStrategy == "UseIP"' ${engine} >/dev/null
+      jq -e 'any(.dns.servers[]; .address == "fakedns" and .queryStrategy == "UseIPv4")' ${engine} >/dev/null
+      jq -e 'any(.inbounds[]; .tag == "dns-lan-lan" and .listen == "192.168.10.1" and .port == 53)' ${engine} >/dev/null
+      jq -e 'all(.dns.servers[]; .clientIp == null)' ${engine} >/dev/null
+      jq -e '.dns.disableCache != true' ${engine} >/dev/null
       jq -e '.routing.balancers[] | select(.tag == "Wave") | .strategy.type == "roundRobin"' ${engine} >/dev/null
       jq -e '[.inbounds[] | select(.protocol == "tun" or .type == "tun")] | length == 0' ${engine} >/dev/null
       echo ${lib.escapeShellArg start} | grep -q 'xray run'
@@ -1850,7 +2108,7 @@ in {
     os = mk [
       base
       {
-        janus.region = "ru";
+        janus.system.region = "ru";
         janus.proxy.enable = true;
       }
     ];
@@ -1863,14 +2121,16 @@ in {
       jq -e '.dns.domestic.resolvers == ["https://common.dot.dns.yandex.net/dns-query","tls://common.dot.dns.yandex.net"]' ${model} >/dev/null
       jq -e '.dns.domestic.domains == ["ru","su","xn--p1ai","geosite:category-ru"]' ${model} >/dev/null
       jq -e '.rules | length == 0' ${model} >/dev/null
+      echo ${lib.escapeShellArg os.config.environment.etc."janus/dns-policy.json".text} | jq -e '.domesticProbe == "ya.ru"' >/dev/null
       echo ok > "$out"
     '';
   eval-region-ir = let
     os = mk [
       base
       {
-        janus.region = "ir";
+        janus.system.region = "ir";
         janus.dns.domestic.resolvers = ["https://dns.example.ir/dns-query"];
+        janus.dns.bootstrap = ["192.0.2.53"];
         janus.proxy.enable = true;
       }
     ];
@@ -1883,6 +2143,7 @@ in {
     } ''
       jq -e '.blockQuic == false' ${model} >/dev/null
       jq -e '.dns.domestic.resolvers == ["https://dns.example.ir/dns-query"]' ${model} >/dev/null
+      jq -e '.dns.bootstrap == ["192.0.2.53"]' ${model} >/dev/null
       jq -e '.dns.domestic.domains == ["ir","geosite:ir"]' ${model} >/dev/null
       jq -e '.rules | length == 0' ${model} >/dev/null
       jq -e '.geodataSources.tags["geosite-ir"] | test("Chocolate4U/Iran-sing-box-rules")' ${model} >/dev/null
@@ -1892,12 +2153,12 @@ in {
     '';
   eval-region-ir-off = pass "eval-region-ir-off" [
     base
-    {janus.region = "ir";}
+    {janus.system.region = "ir";}
   ];
   eval-region-ir-empty = fail "eval-region-ir-empty" [
     base
     {
-      janus.region = "ir";
+      janus.system.region = "ir";
       janus.proxy.enable = true;
     }
   ];
@@ -1905,7 +2166,7 @@ in {
     os = mk [
       base
       {
-        janus.region = "ru";
+        janus.system.region = "ru";
         janus.proxy.enable = true;
         janus.proxy.rules = [
           {

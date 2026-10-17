@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-16 |
+| Last updated | 2026-10-17 |
 
 This document is the preset that makes one Janus router practical in
 mainland China, Russia, or Iran. The module is `modules/janus/region.nix`.
@@ -23,16 +23,16 @@ The five proposed changes collapse to one option and a table of data.
 | Domestic DNS in the country of use | Yes. The preset names the resolvers. AliDNS is the China preset only. |
 | A different routing template | Yes. One ordered list per reference region, written in the example. An unset `janus.proxy.rules` stays empty. |
 | A different implementation per censorship system | No. Active probing, DNS pollution, SNI filtering, and protocol-class throttling are met by the controls Janus already has (REALITY, uTLS, split DNS, fail-closed, QUIC policy). A second renderer would rot. |
-| An explicit target region `cn`, `ru`, or `ir` | Yes. `janus.region`. |
+| An explicit target region `cn`, `ru`, or `ir` | Yes. `janus.system.region`. |
 
-`janus.region` is the censorship environment the router is built for. It
+`janus.system.region` is the censorship environment the router is built for. It
 is not a language, not a time zone, and not an exit-node country. Exit
 groups such as JP, US, and HK stay FR-PRX-014.
 
 ## 2. Option
 
 ```
-janus.region = "cn" | "ru" | "ir";   # default "cn"
+janus.system.region = "cn" | "ru" | "ir";   # default "cn"
 ```
 
 * One region per router. A household is in one of these networks.
@@ -53,7 +53,7 @@ Explicit DNS and QUIC settings win as a whole:
   `fakeIp.exclude` replaces that field of the preset.
 * An explicit `janus.proxy.blockQuic` replaces the preset default.
 
-Evaluation does not compare the written rule list with `janus.region`.
+Evaluation does not compare the written rule list with `janus.system.region`.
 A list for one country beside a region for another is the list the user
 wrote.
 
@@ -64,15 +64,21 @@ These do not vary by region:
 * Protocols, engines, subscriptions, groups, and transparent interception.
 * `failMode` default `closed`.
 * Remote resolvers stay `https://1.1.1.1/dns-query` and
-  `https://dns.google/dns-query`, reached through the tunnel.
-* Foreign names are not sent to the domestic resolvers.
-* IPv6 policy stays `strip-for-proxied`.
-* Fake-IP stays `auto`.
-* Carrier resolvers stay `never`.
+  `https://dns.google/dns-query`, reached through the tunnel. On a
+  `rule-based` or `proxy-all` LAN, a name that LAN will proxy is not sent
+  to the domestic resolvers. A `bypass` LAN sends every recursive name to
+  the domestic resolvers and does not use the tunnel (D-0042).
+* IPv6 policy stays `strip-for-proxied`. A fake-IP AAAA is not a leak
+  (D-0038).
+* Fake-IP stays `auto`. It covers names the router will proxy, including
+  the default target when that target is a group (D-0037).
+* Carrier resolvers stay `never`, including on a `domestic` LAN.
 
 The region changes the domestic resolvers, the fake-IP exclusions that
-match the domestic names, and the `blockQuic` default. The routing list
-changes only when the configuration writes it.
+match the domestic names, the bootstrap addresses, and the `blockQuic`
+default. Unset `janus.dns.bootstrap` follows §4 (D-0040). There is no
+build-time lookup and no refresh timer. The routing list changes only
+when the configuration writes it.
 
 ## 4. Presets
 
@@ -108,6 +114,7 @@ already uses.
 | GeoSite | `cn`, `geolocation-cn` |
 | GeoIP | `cn` |
 | Domestic resolvers | `https://dns.alidns.com/dns-query`, `tls://dot.pub` |
+| Bootstrap | `223.5.5.5`, `223.6.6.6` |
 | `blockQuic` | `false` |
 | Source | SagerNet sing-geosite and sing-geoip, as today |
 
@@ -123,6 +130,7 @@ inland and then sent through the tunnel.
 | GeoSite | `category-ru` |
 | GeoIP | `ru` |
 | Domestic resolvers | `https://common.dot.dns.yandex.net/dns-query`, `tls://common.dot.dns.yandex.net` |
+| Bootstrap | `77.88.8.8`, `77.88.8.1` |
 | `blockQuic` | `true` |
 | Source | SagerNet sing-geosite and sing-geoip |
 
@@ -146,6 +154,7 @@ user can set `blockQuic = false`.
 | GeoSite | `ir` |
 | GeoIP | `ir` |
 | Domestic resolvers | none. With the proxy enabled, evaluation fails until the user sets them. |
+| Bootstrap | none. A DoH or DoT hostname needs `janus.dns.bootstrap`. |
 | `blockQuic` | `false` |
 | GeoSite source | Chocolate4U `geosite-ir.srs` |
 | GeoIP source | SagerNet sing-geoip `geoip-ir.srs` |
@@ -181,9 +190,13 @@ does not suggest a URL. With the proxy off, the empty list is kept.
 
 ## 5. Implementation
 
-`modules/janus/region.nix` applies domestic DNS and `blockQuic`. It does
-not write `janus.proxy.rules`. Per-tag URLs and the pins for the preset
-files, including Chocolate4U `geosite-ir`, are in
+`modules/janus/region.nix` applies domestic DNS, `blockQuic`, and the
+bootstrap addresses in §4 (D-0040). It does not write `janus.proxy.rules`.
+sing-box follows D-0037 through D-0042 per LAN. xray 26 follows the same
+DNS decision for one shared policy and routes each LAN by source. A
+household whose LANs do not share that policy stays on sing-box (*07*
+§2.1). Per-tag URLs and the pins for the preset files, including
+Chocolate4U `geosite-ir`, are in
 `modules/janus/proxy/lower.nix`. The pins were measured on 2026-10-16.
 The example writes the `cn` list and comments out `ru` and `ir`.
 `eval-region-ru` checks that an unset rule list stays empty.
@@ -198,7 +211,8 @@ Russia or Iran requirement.
 What remains different is small, and it is not another subsystem.
 
 * **Iran, one more setting.** `region = "ir"` is not enough. Domestic
-  resolvers are empty until the operator sets them (§4.3).
+  resolvers are empty until the operator sets them (§4.3). Bootstrap is
+  empty too. A DoH or DoT hostname also needs `janus.dns.bootstrap`.
 * **Russia, Telegram.** The `ru` template sends Telegram to `defaultTarget`,
   so it is proxied, which is what China and often Iran want. In Russia
   Telegram is usually left direct. That is one extra row in the written
@@ -216,4 +230,19 @@ What remains different is small, and it is not another subsystem.
   did not match a direct rule. It does not rewrite the node's protocol.
 * **Protocols this preset does not add.** FR-PRX-001 stays the list.
   A subscription that is only a WireGuard variant is out of scope for
-  `janus.region`. Adding one would be a new protocol decision.
+  `janus.system.region`. Adding one would be a new protocol decision.
+
+## 7. What a poison check can see
+
+`janus dns check` does not use one bogon list for all three regions
+(D-0041).
+
+* China forges A records on the path of plaintext DNS. `bogusAnswers` may
+  name those addresses. The preset does not require that list.
+* Russia and Iran more often lie in the ISP resolver, returning NXDOMAIN
+  or a block page, and block by SNI or address. On-path forged answers are
+  not the usual tool, and a China bogon list is not a test for them. The
+  preset ships no Russia or Iran bogon list.
+* The foreign probe fails when the domestic resolver answered that name,
+  or when the answer is in `bogusAnswers`. Encrypted DNS to a resolver
+  that is not the ISP often works until that resolver's address is blocked.

@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-16 |
+| Last updated | 2026-10-17 |
 
 This is the contract for the on-router `janus` command. Implementation
 follows this file. The user manual will later show the same commands with
@@ -46,7 +46,7 @@ These do not change configuration or hot overrides.
 | `janus dns query <name>` | Resolve as the router would |
 | `janus dns flush` | Clear the DNS cache |
 | `janus dns stats` | Cache and upstream counters |
-| `janus dns check` | Leak and poisoning probes (FR-DNS-011). Does not change policy. |
+| `janus dns check` | On-router leak and poisoning probes, once per LAN: one domestic name and one foreign name (FR-DNS-011, D-0041). Does not impersonate a LAN client. Does not change policy. |
 | `janus logs [unit] [-f]` | Journal for Janus units |
 | `janus fw list` | nftables ruleset with zone notes |
 | `janus version [--components]` | Image provenance from `/etc/janus/build.json` |

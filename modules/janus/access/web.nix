@@ -136,6 +136,11 @@ in {
         Type = "oneshot";
         RemainAfterExit = true;
         ExecStart = "${webCmd}/bin/janus-web cert";
+        ProtectSystem = "strict";
+        ProtectHome = true;
+        PrivateTmp = true;
+        NoNewPrivileges = true;
+        ReadWritePaths = "/var/lib/janus/web";
       };
     };
 
@@ -165,6 +170,10 @@ in {
         TimeoutStartSec = "10s";
         ExecCondition = ["${webCmd}/bin/janus-web ready"];
         LoadCredential = "passphrase:${cfg.passphraseFile}";
+        ProtectSystem = "strict";
+        ProtectHome = true;
+        PrivateTmp = true;
+        ReadWritePaths = "/var/lib/janus/web";
       };
     };
 
@@ -182,6 +191,11 @@ in {
         ExecStart = "${pkgs.stunnel}/bin/stunnel /etc/janus/stunnel.conf";
         Restart = "on-failure";
         RestartSec = "2s";
+        ProtectSystem = "strict";
+        ProtectHome = true;
+        PrivateTmp = true;
+        NoNewPrivileges = true;
+        ReadWritePaths = "/var/lib/janus/web";
       };
     };
   };

@@ -222,9 +222,9 @@
       iifname ${q "br-${n}"} meta nfproto ipv6 drop
     '') (lib.attrNames net.lans);
 
-  disabledLans = lib.filter (n: net.lans.${n}.ipv6.mode == "disabled") (lib.attrNames net.lans);
+  lanMembers = lib.unique (lib.concatLists (lib.mapAttrsToList (_: lan: map resolve lan.members) net.lans));
 
-  proxied = map (n: cidr net.lans.${n}.address net.lans.${n}.prefixLength) (lib.filter (n: net.lans.${n}.proxied) (lib.attrNames net.lans));
+  proxied = map (n: cidr net.lans.${n}.address net.lans.${n}.prefixLength) (lib.filter (n: net.lans.${n}.internal.intercept) (lib.attrNames net.lans));
 
   content = ''
     ${lib.optionalString (proxied != []) ''
@@ -285,16 +285,18 @@ in {
           content = content;
         };
       }
-      (lib.mkIf (disabledLans != []) {
-        janus-ra = {
+      (lib.mkIf (lanMembers != []) {
+        janus-lan-guard = {
           family = "bridge";
           content = ''
             chain forward {
               type filter hook forward priority 0; policy accept;
-              ${lib.concatMapStrings (n: ''
-                iifname ${q "br-${n}"} ether type ip6 icmpv6 type nd-router-advert drop
+              ${lib.concatMapStrings (iface: ''
+                iifname ${q iface} udp sport 67 drop
+                iifname ${q iface} udp sport 547 drop
+                iifname ${q iface} ether type ip6 icmpv6 type nd-router-advert drop
               '')
-              disabledLans}
+              lanMembers}
             }
           '';
         };

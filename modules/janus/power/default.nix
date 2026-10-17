@@ -133,6 +133,10 @@ in {
         RemainAfterExit = true;
         TimeoutStartSec = "infinity";
         ExecStart = "${powerPkg}/bin/janus-power guard /etc/janus/power.conf";
+        ProtectSystem = "strict";
+        ProtectHome = true;
+        PrivateTmp = true;
+        NoNewPrivileges = true;
       };
     };
 
@@ -145,6 +149,10 @@ in {
         ExecStart = "${powerPkg}/bin/janus-power watch /etc/janus/power.conf";
         Restart = "on-failure";
         RestartSec = "2s";
+        ProtectSystem = "strict";
+        ProtectHome = true;
+        PrivateTmp = true;
+        NoNewPrivileges = true;
       };
     };
   };

@@ -7,8 +7,8 @@
   ...
 }: let
   inherit (lib) mkOption types;
+  outer = config;
   cfg = config.janus.network;
-  proxyMode = config.janus.proxy.mode;
 
   ipv4ToInt = addr: let
     p = lib.splitString "." addr;
@@ -130,7 +130,7 @@ in {
           metric = mkOption {
             type = types.nullOr types.int;
             default = null;
-            description = "Route metric. Null assigns 100 plus the WAN index.";
+            description = "Route metric. Null assigns 100 plus the WAN index, or 1100 plus the index when role is backup.";
           };
           dhcp = mkOption {
             type = types.submodule {
@@ -318,13 +318,20 @@ in {
             description = "MAC clone for a carrier lock.";
           };
         };
-        config = lib.mkIf (config.role == "backup") {
+        config = lib.mkIf (config.role == "backup" || (config.role == "default" && outer.janus.network.internal.multipleDefaults)) {
           healthCheck.enable = lib.mkDefault true;
           healthCheck.targets = lib.mkDefault ["1.1.1.1" "9.9.9.9"];
         };
       }));
       default = {};
       description = "WAN uplinks. docs/06 §4.";
+    };
+
+    internal.multipleDefaults = mkOption {
+      type = types.bool;
+      internal = true;
+      default = false;
+      description = "True when more than one WAN has role default.";
     };
 
     lans = mkOption {
@@ -389,11 +396,8 @@ in {
           };
           ipv6.mode = mkOption {
             type = types.enum ["disabled" "ula-only" "delegated"];
-            default =
-              if proxyMode == "bypass"
-              then "delegated"
-              else "disabled";
-            defaultText = "delegated when janus.proxy.mode is bypass, otherwise disabled";
+            default = "disabled";
+            defaultText = "delegated when this LAN's proxy.mode is bypass, otherwise disabled";
             description = "LAN IPv6. docs/06 §9.";
           };
           ipv6.ula = mkOption {
@@ -406,10 +410,103 @@ in {
             default = name;
             description = "Firewall zone. Defaults to the LAN name.";
           };
-          proxied = mkOption {
+          proxy.mode = mkOption {
+            type = types.nullOr (types.enum ["bypass" "rule-based" "proxy-all"]);
+            default = null;
+            description = "Traffic mode for this LAN. Null inherits janus.proxy.mode.";
+          };
+          proxy.rules = mkOption {
+            type = types.nullOr (types.listOf types.attrs);
+            default = null;
+            description = "Routing rules for this LAN. Null inherits janus.proxy.rules. A list replaces that list.";
+          };
+          proxy.defaultTarget = mkOption {
+            type = types.nullOr types.str;
+            default = null;
+            description = "Target when no rule matches. Null inherits janus.proxy.defaultTarget.";
+          };
+          proxy.exceptions = mkOption {
+            type = types.nullOr (types.listOf types.str);
+            default = null;
+            description = "proxy-all exceptions that stay direct. Null inherits janus.proxy.exceptions.";
+          };
+          dns.recursive = mkOption {
+            type = types.nullOr types.bool;
+            default = null;
+            description = "Null inherits janus.dns.recursive. False answers only hosts and static leases.";
+          };
+          dns.domestic.resolvers = mkOption {
+            type = types.nullOr (types.listOf types.str);
+            default = null;
+            description = "Null inherits janus.dns.domestic.resolvers.";
+          };
+          dns.domestic.domains = mkOption {
+            type = types.nullOr (types.listOf types.str);
+            default = null;
+            description = "Null inherits janus.dns.domestic.domains.";
+          };
+          dns.remote.resolvers = mkOption {
+            type = types.nullOr (types.listOf types.str);
+            default = null;
+            description = "Null inherits janus.dns.remote.resolvers. Setting this on a bypass LAN fails evaluation.";
+          };
+          dns.remote.via = mkOption {
+            type = types.nullOr (types.enum ["tunnel" "direct"]);
+            default = null;
+            description = "Null inherits janus.dns.remote.via.";
+          };
+          dns.fakeIp.enable = mkOption {
+            type = types.nullOr (types.either types.bool (types.enum ["auto"]));
+            default = null;
+            description = "Null inherits janus.dns.fakeIp.enable. True on a bypass LAN fails evaluation.";
+          };
+          dns.fakeIp.v4Range = mkOption {
+            type = types.nullOr types.str;
+            default = null;
+            description = "Null inherits janus.dns.fakeIp.v4Range.";
+          };
+          dns.fakeIp.v6Range = mkOption {
+            type = types.nullOr types.str;
+            default = null;
+            description = "Null inherits janus.dns.fakeIp.v6Range.";
+          };
+          dns.fakeIp.exclude = mkOption {
+            type = types.nullOr (types.listOf types.str);
+            default = null;
+            description = "Null inherits janus.dns.fakeIp.exclude.";
+          };
+          dns.ipv6Answers = mkOption {
+            type = types.nullOr (types.enum ["keep" "strip-for-proxied" "strip-all"]);
+            default = null;
+            description = "Null inherits janus.dns.ipv6Answers.";
+          };
+          dns.hosts = mkOption {
+            type = types.nullOr (types.attrsOf types.str);
+            default = null;
+            description = "Null inherits janus.dns.hosts. A set is merged over the inherited hosts.";
+          };
+          dns.forwarders = mkOption {
+            type = types.nullOr (types.attrsOf (types.listOf types.str));
+            default = null;
+            description = "Null inherits janus.dns.forwarders. A set replaces them.";
+          };
+          dns.bootstrap = mkOption {
+            type = types.nullOr (types.listOf types.str);
+            default = null;
+            description = "Null inherits janus.dns.bootstrap.";
+          };
+          internal.intercept = mkOption {
             type = types.bool;
-            default = true;
-            description = "Subject this LAN to the traffic mode.";
+            internal = true;
+            readOnly = true;
+            default =
+              (
+                if config.proxy.mode == null
+                then outer.janus.proxy.mode
+                else config.proxy.mode
+              )
+              != "bypass";
+            description = "This LAN's traffic enters the engine.";
           };
           nat.enable = mkOption {
             type = types.bool;
@@ -430,9 +527,18 @@ in {
         config = let
           parts = lib.splitString "." config.address;
           prefix = lib.concatStringsSep "." (lib.take 3 parts);
+          lanMode =
+            if config.proxy.mode == null
+            then outer.janus.proxy.mode
+            else config.proxy.mode;
         in {
           dhcp.rangeStart = lib.mkIf (config.dhcp.enable && builtins.length parts == 4) (lib.mkDefault "${prefix}.100");
           dhcp.rangeEnd = lib.mkIf (config.dhcp.enable && builtins.length parts == 4) (lib.mkDefault "${prefix}.199");
+          ipv6.mode = lib.mkDefault (
+            if lanMode == "bypass"
+            then "delegated"
+            else "disabled"
+          );
         };
       }));
       default = {};
@@ -536,6 +642,8 @@ in {
       cfg.lans;
     pairs = lib.concatLists (lib.imap0 (i: a: map (b: {inherit a b;}) (lib.drop (i + 1) nets)) nets);
   in {
+    janus.network.internal.multipleDefaults = lib.length defaultWanNames > 1;
+
     assertions =
       lib.concatMap (n: [
         {

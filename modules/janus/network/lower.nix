@@ -79,6 +79,9 @@
   pdWan = lib.findFirst (n: builtins.elem cfg.wans.${n}.ipv6.mode ["dhcpv6-pd" "passthrough" "slaac"]) null wanNames;
 
   dhcpLanNames = lib.filter (n: cfg.lans.${n}.dhcp.enable) lanNames;
+  listenLans = config.janus.dns.listen.lans;
+  told = name: listenLans == "all" || lib.elem name listenLans;
+  toldDhcp = lib.filter told dhcpLanNames;
   # systemd-escape -p of /sys/subsystem/net/devices/br-<lan>.
   bridgeDevice = name: "sys-subsystem-net-devices-${lib.replaceStrings ["-"] ["\\x2d"] "br-${name}"}.device";
 
@@ -158,6 +161,8 @@
           LinkLocalAddressing = "ipv6";
           IPv6AcceptRA = false;
           ConfigureWithoutCarrier = true;
+          IPv6StableSecretAddress = true;
+          IPv6LinkLocalAddressGenerationMode = "stable-privacy";
         };
       };
     }
@@ -170,6 +175,8 @@
             LinkLocalAddressing = "ipv6";
             ConfigureWithoutCarrier = true;
             IPv6PrivacyExtensions = "kernel";
+            IPv6StableSecretAddress = true;
+            IPv6LinkLocalAddressGenerationMode = "stable-privacy";
           }
           // lib.optionalAttrs dhcp {
             DHCP =
@@ -230,16 +237,22 @@
         IPv6PrivacyExtensions = "kernel";
         LinkLocalAddressing = "ipv6";
         DHCPPrefixDelegation = mode == "delegated" && pdWan != null;
+        IPv6StableSecretAddress = true;
+        IPv6LinkLocalAddressGenerationMode = "stable-privacy";
       };
       ipv6SendRAConfig =
         lib.optionalAttrs (mode == "ula-only") {
           RouterLifetimeSec = 0;
+        }
+        // lib.optionalAttrs (mode == "ula-only" && told name) {
           EmitDNS = true;
           DNS = "${ula}::1";
         }
-        // lib.optionalAttrs (mode == "delegated") {
+        // lib.optionalAttrs (mode == "delegated" && told name) {
           EmitDNS = true;
-          DNS = lan.address;
+          # The delegated address is assigned at runtime. systemd sends the
+          # router's IPv6 link-local. An IPv4 literal is not an RDNSS address.
+          DNS = "_link_local";
         };
       dhcpPrefixDelegationConfig = lib.optionalAttrs (mode == "delegated" && pdWan != null) {
         UplinkInterface = wanIface pdWan;
@@ -396,6 +409,11 @@
 in {
   config = lib.mkMerge [
     {
+      assertions = lib.optionals (listenLans != "all") (map (name: {
+          assertion = cfg.lans ? ${name};
+          message = "janus.dns.listen.lans names ${name}, which is not a LAN.";
+        })
+        listenLans);
       # Name stable jacks even before a WAN or LAN uses them.
       systemd.network.links = lib.mkMerge (lib.mapAttrsToList portLink cfg.ports);
     }
@@ -434,8 +452,9 @@ in {
           dhcp-leasefile = "/var/lib/janus/leases/dnsmasq.leases";
           dhcp-range = map (n: let
             lan = cfg.lans.${n};
-          in "${lan.dhcp.rangeStart},${lan.dhcp.rangeEnd},${lan.dhcp.leaseTime}")
+          in "set:janus-${n},${lan.dhcp.rangeStart},${lan.dhcp.rangeEnd},${lan.dhcp.leaseTime}")
           dhcpLanNames;
+          dhcp-option = map (n: "tag:janus-${n},option:dns-server,${cfg.lans.${n}.address}") toldDhcp;
           dhcp-hostsfile = "/var/lib/janus/dhcp-hosts";
         };
       };

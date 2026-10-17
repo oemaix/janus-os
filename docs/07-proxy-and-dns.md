@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-09-23 |
+| Last updated | 2026-10-17 |
 
 ## 1. Scope
 
@@ -29,13 +29,35 @@ for one engine:
 | Hysteria2 / TUIC | yes | no | assertion when engine = xray |
 | Transparent inbound | TUN, TPROXY, redirect | TPROXY, redirect, (TUN via external) | default: sing-box TUN with auto-route off (Janus owns routing); Xray TPROXY |
 | Rule sets | binary `.srs` (remote/local) | `geosite.dat`/`geoip.dat` | fetched per engine format at build; refreshable |
-| DNS server | built-in with fake-IP, per-rule servers | built-in DNS (fake-IP, per-domain servers) | both used as LAN resolver |
+| DNS server | built-in with fake-IP, per-LAN rules | one DNS module, per-domain servers | sing-box keeps a DNS policy per LAN. xray 26 has one policy for every LAN (§2.1) |
 | Selector/URL-test groups | `selector`, `urltest` | `balancer` (leastPing, roundRobin) — no persistent manual selector | Xray: manual strategy emulated by regenerating config on `janus select` |
 | Clash-API for runtime selection | yes | no | `janus select` uses Clash API on sing-box, config regen on Xray |
 
 **Default engine: sing-box** (broader protocol coverage, native rule sets,
 runtime selection API, single binary). Xray is offered for users who prefer
 its XTLS implementation or have Xray-only nodes (ADR-0006).
+
+### 2.1 Which engine to keep
+
+Leave `janus.proxy.engine` at `sing-box` unless a row below names xray.
+A setting the selected engine cannot express fails evaluation. It is not
+dropped.
+
+| Requirement | Keep |
+|-------------|------|
+| LANs that do not share one DNS policy: mode, resolvers, `recursive`, fake-IP, `ipv6Answers`, forwarders, name rules, or the same host name with two addresses | sing-box. xray 26 has one DNS module and matches names, not the LAN a query came from. A guest LAN on `bypass` beside a home LAN on `rule-based` fails evaluation. |
+| Hysteria2, TUIC, `tls.insecure`, or a Shadowsocks plugin | sing-box |
+| A DNS cache size other than 4096, or a written TTL other than 60 | sing-box. xray 26 has neither knob. Another value fails evaluation. The defaults are accepted and left to xray's own cache. |
+| A blocked name answered by a DNS reject | sing-box. xray 26 has no reject code. The lookup is sent to a closed port on the router, and the client receives the failure. |
+| Group strategy `load-balance` | xray. sing-box has no such group. |
+| Nodes written for xray, with every LAN on one DNS policy | xray |
+
+Address, port, and protocol rules may still differ per LAN on xray, because
+those rules do not change the DNS decision. `url-test` and `manual` work on
+both engines. On xray, `janus proxy select` rewrites the configuration. On
+sing-box it uses the running API. Group strategy `fallback` fails on both.
+`listen.lans` and `encryption` behave the same on both. Interception is TUN
+on sing-box and TPROXY on xray (D-0031). Both still intercept.
 
 ## 3. Nodes
 
@@ -118,32 +140,58 @@ Groups are computed at build time (for the snapshot) and recomputed at every
 refresh by the same Janet code, guaranteeing identical semantics.
 
 Implicit groups: every subscription is a group `sub:<name>` with strategy
-`url-test` unless overridden.
+`url-test` unless overridden. `fallback` fails evaluation on both engines.
+`load-balance` is xray only (§2.1).
 
 ## 5. Traffic mode and routing rules
 
 ```
-janus.proxy.mode = "bypass" | "rule-based" | "proxy-all";
-janus.proxy.defaultTarget = "group:Auto";     # rule-based: no rule matched; proxy-all: everything
+janus.proxy.mode = "bypass" | "rule-based" | "proxy-all";   # inherited default
+janus.proxy.defaultTarget = "group:Auto";
 janus.proxy.rules = [
   { match = { geosite = [ "private" "cn" ]; };            target = "direct"; }
   { match = { geoip = [ "cn" "private" ]; };              target = "direct"; }
   { match = { geosite = [ "category-ads-all" ]; };        target = "block"; }
   { match = { domainSuffix = [ "netflix.com" "nflxvideo.net" ]; }; target = "group:Streaming"; }
   { match = { geosite = [ "telegram" ]; geoip = [ "telegram" ]; }; target = "group:Telegram"; }
-  { match = { sourceLan = [ "iot" ]; };                   target = "direct"; }
-  { match = { port = [ 853 ]; protocol = "tcp"; };        target = "block"; }  # kill DoT from LAN
+  { match = { port = [ 853 ]; protocol = "tcp"; };        target = "block"; }
 ];
-janus.proxy.exceptions = [ ... ];   # proxy-all mode: always direct (e.g. geosite:private, iptv)
+janus.proxy.exceptions = [ ... ];   # proxy-all: always direct (private, iptv)
+
+janus.network.lans.<name>.proxy = {
+  mode = "rule-based";              # unset inherits janus.proxy.mode
+  rules = [ ... ];                  # unset inherits; a set list replaces
+  defaultTarget = "group:Auto";     # unset inherits
+  exceptions = [ ... ];             # unset inherits
+};
 ```
 
-Rule evaluation order is list order; the renderer emits engine rules in the
-same order. `direct` means "leave via the normal WAN routing (default
+`janus.proxy.mode`, `rules`, `defaultTarget`, and `exceptions` are the
+values every LAN inherits (D-0042, FR-PRX-023). A LAN overrides any of
+them. A set `rules` list replaces the inherited list. The renderer does
+not append, because the winner would then depend on two orders. A LAN
+that wants the same rules binds the same Nix list, or leaves `rules`
+unset. Nodes, groups, and subscriptions stay on the router. One engine
+matches the LAN by source address.
+
+`bypass` is not intercepted. That LAN still has a path to WAN when a
+firewall policy accepts it, including while the engine is down.
+`rule-based` and `proxy-all` are intercepted. While the engine is down
+and `failMode` is `closed`, those flows drop. `proxied` is not a second
+switch.
+
+A rule may still set `sourceLan`. In a LAN's effective list it may name
+only that LAN. Another name fails evaluation. Selecting a whole LAN is
+`proxy.mode` and `proxy.rules`, not a `sourceLan` row in the shared list.
+
+Rule evaluation order is list order; the renderer emits engine rules in
+the same order. `direct` means "leave via the normal WAN routing (default
 route)". `block` means reject (TCP RST / ICMP unreachable) at the engine.
 
 The block above is the rule language. The China, Russia, and Iran lists
-are the templates in the example and in *21* §4. `janus.region` does not
-insert them. An unset `janus.proxy.rules` stays empty.
+are the templates in the example and in *21* §4. `janus.system.region` does not
+insert them. An unset `janus.proxy.rules` stays empty, and a LAN that does
+not set `proxy.rules` inherits that empty list.
 
 Terminology (Glossary): the three modes are `bypass`, `rule-based`, and
 `proxy-all`. A rule target may still be `direct`, meaning that one flow
@@ -153,7 +201,8 @@ themselves when `via = "direct"`).
 
 ## 6. Interception
 
-* Source set: LANs with `proxied = true` (nftables set `janus_proxied_src`).
+* Source set: LANs whose mode is `rule-based` or `proxy-all` (nftables set
+  `janus_proxied_src`). A `bypass` LAN is not in the set.
 * TCP+UDP for IPv4 and IPv6 are redirected to the engine's transparent
   inbound (sing-box TUN with `auto_route = false` and Janus-managed `ip
   rule`/`ip route` to the TUN for marked traffic; or TPROXY on Xray).
@@ -165,8 +214,9 @@ themselves when `via = "direct"`).
   default. `janus.proxy.blockQuic = true` rejects it after the direct
   rules, in the engine, so a flow that matched `direct` keeps QUIC.
   nftables does not drop every UDP/443 from the LAN.
-* Per-LAN opt-out (`proxied = false`) and per-rule `sourceLan` cover mixed
-  households (FR-PRX-023).
+* Each LAN has its own mode, rules, and DNS policy (D-0042, FR-PRX-023).
+  A guest LAN is `proxy.mode = "bypass"`. An agents LAN is `proxy-all`.
+  The owner's LAN inherits `rule-based`.
 
 ## 7. DNS policy
 
@@ -184,7 +234,7 @@ belong to a test command, not to a second resolver (ADR-0019).
 | DNS pollution (forged A records for foreign names) | Foreign names never hit domestic/carrier resolvers; resolved remotely through the tunnel or answered with fake-IP; bogus-answer list |
 | CDN mis-routing when domestic names are resolved abroad | Domestic name sets → domestic encrypted public resolver with ECS allowed |
 | Plaintext DNS from LAN clients bypassing the router | Redirect all LAN udp/tcp 53 to the router; optionally block DoT (853) and known DoH endpoints |
-| IPv6 AAAA leak | AAAA for proxied domains handled by fake-IP (v6 range) or resolved remotely; policy `ipv6Answers = "keep"|"strip-for-proxied"|"strip-all"` |
+| IPv6 AAAA leak | A proxied name gets no globally routable AAAA. An address in the configured IPv6 fake-IP range is not a leak. `ipv6Answers` is `strip-for-proxied` (default), `strip-all`, or `keep` (D-0038). |
 
 ### 7.2 Configuration
 
@@ -204,52 +254,170 @@ janus.dns = {
   interceptPlaintext = true; blockDoT = true; blockKnownDoH = false;
   hosts = { "nas.lan" = "192.168.10.5"; };
   forwarders = { "corp.example" = [ "10.0.0.53" ]; };
-  bogusAnswers = [ "geoip:cn-poisoned-list" ];   # optional list of known poison IPs
+  bogusAnswers = [ "geoip:cn-poisoned-list" ];   # optional; China forgeries. Not a ru/ir list.
   cache = { size = 4096; minTtl = 60; };
+  # bootstrap is unset. It follows *21* (D-0040). An explicit list of IP
+  # literals replaces the preset. The build does not look hostnames up.
 };
 ```
+
+`listen.lans` defaults to `all`. Those LANs are told to use the router.
+dnsmasq option 6 carries that LAN's own IPv4 address. An RA in `ula-only`
+names the ULA. An RA in `delegated` names the router's IPv6 link-local
+(`DNS=_link_local`), because the delegated address is assigned at runtime
+and an IPv4 literal is not an RDNSS address. A LAN left out of the list is
+not told. Plaintext port 53 is still redirected on every LAN bridge.
+
+`encryption` defaults to `prefer`. `require` accepts only `https://`,
+`tls://`, and `quic://` for a resolver that answers a client. Bootstrap
+addresses stay plaintext IP literals.
+
+Each of `domestic.resolvers`, `remote.resolvers`, `forwarders`, and
+`bootstrap` is a list, and the engine queries the first address only.
+sing-box 1.13 puts one server on a DNS rule and has no failover group.
+xray 26 matches names, and two servers that share one name list are not
+ordered. Further addresses stay in the configuration and are not queried.
+The render log names the address that is used.
+
+`domestic.ecs` defaults to `allow` and `remote.ecs` to `strip`. Neither
+engine attaches a client subnet, so the two values render the same query.
+sing-box 1.13 disables the DNS cache for any query that carries a client
+subnet, and `0.0.0.0/0` is a valid prefix, so sending the opt-out would
+drop the cache on the remote path. xray 26 has no client-subnet field.
+The resolver sees the source address of the query: the WAN for a direct
+domestic query, the tunnel exit for a remote query.
+
+`cache.size` defaults to 4096 and `cache.minTtl` to 60. sing-box keeps
+that many answers and writes each routed answer's TTL to `minTtl`. It has
+no floor-only TTL. `minTtl = 0` leaves the upstream TTL. xray 26 has
+neither knob, so a size other than 4096 or a minimum other than 60 fails
+evaluation.
+
+`carrierResolvers` defaults to `never`. `domestic-only` places the first
+learned WAN address at the front of the domestic list, and that address
+is the one domestic server. `fallback-only` is not available: the same
+one-server limit means a second address is not tried when the first
+fails. The router logs that and leaves the list unchanged. `encryption =
+require` keeps the carrier addresses out, because they are plaintext.
+
+A blocked name is a DNS reject on sing-box. xray 26 has no reject code.
+Those names are sent to `127.0.0.1` port 1 on the router, where nothing
+listens. The client receives the lookup failure. It does not receive
+`127.0.0.1` as the address of the name.
 
 `fakeIp.enable` is a real choice, not an internal detail:
 
 | Value | Meaning |
 |-------|---------|
 | `"auto"` | On in `rule-based` and `proxy-all`, off in `bypass`. Default. |
-| `true` | Always fake-IP for proxied names, including when the user wants it under a custom mode later. |
-| `false` | Real addresses only. Remote names are resolved through the tunnel. Use this when an application breaks on the fake-IP range. |
+| `true` | Fake-IP for every name the router will proxy. |
+| `false` | Real addresses only. Proxied names are resolved through the tunnel. Use this when an application breaks on the fake-IP range. |
 
-A LAN selects one named policy. The block above is the household policy.
-A guest LAN can select another policy instead of sharing it. `forwarders`
-sends names under one domain to a specific resolver, such as a company DNS
-on a VPN. It is not a second policy and not the carrier resolver.
+`ipv6Answers`:
 
-`janus dns check` compares a fixed probe list (a domestic name, a foreign
-name, a name that pollution commonly forges) against the policy: where the
-query was sent, whether the answer is in the bogus list, whether an AAAA
-leaked for a proxied name, and whether a LAN client can still reach a
-resolver other than the router. It prints a pass/fail per probe and does
-not rewrite `janus.dns`.
+| Value | Meaning |
+|-------|---------|
+| `"strip-for-proxied"` | Default. A proxied name has no globally routable AAAA. A direct name keeps one. An answer in `fakeIp.v6Range` is not a leak (D-0038). |
+| `"strip-all"` | Direct names lose AAAA as well. |
+| `"keep"` | A proxied name may receive a globally routable AAAA. That is the leak. |
 
-### 7.3 Resolution flow (rule-based mode)
+`janus.dns` is the policy every LAN inherits (D-0042, FR-DNS-014).
+`janus.network.lans.<name>.dns` has the same shape. A field that is set
+overrides the inherited field. A field that is unset stays inherited, so
+a LAN reuses the household resolvers by leaving them alone. `recursive`
+defaults to `true`. `recursive = false` answers hosts and static leases
+only and does not ask an upstream. That is the IoT case: the router does
+not look the wider Internet up for a LAN with no WAN path.
+
+The LAN's mode picks the path for a name the policy does not answer as a
+host or a forwarder:
+
+| Mode | Unmatched name |
+|------|----------------|
+| `rule-based` | A name in the domestic sets uses the domestic encrypted resolver. A name the LAN will proxy is a fake-IP, or the remote resolver through the tunnel when fake-IP is off. |
+| `proxy-all` | A name the LAN will proxy is a fake-IP, or the remote resolver. Exceptions and `fakeIp.exclude` stay direct and use the domestic resolver. The domestic set does not by itself make a name direct. |
+| `bypass` | Every recursive name uses the domestic encrypted resolvers. Fake-IP is off. The remote resolver is not used. A blocked foreign name gets the domestic answer, which may be forged or empty, and does not get the tunnel. |
+
+A `bypass` LAN that sets `fakeIp.enable = true`, or sets
+`remote.resolvers`, fails evaluation. Inherited remote resolvers are not
+used, and inherited `fakeIp.enable = "auto"` is off. A name that
+`rule-based` or `proxy-all` will proxy must not be answered by the
+domestic resolver. Putting such a name in `proxy-all` exceptions is how
+it stays direct and may use the domestic resolver. `forwarders` sends
+names under one domain to a specific resolver, such as a company DNS on
+a VPN. It is not the carrier resolver.
+
+`janus dns check` runs on the router (D-0041, FR-DNS-011). It does not
+impersonate a LAN client, and it cannot show that a phone can still reach
+another resolver. It may report whether the plaintext port-53 redirect is
+installed. It does not send a packet as a LAN host. It repeats the probe
+for each LAN's effective policy.
+
+For a `rule-based` or `proxy-all` LAN it probes one domestic name and one
+foreign name. The domestic name comes from the region: `www.baidu.com`,
+`ya.ru`, or `nic.ir`. The foreign name is `example.com`. With fake-IP on,
+the domestic answer must be a real address and not in `bogusAnswers`. The
+foreign answer must be a fake-IP, or a remote answer that is not bogus and
+was not taken from the domestic resolver. For a `bypass` LAN, and when
+fake-IP is off, both answers are real addresses from that LAN's resolvers,
+and a foreign answer in `bogusAnswers` fails. Under `strip-for-proxied` or
+`strip-all`, a proxied name has no globally routable AAAA. The command
+prints a pass or fail per probe and does not rewrite `janus.dns`.
+
+China forges plaintext answers on the path, so `bogusAnswers` can name
+those addresses. Russia and Iran more often lie in the ISP resolver and
+block by SNI or address. A China bogon list is not a test for them. The
+preset ships no such list (*21* §7). The foreign probe is the poison test:
+the domestic resolver answered a foreign name, or the answer is in
+`bogusAnswers`.
+
+### 7.3 Resolution flow
+
+Fake-IP applies to a name that LAN will proxy (D-0037). The same engine
+sees the following connection and maps the address back to the name. A
+`bypass` LAN is not intercepted, so it does not get that mapping, a
+fake-IP, or an address from the remote resolver.
 
 ```
-query from LAN
+query from a LAN
+ ├─ recursive = false              → hosts and static leases only
  ├─ hosts / static leases / forwarders → answer
- ├─ name ∈ domestic sets                 → domestic encrypted resolver (ECS allowed)
- ├─ name matches a rule with target group→ fake-IP (or remote resolver if excluded)
- ├─ name matches rule target direct      → domestic resolver
- └─ default                              → per defaultTarget: fake-IP / remote / domestic
+ └─ mode
+     ├─ bypass      → domestic encrypted resolvers, for every name
+     ├─ proxy-all   → fake-IP or remote, except exceptions and fakeIp.exclude
+     └─ rule-based
+         ├─ name ∈ domestic sets   → domestic encrypted resolver (ECS allowed)
+         ├─ rule target block      → reject
+         ├─ rule target direct     → domestic resolver
+         ├─ rule target group      → fake-IP, or the remote resolver through the tunnel
+         └─ no rule matches        → the same as that LAN's defaultTarget
 ```
 
-Fake-IP answers are only meaningful because the same engine sees the
-subsequent connection and maps it back to the domain; hence fake-IP is
-disabled for any LAN with `proxied = false` (those LANs get real remote
-resolution instead).
+A group `defaultTarget` is proxied, so an unmatched name on a
+`rule-based` LAN is a fake-IP when fake-IP is on. A name in
+`fakeIp.exclude`, or a proxied name while fake-IP is off, is resolved
+through the tunnel.
 
 ### 7.4 Bootstrap
 
-Encrypted resolvers need their own names resolved: Janus pins bootstrap IPs
-for configured DoH/DoT hostnames at build time (assertion if unresolvable on
-the build host) and refreshes them with Geo data.
+DoH and DoT need their hostnames resolved before those resolvers can be
+used. `janus.dns.bootstrap` is a list of IP addresses used only for that
+lookup (D-0040, FR-DNS-013). Unset, the list follows the region preset:
+
+| Region | Addresses |
+|--------|-----------|
+| `cn` | `223.5.5.5`, `223.6.6.6` |
+| `ru` | `77.88.8.8`, `77.88.8.1` |
+| `ir` | none |
+
+An explicit list replaces the preset. The build does not look the
+hostnames up, and no timer refreshes the list. A resolver written as an
+IP (`https://223.5.5.5/dns-query`) does not need a bootstrap address. An
+encrypted resolver whose host is a name, with an empty list, fails
+evaluation. `1.1.1.1` is not the bootstrap. On the networks this preset
+is for, that address is often blocked or forged, and the build host is
+often outside the region, so a lookup there would not be the address the
+router should keep.
 
 ## 8. Geo data
 
@@ -272,7 +440,7 @@ the build host) and refreshes them with Geo data.
 
 ## 9. Operator interface
 
-`janus proxy status`, `janus proxy groups`, `janus proxy select <group>
+`janus status`, `janus proxy groups`, `janus proxy select <group>
 <node>`, `janus proxy test <group>`, `janus proxy refresh [<subscription>]`,
 `janus dns query <name>`, `janus dns flush`. Manual selections persist in
 `/var/lib/janus/engine/selection.json` and survive refresh and reboot; a

@@ -24,7 +24,7 @@ in {
     ssh.zones = mkOption {
       type = types.listOf types.str;
       default = ["lan" "mgmt"];
-      description = "Zones where SSH listens.";
+      description = "Zones that accept SSH. Sets janus.firewall.services.ssh.zones unless that service is set directly.";
     };
     ssh.passwordAuthentication = mkOption {
       type = types.bool;
@@ -34,7 +34,7 @@ in {
     ssh.rootPasswordFile = mkOption {
       type = types.nullOr types.str;
       default = null;
-      description = "Path of a root password file. Only meaningful with password authentication.";
+      description = "Path of a root password hash on the state partition. Applied at boot when password authentication is on. Not a plaintext password.";
     };
     cli.enable = mkOption {
       type = types.bool;
@@ -81,7 +81,16 @@ in {
         assertion = cfg.ssh.passwordAuthentication -> cfg.ssh.authorizedKeys != [];
         message = "janus.access.ssh.passwordAuthentication still requires at least one authorized key.";
       }
+      {
+        assertion = cfg.ssh.passwordAuthentication -> cfg.ssh.rootPasswordFile != null;
+        message = "janus.access.ssh.passwordAuthentication requires janus.access.ssh.rootPasswordFile, a hash file on the state partition.";
+      }
     ];
+
+    janus.firewall.services.ssh = {
+      zones = lib.mkDefault cfg.ssh.zones;
+      port = lib.mkDefault cfg.ssh.port;
+    };
 
     users.users.root.openssh.authorizedKeys.keys = cfg.ssh.authorizedKeys;
 
@@ -95,6 +104,24 @@ in {
           if cfg.ssh.passwordAuthentication
           then "yes"
           else "prohibit-password";
+        MaxAuthTries = 3;
+        X11Forwarding = false;
+        AllowAgentForwarding = false;
+        Ciphers = [
+          "chacha20-poly1305@openssh.com"
+          "aes256-gcm@openssh.com"
+          "aes128-gcm@openssh.com"
+          "aes256-ctr"
+        ];
+        KexAlgorithms = [
+          "sntrup761x25519-sha512"
+          "curve25519-sha256"
+          "curve25519-sha256@libssh.org"
+        ];
+        Macs = [
+          "hmac-sha2-512-etm@openssh.com"
+          "hmac-sha2-256-etm@openssh.com"
+        ];
       };
       hostKeys = [
         {
@@ -104,6 +131,37 @@ in {
       ];
     };
     systemd.services.sshd.after = ["janus-seed.service"];
+
+    systemd.services.janus-root-password = lib.mkIf (cfg.ssh.passwordAuthentication && cfg.ssh.rootPasswordFile != null) {
+      description = "Apply the root password hash from the state partition";
+      wantedBy = ["multi-user.target"];
+      before = ["sshd.service"];
+      after = ["var.mount" "janus-persist-etc.service"];
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+      };
+      path = [pkgs.coreutils pkgs.gawk pkgs.util-linux];
+      script = ''
+        set -eu
+        install -d -m 0755 /var/lib/janus/etc
+        if mountpoint -q /etc/shadow; then
+          umount /etc/shadow
+        fi
+        cp -a /etc/shadow /run/janus-shadow
+        mount --bind /run/janus-shadow /etc/shadow
+        hash=$(tr -d '\n' < ${lib.escapeShellArg cfg.ssh.rootPasswordFile})
+        if [ -z "$hash" ]; then
+          echo "janus: root password hash file is empty" >&2
+          exit 1
+        fi
+        tmp=$(mktemp)
+        awk -F: -v hash="$hash" 'BEGIN{OFS=":"} $1=="root" {$2=hash} {print}' /etc/shadow > "$tmp"
+        cat "$tmp" > /etc/shadow
+        rm -f "$tmp"
+        chmod 0000 /etc/shadow
+      '';
+    };
 
     environment.systemPackages = lib.optional cfg.cli.enable (pkgs.writeShellApplication {
       name = "janus";

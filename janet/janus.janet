@@ -702,19 +702,69 @@
     (put ob :tolerance (or (get test "tolerance") 50)))
   ob)
 
-(defn dns-server [tag url via]
-  (cond
+(defn one-address [kind urls]
+  (def list (or urls @[]))
+  (when (> (length list) 1)
+    (eprint (string "janus: " kind " queries " (first list) " only. A DNS rule names one server. sing-box has no failover group. xray 26 does not stably match one name on two servers.")))
+  (if (empty? list) nil (first list)))
+
+(defn encrypted-url? [url]
+  (or
     (string/has-prefix? "https://" url)
-    (let [rest (string/slice url 8)
-          slash (string/find "/" rest)
-          host (if slash (string/slice rest 0 slash) rest)
-          path (if slash (string/slice rest slash) "/dns-query")]
-      @{:type "https" :tag tag :server host :path path :domain_resolver "bootstrap"})
     (string/has-prefix? "tls://" url)
-    @{:type "tls" :tag tag :server (string/slice url 6) :domain_resolver "bootstrap"}
-    (string/has-prefix? "udp://" url)
-    @{:type "udp" :tag tag :server (string/slice url 6)}
-    @{:type "udp" :tag tag :server url}))
+    (string/has-prefix? "quic://" url)))
+
+(defn reject-plaintext [encryption url]
+  (when (and (= encryption "require") (not (encrypted-url? url)))
+    (die (string "janus: encryption require rejects " url))))
+
+(defn resolver-host [url]
+  (def rest
+    (cond
+      (string/has-prefix? "https://" url) (string/slice url 8)
+      (string/has-prefix? "tls://" url) (string/slice url 6)
+      (string/has-prefix? "quic://" url) (string/slice url 7)
+      (string/has-prefix? "udp://" url) (string/slice url 6)
+      url))
+  (def slash (string/find "/" rest))
+  (def host (if slash (string/slice rest 0 slash) rest))
+  (if (string/has-prefix? "[" host)
+    (string/slice host 1 (string/find "]" host))
+    (let [colon (string/find ":" host)]
+      (if colon (string/slice host 0 colon) host))))
+
+(defn ip-literal? [host]
+  (def parts (string/split "." host))
+  (or
+    (and (= (length parts) 4)
+      (all |(and (not (empty? $)) (number? (scan-number $))) parts))
+    (string/find ":" host)))
+
+(defn needs-bootstrap? [url]
+  (and
+    (encrypted-url? url)
+    (not (ip-literal? (resolver-host url)))))
+
+(defn dns-server [tag url resolver encryption]
+  (reject-plaintext encryption url)
+  (def host (resolver-host url))
+  (def item
+    (cond
+      (string/has-prefix? "https://" url)
+      (let [rest (string/slice url 8)
+            slash (string/find "/" rest)
+            path (if slash (string/slice rest slash) "/dns-query")]
+        @{:type "https" :tag tag :server host :path path})
+      (string/has-prefix? "tls://" url)
+      @{:type "tls" :tag tag :server host}
+      (string/has-prefix? "quic://" url)
+      @{:type "quic" :tag tag :server host}
+      @{:type "udp" :tag tag :server host}))
+  (when (needs-bootstrap? url)
+    (if resolver
+      (put item :domain_resolver resolver)
+      (die (string "janus: " url " needs janus.dns.bootstrap"))))
+  item)
 
 (defn rule-outbound [target]
   (cond
@@ -749,10 +799,21 @@
   (def tags @[])
   (defn add [prefix names]
     (each name names (array/push tags (string prefix name))))
-  (each rule (or (get model "rules") @[])
-    (def match (or (get rule "match") @{}))
-    (add "geosite-" (or (get match "geosite") @[]))
-    (add "geoip-" (or (get match "geoip") @[])))
+  (defn walk [rules]
+    (each rule rules
+      (def match (or (get rule "match") @{}))
+      (add "geosite-" (or (get match "geosite") @[]))
+      (add "geoip-" (or (get match "geoip") @[]))))
+  (walk (or (get model "rules") @[]))
+  (each view (or (get model "lans") @[])
+    (walk (or (get view "rules") @[]))
+    (def vdns (or (get view "dns") @{}))
+    (each name (or (get (or (get vdns "domestic") @{}) "domains") @[])
+      (when (string/has-prefix? "geosite:" name)
+        (array/push tags (string "geosite-" (string/slice name 8)))))
+    (each name (or (get (or (get vdns "fakeIp") @{}) "exclude") @[])
+      (when (string/has-prefix? "geosite:" name)
+        (array/push tags (string "geosite-" (string/slice name 8))))))
   (def dns (or (get model "dns") @{}))
   (def domestic (or (get dns "domestic") @{}))
   (each name (or (get domestic "domains") @[])
@@ -776,6 +837,24 @@
             (or (get sources "geosite") "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set"))]
       (string base "/" tag ".srs"))))
 
+(defn bootstrap-ips [policy]
+  (def raw (get policy "bootstrap"))
+  (if (nil? raw) @["1.1.1.1"] raw))
+
+(defn policy-views [model]
+  (def lans (or (get model "lans") @[]))
+  (if (empty? lans)
+    @[@{
+      "name" "router"
+      "cidr" nil
+      "address" nil
+      "inbound" nil
+      "mode" (or (get model "mode") "rule-based")
+      "defaultTarget" (or (get model "defaultTarget") "group:Auto")
+      "rules" (or (get model "rules") @[])
+      "dns" (or (get model "dns") @{})}]
+    lans))
+
 (defn render [model nodes rule-set-mode]
   (def outbounds @[])
   (each node nodes (array/push outbounds (outbound-for-node node)))
@@ -797,69 +876,217 @@
         @{:type "selector" :tag "Auto" :outbounds @["direct"] :default "direct"}
         @{:type "urltest" :tag "Auto" :outbounds all :url "https://www.gstatic.com/generate_204" :interval "5m" :tolerance 50})))
   (array/push outbounds @{:type "direct" :tag "direct" :routing_mark 74})
-  (def dns (or (get model "dns") @{}))
-  (def domestic (or (get dns "domestic") @{}))
-  (def remote (or (get dns "remote") @{}))
-  (def fake (or (get dns "fakeIp") @{}))
-  (def mode (or (get model "mode") "rule-based"))
-  (def fake-on
-    (case (get fake "enable")
-      false false
-      true true
-      (not= mode "bypass")))
-  (def servers @[
-    @{:type "udp" :tag "bootstrap" :server "1.1.1.1"}])
-  (var n 0)
-  (each url (or (get domestic "resolvers") @[])
-    (array/push servers (dns-server (string "domestic-" n) url "direct"))
-    (++ n))
-  (set n 0)
-  (each url (or (get remote "resolvers") @[])
-    (def item (dns-server (string "remote-" n) url (get remote "via")))
-    (when (= (get remote "via") "tunnel") (put item :detour "Auto"))
-    (array/push servers item)
-    (++ n))
-  (when fake-on
-    (array/push servers @{:type "fakeip" :tag "fakeip" :inet4_range (or (get fake "v4Range") "198.18.0.0/15") :inet6_range (or (get fake "v6Range") "fc00::/18")}))
-  (def hosts (or (get dns "hosts") @{}))
-  (when (not (empty? (keys hosts)))
-    (array/push servers @{:type "hosts" :tag "hosts" :predefined hosts}))
-  (def dns-rules @[])
-  (each host (keys hosts)
-    (array/push dns-rules @{:domain @[host] :server "hosts"}))
-  (each name (or (get domestic "domains") @[])
-    (if (string/has-prefix? "geosite:" name)
-      (array/push dns-rules @{:rule_set @[(string "geosite-" (string/slice name 8))] :server "domestic-0"})
-      (array/push dns-rules @{:domain_suffix @[name] :server "domestic-0"})))
-  (var fi 0)
-  (each domain (keys (or (get dns "forwarders") @{}))
-    (def urls (get (get dns "forwarders") domain))
-    (def tag (string "forward-" fi))
-    (when (and urls (not (empty? urls)))
-      (array/push servers (dns-server tag (first urls) nil))
-      (array/push dns-rules @{:domain_suffix @[domain] :server tag})
-      (++ fi)))
-  (def real-dns (if (empty? (or (get domestic "resolvers") @[])) "bootstrap" "domestic-0"))
-  (each name (or (get fake "exclude") @[])
+  (defn fake-on? [policy mode]
+    (if (= mode "bypass")
+      false
+      (case (get (or (get policy "fakeIp") @{}) "enable")
+        false false
+        true true
+        true)))
+  (defn group-target? [target]
+    (and target (string/has-prefix? "group:" target)))
+  (defn name-match? [match]
+    (and
+      (or
+        (not (empty? (or (get match "domains") @[])))
+        (not (empty? (or (get match "domainSuffix") @[])))
+        (not (empty? (or (get match "geosite") @[]))))
+      (empty? (or (get match "geoip") @[]))
+      (empty? (or (get match "ipCidr") @[]))
+      (empty? (or (get match "port") @[]))
+      (nil? (get match "protocol"))))
+  (defn put-names [item match]
+    (when (not (empty? (or (get match "domains") @[])))
+      (put item :domain (get match "domains")))
+    (when (not (empty? (or (get match "domainSuffix") @[])))
+      (put item :domain_suffix (get match "domainSuffix")))
+    (when (not (empty? (or (get match "geosite") @[])))
+      (put item :rule_set (map |(string "geosite-" $) (get match "geosite"))))
+    item)
+  (defn domain-item [name server]
     (cond
       (string/has-prefix? "geosite:" name)
-      (array/push dns-rules @{:rule_set @[(string "geosite-" (string/slice name 8))] :server real-dns})
+      @{:rule_set @[(string "geosite-" (string/slice name 8))] :action "route" :server server}
       (string/has-prefix? "*." name)
-      (array/push dns-rules @{:domain_suffix @[(string/slice name 2)] :server real-dns})
-      (array/push dns-rules @{:domain @[name] :server real-dns})))
-  (when fake-on
-    (array/push dns-rules @{:query_type @["A" "AAAA"] :server "fakeip"}))
+      @{:domain_suffix @[(string/slice name 2)] :action "route" :server server}
+      @{:domain @[name] :action "route" :server server}))
+  (defn views-of [model] (policy-views model))
+  (def house (or (get model "dns") @{}))
+  (def encryption (or (get house "encryption") "prefer"))
+  (def cache (or (get house "cache") @{}))
+  (def min-ttl (or (get cache "minTtl") 60))
+  (defn stamp-dns [item]
+    (def server (get item :server))
+    (when (and (= (get item :action) "route") server (> min-ttl 0))
+      (put item :rewrite_ttl min-ttl))
+    item)
+  (defn push-dns [rules item cidr inbound]
+    (def base (stamp-dns (table/clone item)))
+    (when cidr (put base :source_ip_cidr @[cidr]))
+    (array/push rules base)
+    (when inbound
+      (def alt (stamp-dns (table/clone item)))
+      (put alt :inbound @[(string inbound) (string inbound "-tcp")])
+      (array/push rules alt)))
+  (def servers @[])
+  (def dns-rules @[])
+  (var house-boot nil)
+  (let [ip (one-address "bootstrap" (bootstrap-ips house))]
+    (when ip
+      (set house-boot "bootstrap-house-0")
+      (array/push servers @{:type "udp" :tag house-boot :server ip})))
+  (var saw-fake false)
+  (each view (views-of model)
+    (def policy (or (get view "dns") @{}))
+    (def mode (or (get view "mode") "rule-based"))
+    (def cidr (get view "cidr"))
+    (def inbound (get view "inbound"))
+    (def label (or (get view "name") "router"))
+    (def domestic (or (get policy "domestic") @{}))
+    (def remote (or (get policy "remote") @{}))
+    (def fake (or (get policy "fakeIp") @{}))
+    (def strip (or (get policy "ipv6Answers") "strip-for-proxied"))
+    (def on (fake-on? policy mode))
+    (def own-ips (get policy "bootstrap"))
+    (def boot
+      (if (or (nil? own-ips) (deep= own-ips (bootstrap-ips house)))
+        house-boot
+        (let [ip (one-address (string "bootstrap " label) own-ips)]
+          (when ip
+            (def tag (string "bootstrap-" label "-0"))
+            (array/push servers @{:type "udp" :tag tag :server ip})
+            tag))))
+    (def domestic-list (or (get domestic "resolvers") @[]))
+    (each url domestic-list (reject-plaintext encryption url))
+    (def domestic-url (one-address (string "domestic " label) domestic-list))
+    (var dom-tag nil)
+    (when domestic-url
+      (set dom-tag (string "domestic-" label "-0"))
+      (array/push servers (dns-server dom-tag domestic-url boot encryption)))
+    (def remote-list (or (get remote "resolvers") @[]))
+    (var rem-tag nil)
+    (when (not= mode "bypass")
+      (each url remote-list (reject-plaintext encryption url))
+      (let [remote-url (one-address (string "remote " label) remote-list)]
+        (when remote-url
+          (set rem-tag (string "remote-" label "-0"))
+          (def item (dns-server rem-tag remote-url boot encryption))
+          (when (= (get remote "via") "tunnel") (put item :detour "Auto"))
+          (array/push servers item))))
+    (when (and on (not saw-fake))
+      (array/push servers @{
+        :type "fakeip" :tag "fakeip"
+        :inet4_range (or (get fake "v4Range") "198.18.0.0/15")
+        :inet6_range (or (get fake "v6Range") "fc00::/18")})
+      (set saw-fake true))
+    (def hosts (or (get policy "hosts") @{}))
+    (when (not (empty? (keys hosts)))
+      (def host-tag (string "hosts-" label))
+      (array/push servers @{:type "hosts" :tag host-tag :predefined hosts})
+      (each host (keys hosts)
+        (push-dns dns-rules @{:domain @[host] :action "route" :server host-tag} cidr inbound)))
+    (def real (or dom-tag house-boot))
+    (when (= (get policy "recursive") false)
+      (push-dns dns-rules @{:action "reject"} cidr inbound))
+    (when (not= (get policy "recursive") false)
+      (var fi 0)
+      (each domain (keys (or (get policy "forwarders") @{}))
+        (def urls (get (get policy "forwarders") domain))
+        (when (and urls (not (empty? urls)))
+          (each url urls (reject-plaintext encryption url))
+          (def url (one-address (string "forwarder " domain) urls))
+          (def tag (string "forward-" label "-" fi))
+          (array/push servers (dns-server tag url boot encryption))
+          (push-dns dns-rules @{:domain_suffix @[domain] :action "route" :server tag} cidr inbound)
+          (++ fi)))
+      (when (= strip "strip-all")
+        (push-dns dns-rules @{:query_type @["AAAA"] :action "reject"} cidr inbound))
+      (cond
+        (= mode "bypass")
+        (when real
+          (push-dns dns-rules @{:action "route" :server real} cidr inbound))
+        (= mode "proxy-all")
+        (do
+          (each name (or (get fake "exclude") @[])
+            (when real (push-dns dns-rules (domain-item name real) cidr inbound)))
+          (each rule (or (get view "rules") @[])
+            (def match (or (get rule "match") @{}))
+            (when (name-match? match)
+              (cond
+                (= (get rule "target") "block")
+                (push-dns dns-rules (put-names @{:action "reject"} match) cidr inbound)
+                (= (get rule "target") "direct")
+                (when real (push-dns dns-rules (put-names @{:action "route" :server real} match) cidr inbound)))))
+          (when (not= strip "keep")
+            (push-dns dns-rules @{:query_type @["AAAA"] :action "reject"} cidr inbound))
+          (when on
+            (push-dns dns-rules @{:query_type @["A" "AAAA"] :action "route" :server "fakeip"} cidr inbound))
+          (when rem-tag
+            (push-dns dns-rules @{:action "route" :server rem-tag} cidr inbound)))
+        (do
+          (each name (or (get domestic "domains") @[])
+            (when real (push-dns dns-rules (domain-item name real) cidr inbound)))
+          (each name (or (get fake "exclude") @[])
+            (when real (push-dns dns-rules (domain-item name real) cidr inbound)))
+          (each rule (or (get view "rules") @[])
+            (def match (or (get rule "match") @{}))
+            (def target (get rule "target"))
+            (when (name-match? match)
+              (cond
+                (= target "block")
+                (push-dns dns-rules (put-names @{:action "reject"} match) cidr inbound)
+                (= target "direct")
+                (when real (push-dns dns-rules (put-names @{:action "route" :server real} match) cidr inbound))
+                (group-target? target)
+                (do
+                  (when (not= strip "keep")
+                    (push-dns dns-rules (put-names @{:query_type @["AAAA"] :action "reject"} match) cidr inbound))
+                  (when on
+                    (push-dns dns-rules (put-names @{:query_type @["A" "AAAA"] :action "route" :server "fakeip"} match) cidr inbound))
+                  (when (and (not on) rem-tag)
+                    (push-dns dns-rules (put-names @{:action "route" :server rem-tag} match) cidr inbound))))))
+          (def target (or (get view "defaultTarget") "group:Auto"))
+          (cond
+            (= target "block")
+            (push-dns dns-rules @{:action "reject"} cidr inbound)
+            (= target "direct")
+            (when real (push-dns dns-rules @{:action "route" :server real} cidr inbound))
+            (group-target? target)
+            (do
+              (when (not= strip "keep")
+                (push-dns dns-rules @{:query_type @["AAAA"] :action "reject"} cidr inbound))
+              (when on
+                (push-dns dns-rules @{:query_type @["A" "AAAA"] :action "route" :server "fakeip"} cidr inbound))
+              (when rem-tag
+                (push-dns dns-rules @{:action "route" :server rem-tag} cidr inbound))))))))
   (def rules @[
     @{:action "sniff"}
     @{:port @[53] :action "hijack-dns"}])
-  (each rule (or (get model "rules") @[])
-    (array/push rules (one-rule rule)))
-  # After direct rules, so a domestic QUIC flow is not rejected.
-  (when (get model "blockQuic")
-    (array/push rules @{:network "udp" :port @[443] :action "reject"}))
+  (each view (views-of model)
+    (def mode (or (get view "mode") "rule-based"))
+    (when (not= mode "bypass")
+      (def cidr (get view "cidr"))
+      (each rule (or (get view "rules") @[])
+        (def item (one-rule rule))
+        (def existing (get item :source_ip_cidr))
+        (when (and cidr (or (nil? existing) (empty? existing)))
+          (put item :source_ip_cidr @[cidr]))
+        (array/push rules item))
+      # After direct rules, so a domestic QUIC flow is not rejected.
+      (when (get model "blockQuic")
+        (def quic @{:network "udp" :port @[443] :action "reject"})
+        (when cidr (put quic :source_ip_cidr @[cidr]))
+        (array/push rules quic))
+      (def target (or (get view "defaultTarget") (get model "defaultTarget") "group:Auto"))
+      (def catch @{})
+      (if (= target "block")
+        (put catch :action "reject")
+        (do
+          (put catch :action "route")
+          (put catch :outbound (or (rule-outbound target) "Auto"))))
+      (when cidr (put catch :source_ip_cidr @[cidr]))
+      (array/push rules catch)))
   (def final-target (or (get model "defaultTarget") "group:Auto"))
-  (when (= final-target "block")
-    (array/push rules @{:action "reject"}))
   (def sets @[])
   (each tag (referenced-sets model)
     (array/push sets
@@ -867,29 +1094,40 @@
         @{:type "local" :tag tag :format "binary" :path (string "/var/lib/janus/geodata/" tag ".srs")}
         @{:type "remote" :tag tag :format "binary" :url (rule-set-url model tag)})))
   (def final
-    (if (= final-target "block") "direct" (or (rule-outbound final-target) "Auto")))
+    (if (not (empty? (or (get model "lans") @[])))
+      "direct"
+      (if (= final-target "block") "direct" (or (rule-outbound final-target) "Auto"))))
+  (def inbounds @[
+    @{:type "tun" :tag "tun-in" :interface_name "tun0"
+      :address @["172.19.0.1/30" "fdfe:dcba:9876::1/126"]
+      :auto_route false :strict_route false}
+    @{:type "redirect" :tag "dns-tcp" :listen "::" :listen_port 5353}
+    # TProxy delivers a packet only to a socket of the same family.
+    @{:type "tproxy" :tag "dns-udp4" :listen "0.0.0.0" :listen_port 5353 :network "udp"}
+    @{:type "tproxy" :tag "dns-udp6" :listen "::" :listen_port 5353 :network "udp"}])
+  (each view (views-of model)
+    (def address (get view "address"))
+    (def inbound (get view "inbound"))
+    (when (and address inbound)
+      (array/push inbounds @{:type "direct" :tag inbound :listen address :listen_port 53 :network "udp"})
+      (array/push inbounds @{:type "direct" :tag (string inbound "-tcp") :listen address :listen_port 53 :network "tcp"})))
+  (array/push inbounds @{:type "socks" :tag "refresh" :listen "127.0.0.1" :listen_port 2080})
+  (def dns-final (or house-boot (if (empty? servers) "bootstrap-house-0" (get (first servers) :tag))))
   @{
     :log @{:level "info"}
     :dns @{
       :servers servers
       :rules dns-rules
-      :final (if (empty? (or (get remote "resolvers") @[])) "bootstrap" "remote-0")
-      :strategy (if (= (get dns "ipv6Answers") "strip-all") "ipv4_only" "prefer_ipv4")}
-    :inbounds @[
-      @{:type "tun" :tag "tun-in" :interface_name "tun0"
-        :address @["172.19.0.1/30" "fdfe:dcba:9876::1/126"]
-        :auto_route false :strict_route false}
-      @{:type "redirect" :tag "dns-tcp" :listen "::" :listen_port 5353}
-      # TProxy delivers a packet only to a socket of the same family.
-      @{:type "tproxy" :tag "dns-udp4" :listen "0.0.0.0" :listen_port 5353 :network "udp"}
-      @{:type "tproxy" :tag "dns-udp6" :listen "::" :listen_port 5353 :network "udp"}
-      @{:type "socks" :tag "refresh" :listen "127.0.0.1" :listen_port 2080}]
+      :final dns-final
+      :strategy "prefer_ipv4"
+      :cache_capacity (or (get cache "size") 4096)}
+    :inbounds inbounds
     :outbounds outbounds
     :route @{
       :rules rules
       :rule_set sets
       :final final
-      :default_domain_resolver "bootstrap"
+      :default_domain_resolver dns-final
       :auto_detect_interface true}
     :experimental @{
       :clash_api @{:external_controller "127.0.0.1:9090"}
@@ -964,6 +1202,55 @@
         ["balancer" name]))
     ["outbound" (node-tag (or target "direct"))]))
 
+(defn xray-name-only? [match]
+  (and
+    (or
+      (not (empty? (or (get match "domains") @[])))
+      (not (empty? (or (get match "domainSuffix") @[])))
+      (not (empty? (or (get match "geosite") @[]))))
+    (empty? (or (get match "geoip") @[]))
+    (empty? (or (get match "ipCidr") @[]))
+    (empty? (or (get match "port") @[]))
+    (nil? (get match "protocol"))))
+
+(defn xray-pattern [name]
+  (cond
+    (string/has-prefix? "geosite:" name) name
+    (string/has-prefix? "full:" name) name
+    (string/has-prefix? "domain:" name) name
+    (string/has-prefix? "*." name) (string "domain:" (string/slice name 2))
+    (string "full:" name)))
+
+(defn xray-match-names [match]
+  (def names @[])
+  (each name (or (get match "domains") @[]) (array/push names (xray-pattern name)))
+  (each name (or (get match "domainSuffix") @[]) (array/push names (string "domain:" name)))
+  (each name (or (get match "geosite") @[]) (array/push names (string "geosite:" name)))
+  names)
+
+(defn xray-dns-fp [view]
+  (def policy (or (get view "dns") @{}))
+  (def name-rules @[])
+  (each rule (or (get view "rules") @[])
+    (def match (or (get rule "match") @{}))
+    (when (xray-name-only? match)
+      (array/push name-rules @{
+        "domains" (or (get match "domains") @[])
+        "domainSuffix" (or (get match "domainSuffix") @[])
+        "geosite" (or (get match "geosite") @[])
+        "target" (get rule "target")})))
+  @{
+    "mode" (or (get view "mode") "rule-based")
+    "defaultTarget" (or (get view "defaultTarget") "group:Auto")
+    "recursive" (get policy "recursive")
+    "domestic" (or (get policy "domestic") @{})
+    "remote" (or (get policy "remote") @{})
+    "fakeIp" (or (get policy "fakeIp") @{})
+    "ipv6Answers" (or (get policy "ipv6Answers") "strip-for-proxied")
+    "forwarders" (or (get policy "forwarders") @{})
+    "bootstrap" (get policy "bootstrap")
+    "nameRules" name-rules})
+
 (defn xray-rule [model rule]
   (def match (or (get rule "match") rule))
   (def item @{:type "field"})
@@ -978,6 +1265,10 @@
   (each cidr (or (get match "ipCidr") @[]) (array/push ips cidr))
   (when (not (empty? ips)) (put item :ip ips))
   (when (not (empty? (or (get match "port") @[]))) (put item :port (get match "port")))
+  (when (get match "protocol") (put item :network (get match "protocol")))
+  (def sources @[])
+  (each cidr (or (get match "sourceIp") @[]) (array/push sources cidr))
+  (when (not (empty? sources)) (put item :source sources))
   (def where (xray-dispatch model (get rule "target")))
   (if (= (get where 0) "balancer")
     (put item :balancerTag (get where 1))
@@ -1004,66 +1295,225 @@
     (def all (map tag-of nodes))
     (array/push balancers @{:tag "Auto" :selector (if (empty? all) @["direct"] all) :strategy @{:type "leastPing"}})
     (each tag all (array/push observed tag)))
-  (def rules @[
-    @{:type "field" :inboundTag @["api"] :outboundTag "api"}
-    @{:type "field" :inboundTag @["dns-tcp" "dns-udp4" "dns-udp6"] :outboundTag "dns-out"}])
-  (each rule (or (get model "rules") @[])
-    (array/push rules (xray-rule model rule)))
-  (when (get model "blockQuic")
-    (array/push rules @{:type "field" :network "udp" :port "443" :outboundTag "block"}))
-  (def final-target (or (get model "defaultTarget") "group:Auto"))
-  (def final (xray-dispatch model final-target))
-  (def catch @{:type "field" :network "tcp,udp"})
-  (if (= (get final 0) "balancer")
-    (put catch :balancerTag (get final 1))
-    (put catch :outboundTag (get final 1)))
-  (array/push rules catch)
-  (def dns (or (get model "dns") @{}))
-  (def fake (or (get dns "fakeIp") @{}))
-  (def mode (or (get model "mode") "rule-based"))
+  (def views (policy-views model))
+  (def anchor (first views))
+  (def anchor-fp (xray-dns-fp anchor))
+  (each view views
+    (when (not (deep= (xray-dns-fp view) anchor-fp))
+      (die (string "janus: xray has one DNS module, and " (get view "name") " does not share it with " (get anchor "name")))))
+  (def hosts @{})
+  (each view views
+    (def hostmap (or (get (or (get view "dns") @{}) "hosts") @{}))
+    (each name (keys hostmap)
+      (def ip (get hostmap name))
+      (def prev (get hosts name))
+      (when (and prev (not= prev ip))
+        (die (string "janus: xray hosts disagree on " name)))
+      (put hosts name ip)))
+  (def policy (or (get anchor "dns") @{}))
+  (def encryption (or (get (or (get model "dns") @{}) "encryption") "prefer"))
+  (def xcache (or (get (or (get model "dns") @{}) "cache") @{}))
+  (when (or
+    (and (get xcache "size") (not= (get xcache "size") 4096))
+    (and (get xcache "minTtl") (not= (get xcache "minTtl") 60)))
+    (die "janus: xray 26 has no DNS cache size or minimum TTL"))
+  (def mode (or (get anchor "mode") "rule-based"))
+  (def fake (or (get policy "fakeIp") @{}))
+  (def strip (or (get policy "ipv6Answers") "strip-for-proxied"))
+  (def target (or (get anchor "defaultTarget") "group:Auto"))
   (def fake-on
-    (case (get fake "enable")
-      false false
-      true true
-      (not= mode "bypass")))
+    (if (or (= mode "bypass") (= (get policy "recursive") false))
+      false
+      (case (get fake "enable")
+        false false
+        true true
+        true)))
+  (def fallback
+    (cond
+      (= (get policy "recursive") false) "none"
+      (= mode "bypass") "domestic"
+      (= mode "proxy-all") (if fake-on "fake" "remote")
+      (= target "block") "block"
+      (= target "direct") "domestic"
+      (if fake-on "fake" "remote")))
+  (def direct-qs (if (= strip "strip-all") nil "UseIP"))
+  (def proxy-qs (if (= strip "keep") "UseIP" "UseIPv4"))
+  (defn xray-ns [url domains strategy]
+    (def item @{:address url})
+    (when (and domains (not (empty? domains)))
+      (put item :domains (distinct domains))
+      (put item :skipFallback true))
+    (when strategy (put item :queryStrategy strategy))
+    item)
+  (defn xray-remote [url domains strategy]
+    (def item (xray-ns url domains strategy))
+    (when (= (get (or (get policy "remote") @{}) "via") "tunnel")
+      (put item :tag "dns-remote"))
+    item)
+  (def real @[])
+  (def blocked @[])
+  (def proxied @[])
+  (def forwarded @[])
+  (defn placed? [name]
+    (or (index-of name real) (index-of name blocked) (index-of name proxied) (index-of name forwarded)))
+  (defn place [bag name]
+    (when (not (placed? name)) (array/push bag name)))
+  (def forward-servers @[])
+  (def domestic-all (or (get (or (get policy "domestic") @{}) "resolvers") @[]))
+  (def remote-all (or (get (or (get policy "remote") @{}) "resolvers") @[]))
+  (each url domestic-all (reject-plaintext encryption url))
+  (when (not= mode "bypass")
+    (each url remote-all (reject-plaintext encryption url)))
+  (def domestic-one (one-address "domestic" domestic-all))
+  (def remote-one (if (= mode "bypass") nil (one-address "remote" remote-all)))
+  (def domestic-urls (if domestic-one @[domestic-one] @[]))
+  (def remote-urls (if remote-one @[remote-one] @[]))
+  (when (not= fallback "none")
+    (each domain (keys (or (get policy "forwarders") @{}))
+      (def urls (get (get policy "forwarders") domain))
+      (def pattern (string "domain:" domain))
+      (when (and urls (not (empty? urls)))
+        (each url urls (reject-plaintext encryption url))
+        (def url (one-address (string "forwarder " domain) urls))
+        (place forwarded pattern)
+        (array/push forward-servers (xray-ns url @[pattern] direct-qs))))
+    (when (and (= mode "rule-based") (not= fallback "domestic"))
+      (each name (or (get (or (get policy "domestic") @{}) "domains") @[])
+        (place real (xray-pattern name)))
+      (each name (or (get fake "exclude") @[])
+        (place real (xray-pattern name))))
+    (when (= mode "proxy-all")
+      (each name (or (get fake "exclude") @[])
+        (place real (xray-pattern name))))
+    (when (not= mode "bypass")
+      (each rule (or (get anchor "rules") @[])
+        (def match (or (get rule "match") @{}))
+        (when (xray-name-only? match)
+          (def want (get rule "target"))
+          (def bag
+            (cond
+              (= want "block") (if (= fallback "block") nil blocked)
+              (= want "direct") (if (= fallback "domestic") nil real)
+              (and want (string/has-prefix? "group:" want))
+              (if (or (= fallback "fake") (= fallback "remote")) nil proxied)
+              nil))
+          (when bag
+            (each name (xray-match-names match) (place bag name)))))))
+  (def boot-one (one-address "bootstrap" (bootstrap-ips policy)))
+  (def boots (if boot-one @[boot-one] @[]))
+  (def hostnames @[])
+  (each url (array/concat @[] domestic-urls remote-urls)
+    (when (needs-bootstrap? url) (array/push hostnames (resolver-host url))))
+  (each item forward-servers
+    (def url (get item :address))
+    (when (and url (needs-bootstrap? url)) (array/push hostnames (resolver-host url))))
+  (when (and (not= fallback "none") (not (empty? hostnames)) (empty? boots))
+    (die "janus: URL needs janus.dns.bootstrap"))
   (def servers @[])
-  (when fake-on
-    (array/push servers @{:address "fakedns"}))
-  (each url (or (get (or (get dns "domestic") @{}) "resolvers") @[])
-    (array/push servers @{:address url :domains (or (get (or (get dns "domestic") @{}) "domains") @[])}))
-  (each url (or (get (or (get dns "remote") @{}) "resolvers") @[])
-    (array/push servers url))
+  (when (and (not= fallback "none") (not (empty? boots)) (not (empty? hostnames)))
+    (array/push servers (xray-ns (first boots) (map |(string "full:" $) (distinct hostnames)) "UseIPv4")))
+  (each item forward-servers (array/push servers item))
+  (when (not (empty? real))
+    (each url domestic-urls (array/push servers (xray-ns url real direct-qs))))
+  (when (not (empty? blocked))
+    # xray 26 has no DNS reject code. This address is the resolver, on the
+    # router, at a closed port. The client receives the lookup failure.
+    (def item (xray-ns "127.0.0.1" blocked nil))
+    (put item :port 1)
+    (array/push servers item))
+  (when (not (empty? proxied))
+    (if fake-on
+      (array/push servers (xray-ns "fakedns" proxied proxy-qs))
+      (each url remote-urls (array/push servers (xray-remote url proxied proxy-qs)))))
+  (case fallback
+    "domestic" (each url domestic-urls (array/push servers (xray-ns url nil direct-qs)))
+    "fake" (array/push servers (xray-ns "fakedns" nil proxy-qs))
+    "remote" (each url remote-urls (array/push servers (xray-remote url nil proxy-qs)))
+    "block" (array/push servers @{:address "127.0.0.1" :port 1})
+    nil)
   (when (empty? servers)
-    (array/push servers "1.1.1.1"))
+    (each ip boots (array/push servers @{:address ip})))
+  (when (empty? servers)
+    (array/push servers @{:address "1.1.1.1"}))
+  (defn fakedns-server? [item]
+    (and (dictionary? item) (= (get item :address) "fakedns")))
+  (defn source-rule [item cidr]
+    (when (and cidr (or (nil? (get item :source)) (empty? (get item :source))))
+      (put item :source @[cidr]))
+    item)
+  (def dns-tags @["dns-tcp" "dns-udp4" "dns-udp6"])
+  (def inbounds @[
+    @{:tag "api" :listen "127.0.0.1" :port 8080 :protocol "dokodemo-door"
+      :settings @{:address "127.0.0.1"}}
+    @{:tag "tproxy-in" :listen "0.0.0.0" :port 12345 :protocol "dokodemo-door"
+      :settings @{:network "tcp,udp" :followRedirect true}
+      :sniffing @{:enabled true :destOverride
+                  (array/concat
+                    (if (some fakedns-server? servers) @["fakedns" "http" "tls"] @["http" "tls"])
+                    (if (get model "blockQuic") @["quic"] @[]))}
+      :streamSettings @{:sockopt @{:tproxy "tproxy"}}}
+    @{:tag "dns-tcp" :listen "::" :port 5353 :protocol "dokodemo-door"
+      :settings @{:address "1.1.1.1" :port 53 :network "tcp"}}
+    @{:tag "dns-udp4" :listen "0.0.0.0" :port 5353 :protocol "dokodemo-door"
+      :settings @{:address "1.1.1.1" :port 53 :network "udp"}
+      :streamSettings @{:sockopt @{:tproxy "tproxy"}}}
+    @{:tag "dns-udp6" :listen "::" :port 5353 :protocol "dokodemo-door"
+      :settings @{:address "1.1.1.1" :port 53 :network "udp"}
+      :streamSettings @{:sockopt @{:tproxy "tproxy" :v6only true}}}])
+  (each view views
+    (def address (get view "address"))
+    (def inbound (get view "inbound"))
+    (when (and address inbound)
+      (array/push dns-tags inbound)
+      (array/push dns-tags (string inbound "-tcp"))
+      (array/push inbounds @{
+        :tag inbound :listen address :port 53 :protocol "dokodemo-door"
+        :settings @{:address "1.1.1.1" :port 53 :network "udp"}})
+      (array/push inbounds @{
+        :tag (string inbound "-tcp") :listen address :port 53 :protocol "dokodemo-door"
+        :settings @{:address "1.1.1.1" :port 53 :network "tcp"}})))
+  (def rules @[
+    @{:type "field" :inboundTag @["api"] :outboundTag "api"}])
+  (when (some |(= (get $ :tag) "dns-remote") servers)
+    (array/push rules @{:type "field" :inboundTag @["dns-remote"] :balancerTag "Auto"}))
+  (array/push rules @{:type "field" :inboundTag dns-tags :outboundTag "dns-out"})
+  (each view views
+    (when (not= (or (get view "mode") "rule-based") "bypass")
+      (def cidr (get view "cidr"))
+      (each rule (or (get view "rules") @[])
+        (array/push rules (source-rule (xray-rule model rule) cidr)))
+      (when (get model "blockQuic")
+        (array/push rules (source-rule @{:type "field" :network "udp" :port "443" :outboundTag "block"} cidr)))
+      (def where (xray-dispatch model (or (get view "defaultTarget") "group:Auto")))
+      (def catch @{:type "field" :network "tcp,udp"})
+      (if (= (get where 0) "balancer")
+        (put catch :balancerTag (get where 1))
+        (put catch :outboundTag (get where 1)))
+      (array/push rules (source-rule catch cidr))))
+  (when (not (empty? (or (get model "lans") @[])))
+    (array/push rules @{:type "field" :network "tcp,udp" :outboundTag "direct"}))
+  (def dns @{
+    :servers servers
+    :queryStrategy (if (= strip "strip-all") "UseIPv4" "UseIP")
+    :disableFallbackIfMatch true})
+  (when (= fallback "none") (put dns :disableFallback true))
+  (when (not (empty? (keys hosts))) (put dns :hosts hosts))
   (def cfg @{
     :log @{:loglevel "warning"}
     :api @{:tag "api" :services @["RoutingService"]}
-    :inbounds @[
-      @{:tag "api" :listen "127.0.0.1" :port 8080 :protocol "dokodemo-door"
-        :settings @{:address "127.0.0.1"}}
-      @{:tag "tproxy-in" :listen "0.0.0.0" :port 12345 :protocol "dokodemo-door"
-        :settings @{:network "tcp,udp" :followRedirect true}
-        :sniffing @{:enabled true :destOverride
-                    (array/concat
-                      (if fake-on @["fakedns" "http" "tls"] @["http" "tls"])
-                      (if (get model "blockQuic") @["quic"] @[]))}
-        :streamSettings @{:sockopt @{:tproxy "tproxy"}}}
-      # TCP/53 is redirected. UDP/53 is tproxied, one socket per family.
-      @{:tag "dns-tcp" :listen "::" :port 5353 :protocol "dokodemo-door"
-        :settings @{:address "1.1.1.1" :port 53 :network "tcp"}}
-      @{:tag "dns-udp4" :listen "0.0.0.0" :port 5353 :protocol "dokodemo-door"
-        :settings @{:address "1.1.1.1" :port 53 :network "udp"}
-        :streamSettings @{:sockopt @{:tproxy "tproxy"}}}
-      @{:tag "dns-udp6" :listen "::" :port 5353 :protocol "dokodemo-door"
-        :settings @{:address "1.1.1.1" :port 53 :network "udp"}
-        :streamSettings @{:sockopt @{:tproxy "tproxy" :v6only true}}}]
+    :inbounds inbounds
     :outbounds outbounds
     :routing @{:domainStrategy "AsIs" :rules rules :balancers balancers}
-    :dns @{
-      :servers servers
-      :queryStrategy (if (= (get dns "ipv6Answers") "strip-all") "UseIPv4" "UseIP")}})
-  (when (not (empty? observed))
-    (put cfg :observatory @{:subjectSelector (distinct observed) :probeUrl "https://www.gstatic.com/generate_204" :probeInterval "10s"}))
+    :dns dns})
+  (when (some fakedns-server? servers)
+    (put cfg :fakedns @[
+      @{:ipPool (or (get fake "v4Range") "198.18.0.0/15") :poolSize 65535}
+      @{:ipPool (or (get fake "v6Range") "fc00::/18") :poolSize 65535}]))
+  (when (some |(= (get-in $ [:strategy :type]) "leastPing") balancers)
+    (put cfg :observatory @{
+      :subjectSelector (if (empty? observed) @["direct"] (distinct observed))
+      :probeUrl "https://www.gstatic.com/generate_204"
+      :probeInterval "10s"}))
   cfg)
 
 (defn arg-value [args flag]

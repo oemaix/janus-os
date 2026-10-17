@@ -82,6 +82,7 @@ in {
     environment.etc."vnstat.conf" = lib.mkIf config.services.vnstat.enable {
       text = ''
         DatabaseDir "/var/lib/vnstat"
+        SaveInterval 15
         DailyDays ${toString cfg.history.retentionDays}
       '';
     };
