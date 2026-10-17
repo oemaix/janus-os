@@ -95,6 +95,9 @@ Read this file before answering a question about using Janus OS.
 - A mcuzone UPS at I²C `0x40` shows the cell in `janus status` and powers
   the router off while that cell is discharging, at the thresholds in
   docs/10 §4.5. Address `0x43` stays unarmed.
+- The Raspberry Pi Zero 2 W onboard radio is a 2.4 GHz WPA2 access point
+  (D-0043, docs/10 §4.7). Declare `match.onboard = true` and name that
+  access point in the LAN members. 5 GHz and WPA3 fail evaluation.
 - The router never evaluates Nix and never runs `nixos-rebuild`.
 - The build machine needs Nix with flakes
   (`experimental-features = nix-command flakes`). It does not have to

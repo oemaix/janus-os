@@ -22,7 +22,9 @@ and names `janus-build`. A Waveshare 1.3" OLED HAT on a Raspberry Pi
 Zero 2 W, a Raspberry Pi 3, or a Raspberry Pi 4 shows status. From the
 panel you can refresh the proxy, select a node, reboot, or wipe state.
 A mcuzone UPS on that
-board can power it off while the cell is discharging.
+board can power it off while the cell is discharging. The Zero 2 W
+onboard Wi-Fi is a 2.4 GHz WPA2 access point: set `match.onboard = true`
+and add that access point to a LAN. It does not do 5 GHz or WPA3.
 
 A development shell exists for people working on the source: from a
 clone of this repository, run `nix develop`. Operating a router does

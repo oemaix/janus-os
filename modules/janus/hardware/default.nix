@@ -45,6 +45,11 @@
               default = null;
               description = "MAC address match.";
             };
+            onboard = mkOption {
+              type = types.bool;
+              default = false;
+              description = "The radio soldered to this board. docs/10 §4.7.";
+            };
             i2cAddress = mkOption {
               type = types.nullOr types.str;
               default = null;
@@ -250,7 +255,7 @@ in {
               '';
             }
           ]
-          ++ lib.optionals (class == "wifi" && wifi.capabilities != []) [
+          ++ lib.optionals (class == "wifi" && wifi.capabilities != [] && !match.onboard) [
             {
               assertion =
                 usb
@@ -263,8 +268,59 @@ in {
               '';
             }
           ]
+          ++ lib.optionals match.onboard [
+            {
+              assertion = class == "wifi";
+              message = "janus.hardware.peripherals.${name}: match.onboard is the board's Wi-Fi radio.";
+            }
+            {
+              assertion =
+                match.usbVendorProduct
+                == null
+                && match.usbPath == null
+                && match.pciSlot == null
+                && match.mac == null
+                && match.i2cAddress == null;
+              message = "janus.hardware.peripherals.${name}: match.onboard does not take a USB, PCI, MAC, or I²C id.";
+            }
+            {
+              assertion = allow.onboard ? ${cfg.board};
+              message = ''
+                janus.hardware.peripherals.${name}: board ${cfg.board} has no onboard Wi-Fi access point.
+                See docs/10 §4.7.
+              '';
+            }
+            {
+              assertion = let
+                row = allow.onboard.${cfg.board} or null;
+              in
+                wifi.capabilities
+                == []
+                || (
+                  row
+                  != null
+                  && lib.all (cap: lib.elem cap (row.capabilities or [])) wifi.capabilities
+                );
+              message = ''
+                janus.hardware.peripherals.${name}: Wi-Fi capabilities ${toString wifi.capabilities} are not advertised for the onboard radio.
+                See docs/10 §4.7.
+              '';
+            }
+          ]
       )
-      rows;
+      rows
+      ++ [
+        {
+          assertion = let
+            names = lib.filter (name: cfg.peripherals.${name}.match.onboard) (lib.attrNames cfg.peripherals);
+          in
+            lib.length names <= 1;
+          message = ''
+            This board has one onboard Wi-Fi radio. Declare match.onboard once.
+            See docs/10 §4.7.
+          '';
+        }
+      ];
 
     warnings =
       lib.concatMap (

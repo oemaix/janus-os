@@ -42,6 +42,10 @@
 
     # mcuzone Pi Zero UPS. On a Raspberry Pi the image enables I²C and the INA219.
     # ups = { class = "power"; match.i2cAddress = "0x40"; };
+
+    # Zero 2 W onboard radio. The board must be rpi-zero-2w. 2.4 GHz, WPA2.
+    # Add "ap" to the LAN members. docs/10 §4.7.
+    # radio = { class = "wifi"; match.onboard = true; };
   };
 
   ############################################################################

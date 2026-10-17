@@ -120,20 +120,40 @@
     })
     cfg.vlans);
 
+  onboardMember = member: let
+    ap = cfg.wifi.${member} or null;
+    periph =
+      if ap == null
+      then null
+      else config.janus.hardware.peripherals.${ap.peripheral} or null;
+  in
+    periph != null && periph.match.onboard;
+
   memberFile = lanName: member: let
     vlans =
       if cfg.ports ? ${member}
       then parentVlans.${member} or []
       else [];
-  in {
-    "30-member-${lanName}-${builtins.replaceStrings ["."] ["-"] member}" = {
-      matchConfig.Name = resolve member;
-      networkConfig =
-        {Bridge = "br-${lanName}";}
-        // lib.optionalAttrs (vlans != []) {VLAN = vlans;};
-      bridgeConfig.Isolated = cfg.lans.${lanName}.isolation;
+    file = "30-member-${lanName}-${builtins.replaceStrings ["."] ["-"] member}";
+  in
+    # hostapd joins this radio to the bridge. networkd must not enslave
+    # it first: brcmfmac rejects AP mode on a bridge port. docs/10 §4.7.
+    if onboardMember member
+    then {
+      ${file} = {
+        matchConfig.Name = resolve member;
+        linkConfig.Unmanaged = true;
+      };
+    }
+    else {
+      ${file} = {
+        matchConfig.Name = resolve member;
+        networkConfig =
+          {Bridge = "br-${lanName}";}
+          // lib.optionalAttrs (vlans != []) {VLAN = vlans;};
+        bridgeConfig.Isolated = cfg.lans.${lanName}.isolation;
+      };
     };
-  };
 
   parentFile = name: vlans:
     lib.optionalAttrs (vlans != [] && !(lib.any (lan: lib.elem name cfg.lans.${lan}.members) lanNames)) {

@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-15 |
+| Last updated | 2026-10-17 |
 
 ## 1. Terminology
 
@@ -26,7 +26,7 @@
 | **NanoPi R4S** | RK3399 · aarch64 | 2× 1 GbE (RTL8211E + RTL8111H/PCIe) | 1 | Reference router board. Mainline U-Boot at raw offset (sector 64); GPT. No Wi-Fi. |
 | **Raspberry Pi 4 / CM4** (`rpi4`) | BCM2711 · aarch64 | Pi 4: 1× 1 GbE. CM4: that port on the official IO board. USB 3 NICs are peripherals. | 2 | Tier 2 (D-0016). EEPROM firmware, FAT `config.txt`, hybrid MBR so the bootloader finds the GPT boot partition. One `eth0`; the profile does not choose a WAN. The Pi 400 is not a board: it has no Ethernet jack (D-0032). |
 | **Raspberry Pi 3 / 3+** | BCM2837 · aarch64 | 1× 100 MbE (USB 2 shared) | 2 | Low throughput; fine for tunnel-only use behind another router. |
-| **Raspberry Pi Zero 2 W** | BCM2710A1 · aarch64 | Wi-Fi 4 + Bluetooth, no Ethernet | 1 | Owner's lab. 512 MiB RAM. Needs a USB Ethernet peripheral for a wired WAN or LAN. On-board Wi-Fi and Bluetooth need the redistributable closed Broadcom firmware (FR-HW-006). Not a 500-node target. INA219 UPS overlay is part of this board's lab setup (FR-HW-008). |
+| **Raspberry Pi Zero 2 W** | BCM2710A1 · aarch64 | Wi-Fi 4 + Bluetooth, no Ethernet | 1 | Owner's lab. 512 MiB RAM. Needs a USB Ethernet peripheral for a wired WAN or LAN. The onboard radio is a 2.4 GHz WPA2 access point (§4.7, D-0043). Bluetooth is present and unused. Not a 500-node target. INA219 UPS overlay is part of this board's lab setup (FR-HW-008). |
 | **Libre Computer Le Potato (AML-S905X-CC)** | S905X · aarch64 | 1× 100 MbE | 1 | Owner's lab. Mainline U-Boot with FIP at raw offset; eMMC or SD. Lab peripherals: Fibocom NL668 as USB Ethernet (§4.2), RTL8188CUS as AP (§4.4), CSR Bluetooth. |
 | **StarFive VisionFive 2** | JH7110 · riscv64 | 2× 1 GbE | 3 | Needs recent kernel; SPL + U-Boot in dedicated GPT partitions (types `2E54B353…`, `BC13C2FF…`); no binary cache. |
 | **Raspberry Pi 2 (v1.1)** | BCM2836 · armv7l | 1× 100 MbE | 3 | 32-bit; no cache; RPi 2 v1.2 is BCM2837 and uses the `rpi3` profile. |
@@ -138,6 +138,7 @@ are not part of the profile. QMI and MBIM are not how this unit attaches.
 | MediaTek MT7921AU | `0e8d:7961` | wifi (AP) | supported (recent kernel) |
 | Realtek RTL8812AU | `0bda:8812` | wifi | unsupported (out-of-tree driver) |
 | Realtek RTL8188CUS | `0bda:8176` | wifi (AP, 2.4 GHz HT20) | supported via in-tree `rtl8192cu` (§4.4) |
+| Raspberry Pi Zero 2 W onboard CYW43430 | board radio, `match.onboard` | wifi (AP, 2.4 GHz HT20, WPA2) | supported via in-tree `brcmfmac` (§4.7) |
 | Fibocom NL668 (LTE Cat.4) | `05c6:90b6` (product string `Android`) | wwan, Ethernet mode | supported on Le Potato. Same USB ID as other Qualcomm gadgets; the user declares the peripheral. |
 | EigenComm, exposed as a NIC | `19d1:0001` | wwan (ethernet mode, LTE Cat.1) | supported on Zero 2 W |
 | mcuzone Pi Zero UPS (INA219) | I²C `0x40` | power | supported on Zero 2 W (FR-HW-008) |
@@ -237,6 +238,49 @@ Factory reset stays unbound unless the configuration sets it. The inputs
 are active-low and the profile enables pull-ups on BCM 6, 19, 5, 26, 13,
 21, 20, and 16. A user may replace a key's action. The user may not turn
 the joystick into a set of unrelated commands without leaving the profile.
+
+### 4.7 Zero 2 W onboard radio
+
+The radio is soldered to the board. It is not a USB dongle. Declare it
+once:
+
+```
+janus.hardware.peripherals.<name> = { class = "wifi"; match.onboard = true; };
+janus.network.wifi.<ap> = { peripheral = "<name>"; ssid; passphrase…; lan; };
+```
+
+`janus.network.lans.<lan>.members` names `<ap>`. `hostapd` joins `br-<lan>`
+and waits for that bridge device, the same wait `dnsmasq` uses.
+networkd leaves the radio unmanaged, because `brcmfmac` will not enter
+AP mode after the interface is already a bridge port. With
+`isolation = true`, the start script marks that bridge port isolated. If
+the port never joins, or the isolated flag does not stick, the script
+exits and systemd restarts the access point.
+
+The chip is a CYW43430 (firmware names `43430` and `43436`). The NVRAM
+file is 2.4 GHz, 20 MHz, `ccode=ALL`. Evaluation fails for `band = "5g"`,
+for a channel outside 1–13, and for `security` other than `wpa2`.
+`channel = "auto"` is 6. `hostapd` uses `nl80211`, `wmm_enabled=1`, and
+`ht_capab=[HT20][SHORT-GI-20]`.
+
+The driver is in-tree `brcmfmac` (D-0010). Firmware is the
+redistributable `raspberrypiWirelessFirmware` package (FR-HW-006): the
+board-specific files `brcmfmac43430b0-sdio.raspberrypi,model-zero-2-w.*`,
+`brcmfmac43436-sdio.raspberrypi,model-zero-2-w.*`, and
+`brcmfmac43436s-sdio.raspberrypi,model-zero-2-w.*`. The image enables
+`hardware.enableRedistributableFirmware` and adds that package when an
+access point uses this radio.
+
+The SDIO host is the Arasan controller (`brcm,bcm2835-sdhci`). The
+generic arm64 defconfig does not build `MMC_SDHCI_IPROC`. An image that
+declares this access point enables that option as a module, and loads
+`brcmfmac`. The SD card stays on `sdhost` (`MMC_BCM2835`), which the
+defconfig already builds in.
+
+The boot file is the mainline tree `bcm2837-rpi-zero-2-w.dtb`. Its
+compatible string is `raspberrypi,model-zero-2-w`, which is how the
+kernel picks those firmware files. The downstream name
+`bcm2710-rpi-zero-2-w.dtb` is not what this kernel installs.
 
 ## 5. Performance notes (guidance for NFR-004/005)
 

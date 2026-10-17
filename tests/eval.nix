@@ -246,6 +246,7 @@ in {
       echo ${text potato.config.system.build.janusBoardImage.firmwareInstall} | grep -q u-boot.gxl
       test ${toString (lib.length (lib.attrNames zero.config.janus.network.ports))} = 0
       echo ${text zero.config.system.build.janusBoardImage.bootExtra} | grep -q config.txt
+      echo ${text zero.config.system.build.janusBoardImage.bootExtra} | grep -q bcm2837-rpi-zero-2-w.dtb
       test ${lib.escapeShellArg (lib.head (lib.attrNames rpi.config.janus.network.ports))} = eth0
       echo ${text rpi.config.system.build.janusBoardImage.bootExtra} | grep -q bcm2710-rpi-3-b.dtb
       echo ${text rpi.config.system.build.janusBoardImage.bootExtra} | grep -q bcm2710-rpi-3-b-plus.dtb
@@ -1049,6 +1050,258 @@ in {
       echo ${lib.escapeShellArg (lib.concatStrings os.config.boot.blacklistedKernelModules)} | grep -q rtl8xxxu
       echo ok > "$out"
     '';
+  eval-wifi-onboard = let
+    os = mk [
+      {
+        janus.hardware.board = "rpi-zero-2w";
+        janus.access.ssh.authorizedKeys = [key];
+        janus.security.allowInlineSecrets = true;
+        janus.hardware.peripherals.radio = {
+          class = "wifi";
+          match.onboard = true;
+        };
+        janus.network.lans.lan = {
+          members = ["home"];
+          address = "10.255.252.32";
+          prefixLength = 22;
+        };
+        janus.network.wifi.home = {
+          peripheral = "radio";
+          ssid = "janus";
+          passphrase = "secret-pass";
+          lan = "lan";
+        };
+      }
+    ];
+    script = os.config.systemd.services.janus-hostapd-home.serviceConfig.ExecStart;
+    patch = lib.findFirst (p: p.name == "janus-rpi-onboard-wifi") null os.config.boot.kernelPatches;
+    member = os.config.systemd.network.networks."30-member-lan-home";
+    firmwareNames = lib.concatMapStringsSep " " (p: p.name) (
+      lib.filter (p: lib.isAttrs p && lib.isDerivation p) (
+        lib.flatten os.options.hardware.firmware.definitions
+      )
+    );
+  in
+    pkgs.runCommand "eval-wifi-onboard" {} ''
+      test ${lib.escapeShellArg os.config.systemd.network.links."10-wifi-home".linkConfig.Name} = wifi-home
+      test ${lib.escapeShellArg os.config.systemd.network.links."10-wifi-home".matchConfig.Driver} = brcmfmac
+      test ${
+        if member.linkConfig.Unmanaged or false
+        then "yes"
+        else "no"
+      } = yes
+      test ${
+        if member.networkConfig ? Bridge
+        then "yes"
+        else "no"
+      } = no
+      echo ${lib.escapeShellArg (lib.concatStringsSep " " os.config.boot.kernelModules)} | grep -q brcmfmac
+      test ${lib.escapeShellArg patch.structuredExtraConfig.MMC_SDHCI_IPROC.tristate} = m
+      test ${lib.escapeShellArg patch.structuredExtraConfig.BRCMFMAC_SDIO.tristate} = y
+      echo ${lib.escapeShellArg firmwareNames} | grep -q raspberrypi-wireless-firmware
+      grep -q 'ht_capab=\[HT20\]\[SHORT-GI-20\]' ${script}
+      grep -q wmm_enabled=1 ${script}
+      grep -q 'set type __ap' ${script}
+      grep -q 'interface=wifi-home' ${script}
+      echo ${lib.escapeShellArg (lib.concatStringsSep " " os.config.systemd.services.janus-hostapd-home.after)} | grep -q 'wifi\\x2dhome'
+      echo ${lib.escapeShellArg (lib.concatStringsSep " " os.config.systemd.services.janus-hostapd-home.after)} | grep -q 'br\\x2dlan'
+      echo ${lib.escapeShellArg (lib.concatStringsSep " " os.config.systemd.services.janus-hostapd-home.wants)} | grep -q 'br\\x2dlan'
+      if grep -q 'did not join' ${script}; then
+        echo "isolation failure path is in the default AP" >&2
+        exit 1
+      fi
+      echo ok > "$out"
+    '';
+  eval-wifi-onboard-isolate = let
+    os = mk [
+      {
+        janus.hardware.board = "rpi-zero-2w";
+        janus.access.ssh.authorizedKeys = [key];
+        janus.security.allowInlineSecrets = true;
+        janus.hardware.peripherals.radio = {
+          class = "wifi";
+          match.onboard = true;
+        };
+        janus.network.lans.lan = {
+          members = ["home"];
+          address = "192.168.10.1";
+          prefixLength = 24;
+          isolation = true;
+        };
+        janus.network.wifi.home = {
+          peripheral = "radio";
+          ssid = "janus";
+          passphrase = "secret-pass";
+          lan = "lan";
+        };
+      }
+    ];
+    script = os.config.systemd.services.janus-hostapd-home.serviceConfig.ExecStart;
+  in
+    pkgs.runCommand "eval-wifi-onboard-isolate" {} ''
+      grep -q 'bridge link set dev wifi-home isolated on' ${script}
+      grep -q 'did not join br-lan' ${script}
+      grep -q 'bridge port is not isolated' ${script}
+      grep -q 'exit 1' ${script}
+      echo ok > "$out"
+    '';
+  eval-wifi-onboard-5g = fail "eval-wifi-onboard-5g" [
+    {
+      janus.hardware.board = "rpi-zero-2w";
+      janus.access.ssh.authorizedKeys = [key];
+      janus.security.allowInlineSecrets = true;
+      janus.hardware.peripherals.radio = {
+        class = "wifi";
+        match.onboard = true;
+      };
+      janus.network.lans.lan = {
+        members = ["home"];
+        address = "192.168.10.1";
+        prefixLength = 24;
+      };
+      janus.network.wifi.home = {
+        peripheral = "radio";
+        ssid = "janus";
+        passphrase = "secret-pass";
+        lan = "lan";
+        band = "5g";
+      };
+    }
+  ];
+  eval-wifi-onboard-wpa3 = fail "eval-wifi-onboard-wpa3" [
+    {
+      janus.hardware.board = "rpi-zero-2w";
+      janus.access.ssh.authorizedKeys = [key];
+      janus.security.allowInlineSecrets = true;
+      janus.hardware.peripherals.radio = {
+        class = "wifi";
+        match.onboard = true;
+      };
+      janus.network.lans.lan = {
+        members = ["home"];
+        address = "192.168.10.1";
+        prefixLength = 24;
+      };
+      janus.network.wifi.home = {
+        peripheral = "radio";
+        ssid = "janus";
+        passphrase = "secret-pass";
+        lan = "lan";
+        security = "wpa3";
+      };
+    }
+  ];
+  eval-wifi-onboard-channel = fail "eval-wifi-onboard-channel" [
+    {
+      janus.hardware.board = "rpi-zero-2w";
+      janus.access.ssh.authorizedKeys = [key];
+      janus.security.allowInlineSecrets = true;
+      janus.hardware.peripherals.radio = {
+        class = "wifi";
+        match.onboard = true;
+      };
+      janus.network.lans.lan = {
+        members = ["home"];
+        address = "192.168.10.1";
+        prefixLength = 24;
+      };
+      janus.network.wifi.home = {
+        peripheral = "radio";
+        ssid = "janus";
+        passphrase = "secret-pass";
+        lan = "lan";
+        channel = 36;
+      };
+    }
+  ];
+  eval-wifi-onboard-two = fail "eval-wifi-onboard-two" [
+    {
+      janus.hardware.board = "rpi-zero-2w";
+      janus.access.ssh.authorizedKeys = [key];
+      janus.security.allowInlineSecrets = true;
+      janus.hardware.peripherals.radio = {
+        class = "wifi";
+        match.onboard = true;
+      };
+      janus.network.lans.lan = {
+        members = ["one" "two"];
+        address = "192.168.10.1";
+        prefixLength = 24;
+      };
+      janus.network.wifi.one = {
+        peripheral = "radio";
+        ssid = "janus";
+        passphrase = "secret-pass";
+        lan = "lan";
+      };
+      janus.network.wifi.two = {
+        peripheral = "radio";
+        ssid = "janus-2";
+        passphrase = "secret-pass";
+        lan = "lan";
+      };
+    }
+  ];
+  eval-wifi-onboard-kernel = let
+    os = mk [
+      {
+        janus.hardware.board = "rpi-zero-2w";
+        janus.access.ssh.authorizedKeys = [key];
+        janus.security.allowInlineSecrets = true;
+        janus.hardware.peripherals.radio = {
+          class = "wifi";
+          match.onboard = true;
+        };
+        janus.network.lans.lan = {
+          members = ["home"];
+          address = "192.168.10.1";
+          prefixLength = 24;
+        };
+        janus.network.wifi.home = {
+          peripheral = "radio";
+          ssid = "janus";
+          passphrase = "secret-pass";
+          lan = "lan";
+        };
+      }
+    ];
+    kernel = os.config.boot.kernelPackages.kernel;
+  in
+    pkgs.runCommand "eval-wifi-onboard-kernel" {} ''
+      grep -q '^CONFIG_MMC_SDHCI_IPROC=m$' ${kernel.configfile}
+      grep -q '^CONFIG_BRCMFMAC=m$' ${kernel.configfile}
+      grep -q '^CONFIG_BRCMFMAC_SDIO=y$' ${kernel.configfile}
+      grep -q '^CONFIG_ARCH_BCM2835=y$' ${kernel.configfile}
+      tar -tJf ${kernel.src} > "$TMPDIR/kernel-files"
+      dts=$(grep -m1 'arch/arm64/boot/dts/broadcom/bcm2837-rpi-zero-2-w.dts$' "$TMPDIR/kernel-files")
+      test -n "$dts"
+      tar -xJf ${kernel.src} -O "''${dts%bcm2837-rpi-zero-2-w.dts}Makefile" > "$TMPDIR/broadcom.mk"
+      grep -q 'dtb-$(CONFIG_ARCH_BCM2835)' "$TMPDIR/broadcom.mk"
+      grep -q 'bcm2837-rpi-zero-2-w.dtb' "$TMPDIR/broadcom.mk"
+      echo ok > "$out"
+    '';
+  eval-wifi-onboard-board = fail "eval-wifi-onboard-board" [
+    base
+    {
+      janus.hardware.board = lib.mkForce "x86_64-test";
+      janus.security.allowInlineSecrets = true;
+      janus.hardware.peripherals.radio = {
+        class = "wifi";
+        match.onboard = true;
+      };
+      janus.network.lans.lan = {
+        members = ["home"];
+        address = "192.168.10.1";
+        prefixLength = 24;
+      };
+      janus.network.wifi.home = {
+        peripheral = "radio";
+        ssid = "janus";
+        passphrase = "secret-pass";
+        lan = "lan";
+      };
+    }
+  ];
   eval-wwan-qmi = let
     os = mk [
       base

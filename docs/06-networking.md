@@ -230,6 +230,9 @@ janus.network.wifi.<name> = { peripheral = "wifi0"; ssid; passphraseFile|passphr
                               lan = "lan"; hidden = false; };
 ```
 
+The Zero 2 W onboard radio is the same kind of access point, declared
+with `match.onboard = true`. It is 2.4 GHz WPA2 (D-0043, *10* §4.7).
+
 Client (STA) mode as a WAN uplink is out of scope for 1.0.
 
 ## 12. Interaction with the proxy layer

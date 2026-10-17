@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# Wi-Fi access points. docs/06 §11, docs/10 §4.4.
+# Wi-Fi access points. docs/06 §11, docs/10 §4.4 and §4.7.
 {
   config,
   lib,
@@ -8,9 +8,22 @@
 }: let
   cfg = config.janus.network;
   hw = config.janus.hardware.peripherals;
+  allow = import ../hardware/allowlist.nix;
   apNames = lib.attrNames cfg.wifi;
 
+  onboardAp = ap: let
+    periph = hw.${ap.peripheral} or null;
+  in
+    periph != null && periph.match.onboard;
+
+  onboardNames = lib.filter (name: onboardAp cfg.wifi.${name}) apNames;
+
   iface = name: "wifi-${name}";
+
+  deviceUnit = name: "sys-subsystem-net-devices-${lib.replaceStrings ["-"] ["\\x2d"] (iface name)}.device";
+
+  # systemd-escape -p of /sys/subsystem/net/devices/br-<lan>.
+  bridgeUnit = lan: "sys-subsystem-net-devices-${lib.replaceStrings ["-"] ["\\x2d"] "br-${lan}"}.device";
 
   channel = ap:
     if ap.channel == "auto"
@@ -35,12 +48,53 @@
     else "WPA-PSK";
 
   start = name: ap: let
+    dev = iface name;
     secret =
       if ap.passphraseSecret != null
       then "/run/secrets/${ap.passphraseSecret}"
       else if ap.passphraseFile != null
       then ap.passphraseFile
       else "/var/lib/janus/wifi/${name}.passphrase";
+    onboard = onboardAp ap;
+    isolate = onboard && builtins.hasAttr ap.lan cfg.lans && cfg.lans.${ap.lan}.isolation;
+    launch =
+      if isolate
+      then ''
+        ${pkgs.hostapd}/bin/hostapd /run/janus/wifi/${name}.conf &
+        pid=$!
+        i=0
+        joined=0
+        while [ "$i" -lt 50 ]; do
+          if ${pkgs.iproute2}/bin/bridge link show dev ${dev} >/dev/null 2>&1; then
+            ${pkgs.iproute2}/bin/bridge link set dev ${dev} isolated on
+            joined=1
+            break
+          fi
+          if ! kill -0 "$pid" 2>/dev/null; then
+            wait "$pid" || exit $?
+            echo "janus: Wi-Fi ${name} exited before joining br-${ap.lan}" >&2
+            exit 1
+          fi
+          i=$((i + 1))
+          sleep 0.2
+        done
+        if [ "$joined" != 1 ]; then
+          echo "janus: Wi-Fi ${name} did not join br-${ap.lan}" >&2
+          kill "$pid" 2>/dev/null || true
+          wait "$pid" 2>/dev/null || true
+          exit 1
+        fi
+        if ! ${pkgs.iproute2}/bin/bridge link show dev ${dev} | grep -q isolated; then
+          echo "janus: Wi-Fi ${name} bridge port is not isolated" >&2
+          kill "$pid" 2>/dev/null || true
+          wait "$pid" 2>/dev/null || true
+          exit 1
+        fi
+        wait "$pid"
+      ''
+      else ''
+        exec ${pkgs.hostapd}/bin/hostapd /run/janus/wifi/${name}.conf
+      '';
   in
     pkgs.writeShellScript "hostapd-${name}" ''
       set -euo pipefail
@@ -58,14 +112,20 @@
       pass=$(tr -d '\n' < "$src")
       ssid=${lib.escapeShellArg ap.ssid}
       {
-        printf '%s\n' "interface=${iface name}" "bridge=br-${ap.lan}" "driver=nl80211"
+        printf '%s\n' "interface=${dev}" "bridge=br-${ap.lan}" "driver=nl80211"
         printf 'ssid=%s\n' "$ssid"
         printf '%s\n' "wpa=2" "wpa_key_mgmt=${keyMgmt ap}" "rsn_pairwise=CCMP" "hw_mode=${bandMode ap}" "channel=${channel ap}" "ieee80211n=1"
         printf 'wpa_passphrase=%s\n' "$pass"
+        ${lib.optionalString onboard ''printf '%s\n' "wmm_enabled=1" "ht_capab=[HT20][SHORT-GI-20]"''}
         ${lib.optionalString (ap.security != "wpa2") ''printf '%s\n' "ieee80211w=1"''}
         ${lib.optionalString ap.hidden ''printf '%s\n' "ignore_broadcast_ssid=1"''}
       } > /run/janus/wifi/${name}.conf
-      exec ${pkgs.hostapd}/bin/hostapd /run/janus/wifi/${name}.conf
+      ${lib.optionalString onboard ''
+        ${pkgs.iproute2}/bin/ip link set dev ${dev} nomaster || true
+        ${pkgs.iproute2}/bin/ip link set dev ${dev} down
+        ${pkgs.iw}/bin/iw dev ${dev} set type __ap
+      ''}
+      ${launch}
     '';
 
   usbId = name: hw.${cfg.wifi.${name}.peripheral}.match.usbVendorProduct or null;
@@ -74,8 +134,72 @@
   product = id: builtins.substring 5 4 id;
 in {
   config = lib.mkIf (apNames != []) {
-    boot.kernelModules = lib.mkIf (lib.any (n: usbId n == "0bda:8176") apNames) ["rtl8192cu"];
+    boot.kernelModules = lib.mkMerge [
+      (lib.mkIf (lib.any (n: usbId n == "0bda:8176") apNames) ["rtl8192cu"])
+      (lib.mkIf (onboardNames != []) ["brcmfmac"])
+    ];
+    # arm64 defconfig builds brcmfmac. The Zero 2 W radio sits on the
+    # Arasan SDHCI, which that defconfig leaves out. docs/10 §4.7.
+    boot.kernelPatches = lib.mkIf (onboardNames != []) [
+      {
+        name = "janus-rpi-onboard-wifi";
+        patch = null;
+        structuredExtraConfig = with lib.kernel; {
+          MMC_SDHCI_IPROC = module;
+          BRCMFMAC = module;
+          BRCMFMAC_SDIO = yes;
+        };
+      }
+    ];
+    hardware.firmware = lib.mkIf (onboardNames != []) [pkgs.raspberrypiWirelessFirmware];
     boot.blacklistedKernelModules = lib.mkIf (lib.any (n: usbId n == "0bda:8176") apNames) ["rtl8xxxu"];
+
+    systemd.network.links = lib.listToAttrs (map (name: {
+        name = "10-wifi-${name}";
+        value = {
+          matchConfig = {
+            Driver = "brcmfmac";
+            Type = "wlan";
+            OriginalName = "wlan*";
+          };
+          linkConfig.Name = iface name;
+        };
+      })
+      onboardNames);
+
+    assertions =
+      lib.concatMap (name: let
+        ap = cfg.wifi.${name};
+        row = allow.onboard.${config.janus.hardware.board} or null;
+      in
+        lib.optionals (onboardAp ap) [
+          {
+            assertion = row != null && lib.elem ap.band (row.bands or []);
+            message = "janus.network.wifi.${name}.band = ${ap.band} is not a band of the onboard radio. docs/10 §4.7.";
+          }
+          {
+            assertion = row != null && lib.elem ap.security (row.security or []);
+            message = "janus.network.wifi.${name}.security = ${ap.security} is not supported on the onboard radio. docs/10 §4.7.";
+          }
+          {
+            assertion =
+              row
+              != null
+              && (
+                ap.channel
+                == "auto"
+                || (lib.isInt ap.channel && lib.elem ap.channel (row.channels or []))
+              );
+            message = "janus.network.wifi.${name}.channel is outside 1-13. docs/10 §4.7.";
+          }
+        ])
+      apNames
+      ++ [
+        {
+          assertion = lib.length onboardNames <= 1;
+          message = "Only one access point can use the onboard radio. docs/10 §4.7.";
+        }
+      ];
 
     services.udev.extraRules = lib.concatMapStrings (name: let
       id = usbId name;
@@ -92,8 +216,12 @@ in {
             description = "Wi-Fi access point ${name}";
             wantedBy = ["multi-user.target"];
             enable = true;
-            after = ["systemd-networkd.service" "sys-subsystem-net-devices-${iface name}.device"];
-            bindsTo = ["sys-subsystem-net-devices-${iface name}.device"];
+            # networkd creates br-* after its own start. dnsmasq waits for
+            # the same device. Onboard ports are unmanaged, so nothing else
+            # joins the bridge if hostapd runs too early. docs/10 §4.7.
+            after = ["systemd-networkd.service" (deviceUnit name) (bridgeUnit cfg.wifi.${name}.lan)];
+            wants = [(bridgeUnit cfg.wifi.${name}.lan)];
+            bindsTo = [deviceUnit name];
             serviceConfig = {
               Type = "simple";
               ExecStart = start name cfg.wifi.${name};

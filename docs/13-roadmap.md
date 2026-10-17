@@ -112,6 +112,11 @@ tree does not mean that behavior exists. Stubs are not finished features.
   Yanyu names `lan1`–`lan4` by PCI path and installs Limine
   (D-0029). The image has not been booted on the lab AMI board. Tier 3
   images are not boot-tested here.
+* The Raspberry Pi Zero 2 W onboard radio is a 2.4 GHz WPA2 access
+  point (D-0043). `match.onboard = true`. `hostapd` uses in-tree
+  `brcmfmac` and `raspberrypiWirelessFirmware`. The image enables
+  `MMC_SDHCI_IPROC`, which the generic arm64 defconfig leaves out.
+  The boot tree is mainline `bcm2837-rpi-zero-2-w.dtb`.
 * Image builder: GPT, FAT boot, f2fs root, f2fs store, f2fs state.
   `nix build .#checks.x86_64-linux.vm-x86_64-test` boots that image.
 * Options reference: `nix build .#docs-options`.

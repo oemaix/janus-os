@@ -59,6 +59,18 @@
     "0a12:0001" = {class = "bluetooth";};
   };
 
+  # Onboard radios. docs/10 §4.7. Not a USB id.
+  onboard = {
+    "rpi-zero-2w" = {
+      class = "wifi";
+      driver = "brcmfmac";
+      capabilities = ["ap"];
+      bands = ["2g"];
+      security = ["wpa2"];
+      channels = [1 2 3 4 5 6 7 8 9 10 11 12 13];
+    };
+  };
+
   # INA219 profiles. docs/10 §4.5. Address 0x43 stays unarmed.
   i2c = {
     "0x40" = {
