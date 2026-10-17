@@ -66,6 +66,9 @@ branch in the URL. `janus-build update --train <train>` rewrites the URL
 to `github:oemaix/janus-os/<train>` and then updates the lock. `<train>`
 is `main` or `X.Y`. A tag, a patch number, a commit, and a topic branch
 such as `1.3-dhcp-lease` are refused. Neither form builds or deploys.
+When the pinned Janus does not evaluate, those commands are unavailable
+with it: `janus-build` is that pin. `nix flake update janus` in the fleet
+repo moves the lock without evaluating it.
 
 Cloning Janus OS and running `nix develop` there is how someone changes
 Janus itself. That shell also contains `janus-build`. `init` from it

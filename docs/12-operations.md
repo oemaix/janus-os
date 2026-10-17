@@ -201,8 +201,11 @@ providers are not hit at the same moment.
 1. On the build host: `janus-build update` follows the current train
    (*09* §10, ADR-0024). A different train is
    `janus-build update --train <train>`, where `<train>` is `main` or
-   `X.Y`. Read the changelog for option changes (deprecations produce
-   evaluation warnings with the new option path).
+   `X.Y`. When that pin does not evaluate, `nix develop` cannot start and
+   `janus-build` is not available. `nix flake update janus` in the fleet
+   repo moves the same lock without evaluating the pin (*16* §0). Read
+   the changelog for option changes (deprecations produce evaluation
+   warnings with the new option path).
 2. `janus-build build <host>`, then `janus-build deploy --preserve-state`
    (re-flash) or `janus-build deploy` (closure push, P2).
 3. After boot, `janus status` and `janus version` confirm; if the new
