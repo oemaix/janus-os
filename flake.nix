@@ -15,7 +15,12 @@
     forAllSystems = f:
       nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
     train = let
-      raw = nixpkgs.lib.stringTrim (builtins.readFile ./train);
+      # nixpkgs 5e2305d (nixos-26.05) has no lib.stringTrim.
+      # trimWith keeps each end unless that side is set.
+      raw = nixpkgs.lib.trimWith {
+        start = true;
+        end = true;
+      } (builtins.readFile ./train);
       ok = raw == "main" || builtins.match "(0|[1-9][0-9]*)[.](0|[1-9][0-9]*)" raw != null;
     in
       if ok
