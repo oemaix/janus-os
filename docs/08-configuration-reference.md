@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-17 |
+| Last updated | 2026-10-18 |
 
 This document defines the **shape and semantics** of the `janus.*` option
 tree. The final, exhaustive reference (every option with type, default,
@@ -201,8 +201,9 @@ learned WAN address as the domestic server.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `tailscale.enable` | bool | `false` | Router joins a tailnet. `tailscale0` joins the `mgmt` zone. |
-| `tailscale.authKeyFile` | path | — | Auth key, from sops. |
+| `tailscale.enable` | bool | `false` | Router joins a tailnet. `tailscale0` joins the `mgmt` zone. When true, exactly one of `authKeySecret` and `authKeyFile` is set. |
+| `tailscale.authKeySecret` | str | — | sops secret name. One line in `secrets/tailscale/<host>.yaml`, encrypted to that host. |
+| `tailscale.authKeyFile` | path | — | File from `janus secrets put`. |
 | `tailscale.loginServer` | str/null | `null` | Headscale URL. Unset uses Tailscale's coordination. |
 | `tailscale.advertiseRoutes` | list | `[]` | LAN prefixes offered to the tailnet. Empty: peers reach the router only. |
 | `tailscale.exitNode` | bool | `false` | Router may carry a peer's Internet traffic. |
@@ -245,15 +246,32 @@ secrets/web/potato.yaml              # maintenance page passphrase
 
 `wifi`, `pppoe`, `tailscale`, `wireguard`, and `web` are encrypted to
 that host only. A proxy subscription file and a manual proxy-node file
-are encrypted to every host that references the file. A PPPoE file holds
-the username and the password together. The other files hold one value.
+are encrypted to every host that references the file. A PPPoE file and a
+manual node file hold the YAML document. The other files hold one value.
+
+`janus-build secret set` writes a sops document encrypted to the
+recipients of that path. sops-nix decrypts it into `/run/secrets`. A
+one-line credential is the `value` key. A PPPoE file and a manual node
+file are the YAML document. The module sets the key for an option that
+names the secret: `value` for a Wi-Fi passphrase, a page passphrase, a
+Tailscale auth key, and a subscription URL, and the whole document for
+PPPoE. A WireGuard private key is still `privateKeyFile`. `secret set`
+stores it under `value`, and the fleet sets
+`sops.secrets.<name>.key = "value"`. A node file has no secret-name
+option. `secret set` stores the YAML document, and the fleet sets
+`key = ""`. The fleet sets `sops.secrets.<name>.sopsFile` and the janus
+option. It does not decrypt the file in its own unit.
 
 ```nix
 sops.age.keyFile = "/var/lib/janus/secrets/age.key";
 sops.secrets.wifi-potato-home.sopsFile = ./secrets/wifi/potato/home.yaml;
 janus.network.wifi.home.passphraseSecret = "wifi-potato-home";
+sops.secrets.pppoe-potato-main.sopsFile = ./secrets/pppoe/potato/main.yaml;
 janus.network.wans.main.pppoe.passwordSecret = "pppoe-potato-main";
+sops.secrets.subscription-vendor-a.sopsFile = ./secrets/subscription/vendor-a.yaml;
 janus.proxy.subscriptions.providerA.urlSecret = "subscription-vendor-a";
+sops.secrets.tailscale-potato.sopsFile = ./secrets/tailscale/potato.yaml;
+janus.remoteAccess.tailscale.authKeySecret = "tailscale-potato";
 sops.secrets.web-potato.sopsFile = ./secrets/web/potato.yaml;
 janus.access.web.passphraseSecret = "web-potato";
 ```

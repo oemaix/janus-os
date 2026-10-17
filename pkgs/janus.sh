@@ -423,11 +423,24 @@ case "$cmd" in
           failed=$(systemctl list-units --failed --no-legend --plain --type=service)
           printf '%s\n' "$failed" | while read -r unit _extra; do
             case "$unit" in
-              janus-pppoe-*.service|janus-hostapd-*.service)
+              janus-pppoe-*.service)
+                systemctl restart "$unit" || true
+                ;;
+              janus-hostapd-*.service)
+                secret_unit=janus-wifi-secret-${unit#janus-hostapd-}
+                if systemctl cat "$secret_unit" >/dev/null 2>&1; then
+                  systemctl restart "$secret_unit" || true
+                fi
                 systemctl restart "$unit" || true
                 ;;
             esac
           done
+          case "$failed" in
+            *janus-tailscale-auth.service*|*tailscaled.service*)
+              systemctl restart janus-tailscale-auth.service || true
+              systemctl restart tailscaled.service || true
+              ;;
+          esac
           # The listener is janus-web-tls and it stops when janus-web restarts, so the page unit comes last.
           case "$failed" in
             *janus-web.service*|*janus-web-tls.service*)

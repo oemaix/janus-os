@@ -420,9 +420,12 @@
   };
 
   /*
-     janus.remoteAccess.tailscale = {
-    enable      = true;
-    authKeyFile = "/var/lib/janus/secrets/tailscale-authkey";
+  sops.secrets.tailscale-janus.sopsFile = ./secrets/tailscale/janus.yaml;
+  janus.remoteAccess.tailscale = {
+    enable = true;
+    authKeySecret = "tailscale-janus";
+    # authKeyFile is the board file from `janus secrets put`.
+    # Exactly one of authKeySecret and authKeyFile.
     # loginServer = "https://headscale.example.com";
     # advertiseRoutes = [ "192.168.10.0/24" ];
     # exitNode = true;

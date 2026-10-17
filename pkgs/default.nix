@@ -16,7 +16,7 @@
   bootInstall = pkgs.writeText "janus-boot-install.sh" (builtins.readFile ./janus-boot-install.sh);
   janus-build = pkgs.writeShellApplication {
     name = "janus-build";
-    runtimeInputs = with pkgs; [git age nix coreutils gnugrep gnused findutils gawk jq openssh];
+    runtimeInputs = with pkgs; [git age sops nix coreutils gnugrep gnused findutils gawk jq openssh];
     text =
       ''
         TEMPLATE=${template}

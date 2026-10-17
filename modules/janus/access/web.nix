@@ -57,8 +57,12 @@ in {
           message = "janus.access.web has both passphraseFile and passphraseSecret.";
         }
         {
-          assertion = cfg.passphraseSecret == null || (options ? sops && config.sops.secrets ? ${cfg.passphraseSecret});
-          message = "janus.access.web.passphraseSecret is not a sops.secrets name.";
+          assertion = cfg.passphraseSecret == null || (
+            (options ? sops)
+            && (config.sops.secrets ? ${cfg.passphraseSecret})
+            && (builtins.tryEval config.sops.secrets.${cfg.passphraseSecret}.sopsFile).success
+          );
+          message = "janus.access.web.passphraseSecret needs sops.secrets.<name>.sopsFile.";
         }
         {
           assertion = cfg.zones != [];

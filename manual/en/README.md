@@ -100,7 +100,7 @@ In that shell:
    not go into git. Do this after the host exists and before the build.
 4. `janus-build secret set <path>` encrypts each credential this host
    needs: a PPPoE password, a Wi-Fi passphrase, a subscription URL, a
-   manual node, or the maintenance-page passphrase. The public key from
+   manual node, a Tailscale auth key, or the maintenance-page passphrase. The public key from
    the previous step must already exist.
 5. `janus-build build <host>` writes `janus-<host>.img`. The image
    contains that ciphertext. It does not contain the private key.
@@ -110,7 +110,7 @@ In that shell:
 8. Install the private key from the password manager, once, with
    `janus-build deploy --age-key <host>` on the build machine.
    (`janus secrets install-age-key` on the router does the same thing.)
-   PPPoE, Wi-Fi, a subscription URL that is a secret, and the
+   PPPoE, Wi-Fi, a subscription URL that is a secret, Tailscale, and the
    maintenance-page passphrase stay unavailable until this step.
 9. `janus proxy refresh` fills a subscription that came from `urlSecret`.
     Until the key is installed and that refresh runs, the snapshot is empty.

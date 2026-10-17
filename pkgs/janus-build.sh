@@ -35,6 +35,68 @@ require_repo() {
   fi
 }
 
+# Write stdin to $1 as a sops document for the age public-key files in
+# the remaining arguments. A PPPoE file stays YAML with username and
+# password. A manual node file is that YAML document too. Every other
+# credential is one value under the key `value`. The module sets the key
+# for an option that names the secret. WireGuard is still a path, so the
+# fleet sets `key = "value"`. A node file has no secret-name option, so
+# the fleet sets `key = ""`. ADR-0014, ADR-0022.
+sops_encrypt() {
+  out=$1
+  shift
+  if [ "$#" -eq 0 ]; then
+    echo "No age recipients for ${out}." >&2
+    exit 1
+  fi
+  keys=""
+  for pub in "$@"; do
+    if [ ! -f "$pub" ]; then
+      echo "Missing ${pub}." >&2
+      exit 1
+    fi
+    key=$(tr -d '[:space:]' < "$pub")
+    if [ -z "$key" ]; then
+      echo "Empty age recipient ${pub}." >&2
+      exit 1
+    fi
+    if [ -n "$keys" ]; then
+      keys="${keys},${key}"
+    else
+      keys=$key
+    fi
+  done
+  work=$(mktemp -d)
+  # RETURN runs on every exit from this function, including `set -e`.
+  # The plaintext stays in the temp dir and never enters argv.
+  trap 'rm -rf "$work"' RETURN
+  cat > "${work}/plain"
+  case "$out" in
+    secrets/pppoe/*|secrets/nodes/*)
+      if [ ! -s "${work}/plain" ]; then
+        echo "Refusing an empty secret for ${out}." >&2
+        exit 1
+      fi
+      cp "${work}/plain" "${work}/in"
+      intype=yaml
+      ;;
+    *)
+      # Drop trailing newlines. jq reads the file; the secret is not an argument.
+      jq -Rs 'sub("\n+$"; "") | {value: .}' < "${work}/plain" > "${work}/in"
+      if ! jq -e '.value | length > 0' "${work}/in" >/dev/null; then
+        echo "Refusing an empty secret for ${out}." >&2
+        exit 1
+      fi
+      intype=json
+      ;;
+  esac
+  if ! sops encrypt --age "$keys" --input-type "$intype" --output-type yaml "${work}/in" > "${out}.new"; then
+    rm -f "${out}.new"
+    exit 1
+  fi
+  mv "${out}.new" "$out"
+}
+
 host_nix_system() {
   case "$(uname -m)" in
     x86_64) printf '%s\n' x86_64-linux ;;
@@ -510,7 +572,7 @@ fleet_pull() {
       if [ "$blocked" = 1 ]; then
         continue
       fi
-      recipients=()
+      pubs=()
       while IFS= read -r owner; do
         [ -n "$owner" ] || continue
         pub="secrets/keys/${owner}.pub"
@@ -518,15 +580,14 @@ fleet_pull() {
           echo "Missing ${pub}." >&2
           exit 1
         fi
-        recipients+=(-R "$pub")
+        pubs+=("$pub")
       done < <(awk -v f="$file" '$1 == f {print $2}' "$refs")
-      if [ "${#recipients[@]}" -eq 0 ]; then
+      if [ "${#pubs[@]}" -eq 0 ]; then
         echo "No referencing host key for ${file}." >&2
         exit 1
       fi
       awk -F '\t' -v f="$file" '$1 == f {print $3; exit}' "${values}.files" \
-        | age -e "${recipients[@]}" -o "${file}.new"
-      mv "${file}.new" "$file"
+        | sops_encrypt "$file" "${pubs[@]}"
       echo "updated ${file}"
     done < <(cut -f1 "${values}.files" | sort -u)
   fi
@@ -780,26 +841,26 @@ case "$cmd" in
             exit 2
             ;;
         esac
-        recipients=()
+        pubs=()
         if [ -n "$host" ]; then
-          recipients=(-R "secrets/keys/${host}.pub")
           if [ ! -f "secrets/keys/${host}.pub" ]; then
             echo "Missing secrets/keys/${host}.pub." >&2
             exit 1
           fi
+          pubs+=("secrets/keys/${host}.pub")
         else
           for pub in secrets/keys/*.pub; do
             if [ -f "$pub" ]; then
-              recipients+=(-R "$pub")
+              pubs+=("$pub")
             fi
           done
-          if [ "${#recipients[@]}" -eq 0 ]; then
+          if [ "${#pubs[@]}" -eq 0 ]; then
             echo "No host public keys to encrypt $path." >&2
             exit 1
           fi
         fi
         mkdir -p "$(dirname "$path")"
-        age -e "${recipients[@]}" -o "$path"
+        sops_encrypt "$path" "${pubs[@]}"
         ;;
       rewrap)
         later "secret rewrap"

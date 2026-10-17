@@ -385,6 +385,8 @@
 
   enabledSubscriptions = lib.filterAttrs (_: sub: sub.enable) cfg.subscriptions;
 
+  secretSubscriptions = lib.filterAttrs (_: sub: sub.urlSecret != null) enabledSubscriptions;
+
   inlineUrls = lib.filterAttrs (_: sub: sub.url != null && config.janus.security.allowInlineSecrets) enabledSubscriptions;
 
   waitClock = pkgs.writeShellScript "janus-wait-clock" ''
@@ -394,7 +396,7 @@
   helper = pkgs.writeShellApplication {
     name = "janus-proxy";
     runtimeInputs = with pkgs;
-      [janet curl jq iproute2 coreutils age nftables systemd gawk]
+      [janet curl jq iproute2 coreutils nftables systemd gawk]
       ++ (
         if cfg.engine == "xray"
         then [xray bind]
@@ -532,7 +534,7 @@ in {
           lanViews)
         lanViews
       );
-    environment.systemPackages = [pkgs.janet pkgs.sing-box pkgs.curl pkgs.age pkgs.jq pkgs.bind];
+    environment.systemPackages = [pkgs.janet pkgs.sing-box pkgs.curl pkgs.jq pkgs.bind];
     boot.kernel.sysctl = lib.mkIf intercept {
       "net.ipv4.conf.all.rp_filter" = lib.mkDefault 2;
       "net.ipv4.conf.default.rp_filter" = lib.mkDefault 2;
@@ -694,7 +696,10 @@ in {
 
     systemd.services."janus-proxy-refresh@" = {
       description = "Refresh subscription %i";
-      after = ["janus-subscription-urls.service"];
+      after =
+        ["janus-subscription-urls.service"]
+        ++ lib.optional (secretSubscriptions != {}) "sops-install-secrets.service";
+      wants = lib.optional (secretSubscriptions != {}) "sops-install-secrets.service";
       serviceConfig = {
         Type = "oneshot";
         ExecStart = "${helper}/bin/janus-proxy refresh %i";

@@ -10,6 +10,7 @@
   hw = config.janus.hardware.peripherals;
   allow = import ../hardware/allowlist.nix;
   apNames = lib.attrNames cfg.wifi;
+  secretNames = lib.filter (name: cfg.wifi.${name}.passphraseSecret != null) apNames;
 
   onboardAp = ap: let
     periph = hw.${ap.peripheral} or null;
@@ -51,7 +52,7 @@
     dev = iface name;
     secret =
       if ap.passphraseSecret != null
-      then "/run/secrets/${ap.passphraseSecret}"
+      then config.sops.secrets.${ap.passphraseSecret}.path
       else if ap.passphraseFile != null
       then ap.passphraseFile
       else "/var/lib/janus/wifi/${name}.passphrase";
@@ -219,8 +220,11 @@ in {
             # networkd creates br-* after its own start. dnsmasq waits for
             # the same device. Onboard ports are unmanaged, so nothing else
             # joins the bridge if hostapd runs too early. docs/10 §4.7.
-            after = ["systemd-networkd.service" (deviceUnit name) (bridgeUnit cfg.wifi.${name}.lan)];
+            after =
+              ["systemd-networkd.service" (deviceUnit name) (bridgeUnit cfg.wifi.${name}.lan)]
+              ++ lib.optional (cfg.wifi.${name}.passphraseSecret != null) "janus-wifi-secret-${name}.service";
             wants = [(bridgeUnit cfg.wifi.${name}.lan)];
+            requires = lib.optional (cfg.wifi.${name}.passphraseSecret != null) "janus-wifi-secret-${name}.service";
             bindsTo = [(deviceUnit name)];
             serviceConfig = {
               Type = "simple";
@@ -231,6 +235,23 @@ in {
           };
         })
         apNames)
+      // lib.listToAttrs (map (name: {
+          name = "janus-wifi-secret-${name}";
+          value = {
+            description = "Wi-Fi passphrase for ${name}";
+            before = ["janus-hostapd-${name}.service"];
+            after = ["sops-install-secrets.service"];
+            requires = ["sops-install-secrets.service"];
+            # No Restart. An empty file fails once and stays failed, so
+            # install-age-key can restart it. hostapd still restarts on a crash.
+            serviceConfig = {
+              Type = "oneshot";
+              RemainAfterExit = true;
+              ExecStart = "${pkgs.coreutils}/bin/test -s ${lib.escapeShellArg config.sops.secrets.${cfg.wifi.${name}.passphraseSecret}.path}";
+            };
+          };
+        })
+        secretNames)
       // lib.optionalAttrs (lib.any (n: cfg.wifi.${n}.passphrase != null) apNames) {
         janus-wifi-passphrases = {
           description = "Install inline Wi-Fi passphrases";

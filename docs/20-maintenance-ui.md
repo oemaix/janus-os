@@ -25,7 +25,7 @@ It does not replace SSH, and it does not edit `configuration.nix`.
 
 When `enable` is true, exactly one of `passphraseSecret` and
 `passphraseFile` is set. Evaluation fails when neither is set, when
-both are set, and when `passphraseSecret` is not a `sops.secrets` name.
+both are set, and when `passphraseSecret` has no `sops.secrets.<name>.sopsFile`.
 Evaluation fails when `zones` contains `wan`. `guest` and `iot` are
 reached only when the list names them.
 

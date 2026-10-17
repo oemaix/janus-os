@@ -4,6 +4,7 @@
 {
   config,
   lib,
+  options,
   ...
 }: let
   inherit (lib) mkOption types;
@@ -131,7 +132,7 @@ in {
           urlSecret = mkOption {
             type = types.nullOr types.str;
             default = null;
-            description = "sops secret name of the subscription URL. The router reads /run/secrets/<name>. In a fleet repo the ciphertext file is secrets/<name>.";
+            description = "sops secret name of the subscription URL. The decrypted file is the URL. In a fleet repo the ciphertext is secrets/subscription/<name>.yaml.";
           };
           format = mkOption {
             type = types.enum ["auto" "share-links" "clash" "sing-box"];
@@ -539,6 +540,15 @@ in {
       ++ lib.mapAttrsToList (name: sub: {
         assertion = (sub.url != null) != (sub.urlSecret != null);
         message = "janus.proxy.subscriptions.${name} must set exactly one of url or urlSecret.";
+      })
+      cfg.subscriptions
+      ++ lib.mapAttrsToList (name: sub: {
+        assertion = sub.urlSecret == null || (
+          (options ? sops)
+          && (config.sops.secrets ? ${sub.urlSecret})
+          && (builtins.tryEval config.sops.secrets.${sub.urlSecret}.sopsFile).success
+        );
+        message = "janus.proxy.subscriptions.${name}.urlSecret needs sops.secrets.<name>.sopsFile.";
       })
       cfg.subscriptions
       ++ [

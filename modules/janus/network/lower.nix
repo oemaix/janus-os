@@ -373,6 +373,12 @@
         wants = ["network-online.target"];
         requires = lib.optional (wan.pppoe.passwordSecret != null) "sops-install-secrets.service";
         wantedBy = ["multi-user.target"];
+        # Empty credentials exit in ExecStartPre. A short RestartSec would
+        # otherwise slide under the default start limit and retry forever.
+        unitConfig = lib.optionalAttrs fromSecret {
+          StartLimitBurst = 3;
+          StartLimitIntervalSec = 120;
+        };
         serviceConfig = {
           Type = "simple";
           ExecStartPre = lib.optional fromSecret (pppPrepare name);

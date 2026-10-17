@@ -11,8 +11,10 @@ Read this file before answering a question about using Janus OS.
   contains ciphertext and not that key. After boot, `janus-build deploy
   --age-key` or `janus secrets install-age-key` installs it.
   `install-age-key` restarts `sops-install-secrets` when that unit
-  exists, then failed PPPoE and Wi-Fi units, then `janus-web` and
-  `janus-web-tls` when either page unit failed. A `urlSecret` subscription stays an empty snapshot until
+  exists, then a failed PPPoE unit, then `janus-wifi-secret-<name>` when
+  that unit exists and `janus-hostapd-<name>` failed, then failed Wi-Fi
+  units, then `janus-tailscale-auth` and `tailscaled` when either failed,
+  then `janus-web` and `janus-web-tls` when either page unit failed. A `urlSecret` subscription stays an empty snapshot until
   `janus proxy refresh`. `subscriptions.<name>.enable` defaults to true.
   False on one host drops that subscription's nodes, snapshot, and timer,
   and keeps `url` or `urlSecret` so the host still names the secret file
@@ -75,7 +77,11 @@ Read this file before answering a question about using Janus OS.
   `secrets/web/<host>.yaml`, encrypted to that host) or
   `janus.access.web.passphraseFile`, the maintenance page listens on
   port 8443 (TLS only) for the zones in `web.zones` (default `lan` and
-  `mgmt`). `janus web stop` pauses it without a rebuild. The passphrase
+  `mgmt`). `janus.remoteAccess.tailscale.authKeySecret` is one line in
+  `secrets/tailscale/<host>.yaml`. With Tailscale enabled, exactly one of
+  `authKeySecret` and `authKeyFile` is set. `janus-build secret set` writes
+  a sops document. The fleet sets `sops.secrets.<name>.sopsFile` and the
+  janus option. The router decrypts it. `janus web stop` pauses the page without a rebuild. The passphrase
   is not the root password. Compare `janus web fingerprint` with the
   page before typing it. The page is status, maintenance actions, and
   the hot-override allowlist.

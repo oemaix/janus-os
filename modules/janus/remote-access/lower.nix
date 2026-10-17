@@ -4,6 +4,7 @@
 {
   config,
   lib,
+  pkgs,
   ...
 }: let
   cfg = config.janus.remoteAccess;
@@ -15,17 +16,43 @@
     else if ts.advertiseRoutes != [] || ts.exitNode
     then "server"
     else "none";
+  authKey =
+    if ts.authKeySecret != null
+    then config.sops.secrets.${ts.authKeySecret}.path
+    else ts.authKeyFile;
 in {
   config = lib.mkMerge [
     (lib.mkIf ts.enable {
       services.tailscale = {
         enable = true;
-        authKeyFile = ts.authKeyFile;
+        authKeyFile = authKey;
         extraUpFlags =
           lib.optional (ts.loginServer != null) "--login-server=${ts.loginServer}"
           ++ lib.optional (ts.advertiseRoutes != []) "--advertise-routes=${routes}"
           ++ lib.optional ts.exitNode "--advertise-exit-node";
         useRoutingFeatures = routing;
+      };
+      systemd.services = lib.mkIf (ts.authKeySecret != null) {
+        tailscaled = {
+          after = ["sops-install-secrets.service"];
+          requires = ["sops-install-secrets.service"];
+        };
+        tailscale-autoconnect = {
+          after = ["sops-install-secrets.service"];
+          wants = ["sops-install-secrets.service"];
+        };
+        janus-tailscale-auth = {
+          description = "Tailscale auth key is present";
+          requiredBy = ["tailscaled.service"];
+          before = ["tailscaled.service"];
+          after = ["sops-install-secrets.service"];
+          requires = ["sops-install-secrets.service"];
+          serviceConfig = {
+            Type = "oneshot";
+            RemainAfterExit = true;
+            ExecStart = "${pkgs.coreutils}/bin/test -s ${lib.escapeShellArg authKey}";
+          };
+        };
       };
     })
     (lib.mkIf (cfg.wireguard != {}) {

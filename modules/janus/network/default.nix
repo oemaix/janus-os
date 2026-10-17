@@ -711,8 +711,12 @@ in {
           assertion =
             cfg.wans.${n}.pppoe.passwordSecret
             == null
-            || (options ? sops && config.sops.secrets ? ${cfg.wans.${n}.pppoe.passwordSecret});
-          message = "janus.network.wans.${n}.pppoe.passwordSecret is not a sops.secrets name.";
+            || (
+              (options ? sops)
+              && (config.sops.secrets ? ${cfg.wans.${n}.pppoe.passwordSecret})
+              && (builtins.tryEval config.sops.secrets.${cfg.wans.${n}.pppoe.passwordSecret}.sopsFile).success
+            );
+          message = "janus.network.wans.${n}.pppoe.passwordSecret needs sops.secrets.<name>.sopsFile.";
         }
         {
           assertion = let
@@ -740,8 +744,12 @@ in {
       })
       cfg.wifi
       ++ lib.mapAttrsToList (n: ap: {
-        assertion = ap.passphraseSecret == null || (options ? sops && config.sops.secrets ? ${ap.passphraseSecret});
-        message = "janus.network.wifi.${n}.passphraseSecret is not a sops.secrets name.";
+        assertion = ap.passphraseSecret == null || (
+          (options ? sops)
+          && (config.sops.secrets ? ${ap.passphraseSecret})
+          && (builtins.tryEval config.sops.secrets.${ap.passphraseSecret}.sopsFile).success
+        );
+        message = "janus.network.wifi.${n}.passphraseSecret needs sops.secrets.<name>.sopsFile.";
       })
       cfg.wifi
       ++ lib.concatMap (n: [

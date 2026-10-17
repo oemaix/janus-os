@@ -395,14 +395,13 @@ subscription_url() {
   fi
   if [ -z "$url" ]; then
     secret=$(jq -r --arg n "$name" '.[$n].urlSecret // empty' "$meta")
-    if [ -n "$secret" ] && [ -f "/run/secrets/${secret}" ]; then
-      first=$(head -n 1 "/run/secrets/${secret}" || true)
-      case "$first" in
-        age-encryption.org*)
-          url=$(age -d -i /var/lib/janus/secrets/age.key "/run/secrets/${secret}")
+    if [ -n "$secret" ] && [ -s "/run/secrets/${secret}" ]; then
+      case $(head -n 1 "/run/secrets/${secret}") in
+        "age-encryption.org"*|"-----BEGIN AGE ENCRYPTED FILE-----")
+          fail_sub "subscription ${name} secret is age armor; rewrite it with janus-build secret set"
           ;;
         *)
-          url=$(cat "/run/secrets/${secret}")
+          url=$(tr -d '\n' < "/run/secrets/${secret}")
           ;;
       esac
     elif [ -f "/var/lib/janus/subscription-urls/${name}" ]; then

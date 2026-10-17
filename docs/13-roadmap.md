@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-17 |
+| Last updated | 2026-10-18 |
 
 This file is the implementation plan, the progress of the code, and the
 notes for work that is specified but not started. Choices are *18*.
@@ -98,10 +98,14 @@ tree does not mean that behavior exists. Stubs are not finished features.
   *16* (`init`, `host add`, `secret keygen`, `secret set`, `check`,
   `build`, `update`, and the router status commands). The age private
   key path is `/var/lib/janus/secrets/age.key`. sops-nix decrypts to
-  `/run/secrets` at activation. A PPPoE `passwordSecret` is YAML with
-  `username` and `password`. A Wi-Fi `passphraseSecret` is one line.
-  A maintenance-page `passphraseSecret` is one line in `secrets/web/<host>.yaml`.
-  `janus-hostapd-<name>` reads a runtime passphrase file.
+  `/run/secrets` at activation. `janus-build secret set` writes a sops
+  document: one-line credentials under the `value` key, a PPPoE file
+  and a node file as YAML. A Wi-Fi `passphraseSecret`, a
+  maintenance-page `passphraseSecret`, a Tailscale `authKeySecret`, and a
+  subscription `urlSecret` read that plaintext. `janus-wifi-secret-<name>`
+  checks the passphrase file and waits for `sops-install-secrets`.
+  `janus-hostapd-<name>` waits for that check. WireGuard and node files
+  have no secret-name option, so the fleet sets `sops.secrets.<name>.key`.
 * Board profiles: `x86_64-test` (virtio, no raw firmware), NanoPi R4S
   (U-Boot at sector 64, `eth0`/`eth1`, no WAN chosen), Le Potato (U-Boot
   FIP, one `eth0`), Raspberry Pi Zero 2 W (FAT `config.txt`, no Ethernet
@@ -183,6 +187,7 @@ tree does not mean that behavior exists. Stubs are not finished features.
 
 * Accepted ADRs bind. They are listed in `docs/adr/` and are not restated here.
 * Undecided choices, if any, are *18* §2. Do not invent an answer for one.
+  D-0045 asks whether the board-local secret path goes away.
 * sing-box renders D-0037 through D-0042: fake-IP for names that LAN
   will proxy, `strip-for-proxied` per name, one policy per LAN, region
   bootstrap addresses, and `janus dns check` once per LAN. xray 26 routes

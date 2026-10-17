@@ -3,6 +3,7 @@
 {
   config,
   lib,
+  options,
   ...
 }: let
   inherit (lib) mkOption types;
@@ -13,10 +14,19 @@ in {
       default = false;
       description = "Join a tailnet. tailscale0 joins the mgmt zone.";
     };
+    tailscale.authKeySecret = mkOption {
+      type = types.nullOr types.str;
+      default = null;
+      description = ''
+        sops secret name. One line in `secrets/tailscale/<host>.yaml`,
+        encrypted to that host. When tailscale is enabled, exactly one of
+        this and `authKeyFile` is set.
+      '';
+    };
     tailscale.authKeyFile = mkOption {
       type = types.nullOr types.str;
       default = null;
-      description = "Auth key file from sops.";
+      description = "Auth key file from `janus secrets put`.";
     };
     tailscale.loginServer = mkOption {
       type = types.nullOr types.str;
@@ -77,6 +87,26 @@ in {
       description = "Optional WireGuard tunnel to a user endpoint. The interface joins mgmt.";
     };
   };
+
+  config.assertions = [
+    {
+      assertion =
+        !config.janus.remoteAccess.tailscale.enable
+        || (config.janus.remoteAccess.tailscale.authKeyFile != null)
+        != (config.janus.remoteAccess.tailscale.authKeySecret != null);
+      message = "janus.remoteAccess.tailscale.enable requires exactly one of authKeySecret and authKeyFile.";
+    }
+    {
+      assertion =
+        config.janus.remoteAccess.tailscale.authKeySecret == null
+        || (
+          (options ? sops)
+          && (config.sops.secrets ? ${config.janus.remoteAccess.tailscale.authKeySecret})
+          && (builtins.tryEval config.sops.secrets.${config.janus.remoteAccess.tailscale.authKeySecret}.sopsFile).success
+        );
+      message = "janus.remoteAccess.tailscale.authKeySecret needs sops.secrets.<name>.sopsFile.";
+    }
+  ];
 
   imports = [./lower.nix];
 }

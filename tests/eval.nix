@@ -195,7 +195,7 @@ in {
     system = pkgs.stdenv.hostPlatform.system;
   in
     pkgs.runCommand "cli-init" {
-      nativeBuildInputs = [self.packages.${system}.janus-build pkgs.age pkgs.jq];
+      nativeBuildInputs = [self.packages.${system}.janus-build pkgs.age pkgs.sops pkgs.jq];
     } ''
       export HOME=$TMPDIR
       janus-build init "$TMPDIR/fleet"
@@ -252,17 +252,35 @@ in {
         echo "unknown secret path should exit 2" >&2
         exit 1
       fi
+      if : | janus-build secret set secrets/wifi/potato/ap.yaml; then
+        echo "empty secret was accepted" >&2
+        exit 1
+      fi
       printf '%s\n' 'page-secret' | janus-build secret set secrets/web/potato.yaml
       test -s secrets/web/potato.yaml
       if grep -q page-secret secrets/web/potato.yaml; then
         echo "maintenance passphrase was stored in plaintext" >&2
         exit 1
       fi
-      age -d -i "$TMPDIR/age.key" -o "$TMPDIR/web-pass" secrets/web/potato.yaml
-      printf '%s\n' 'page-secret' | cmp - "$TMPDIR/web-pass"
+      SOPS_AGE_KEY_FILE="$TMPDIR/age.key" sops -d --extract '["value"]' secrets/web/potato.yaml > "$TMPDIR/web-pass"
+      printf '%s' 'page-secret' | cmp - "$TMPDIR/web-pass"
+      printf '%s\n' 'username: alice' 'password: s3cret' | janus-build secret set secrets/pppoe/potato/wan.yaml
+      SOPS_AGE_KEY_FILE="$TMPDIR/age.key" sops -d secrets/pppoe/potato/wan.yaml > "$TMPDIR/pppoe"
+      printf '%s\n' 'username: alice' 'password: s3cret' | cmp - "$TMPDIR/pppoe"
+      printf '%s\n' 'uuid: abc' 'password: node-secret' | janus-build secret set secrets/nodes/exit.yaml
+      SOPS_AGE_KEY_FILE="$TMPDIR/age.key" sops -d secrets/nodes/exit.yaml > "$TMPDIR/node"
+      printf '%s\n' 'uuid: abc' 'password: node-secret' | cmp - "$TMPDIR/node"
+      printf '%s\n' 'wg-private' | janus-build secret set secrets/wireguard/potato/uplink.yaml
+      SOPS_AGE_KEY_FILE="$TMPDIR/age.key" sops -d --extract '["value"]' secrets/wireguard/potato/uplink.yaml > "$TMPDIR/wg"
+      printf '%s' 'wg-private' | cmp - "$TMPDIR/wg"
+      if grep -q -- '--arg value' "$(command -v janus-build)"; then
+        echo "secret plaintext is passed to jq as an argument" >&2
+        exit 1
+      fi
+      grep -q 'jq -Rs' "$(command -v janus-build)"
       janus-build host add other
       janus-build secret keygen other > "$TMPDIR/other.key"
-      if age -d -i "$TMPDIR/other.key" -o "$TMPDIR/stolen" secrets/web/potato.yaml; then
+      if SOPS_AGE_KEY_FILE="$TMPDIR/other.key" sops -d --extract '["value"]' secrets/web/potato.yaml > "$TMPDIR/stolen"; then
         echo "maintenance passphrase was readable by another host" >&2
         exit 1
       fi
@@ -498,6 +516,7 @@ in {
       grep -q '/var/lib/janus/secrets/pppoe' ${script}
       grep -q 'rp-pppoe.so' ${script}
       grep -q 'ifname ppp-main' ${script}
+      test ${toString os.config.systemd.services.janus-pppoe-main.unitConfig.StartLimitBurst} = 3
       echo ok > "$out"
     '';
   eval-seed = let
@@ -1109,6 +1128,41 @@ in {
       echo ${lib.escapeShellArg (lib.concatStrings os.config.boot.blacklistedKernelModules)} | grep -q rtl8xxxu
       echo ok > "$out"
     '';
+  eval-wifi-sops = let
+    os = mk [
+      base
+      {
+        janus.hardware.peripherals.stick = {
+          class = "wifi";
+          match.usbVendorProduct = "0bda:8176";
+        };
+        janus.network.lans.lan = {
+          members = ["lan" "home"];
+          address = "192.168.10.1";
+          prefixLength = 24;
+        };
+        janus.network.wifi.home = {
+          peripheral = "stick";
+          ssid = "janus";
+          passphraseSecret = "wifi-eval-home";
+          lan = "lan";
+        };
+        sops.secrets.wifi-eval-home.sopsFile = ./fixtures/sops-placeholder;
+      }
+    ];
+    requires = os.config.systemd.services.janus-hostapd-home.requires or [];
+    secretRequires = os.config.systemd.services.janus-wifi-secret-home.requires or [];
+    secretStart = lib.concatStringsSep " " (lib.toList os.config.systemd.services.janus-wifi-secret-home.serviceConfig.ExecStart);
+    script = os.config.systemd.services.janus-hostapd-home.serviceConfig.ExecStart;
+  in
+    pkgs.runCommand "eval-wifi-sops" {} ''
+      printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " requires)} | grep -q janus-wifi-secret-home.service
+      printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " secretRequires)} | grep -q sops-install-secrets.service
+      grep -q ${lib.escapeShellArg os.config.sops.secrets.wifi-eval-home.path} ${script}
+      printf '%s\n' ${lib.escapeShellArg secretStart} | grep -q ${lib.escapeShellArg os.config.sops.secrets.wifi-eval-home.path}
+      test ${lib.escapeShellArg os.config.sops.secrets.wifi-eval-home.key} = value
+      echo ok > "$out"
+    '';
   eval-wifi-onboard = let
     os = mk [
       {
@@ -1411,6 +1465,7 @@ in {
       base
       {
         janus.remoteAccess.tailscale.enable = true;
+        janus.remoteAccess.tailscale.authKeyFile = "/var/lib/janus/secrets/tailscale-authkey";
         janus.remoteAccess.wireguard.uplink = {
           privateKeyFile = "/run/secrets/wg";
           address = "10.9.0.2/32";
@@ -1433,6 +1488,30 @@ in {
       test ${lib.escapeShellArg (toString os.config.networking.wireguard.interfaces.wg-uplink.fwMark)} = 74
       echo ${lib.escapeShellArg ifaces} | grep -q tailscale0
       echo ${lib.escapeShellArg ifaces} | grep -q wg-uplink
+      echo ok > "$out"
+    '';
+  eval-tailscale-key = fail "eval-tailscale-key" [
+    base
+    {janus.remoteAccess.tailscale.enable = true;}
+  ];
+  eval-tailscale-sops = let
+    os = mk [
+      base
+      {
+        sops.secrets.tailscale-eval.sopsFile = ./fixtures/sops-placeholder;
+        janus.remoteAccess.tailscale = {
+          enable = true;
+          authKeySecret = "tailscale-eval";
+        };
+      }
+    ];
+    requires = os.config.systemd.services.tailscaled.requires or [];
+  in
+    pkgs.runCommand "eval-tailscale-sops" {} ''
+      test ${lib.escapeShellArg os.config.services.tailscale.authKeyFile} = ${lib.escapeShellArg os.config.sops.secrets.tailscale-eval.path}
+      test ${lib.escapeShellArg os.config.sops.secrets.tailscale-eval.key} = value
+      printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " requires)} | grep -q sops-install-secrets.service
+      printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " (os.config.systemd.services.janus-tailscale-auth.requiredBy or []))} | grep -q tailscaled.service
       echo ok > "$out"
     '';
   eval-backup-health = let
@@ -1501,6 +1580,10 @@ in {
             refresh = "0 0 * * 0,7";
           };
         };
+        sops.secrets."subscription/a".sopsFile = ./fixtures/sops-placeholder;
+        sops.secrets."subscription/b".sopsFile = ./fixtures/sops-placeholder;
+        sops.secrets."subscription/c".sopsFile = ./fixtures/sops-placeholder;
+        sops.secrets."subscription/d".sopsFile = ./fixtures/sops-placeholder;
       }
     ];
     model = os.config.environment.etc."janus/proxy-model.json".source;
@@ -1512,6 +1595,7 @@ in {
       test ${lib.escapeShellArg os.config.systemd.timers.janus-proxy-refresh-c.timerConfig.OnCalendar} = 'Mon,Fri *-*-* 03:30:00'
       test ${lib.escapeShellArg os.config.systemd.timers.janus-proxy-refresh-d.timerConfig.OnCalendar} = 'Sun *-*-* 00:00:00'
       test ${lib.escapeShellArg os.config.systemd.timers.janus-geodata-refresh.timerConfig.OnCalendar} = 'Tue,Thu,Sat *-*-* 04:00:00'
+      echo ${lib.escapeShellArg (lib.concatStringsSep " " os.config.systemd.services."janus-proxy-refresh@".after)} | grep -q sops-install-secrets.service
       test ${
         if os.config.systemd.timers ? "janus-proxy-refresh-b"
         then "yes"
@@ -1560,6 +1644,7 @@ in {
             match.pattern = ".";
           };
         };
+        sops.secrets."subscription/b".sopsFile = ./fixtures/sops-placeholder;
       }
     ];
     messages = lib.concatMapStringsSep "\n" (a: a.message) (
@@ -1592,6 +1677,7 @@ in {
             members = ["sub:b"];
           };
         };
+        sops.secrets."subscription/b".sopsFile = ./fixtures/sops-placeholder;
       }
     ];
     messages = lib.concatMapStringsSep "\n" (a: a.message) (
@@ -1655,6 +1741,26 @@ in {
       bash "$root/run.sh" render
       jq -e '[.[].name] == ["a/live"]' "$TMPDIR/nodes.json" >/dev/null
       test -s "$root/var/lib/janus/subscriptions/b.json"
+      echo ok > "$out"
+    '';
+  eval-subscription-armor =
+    pkgs.runCommand "eval-subscription-armor" {
+      nativeBuildInputs = [pkgs.bash pkgs.jq pkgs.coreutils];
+    } ''
+      set -eu
+      root=$TMPDIR/root
+      mkdir -p "$root/etc/janus" "$root/var/lib/janus/subscriptions" "$root/run/secrets"
+      printf '%s\n' '{"vendor":{"urlSecret":"sub","format":"auto","via":"direct","minimumNodes":1}}' > "$root/etc/janus/subscriptions.json"
+      printf '%s\n' 'age-encryption.org/v1' '->' > "$root/run/secrets/sub"
+      {
+        printf '%s\n' 'set -euo pipefail' 'JANUS_ENGINE=sing-box' 'JANUS_SCRIPT=unused' 'JANUS_FAIL_MODE=closed' 'JANUS_INTERCEPT=0' 'JANUS_DNS_TPROXY=0' 'JANUS_EGRESS_TABLE='
+        sed -e "s|/var/lib/janus|$root/var/lib/janus|g" -e "s|/etc/janus|$root/etc/janus|g" -e "s|/run/secrets|$root/run/secrets|g" ${../pkgs/janus-engine.sh}
+      } > "$root/run.sh"
+      if bash "$root/run.sh" refresh vendor; then
+        echo "age armor was accepted as a subscription url" >&2
+        exit 1
+      fi
+      grep -q 'age armor' "$root/var/lib/janus/subscriptions/vendor.error"
       echo ok > "$out"
     '';
   janet-normalizer =
@@ -2606,6 +2712,8 @@ in {
         printf '%s\n' 'janus-pppoe-main.service loaded failed'
         printf '%s\n' 'janus-web.service loaded failed'
         printf '%s\n' 'janus-hostapd-home.service loaded failed'
+        printf '%s\n' 'janus-tailscale-auth.service loaded failed'
+        printf '%s\n' 'tailscaled.service loaded failed'
       fi
       exit 0
       EOF
@@ -2616,10 +2724,12 @@ in {
         $1 == "restart" && $2 == "sops-install-secrets.service" { sops = NR }
         $1 == "restart" && $2 == "janus-pppoe-main.service" { pppoe = NR }
         $1 == "restart" && $2 == "janus-hostapd-home.service" { ap = NR }
+        $1 == "restart" && $2 == "janus-tailscale-auth.service" { auth = NR }
+        $1 == "restart" && $2 == "tailscaled.service" { tail = NR }
         $1 == "restart" && $2 == "janus-web.service" { web = NR }
         $1 == "restart" && $2 == "janus-web-tls.service" { tls = NR }
         END {
-          if (!(sops && pppoe && ap && web && tls && sops < pppoe && sops < ap && web < tls)) exit 1
+          if (!(sops && pppoe && ap && auth && tail && web && tls && sops < pppoe && sops < ap && sops < auth && auth < tail && web < tls)) exit 1
         }
       ' "$dir/log"
       echo ok > "$out"

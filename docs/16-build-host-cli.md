@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-17 |
+| Last updated | 2026-10-18 |
 
 `janus-build` runs on the build host. After the fleet repo exists, every
 command runs in that repo. The router command stays `janus` (*14*). The
@@ -94,7 +94,7 @@ SSH destinations are `janus.deploy.address`, or the
 | Create the fleet repo | `nix run github:oemaix/janus-os#janus-build -- init <dir> [--host <name>]` | The only command that runs before the repo exists (§0). No `--host` means the repo has no router. Each `--host` adds that router before the initial commit. Later, `janus-build init <dir>` from a fleet shell creates another fleet directory the same way. |
 | Add a router | `janus-build host add <name>` | Creates `hosts/<name>/configuration.nix` and `hosts/<name>/overrides.nix`. Does not edit `flake.nix` and does not commit. |
 | Age key | `janus-build secret keygen <host>` | Creates that host's keypair outside the Nix build. Commits nothing by itself: it writes `secrets/keys/<host>.pub` and prints the private key once on stdout. Refuses to replace an existing public key. |
-| Set a secret | `janus-build secret set <path>` | Reads plaintext on stdin, encrypts to the recipients of that path, and writes ciphertext. Does not keep a plaintext file. |
+| Set a secret | `janus-build secret set <path>` | Reads plaintext on stdin, writes a sops document for the recipients of that path, and does not keep a plaintext file. A one-line credential is the `value` key. A PPPoE file and a node file are YAML. An empty stdin is refused. The plaintext is not passed as a program argument. |
 | Rewrap a shared secret | `janus-build secret rewrap <path> --from <host>` | Asks a router that can decrypt that file, then encrypts to the current recipient set. |
 | Check | `janus-build check [<host>]` | Evaluates the named host, or every host. Prints assertion failures. Builds nothing. Refuses a cross image whose build machine is not this one. |
 | Build | `janus-build build [<host>]` | Builds `images.<host>` for one host or every host. Prints the image path. On a machine other than x86_64, evaluation is impure so `builtins.currentSystem` is this machine. |
@@ -164,7 +164,7 @@ The tree must be a git repository. These commands do not commit.
 | Command | Effect |
 |---------|--------|
 | `janus-build secret keygen <host>` | Create that host's keypair (§1). Print the private key once. Do not write it into the repo or into `~/.config/janus/`. |
-| `janus-build secret set <path>` | Encrypt stdin to the recipients of `<path>` and write that file. `<path>` is one of the paths above. |
+| `janus-build secret set <path>` | Encrypt stdin to the recipients of `<path>` and write a sops document. A one-line credential is the `value` key. A PPPoE file and a node file are YAML. An empty stdin is refused. The plaintext is not a program argument. `<path>` is one of the paths above. |
 | `janus-build secret rewrap <path> --from <host>` | SSH to `<host>`, which decrypts `<path>`. Encrypt to the recipient set implied by the current configuration. Warn that the session carried plaintext. |
 | `janus-build deploy --age-key <host>` | Read that host's private key on stdin and install it over SSH. Do not store the key. |
 
