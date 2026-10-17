@@ -221,7 +221,7 @@ in {
             # joins the bridge if hostapd runs too early. docs/10 §4.7.
             after = ["systemd-networkd.service" (deviceUnit name) (bridgeUnit cfg.wifi.${name}.lan)];
             wants = [(bridgeUnit cfg.wifi.${name}.lan)];
-            bindsTo = [deviceUnit name];
+            bindsTo = [(deviceUnit name)];
             serviceConfig = {
               Type = "simple";
               ExecStart = start name cfg.wifi.${name};

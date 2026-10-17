@@ -1165,6 +1165,7 @@ in {
       echo ${lib.escapeShellArg (lib.concatStringsSep " " os.config.systemd.services.janus-hostapd-home.after)} | grep -q 'wifi\\x2dhome'
       echo ${lib.escapeShellArg (lib.concatStringsSep " " os.config.systemd.services.janus-hostapd-home.after)} | grep -q 'br\\x2dlan'
       echo ${lib.escapeShellArg (lib.concatStringsSep " " os.config.systemd.services.janus-hostapd-home.wants)} | grep -q 'br\\x2dlan'
+      echo ${lib.escapeShellArg (lib.concatStringsSep " " os.config.systemd.services.janus-hostapd-home.bindsTo)} | grep -q 'wifi\\x2dhome[.]device'
       if grep -q 'did not join' ${script}; then
         echo "isolation failure path is in the default AP" >&2
         exit 1
