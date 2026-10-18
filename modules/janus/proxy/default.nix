@@ -420,7 +420,17 @@ in {
         };
       });
       default = {};
-      description = "Proxy groups. docs/07 §4. Auto exists unless the user defines groups.Auto.";
+      description = "Proxy groups. docs/07 §4. The implicit Auto exists unless groupsAuto is false or the user defines groups.Auto.";
+    };
+    groupsAuto = mkOption {
+      type = types.bool;
+      default = true;
+      description = ''
+        Generate the implicit Auto url-test group over every node, and one
+        url-test group per subscription. Disable for a fully explicit setup:
+        every rule and defaultTarget must then name defined groups, and the
+        engine must be sing-box.
+      '';
     };
     rules = mkOption {
       type = types.listOf (types.submodule {
@@ -638,6 +648,21 @@ in {
           message = "janus.proxy.egressWan '${toString cfg.egressWan}' is not a WAN.";
         }
       ]
+      ++ lib.optionals (!cfg.groupsAuto) [
+        {
+          assertion = cfg.engine == "sing-box";
+          message = "janus.proxy.groupsAuto = false is not expressible by xray (ADR-0006).";
+        }
+        {
+          assertion = cfg.defaultTarget != "Auto" && cfg.defaultTarget != "group:Auto";
+          message = "janus.proxy.groupsAuto = false but defaultTarget names the implicit Auto group.";
+        }
+      ]
+      ++ lib.imap0 (_: rule: {
+        assertion = cfg.groupsAuto || (rule.target != "Auto" && rule.target != "group:Auto");
+        message = "janus.proxy.groupsAuto = false but a rule targets the implicit Auto group.";
+      })
+      cfg.rules
       ++ lib.concatMap (rule:
         map (lan: {
           assertion = config.janus.network.lans ? ${lan};

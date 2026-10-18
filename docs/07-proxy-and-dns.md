@@ -158,7 +158,16 @@ refresh by the same Janet code, guaranteeing identical semantics.
 
 Implicit groups: every enabled subscription is a group `sub:<name>` with strategy
 `url-test` unless overridden. `fallback` fails evaluation on both engines.
-`load-balance` is xray only (§2.1).
+`load-balance` is xray only (§2.1). Every node is collected into a group
+`Auto` unless the fleet defines `groups.Auto`.
+
+`janus.proxy.groupsAuto = false` drops both implicit sets (ADR-0026). The
+fleet then names every group it wants, and `defaultTarget` and every rule
+must target a defined group, `direct`, or `block`; evaluation fails
+otherwise. sing-box only — xray cannot express a fleet-only group set.
+A fleet that wants one hand-picked group writes one `strategy = "manual"`
+group and turns the option off, so the panel shows one group instead of
+three.
 
 ## 5. Traffic mode and routing rules
 

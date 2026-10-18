@@ -157,6 +157,8 @@
     rules = map expandRule cfg.rules;
     lans = lanViews;
     subscriptionNames = lib.attrNames enabledSubscriptions;
+    engineSettings = cfg.engineSettings;
+    autoGroup = cfg.groupsAuto;
     dns = {
       carrierResolvers = dns.carrierResolvers;
       encryption = dns.encryption;
@@ -339,10 +341,10 @@
   # sing-geoip's rule-set branch has no geoip-private.srs, so that tag is compiled below.
   defaultPins = {
     geosite-private = "sha256-JgSRJD4CZuW6VD9QnKfxOwfW9MLCat4/Z13eoWYfMhM=";
-    geosite-cn = "sha256-fl7aoxVpGOu3MmKfe0qz8DBAuZQEVkOPl2wgRgM/wVw=";
-    geosite-geolocation-cn = "sha256-zVOuqBkm1GscCqE5rffd/u10s9aRO0oBSDspbk6K9Ng=";
+    geosite-cn = "sha256-h/MgbEJy0bkWvszzTLMPrerlFiZND0Ir5RhxWvLjKYA=";
+    geosite-geolocation-cn = "sha256-nZ1yZRBVD3BBt9GhILFiOF1RW8KUhHQpHCdGko4W70M=";
     geosite-category-ads-all = "sha256-hOLteWF6SSyxra8ovwxZoaQq+FSrk1YFuoTg3ro4bIg=";
-    geosite-category-ru = "sha256-VGyEFyPfZ0BxmHqQ4yGtjF8OnOD8DuRgwlj1R9MIaFc=";
+    geosite-category-ru = "sha256-kOXxTaBTSrqg/R8PoL6JAs9RWtW/POph7otEJO7JmoQ=";
     geosite-ir = "sha256-SuD3qQ/D8Vau+PKihJU3LOuuv4vrNch2+xcF+nhHb4I=";
     geoip-cn = "sha256-ga2lyv2dgxrcSHdvKc3+VclxPZKHyu753pJe8w9mzOQ=";
     geoip-ru = "sha256-vcpc20TNzwlAAB5ZUjhoIqb0/6iyyO6gA0Cqb1hcf50=";
@@ -608,7 +610,10 @@ in {
       description = "Fail-closed route for proxied LAN traffic";
       wantedBy = ["multi-user.target"];
       before = ["network-online.target" "janus-engine.service"];
-      after = ["network-pre.target"];
+      # After networkd: it reconfigures interfaces at start and drops
+      # policy-routing rules installed before it.
+      after = ["network-pre.target" "systemd-networkd.service"];
+      wants = ["systemd-networkd.service"];
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;
@@ -748,15 +753,26 @@ in {
       };
     };
 
-    janus.firewall.hooks = lib.mkIf (dns.interceptPlaintext && dnsBridges != []) {
-      preroutingRaw = ''
-        iifname { ${dnsBridgeSet} } meta l4proto tcp th dport 53 redirect to :5353
-      '';
-      inputExtra = ''
-        tcp dport 5353 accept
-        udp dport 5353 accept
-      '';
-    };
+    janus.firewall.hooks = lib.mkMerge [
+      # Proxied LAN traffic is policy-routed to the engine tun, which
+      # matches no zone pair, so the filter hook would drop it (policy
+      # drop). Let the marked flows reach tun0; replies are already
+      # covered by the established rule.
+      (lib.mkIf intercept {
+        forwardExtra = ''
+          iifname { ${bridgeSet} } oifname "tun0" accept
+        '';
+      })
+      (lib.mkIf (dns.interceptPlaintext && dnsBridges != []) {
+        preroutingRaw = ''
+          iifname { ${dnsBridgeSet} } meta l4proto tcp th dport 53 redirect to :5353
+        '';
+        inputExtra = ''
+          tcp dport 5353 accept
+          udp dport 5353 accept
+        '';
+      })
+    ];
 
     networking.nftables.tables.janus_intercept = lib.mkIf intercept {
       family = "inet";
