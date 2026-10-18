@@ -31,8 +31,9 @@ in {
       "console=ttyS2,1500000n8"
       "net.ifnames=0"
     ];
+    # Built in as dw_mmc-rockchip. modprobe has no alias for dwmmc_rockchip.
     boot.initrd.availableKernelModules = [
-      "dwmmc_rockchip"
+      "dw_mmc-rockchip"
       "mmc_block"
       "phy_rockchip_inno_usb2"
     ];

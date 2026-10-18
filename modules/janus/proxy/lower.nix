@@ -408,7 +408,7 @@
         JANUS_ENGINE=${cfg.engine}
         JANUS_DIG=${pkgs.bind}/bin/dig
         JANUS_FAIL_MODE=${cfg.failMode}
-        ${lib.optionalString (cfg.engine == "xray") "XRAY_LOCATION_ASSET=${xrayAssets}"}
+        ${lib.optionalString (cfg.engine == "xray") "export XRAY_LOCATION_ASSET=${xrayAssets}"}
         ${lib.optionalString (cfg.engine == "xray" && cfg.failMode == "open" && intercept) "JANUS_XRAY_NFT=/etc/janus/xray-open.nft"}
         JANUS_INTERCEPT=${
           if intercept

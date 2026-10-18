@@ -320,6 +320,7 @@ in {
       echo ${text yanyu.config.system.build.janusImage.limineBiosPartitionScript} | grep -q 'bios-install'
       test ${toString r4s.config.janus.storage.firmwareOffsetMiB} = 15
       echo ${text r4s.config.system.build.janusBoardImage.firmwareInstall} | grep -q 'seek=64'
+      echo ${lib.escapeShellArg (lib.concatStringsSep " " r4s.config.boot.initrd.availableKernelModules)} | grep -q dw_mmc-rockchip
       echo ${text potato.config.system.build.janusBoardImage.firmwareInstall} | grep -q u-boot.gxl
       test ${toString (lib.length (lib.attrNames zero.config.janus.network.ports))} = 0
       echo ${text zero.config.system.build.janusBoardImage.bootExtra} | grep -q config.txt
@@ -1024,6 +1025,7 @@ in {
       }
     ];
     engine = os.config.system.build.janusEngineConfig;
+    proxyBin = os.config.environment.etc."janus/bin/janus-proxy".source;
     mark = os.config.networking.nftables.tables.janus_intercept.content;
     rules = pkgs.writeText "xray-intercept.nft" ''
       table inet janus_intercept {
@@ -1052,6 +1054,7 @@ in {
       jq -e '.routing.balancers[] | select(.tag == "Wave") | .strategy.type == "roundRobin"' ${engine} >/dev/null
       jq -e '[.inbounds[] | select(.protocol == "tun" or .type == "tun")] | length == 0' ${engine} >/dev/null
       echo ${lib.escapeShellArg start} | grep -q 'xray run'
+      grep -q 'export XRAY_LOCATION_ASSET=' ${proxyBin}
       grep -q 'meta l4proto { tcp, udp } meta mark set 0x00004a02 tproxy to :12345' ${rules}
       touch hosts
       export NIX_REDIRECTS="/etc/hosts=$PWD/hosts:/etc/protocols=${pkgs.iana-etc}/etc/protocols:/etc/services=${pkgs.iana-etc}/etc/services"
