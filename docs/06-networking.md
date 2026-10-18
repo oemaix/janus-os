@@ -84,7 +84,10 @@ Semantics:
   IPv6 mode.
 * WAN DNS servers learned via DHCP/PPPoE are recorded to
   `/run/janus/wan/<name>/dns` for the DNS policy layer but are **not**
-  installed into `resolv.conf` (FR-DNS-002).
+  installed into `resolv.conf` (FR-DNS-002). The source is systemd's
+  DHCP lease file; `networkctl status --json` supplies static and RDNSS
+  entries but not DHCP ones, because the WAN links set `UseDNS = false`
+  to keep systemd-resolved from bypassing the engine.
 
 ## 5. LAN
 

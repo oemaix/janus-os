@@ -116,7 +116,7 @@
     cfg.vlans;
 
   parentVlans = lib.zipAttrsWith (_: vs: lib.concatLists vs) (lib.mapAttrsToList (_: vlan: {
-      ${vlan.port} = [vlanNetdev vlan];
+      ${vlan.port} = [(vlanNetdev vlan)];
     })
     cfg.vlans);
 
@@ -392,7 +392,12 @@
       };
     };
 
-  policyScript = pkgs.writeShellScript "janus-wan-policy" ''
+  policyScript = pkgs.writeShellApplication {
+    name = "janus-wan-policy";
+    # Explicit inputs: the script used sed and jq without naming them, and
+    # relied on the inherited PATH.
+    runtimeInputs = with pkgs; [iproute2 gawk coreutils gnused jq systemd];
+    text = ''
     set -eu
     mkdir -p /run/janus/wan
     ${lib.concatMapStrings (name: let
@@ -403,17 +408,39 @@
         table=${toString (wanTable name)}
         pri=${toString (10000 + wanIndex.${name})}
         mkdir -p "/run/janus/wan/$name"
+        printf '%s\n' "$iface" > "/run/janus/wan/$name/iface"
         ${
           if wan.mode == "static"
           then ''
             printf '%s\n' ${lib.escapeShellArgs wan.static.dns} > "/run/janus/wan/$name/dns"
           ''
           else ''
-            if [ -e "/sys/class/net/$iface/ifindex" ]; then
+            dns=""
+            # networkctl's JSON outlives systemd 261 dropping
+            # /run/systemd/netif/leases. Resolver entries render the address
+            # as a byte array under "Address" and as a string under
+            # "AddressString" (json-util.h JSON_BUILD_PAIR_IN_ADDR_WITH_STRING).
+            # DHCP servers appear here only when the link uses them: janus
+            # WANs set UseDNS = false so systemd-resolved never bypasses the
+            # engine, so for DHCP this is empty and the lease file below is
+            # the effective source. Static DNS= and RDNSS entries do appear.
+            if [ -e "/sys/class/net/$iface" ]; then
+              dns=$(networkctl status --json=short "$iface" 2>/dev/null \
+                | jq -r '[.. | objects | select(has("DNS")) | .DNS[]? | .AddressString // empty] | unique | join(" ")' \
+                2>/dev/null || true)
+            fi
+            # Fallback: a systemd whose only record of a DHCP-learned
+            # resolver is the private lease file.
+            if [ -z "$dns" ] && [ -e "/sys/class/net/$iface/ifindex" ]; then
               idx=$(cat "/sys/class/net/$iface/ifindex")
               if [ -f "/run/systemd/netif/leases/$idx" ]; then
-                sed -n 's/^DNS=//p' "/run/systemd/netif/leases/$idx" > "/run/janus/wan/$name/dns"
+                dns=$(sed -n 's/^DNS=//p' "/run/systemd/netif/leases/$idx")
               fi
+            fi
+            if [ -n "$dns" ]; then
+              printf '%s\n' "$dns" | tr ' ' '\n' > "/run/janus/wan/$name/dns"
+            else
+              : > "/run/janus/wan/$name/dns"
             fi
           ''
         }
@@ -432,6 +459,7 @@
       '')
       wanNames}
   '';
+  };
 in {
   config = lib.mkMerge [
     {
@@ -480,6 +508,10 @@ in {
             lan = cfg.lans.${n};
           in "set:janus-${n},${lan.dhcp.rangeStart},${lan.dhcp.rangeEnd},${lan.dhcp.leaseTime}")
           dhcpLanNames;
+          # Clients must resolve through the router so the DNS engine sees
+          # every query. Without option 6 some clients keep stale manual
+          # resolvers and bypass the engine. Told LANs only: a LAN excluded
+          # from `janus.dns.listen.lans` keeps its own resolver choice.
           dhcp-option = map (n: "tag:janus-${n},option:dns-server,${cfg.lans.${n}.address}") toldDhcp;
           dhcp-hostsfile = "/var/lib/janus/dhcp-hosts";
         };
@@ -569,7 +601,7 @@ in {
             wantedBy = ["multi-user.target"];
             serviceConfig = {
               Type = "oneshot";
-              ExecStart = policyScript;
+              ExecStart = "${policyScript}/bin/janus-wan-policy";
             };
           };
         })
