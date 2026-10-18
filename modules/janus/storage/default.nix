@@ -92,11 +92,23 @@
 
   # Phase 0 seed is the empty snapshot. The hash and generation are what
   # janus-seed compares, so a later snapshot with a higher generation replaces it.
+  #
+  # The engine tree presets the clash dashboard. sing-box 1.13 downloads
+  # external_ui synchronously at start, and on a censored first-boot uplink
+  # that download (detour or not — the Proxy group is still empty before
+  # the first subscription refresh) deadlocks the engine before it ever
+  # serves (observed 2026-10-18). Preseeding skips the download: sing-box
+  # only fetches when the ui directory is missing.
+  metacubexd = pkgs.fetchurl {
+    url = "https://github.com/MetaCubeX/metacubexd/releases/download/v1.273.1/compressed-dist.tgz";
+    sha256 = "a178e00b67acabcda2dcef00afa90be6a7bb261e466a67dad58c8478d9553603";
+  };
   janusSeed = pkgs.runCommand "janus-seed" {} ''
     set -eu
-    mkdir -p $out/subscriptions $out/geodata $out/engine
+    mkdir -p $out/subscriptions $out/geodata $out/engine/ui
+    tar -xf ${metacubexd} -C $out/engine/ui
     cat > $out/manifest.json << 'EOF'
-    {"generation":1,"subscriptions":[],"geodata":[],"engine":null}
+    {"generation":1,"subscriptions":[],"geodata":[],"engine":{"ui":"metacubexd-v1.273.1"}}
     EOF
     echo 1 > $out/seed.generation
     sha256sum $out/manifest.json | cut -d' ' -f1 > $out/seed.hash
