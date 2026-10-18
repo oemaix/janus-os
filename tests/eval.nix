@@ -1025,10 +1025,15 @@ in {
     ];
     engine = os.config.system.build.janusEngineConfig;
     mark = os.config.networking.nftables.tables.janus_intercept.content;
+    rules = pkgs.writeText "xray-intercept.nft" ''
+      table inet janus_intercept {
+        ${mark}
+      }
+    '';
     start = os.config.systemd.services.janus-engine.serviceConfig.ExecStart;
   in
     pkgs.runCommand "eval-proxy-xray" {
-      nativeBuildInputs = [pkgs.jq pkgs.xray];
+      nativeBuildInputs = [pkgs.jq pkgs.xray pkgs.nftables];
     } ''
       xray run -test -c ${engine}
       jq -e '.inbounds[] | select(.protocol == "dokodemo-door" and .port == 12345)' ${engine} >/dev/null
@@ -1047,7 +1052,11 @@ in {
       jq -e '.routing.balancers[] | select(.tag == "Wave") | .strategy.type == "roundRobin"' ${engine} >/dev/null
       jq -e '[.inbounds[] | select(.protocol == "tun" or .type == "tun")] | length == 0' ${engine} >/dev/null
       echo ${lib.escapeShellArg start} | grep -q 'xray run'
-      echo ${lib.escapeShellArg mark} | grep -q 'tproxy to :12345'
+      grep -q 'meta l4proto { tcp, udp } meta mark set 0x00004a02 tproxy to :12345' ${rules}
+      touch hosts
+      export NIX_REDIRECTS="/etc/hosts=$PWD/hosts:/etc/protocols=${pkgs.iana-etc}/etc/protocols:/etc/services=${pkgs.iana-etc}/etc/services"
+      LD_PRELOAD="${pkgs.libredirect}/lib/libredirect.so ${pkgs.lklWithFirewall.lib}/lib/liblkl-hijack.so" \
+        nft --check --file ${rules}
       if echo ${lib.escapeShellArg mark} | grep -q '0x00004a01'; then
         echo "xray still marks 0x4a01" >&2
         exit 1

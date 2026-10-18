@@ -471,6 +471,10 @@
       ''}
     '';
 
+  # nftables 1.1 rejects tproxy unless the rule matches one transport protocol.
+  # A set is enough; a bare `tproxy to :12345` is not. Xray's inbound is tcp,udp.
+  xrayTproxy = "iifname { ${bridgeSet} } meta l4proto { tcp, udp } meta mark set 0x00004a02 tproxy to :12345";
+
   guardRules = lib.concatStringsSep "\n" (lib.filter (s: s != "") [
     (lib.optionalString (dns.blockDoT && dnsBridgeSet != "") ''
       iifname { ${dnsBridgeSet} } meta l4proto { tcp, udp } th dport 853 reject
@@ -586,7 +590,7 @@ in {
             chain xray {
               type filter hook prerouting priority mangle; policy accept;
               ${markRules}
-              iifname { ${bridgeSet} } meta mark set 0x00004a02 tproxy to :12345
+              ${xrayTproxy}
             }
           }
         '';
@@ -777,7 +781,7 @@ in {
           chain xray {
             type filter hook prerouting priority mangle; policy accept;
             ${markRules}
-            iifname { ${bridgeSet} } meta mark set 0x00004a02 tproxy to :12345
+            ${xrayTproxy}
           }
         ''}
       '';
