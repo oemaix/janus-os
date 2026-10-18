@@ -5,7 +5,7 @@
 (def fail-limit 5)
 (def fail-seconds 60)
 (def max-sessions 8)
-(def csp "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'")
+(def csp "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'")
 
 (def ident
   (peg/compile ~(* (some (+ (range "az") (range "AZ") (range "09") "_" "-" (range ".."))) -1)))
@@ -542,7 +542,7 @@
     {:status 404 :ctype "text/plain; charset=utf-8" :body ""}))
 
 (defn page-html [st]
-  (string/replace (slurp (st :html)) "__JANUS_META__" (json-encode (public-doc st))))
+  (string/replace "__JANUS_META__" (json-encode (public-doc st)) (slurp (st :html))))
 
 (defn access-line [method path status]
   (string (if method method "-") " " (if path path "-") " " status))
@@ -626,7 +626,7 @@
       (do
         (set req (read-request conn))
         (handle st req))
-      ([_] (bad "rejected"))))
+      ([err] (do (eprint "janus-web handler error: " err) (bad "rejected")))))
   (eprint (access-line (if req (req :method) nil) (if req (req :path) nil) (resp :status)))
   (try (write-response conn resp) ([_] nil))
   (net/close conn))
@@ -649,9 +649,13 @@
     @{}))
 
 (defn strip-nl [s]
-  (if (and (> (length s) 0) (= (string/slice s -1) "\n"))
-    (string/slice s 0 -2)
-    s))
+  # With a negative start string/slice is exclusive, so (string/slice s -1)
+  # is always the empty string, never the last byte. Detect the newline by
+  # byte, and use a negative end (inclusive semantics) to drop it.
+  (def b (string/bytes s))
+  (if (and (> (length b) 0) (= (last b) 10))
+    (string (string/slice s 0 -2))
+    (string s)))
 
 (defn load-passphrase []
   (def from-env (os/getenv "JANUS_WEB_PASSPHRASE"))

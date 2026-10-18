@@ -130,7 +130,11 @@ in {
       socket = a:IPV6_V6ONLY=0
 
       [janus]
-      accept = [::]:${toString cfg.port}
+      # "*" resolves to the wildcard address(es) on glibc; "[::]" is
+      # rejected by getaddrinfo (EAI_NONAME), which stunnel passes the
+      # host through to. Measured: stunnel binds 0.0.0.0 only, which
+      # covers the v4 LAN clients the panel serves.
+      accept = *:${toString cfg.port}
       connect = /run/janus-web/http.sock
       cert = /var/lib/janus/web/cert.pem
       key = /var/lib/janus/web/key.pem
@@ -180,11 +184,15 @@ in {
         JANUS_WEB_HTML = "${../../../janet/web.html}";
         JANUS_WEB_EXEC = "${runCmd}/bin/janus-web-run";
         JANUS_WEB_USE_SUDO = "1";
-        JANUS_WEB_SUDO_BIN = "${pkgs.sudo}/bin/sudo";
+        # The store path is mounted nosuid; the setuid wrapper is the only
+        # sudo the unprivileged janus-web user can actually use.
+        JANUS_WEB_SUDO_BIN = "/run/wrappers/bin/sudo";
         JANUS_WEB_OPENSSL = "${pkgs.openssl}/bin/openssl";
       };
       serviceConfig = {
         Type = "notify";
+        # The wrapper's forked systemd-notify must count; "main" drops it silently.
+        NotifyAccess = "all";
         User = "janus-web";
         Group = "janus-web";
         RuntimeDirectory = "janus-web";
