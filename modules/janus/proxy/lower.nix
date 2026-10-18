@@ -804,6 +804,13 @@ in {
       content = ''
         chain dns-udp {
           type filter hook prerouting priority mangle; policy accept;
+          # LAN clients that query the router itself (the address DHCP
+          # option 6 hands out) must reach the per-LAN direct inbound that
+          # listens on it, not be pulled into the tproxy detour: a
+          # local-target UDP packet hijacked by tproxy never returns to the
+          # client (observed 2026-10-18; the TCP redirect path is unaffected
+          # because it rewrites the packet instead of rerouting it).
+          fib daddr type local return
           iifname { ${dnsBridgeSet} } meta l4proto udp th dport 53 meta mark set 0x00004a02 tproxy to :5353
         }
       '';
