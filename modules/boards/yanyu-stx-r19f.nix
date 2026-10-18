@@ -21,7 +21,14 @@
       "console=tty0"
       "console=ttyS0,115200n8"
     ];
+    # USB media boots: the image runs from a USB stick on field units
+    # (J1900, xhci + ehci controllers). Without usb-storage/uas the initrd
+    # sees no block device and JANUS_STATE never appears.
     boot.initrd.availableKernelModules = [
+      "usb_storage"
+      "uas"
+      "xhci_pci"
+      "ehci_pci"
       "ahci"
       "sd_mod"
       "e1000e"

@@ -423,7 +423,7 @@ in {
             part=$(readlink -f "$dev")
             echo change > "/sys/class/block/''${part##*/}/uevent" || true
             label=/dev/disk/by-label/JANUS_STATE
-            for _ in $(seq 1 50); do
+            for _ in $(seq 1 600); do
               [ -e "$label" ] && break
               sleep 0.1
             done
