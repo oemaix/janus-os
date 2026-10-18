@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-17 |
+| Last updated | 2026-10-18 |
 
 ## 1. Principles
 
@@ -197,7 +197,10 @@ Multiple independent guards:
 
 ### 8.1 Full image re-flash (1.0, always available)
 
-Flash `janus-<host>.img` to the SD card or eMMC. The command
+Flash `janus-<host>.img` to the SD card, eMMC, or NVMe. On the VisionFive 2
+that disk is not the bootloader. The boot ROM loads U-Boot 2026.04 from
+QSPI (D-0047). The operator updates the QSPI before the first boot, using
+the U-Boot board document cited there. The image does not write the flash.
 `janus-build deploy --preserve-state <host>` does not flash. It copies
 this set to the build host:
 

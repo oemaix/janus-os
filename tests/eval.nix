@@ -322,9 +322,18 @@ in {
       echo ${text r4s.config.system.build.janusBoardImage.firmwareInstall} | grep -q 'seek=64'
       echo ${lib.escapeShellArg (lib.concatStringsSep " " r4s.config.boot.initrd.availableKernelModules)} | grep -q dw_mmc-rockchip
       echo ${text potato.config.system.build.janusBoardImage.firmwareInstall} | grep -q u-boot.gxl
+      if echo ${lib.escapeShellArg (lib.concatStringsSep " " potato.config.boot.initrd.availableKernelModules)} | grep -q sdhci_meson; then
+        echo "le potato still requests sdhci_meson" >&2
+        exit 1
+      fi
       test ${toString (lib.length (lib.attrNames zero.config.janus.network.ports))} = 0
       echo ${text zero.config.system.build.janusBoardImage.bootExtra} | grep -q config.txt
       echo ${text zero.config.system.build.janusBoardImage.bootExtra} | grep -q bcm2837-rpi-zero-2-w.dtb
+      test ${
+        if zero.config.system.build.janusImage.hybridFatMbr or false
+        then "yes"
+        else "no"
+      } = yes
       test ${lib.escapeShellArg (lib.head (lib.attrNames rpi.config.janus.network.ports))} = eth0
       echo ${text rpi.config.system.build.janusBoardImage.bootExtra} | grep -q bcm2710-rpi-3-b.dtb
       echo ${text rpi.config.system.build.janusBoardImage.bootExtra} | grep -q bcm2710-rpi-3-b-plus.dtb
@@ -334,7 +343,7 @@ in {
         if rpi.config.system.build.janusImage.hybridFatMbr or false
         then "yes"
         else "no"
-      } = no
+      } = yes
       test ${lib.escapeShellArg rpi4.config.janus.build.strategy} = emulated
       test ${lib.escapeShellArg rpi4.pkgs.stdenv.hostPlatform.system} = aarch64-linux
       test ${lib.escapeShellArg (lib.head (lib.attrNames rpi4.config.janus.network.ports))} = eth0
@@ -375,10 +384,14 @@ in {
       fi
       test ${lib.escapeShellArg vf2.config.janus.build.strategy} = cross
       test ${lib.escapeShellArg vf2.config.nixpkgs.hostPlatform.system} = riscv64-linux
-      test ${toString vf2.config.janus.storage.firmwareOffsetMiB} = 7
+      test ${toString vf2.config.janus.storage.firmwareOffsetMiB} = 0
       test ${toString (lib.length (lib.attrNames vf2.config.janus.network.ports))} = 2
-      echo ${text vf2.config.system.build.janusBoardImage.firmwareInstall} | grep -q 2E54B353-1271-4842-806F-E436D6AF6985
-      echo ${text vf2.config.system.build.janusBoardImage.firmwareInstall} | grep -q BC13C2FF-59E6-4262-A352-B275FD6F7172
+      echo ${lib.escapeShellArg (lib.concatStringsSep " " vf2.config.boot.initrd.availableKernelModules)} | grep -q pcie-starfive
+      echo ${lib.escapeShellArg (lib.concatStringsSep " " vf2.config.boot.initrd.availableKernelModules)} | grep -q phy-jh7110-pcie
+      echo ${text vf2.config.system.build.janusBoardImage.bootExtra} | grep -q u-boot-spl.bin.normal.out
+      echo ${text vf2.config.system.build.janusBoardImage.bootExtra} | grep -q u-boot.itb
+      echo ${text vf2.config.system.build.janusBoardImage.bootExtra} | grep -q 0xf0000
+      echo ${text vf2.config.system.build.janusBoardImage.bootExtra} | grep -q 0xf00000
       echo ${text vf2.config.system.build.janusBoardImage.bootExtra} | grep -q jh7110-starfive-visionfive-2-v1.2a.dtb
       echo ${text vf2.config.system.build.janusBoardImage.bootExtra} | grep -q jh7110-starfive-visionfive-2-v1.3b.dtb
       test ${lib.escapeShellArg plain.config.janus.build.strategy} = emulated
@@ -429,17 +442,18 @@ in {
     vf2 = board "visionfive2";
   in
     pkgs.runCommand "eval-tier3-boot" {
-      nativeBuildInputs = [pkgs.gptfdisk pkgs.gnutar pkgs.xz];
-      passAsFile = ["firmwareInstall"];
-      firmwareInstall = builtins.unsafeDiscardStringContext vf2.config.system.build.janusBoardImage.firmwareInstall;
+      nativeBuildInputs = [pkgs.gnutar pkgs.xz];
+      passAsFile = ["bootExtra"];
+      bootExtra = builtins.unsafeDiscardStringContext vf2.config.system.build.janusBoardImage.bootExtra;
     } ''
       set -eu
-      sec() { echo $(( $1 * 2048 )); }
       grep -A 12 -F ubootVisionFive2 ${self.inputs.nixpkgs}/pkgs/misc/uboot/default.nix > uboot.slice
       grep -q u-boot-spl.bin.normal.out uboot.slice
       grep -q u-boot.itb uboot.slice
-      grep -q u-boot-spl.bin.normal.out "$firmwareInstallPath"
-      grep -q u-boot.itb "$firmwareInstallPath"
+      grep -q u-boot-spl.bin.normal.out "$bootExtraPath"
+      grep -q u-boot.itb "$bootExtraPath"
+      grep -q 0xf0000 "$bootExtraPath"
+      grep -q 0xf00000 "$bootExtraPath"
       list_dts() {
         src=$1
         shift
@@ -462,25 +476,6 @@ in {
       list_dts ${vf2.config.boot.kernelPackages.kernel.src} \
         arch/riscv/boot/dts/starfive/jh7110-starfive-visionfive-2-v1.2a.dts \
         arch/riscv/boot/dts/starfive/jh7110-starfive-visionfive-2-v1.3b.dts
-      truncate -s 64M disk.img
-      boot_start=8
-      sgdisk -o \
-        -n "1:$(sec "$boot_start"):$(($(sec 24) - 1))" \
-        -c 1:JANUS_BOOT -t 1:EF00 \
-        disk.img >/dev/null
-      dd if=/dev/zero of="$TMPDIR/spl" bs=1024 count=1 status=none
-      dd if=/dev/zero of="$TMPDIR/itb" bs=1024 count=1 status=none
-      sed -e "s|^spl=.*|spl=$TMPDIR/spl|" -e "s|^itb=.*|itb=$TMPDIR/itb|" "$firmwareInstallPath" > install.sh
-      # The image builder inlines this script, so sec stays in scope.
-      . ./install.sh
-      sgdisk -i 8 disk.img > part8
-      sgdisk -i 9 disk.img > part9
-      grep -q 2E54B353-1271-4842-806F-E436D6AF6985 part8
-      grep -q 'First sector: 4096' part8
-      grep -q 'Last sector: 8191' part8
-      grep -q BC13C2FF-59E6-4262-A352-B275FD6F7172 part9
-      grep -q 'First sector: 8192' part9
-      grep -q 'Last sector: 16383' part9
       echo ok > "$out"
     '';
   eval-pppoe-secret = fail "eval-pppoe-secret" [

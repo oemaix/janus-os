@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # Raspberry Pi 3 / 3+. docs/10 §3. Tier 2. One 100 MbE port on the USB bus.
 # The GPU firmware on the FAT partition loads the kernel (config.txt).
+# The boot ROM reads an MBR. The image stays GPT and writes a hybrid MBR
+# whose first entry is that FAT filesystem.
 {
   config,
   lib,
@@ -33,6 +35,7 @@ in {
     networking.useNetworkd = lib.mkDefault true;
     networking.useDHCP = lib.mkDefault false;
     system.build.janusBoardImage = {
+      hybridFatMbr = true;
       bootExtra = ''
         cp ${fw}/bootcode.bin ${fw}/fixup*.dat ${fw}/start*.elf .
         cp ${dtbDir}/bcm2710-rpi-3-b.dtb ${dtbDir}/bcm2710-rpi-3-b-plus.dtb .

@@ -316,10 +316,22 @@ somewhere else. Set `emulated` only when the build machine can run that
 architecture.
 
 The Pi 2 image is 32-bit. Its boot partition is the FAT filesystem the
-board firmware reads. The VisionFive 2 image puts SPL and U-Boot in the
-GPT partitions the board looks up, then boots from `extlinux.conf`.
-U-Boot picks the device tree for that board revision. Neither profile
-chooses which jack is the WAN.
+board firmware reads. The Raspberry Pi 2, Pi 3, Zero 2 W, and Pi 4
+images write a hybrid MBR so that firmware finds the same FAT partition.
+
+The VisionFive 2 disk image is the same file for the SD card, eMMC, and
+NVMe. It boots when the QSPI flash already holds U-Boot 2026.04. Leave
+both boot pins low. Janus does not write the QSPI, and older firmware is
+not a boot path for this image. Update the flash with the procedure in
+the U-Boot board document for that release:
+<https://docs.u-boot.org/en/v2026.04/board/starfive/jh7110_common.html>.
+The FAT partition holds the two files that procedure writes,
+`u-boot-spl.bin.normal.out` and `u-boot.itb`.
+
+This U-Boot reads `extlinux.conf`. It tries the eMMC first, then the SD
+card, then NVMe. An image on the eMMC is used even when a bootable SD
+card is inserted. U-Boot picks the device tree for that board revision.
+Neither profile chooses which jack is the WAN.
 
 ## Flows and metrics
 

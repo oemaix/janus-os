@@ -101,6 +101,15 @@ Read this file before answering a question about using Janus OS.
   9100 serves node exporter and engine metrics on IPv4 and IPv6.
   `prometheus.zones` defaults to `mgmt` and is the only place that port
   is accepted.
+- Raspberry Pi 2, Pi 3, Zero 2 W, and Pi 4 images write a hybrid MBR
+  over GPT so the boot ROM finds the FAT partition.
+- StarFive VisionFive 2 (D-0047) uses one GPT image for SD, eMMC, and
+  NVMe. The prerequisite is U-Boot 2026.04 already in QSPI, both boot
+  pins low. Older firmware is not a boot path. Janus does not write the
+  QSPI. The operator follows the U-Boot 2026.04 JH7110 board document:
+  <https://docs.u-boot.org/en/v2026.04/board/starfive/jh7110_common.html>.
+  The FAT partition holds `u-boot-spl.bin.normal.out` and `u-boot.itb`
+  for that procedure. This U-Boot tries eMMC, then the SD card, then NVMe.
 - Raspberry Pi 2 v1.1 (`rpi2`) and StarFive VisionFive 2 are Tier 3.
   `janus.build.strategy` defaults to `cross` for them. `lib.mkRouter`
   takes `buildSystem`. Pure evaluation defaults it to `x86_64-linux`.

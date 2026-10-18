@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # StarFive VisionFive 2. docs/10 §3. Tier 3. JH7110, riscv64, two 1 GbE ports.
-# The boot ROM loads SPL and U-Boot from GPT partitions by type GUID.
-# The boot partition starts at 8 MiB, after those two partitions.
-# extlinux.conf does not name a DTB. U-Boot supplies the one for the board revision.
-# The profile does not choose a WAN jack.
+# U-Boot 2026.04 loads from QSPI (D-0047). One disk image serves the SD card,
+# eMMC, and NVMe. This U-Boot tries eMMC, then the SD card, then NVMe.
+# extlinux.conf does not name a DTB. U-Boot supplies the one for the board
+# revision. The profile does not choose a WAN jack.
 {
   config,
   lib,
@@ -14,8 +14,7 @@
   dtbDir = "${config.boot.kernelPackages.kernel}/dtbs/starfive";
 in {
   config = lib.mkIf (config.janus.hardware.board == "visionfive2") {
-    # 1 MiB GPT header, then SPL at 2 MiB and U-Boot at 4 MiB. Boot starts at 8 MiB.
-    janus.storage.firmwareOffsetMiB = lib.mkDefault 7;
+    janus.storage.firmwareOffsetMiB = lib.mkDefault 0;
     janus.network.ports = lib.mkDefault {
       eth0 = {};
       eth1 = {};
@@ -25,10 +24,13 @@ in {
       "earlycon"
       "net.ifnames=0"
     ];
+    # dw_mmc-starfive is built in. NVMe root also needs the PCIe host and its PHY.
     boot.initrd.availableKernelModules = [
       "mmc_block"
       "dw_mmc-starfive"
       "nvme"
+      "pcie-starfive"
+      "phy-jh7110-pcie"
     ];
     boot.loader.grub.enable = false;
     boot.loader.systemd-boot.enable = false;
@@ -36,38 +38,25 @@ in {
     networking.useNetworkd = lib.mkDefault true;
     networking.useDHCP = lib.mkDefault false;
     system.build.janusBoardImage = {
+      # QSPI map from the U-Boot 2026.04 JH7110 board document: SPL at 0
+      # (0xf0000), ITB at 0x100000 (0xf00000). The image does not write the flash.
       bootExtra = ''
-        cp ${dtbDir}/jh7110-starfive-visionfive-2-v1.2a.dtb .
-        cp ${dtbDir}/jh7110-starfive-visionfive-2-v1.3b.dtb .
-      '';
-      firmwareInstall = ''
-        if [ "$boot_start" -lt 8 ]; then
-          echo "janus: VisionFive 2 needs the boot partition at 8 MiB or later (firmwareOffsetMiB >= 7)" >&2
-          exit 1
-        fi
         spl=${uboot}/u-boot-spl.bin.normal.out
         itb=${uboot}/u-boot.itb
         spl_size=$(stat -c %s "$spl")
         itb_size=$(stat -c %s "$itb")
-        if [ "$spl_size" -gt $((2 * 1024 * 1024)) ]; then
-          echo "janus: SPL ($spl_size bytes) does not fit the 2 MiB partition" >&2
+        if [ "$spl_size" -gt $((0xf0000)) ]; then
+          echo "janus: SPL ($spl_size bytes) exceeds the QSPI spl region 0xf0000" >&2
           exit 1
         fi
-        if [ "$itb_size" -gt $((4 * 1024 * 1024)) ]; then
-          echo "janus: U-Boot ($itb_size bytes) does not fit the 4 MiB partition" >&2
+        if [ "$itb_size" -gt $((0xf00000)) ]; then
+          echo "janus: U-Boot ITB ($itb_size bytes) exceeds the QSPI uboot region 0xf00000" >&2
           exit 1
         fi
-        sgdisk \
-          -n "8:$(sec 2):$(($(sec 4) - 1))" \
-          -c 8:spl \
-          -t 8:2E54B353-1271-4842-806F-E436D6AF6985 \
-          -n "9:$(sec 4):$(($(sec 8) - 1))" \
-          -c 9:uboot \
-          -t 9:BC13C2FF-59E6-4262-A352-B275FD6F7172 \
-          -A 1:set:2 \
-          disk.img
-        dd if="$spl" of=disk.img bs=1M seek=2 conv=notrunc status=none
-        dd if="$itb" of=disk.img bs=1M seek=4 conv=notrunc status=none
+        cp ${dtbDir}/jh7110-starfive-visionfive-2-v1.2a.dtb .
+        cp ${dtbDir}/jh7110-starfive-visionfive-2-v1.3b.dtb .
+        cp "$spl" u-boot-spl.bin.normal.out
+        cp "$itb" u-boot.itb
       '';
     };
   };

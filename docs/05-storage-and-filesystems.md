@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-14 |
+| Last updated | 2026-10-18 |
 
 ## 1. Objectives
 
@@ -31,15 +31,15 @@ etc.).
 Notes:
 
 * `janus.storage.firmwareOffsetMiB` reserves space before partition 1,
-  after the leading 1 MiB. Firmware in raw sectors (NanoPi R4S, Le Potato,
-  VisionFive 2) leaves that gap unpartitioned. A bootloader that keeps a
-  boot stage of its own uses the gap as an extra unformatted partition.
+  after the leading 1 MiB. Firmware in raw sectors (NanoPi R4S, Le Potato)
+  leaves that gap unpartitioned. A bootloader that keeps a boot stage of
+  its own uses the gap as an extra unformatted partition.
 * The Yanyu image keeps GPT partitions 1–4 and their PARTUUIDs. Partition 5,
   `JANUS_BIOS`, is unformatted (type `EF02`) in the 1 MiB before
   `JANUS_BOOT`. Limine stage 2 is written there. It is not mounted.
-* Partition table is GPT by default; MBR where the Board firmware requires it
-  (Raspberry Pi 2/3 firmware reads MBR; the `rpi4` profile writes a hybrid
-  MBR so the Pi 4 EEPROM finds the GPT boot partition).
+* Partition table is GPT by default. The Raspberry Pi 2, Pi 3, Zero 2 W,
+  and Pi 4 profiles write a hybrid MBR so the boot ROM or EEPROM finds
+  the GPT boot partition.
 * Partitions are discovered by label/PARTUUID, never by device name.
 * `janus.storage.slots.enable` (default false) inserts `JANUS_ROOT_B` and
   `JANUS_NIX_B` before `JANUS_STATE`. The boot entry selects the slot.
