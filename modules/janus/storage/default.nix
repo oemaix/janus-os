@@ -260,7 +260,7 @@ in {
           nixp=${nixPartUuid}
         fi
         mkdir -p /dev/disk/by-janus
-        for _ in $(seq 1 50); do
+        for _ in $(seq 1 600); do
           [ -b "/dev/disk/by-partuuid/$root" ] && [ -b "/dev/disk/by-partuuid/$nixp" ] && break
           sleep 0.1
         done
@@ -306,7 +306,7 @@ in {
       script = ''
         set -eu
         dev=/dev/disk/by-partuuid/${statePartUuid}
-        for _ in $(seq 1 50); do
+        for _ in $(seq 1 600); do
           [ -b "$dev" ] && break
           sleep 0.1
         done
@@ -376,7 +376,7 @@ in {
       script = ''
         set -eu
         dev=/dev/disk/by-partuuid/${statePartUuid}
-        for _ in $(seq 1 50); do
+        for _ in $(seq 1 600); do
           [ -b "$dev" ] && break
           sleep 0.1
         done

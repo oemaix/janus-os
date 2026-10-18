@@ -153,8 +153,11 @@ in
           if (( mib < min_mib )); then mib=$min_mib; fi
         fi
         truncate -s "''${mib}M" "$out"
-        mkfs.f2fs -f -l "$label" "$out" >&2
-        fakeroot -- bash -c 'chown -R 0:0 "$1" && sload.f2fs -P -f "$1" -t / "$2"' bash "$src" "$out" >&2
+        # mkfs.f2fs stamps the root inode with the caller's uid:gid, and
+        # sload.f2fs -t / does not rewrite it. Without fakeroot the image
+        # ships / owned by the build user and sshd StrictModes rejects
+        # public-key auth (observed on 2026-10-16).
+        fakeroot -- bash -c 'mkfs.f2fs -f -l "$1" "$2" && chown -R 0:0 "$3" && sload.f2fs -P -f "$3" -t / "$2"' bash "$label" "$out" "$src" >&2
         echo "$mib"
       }
 
@@ -170,7 +173,7 @@ in
       fi
 
       truncate -s "''${stateMiB}M" state.img
-      mkfs.f2fs -f -l "$stateLabel" state.img
+      fakeroot -- mkfs.f2fs -f -l "$stateLabel" state.img
 
       mkdir -p bootfiles
       cp -L "$toplevel/kernel" bootfiles/vmlinuz

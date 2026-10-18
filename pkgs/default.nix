@@ -10,7 +10,7 @@
 }: let
   janus-cli = pkgs.writeShellApplication {
     name = "janus";
-    runtimeInputs = with pkgs; [jq iproute2 nftables vnstat coreutils systemd util-linux gnutar];
+    runtimeInputs = with pkgs; [jq iproute2 nftables vnstat coreutils gnused systemd util-linux gnutar];
     text = builtins.readFile ./janus.sh;
   };
   bootInstall = pkgs.writeText "janus-boot-install.sh" (builtins.readFile ./janus-boot-install.sh);

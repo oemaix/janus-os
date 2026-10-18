@@ -112,14 +112,16 @@ host_nix_system() {
 
 # Pure flake evaluation has no currentSystem. A fleet flake that writes
 # `builtins.currentSystem or "x86_64-linux"` would then cross-compile a
-# Tier 3 image for x86_64. On any other machine, --impure makes
-# currentSystem this machine. x86_64 stays pure, which is that fallback.
+# Tier 3 image for x86_64. On any other machine, eval runs impurely so
+# currentSystem is that machine. `nix build` cannot evaluate impurely
+# (Nix 2.34 rejects `nix --impure build`), so it stays pure there: the
+# fallback x86_64 build system runs under binfmt on other hosts.
 nix_fleet() {
   mine=$(host_nix_system) || return 1
-  if [ "$mine" = x86_64-linux ]; then
+  if [ "$mine" = x86_64-linux ] || [ "${1:-}" != eval ]; then
     nix "$@"
   else
-    nix --impure "$@"
+    nix eval --impure "${@:2}"
   fi
 }
 
@@ -774,7 +776,7 @@ case "$cmd" in
       shift || usage
     done
     (
-      cd "$dir"
+      cd "$dir" || exit 1
       set_janus_url "$JANUS_URL"
       if [ -n "$JANUS_REV" ]; then
         write_janus_lock
