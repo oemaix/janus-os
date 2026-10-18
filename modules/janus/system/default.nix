@@ -40,6 +40,10 @@
       jq --arg date "$date" '. + {buildDate: $date}' "$metaJsonPath" > "$out"
     '';
 in {
+  imports = [
+    ./footprint.nix
+  ];
+
   options.janus.system = {
     hostName = mkOption {
       type = types.str;
@@ -127,11 +131,26 @@ in {
     users.mutableUsers = false;
     documentation.enable = mkDefault false;
     programs.command-not-found.enable = mkDefault false;
+    # The appliance is a router: the distro's default comfort packages
+    # (nano, less, perl, ...) are dead weight on small media.
+    environment.defaultPackages = lib.mkForce [];
 
     # The nix binary stays for boot-time activation and nix-store --import.
     # nix.enable = false does not install it. janus-build is not installed.
+    # With footprint.binOnlyNix a bin-only wrapper replaces the full package
+    # so the nix-perl output (and its perl closure) stays out of the profile.
     environment.systemPackages = [
-      pkgs.nix
+      (
+        if config.janus.system.footprint.binOnlyNix
+        then
+          (pkgs.runCommand "nix-bin" {} ''
+            mkdir -p $out/bin
+            for f in ${pkgs.nix}/bin/*; do
+              ln -s "$f" "$out/bin/"
+            done
+          '')
+        else pkgs.nix
+      )
       pkgs.f2fs-tools
     ];
 
