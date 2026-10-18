@@ -92,29 +92,42 @@
 
   # Phase 0 seed is the empty snapshot. The hash and generation are what
   # janus-seed compares, so a later snapshot with a higher generation replaces it.
-  #
-  # The engine tree presets the clash dashboard. sing-box 1.13 downloads
-  # external_ui synchronously at start, and on a censored first-boot uplink
-  # that download (detour or not — the Proxy group is still empty before
-  # the first subscription refresh) deadlocks the engine before it ever
-  # serves (observed 2026-10-18). Preseeding skips the download: sing-box
+  # The engine tree may preset a dashboard (janus.storage.seedEngineUi,
+  # filled by the proxy module): sing-box 1.13 downloads external_ui
+  # synchronously at start, and on a censored first-boot uplink that
+  # download (detour or not — the Proxy group is still empty before the
+  # first subscription refresh) deadlocks the engine before it ever
+  # serves (observed 2026-10-18). Presetting skips the download: sing-box
   # only fetches when the ui directory is missing.
-  metacubexd = pkgs.fetchurl {
-    url = "https://github.com/MetaCubeX/metacubexd/releases/download/v1.273.1/compressed-dist.tgz";
-    sha256 = "a178e00b67acabcda2dcef00afa90be6a7bb261e466a67dad58c8478d9553603";
-  };
+  seedUi = config.janus.storage.seedEngineUi;
   janusSeed = pkgs.runCommand "janus-seed" {} ''
     set -eu
-    mkdir -p $out/subscriptions $out/geodata $out/engine/ui
-    tar -xf ${metacubexd} -C $out/engine/ui
+    mkdir -p $out/subscriptions $out/geodata $out/engine
+    ${lib.optionalString (seedUi != null) ''
+      mkdir -p $out/engine/ui
+      tar -xf ${seedUi} -C $out/engine/ui
+    ''}
     cat > $out/manifest.json << 'EOF'
-    {"generation":1,"subscriptions":[],"geodata":[],"engine":{"ui":"metacubexd-v1.273.1"}}
+    {"generation":1,"subscriptions":[],"geodata":[],"engine":${
+      if seedUi == null then "null" else ''{"ui":"preset"}''
+    }}
     EOF
     echo 1 > $out/seed.generation
     sha256sum $out/manifest.json | cut -d' ' -f1 > $out/seed.hash
   '';
 in {
   options.janus.storage = {
+    # Filled by the proxy module when the engine is on: a tarball whose
+    # contents land in the seed's engine/ui so the first boot does not
+    # depend on downloading a dashboard over a censored uplink. Null keeps
+    # the seed engine-empty. The manifest records only "preset"; the
+    # seed hash covers the manifest, so a changed tarball does not
+    # re-apply over runtime state (generation gates that).
+    seedEngineUi = mkOption {
+      type = types.nullOr types.package;
+      default = null;
+      description = "Tarball expanded into the seed's engine/ui on first boot. Set by the proxy module; null omits the directory.";
+    };
     layout.partitions = mkOption {
       type = types.attrsOf partition;
       default = {

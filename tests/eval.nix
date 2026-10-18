@@ -527,6 +527,10 @@ in {
       hash=$(cat ${seed}/seed.hash)
       echo "$hash" | grep -Eq '^[0-9a-f]{64}$'
       test "$(cat ${seed}/seed.generation)" = 1
+      # Without the proxy the seed stays engine-empty: no dashboard,
+      # manifest records null (D-0046).
+      test ! -e ${seed}/engine/ui
+      grep -q '"engine":null' ${seed}/manifest.json
       echo ok > "$out"
     '';
   eval-proxy = let
@@ -582,11 +586,16 @@ in {
     natFile = pkgs.writeText "nat.nft" nat;
     wanPolicy = os.config.systemd.services.janus-wan-policy.serviceConfig.ExecStart;
     interceptAfter = os.config.systemd.services.janus-intercept.after;
+    seed = os.config.system.build.janusSeed;
   in
     pkgs.runCommand "eval-proxy" {
       nativeBuildInputs = [pkgs.sing-box pkgs.jq];
     } ''
       sing-box check -c ${engine}
+      # D-0046: with the proxy on, the seed presets the dashboard so the
+      # first boot never waits on a UI download.
+      test -f ${seed}/engine/ui/index.html
+      grep -q '"ui":"preset"' ${seed}/manifest.json
       jq -e '.inbounds[] | select(.type == "tun" and .auto_route == false)' ${engine} >/dev/null
       # ADR-0025: policy-routed flows reach tun0, which only the gvisor
       # stack answers. "system" here silently drops every TCP flow.

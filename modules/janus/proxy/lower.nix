@@ -816,6 +816,19 @@ in {
       '';
     };
 
+    # The dashboard is a proxy-domain resource: sing-box 1.13 downloads
+    # external_ui synchronously at start, which on a censored first-boot
+    # uplink deadlocks the engine (the Proxy group is still empty before
+    # the first subscription refresh, so even a proxy detour degrades to
+    # a direct egress; observed 2026-10-18). Preset it in the seed
+    # instead; deleting /var/lib/janus/engine/ui re-triggers the
+    # engineSettings download as the manual-update channel. Bump the
+    # sha256 (and this comment) when moving to a newer release.
+    janus.storage.seedEngineUi = lib.mkDefault (pkgs.fetchurl {
+      url = "https://github.com/MetaCubeX/metacubexd/releases/download/v1.273.1/compressed-dist.tgz";
+      sha256 = "a178e00b67acabcda2dcef00afa90be6a7bb261e466a67dad58c8478d9553603";
+    });
+
     system.build.janusEngineConfig = engineConfig;
   };
 }
