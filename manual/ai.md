@@ -23,7 +23,10 @@ Read this file before answering a question about using Janus OS.
   The day-of-month and the month stay `*`. A destination that refuses an
   exit from Iran, China, or Russia is future work (*13*).
 - Router commands are `docs/14-cli.md`. Build-host commands are
-  `docs/16-build-host-cli.md`. `janus.*` options are
+  `docs/16-build-host-cli.md`. `janus-build build` prints the store path
+  and links the output directory at `result/<host>`. The image file in
+  that directory is `janus-<hostName>.img`. `janus.system.hostName`
+  defaults to the fleet host name. `janus.*` options are
   `docs/08-configuration-reference.md`. Phase 1 commands exist, and so
   do proxy, DNS, fleet, status, backup, deploy, and `janus audit`.
   On the board, `janus deploy` exits 2 and names `janus-build`. Hot
@@ -101,6 +104,15 @@ Read this file before answering a question about using Janus OS.
   9100 serves node exporter and engine metrics on IPv4 and IPv6.
   `prometheus.zones` defaults to `mgmt` and is the only place that port
   is accepted.
+- Raspberry Pi 2, Pi 3, Zero 2 W, and Pi 4 images write a hybrid MBR
+  over GPT so the boot ROM finds the FAT partition.
+- StarFive VisionFive 2 (D-0047) uses one GPT image for SD, eMMC, and
+  NVMe. The prerequisite is U-Boot 2026.04 already in QSPI, both boot
+  pins low. Older firmware is not a boot path. Janus does not write the
+  QSPI. The operator follows the U-Boot 2026.04 JH7110 board document:
+  <https://docs.u-boot.org/en/v2026.04/board/starfive/jh7110_common.html>.
+  The FAT partition holds `u-boot-spl.bin.normal.out` and `u-boot.itb`
+  for that procedure. This U-Boot tries eMMC, then the SD card, then NVMe.
 - Raspberry Pi 2 v1.1 (`rpi2`) and StarFive VisionFive 2 are Tier 3.
   `janus.build.strategy` defaults to `cross` for them. `lib.mkRouter`
   takes `buildSystem`. Pure evaluation defaults it to `x86_64-linux`.

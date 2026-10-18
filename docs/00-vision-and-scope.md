@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-16 |
+| Last updated | 2026-10-18 |
 
 ## 1. Problem statement
 
@@ -88,8 +88,11 @@ developer's or user's workstation. The device only carries the results.
 
 * A user copies `docs/examples/configuration.example.nix`, edits WAN mode,
   LAN subnet, SSH key and one subscription URL, runs one `nix build`
-  command on an x86_64 workstation and flashes a bootable image for a
-  NanoPi R4S or another Tier 1 board.
+  command on an x86_64 workstation and flashes an image for a Tier 1,
+  Tier 2, or Tier 3 board in *10*. 1.0 includes those boards and every
+  peripheral marked supported in *10* §4.3 (D-0046). Tier 1 is the
+  release-blocking boot and power-cut. Tier 3 ships the profile; a boot
+  on that hardware is not the release gate.
 * The device routes IPv4 and IPv6, applies the firewall, resolves DNS through
   the configured policy, and tunnels traffic according to routing rules.
 * Pulling the power 100 times at random moments does not require re-flash.

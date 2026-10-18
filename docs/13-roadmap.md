@@ -12,6 +12,11 @@ Explanations are *19*. Accepted ADRs are `docs/adr/`.
 
 ## 1. Phased roadmap
 
+1.0 is every Tier 1, Tier 2, and Tier 3 board in *10* and every
+peripheral marked supported there (D-0046). The phases below are the
+order the work landed. Tier 1 remains the release-blocking boot and
+power-cut. Tier 3 ships the profile. The Future list stays after 1.0.
+
 ### Phase 0 — Foundations (repo skeleton)
 
 * Flake, `mkRouter`, `x86_64-test` board, module skeleton with option
@@ -110,12 +115,13 @@ tree does not mean that behavior exists. Stubs are not finished features.
 * Board profiles: `x86_64-test` (virtio, no raw firmware), NanoPi R4S
   (U-Boot at sector 64, `eth0`/`eth1`, no WAN chosen), Le Potato (U-Boot
   FIP, one `eth0`), Raspberry Pi Zero 2 W (FAT `config.txt`, no Ethernet
-  port), Raspberry Pi 3 / 3+ (`rpi3`, FAT `config.txt`, one `eth0`),
+  port), Raspberry Pi 3 / 3+ (`rpi3`, FAT `config.txt`, hybrid MBR, one `eth0`),
   Raspberry Pi 4 and Compute Module 4 (`rpi4`, FAT `config.txt`, hybrid
   MBR, one `eth0`; the Pi 400 is not a board),
   Raspberry Pi 2 v1.1 (`rpi2`, 32-bit, hybrid MBR, one `eth0`; a v1.2
-  uses `rpi3`), and StarFive VisionFive 2 (SPL and U-Boot in GPT
-  partitions `2E54B353…` and `BC13C2FF…`, `eth0`/`eth1`, no WAN chosen).
+  uses `rpi3`), and StarFive VisionFive 2 (U-Boot from QSPI, one GPT
+  image for SD, eMMC, and NVMe, boot order eMMC then SD then NVMe,
+  `eth0`/`eth1`, no WAN chosen, D-0047).
   Yanyu names `lan1`–`lan4` by PCI path and installs Limine
   (D-0029). The image has not been booted on the lab AMI board. Tier 3
   images are not boot-tested here.

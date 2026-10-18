@@ -30,9 +30,9 @@ cutoff and compiles the Raspberry Pi overlay with that machine's `dtc`.
 device-tree overlay. `eval-monitoring` checks IPFIX and NetFlow export, resolution of
 configured interface names, the Prometheus endpoint confined to its
 zones, and the engine metrics text. `eval-rpi2-mbr` checks the hybrid
-MBR type byte and the LBA fields. `eval-tier3-boot` checks the
-VisionFive GPT layout and that the Pi 2 and VisionFive device-tree
-names exist in the kernel source. `eval-boards` includes the Raspberry
+MBR type byte and the LBA fields. `eval-tier3-boot` checks that the
+VisionFive boot files name the QSPI SPL and ITB and the QSPI size limits, and that the Pi 2 and
+VisionFive device-tree names exist in the kernel source. `eval-boards` includes the Raspberry
 Pi 2, Raspberry Pi 4, and VisionFive 2 profiles. `eval-proxy-local` fetches a page through the
 rendered Shadowsocks outbound and a server on `127.0.0.1`. `cli-usage`
 and `cli-init` cover the phase 1 commands. Golden files for the engines

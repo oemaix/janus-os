@@ -410,7 +410,7 @@
         JANUS_ENGINE=${cfg.engine}
         JANUS_DIG=${pkgs.bind}/bin/dig
         JANUS_FAIL_MODE=${cfg.failMode}
-        ${lib.optionalString (cfg.engine == "xray") "XRAY_LOCATION_ASSET=${xrayAssets}"}
+        ${lib.optionalString (cfg.engine == "xray") "export XRAY_LOCATION_ASSET=${xrayAssets}"}
         ${lib.optionalString (cfg.engine == "xray" && cfg.failMode == "open" && intercept) "JANUS_XRAY_NFT=/etc/janus/xray-open.nft"}
         JANUS_INTERCEPT=${
           if intercept
@@ -472,6 +472,10 @@
         iifname { ${bridgeSet} } meta mark set 0x00004a01
       ''}
     '';
+
+  # nftables 1.1 rejects tproxy unless the rule matches one transport protocol.
+  # A set is enough; a bare `tproxy to :12345` is not. Xray's inbound is tcp,udp.
+  xrayTproxy = "iifname { ${bridgeSet} } meta l4proto { tcp, udp } meta mark set 0x00004a02 tproxy to :12345";
 
   guardRules = lib.concatStringsSep "\n" (lib.filter (s: s != "") [
     (lib.optionalString (dns.blockDoT && dnsBridgeSet != "") ''
@@ -588,7 +592,7 @@ in {
             chain xray {
               type filter hook prerouting priority mangle; policy accept;
               ${markRules}
-              iifname { ${bridgeSet} } meta mark set 0x00004a02 tproxy to :12345
+              ${xrayTproxy}
             }
           }
         '';
@@ -793,7 +797,7 @@ in {
           chain xray {
             type filter hook prerouting priority mangle; policy accept;
             ${markRules}
-            iifname { ${bridgeSet} } meta mark set 0x00004a02 tproxy to :12345
+            ${xrayTproxy}
           }
         ''}
       '';

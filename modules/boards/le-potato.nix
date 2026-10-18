@@ -37,9 +37,9 @@ in {
       "console=ttyAML0,115200n8"
       "net.ifnames=0"
     ];
+    # SD and eMMC share the builtin meson-gx-mmc host. There is no sdhci_meson.
     boot.initrd.availableKernelModules = [
       "mmc_block"
-      "sdhci_meson"
     ];
     boot.loader.grub.enable = false;
     boot.loader.systemd-boot.enable = false;

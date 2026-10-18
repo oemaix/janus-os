@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # Raspberry Pi Zero 2 W. docs/10 §3 and §4.7. No onboard Ethernet.
 # The GPU firmware on the FAT partition loads the kernel (config.txt).
+# The boot ROM reads an MBR. The image stays GPT and writes a hybrid MBR
+# whose first entry is that FAT filesystem.
 # Mainline names the tree bcm2837-rpi-zero-2-w.dtb. That tree enables the
 # onboard SDIO radio. A USB Ethernet peripheral is a separate entry.
 {
@@ -31,6 +33,7 @@ in {
     networking.useNetworkd = lib.mkDefault true;
     networking.useDHCP = lib.mkDefault false;
     system.build.janusBoardImage = {
+      hybridFatMbr = true;
       bootExtra = ''
         cp ${fw}/bootcode.bin ${fw}/fixup*.dat ${fw}/start*.elf .
         cp ${dtb} bcm2837-rpi-zero-2-w.dtb
