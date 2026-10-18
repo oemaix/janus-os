@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-17 |
+| Last updated | 2026-10-18 |
 
 ## 1. Terminology
 
@@ -18,6 +18,11 @@
 | **1** | Release-blocking. Image built and boot/route-tested for every release on hardware the project can power-cycle; power-cut test performed. Binary cache available. Tier 1 does not mean every board meets the NanoPi R4S throughput targets. |
 | **2** | Image built in CI for every release; boot tested best-effort by maintainers or community. |
 | **3** | Board profile exists; builds may take hours (no binary cache); community-tested only. |
+
+1.0 includes every Tier 1, Tier 2, and Tier 3 board in §3 and every
+peripheral marked supported in §4.3 (D-0046). A planned or unsupported
+row stays out. `x86_64-test` stays a CI image. Tier is the test
+obligation for that release, not a reason to omit the profile.
 
 ## 3. Boards
 

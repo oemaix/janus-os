@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-17 |
+| Last updated | 2026-10-18 |
 
 Key words MUST / SHOULD / MAY follow RFC 2119. Priority: **P1** required for
 1.0, **P2** planned, **P3** desirable.
@@ -217,4 +217,4 @@ Key words MUST / SHOULD / MAY follow RFC 2119. Priority: **P1** required for
 | NFR-REL-001 | Power-loss robustness | 100 random power cuts without re-flash |
 | NFR-REL-002 | Subscription refresh failure tolerance | Router remains functional with last good data indefinitely |
 | NFR-006 | Documentation | Every option documented; every board in the matrix has a tested image |
-| NFR-007 | Supported architectures | `aarch64-linux` and `x86_64-linux` for the boards in *10*, including Tier 2 boards on those architectures. `armv7l-linux` and `riscv64-linux` are Tier 3. Tier is a per-board test obligation (*10*), not a property of the architecture, and not a promise that every Tier 1 board meets the NanoPi R4S throughput numbers. |
+| NFR-007 | Supported architectures | `aarch64-linux`, `x86_64-linux`, `armv7l-linux`, and `riscv64-linux` for every Tier 1, Tier 2, and Tier 3 board in *10*. 1.0 includes those boards (D-0046). `x86_64-test` stays a CI image. Tier is a per-board test obligation (*10*), not a property of the architecture, and not a promise that every Tier 1 board meets the NanoPi R4S throughput numbers. |

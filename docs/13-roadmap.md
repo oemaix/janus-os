@@ -12,6 +12,11 @@ Explanations are *19*. Accepted ADRs are `docs/adr/`.
 
 ## 1. Phased roadmap
 
+1.0 is every Tier 1, Tier 2, and Tier 3 board in *10* and every
+peripheral marked supported there (D-0046). The phases below are the
+order the work landed. Tier 1 remains the release-blocking boot and
+power-cut. Tier 3 ships the profile. The Future list stays after 1.0.
+
 ### Phase 0 — Foundations (repo skeleton)
 
 * Flake, `mkRouter`, `x86_64-test` board, module skeleton with option
