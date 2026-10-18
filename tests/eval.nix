@@ -2088,8 +2088,11 @@ in {
       rm -rf result
       build_host_image potato
     )
-    grep -F -q -- 'build --out-link result/potato --print-out-paths .#nixosConfigurations.potato.config.system.build.janusImage' "$JANUS_NIX_LOG"
+    grep -F -q -- 'build --no-link --print-out-paths .#nixosConfigurations.potato.config.system.build.janusImage' "$JANUS_NIX_LOG"
     test -d "$linkdir/result"
+    test ! -L "$linkdir/result"
+    test -L "$linkdir/result/potato"
+    test "$(readlink "$linkdir/result/potato")" = /nix/store/fake-image
     echo ok > "$out"
   '';
   eval-audit = let

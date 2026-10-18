@@ -690,9 +690,9 @@ set_janus_url() {
   sed -i -E "s|(inputs\\.janus\\.url[[:space:]]*=[[:space:]]*\")[^\"]*(\";)|\\1${url}\\2|" flake.nix
 }
 
-# The store path stays where Nix put it. The fleet link is result/<host>,
-# so a later host does not replace an earlier image. Nix does not create
-# the parent of --out-link. An old ./result symlink is removed so result/
+# The store path stays where Nix put it. Nix is told not to link, and this
+# command links that path at result/<host>, so a later host does not
+# replace an earlier image. An old ./result symlink is removed so result/
 # can be a directory.
 prepare_image_link() {
   host=$1
@@ -711,7 +711,10 @@ build_host_image() {
   host=$1
   require_build_host "$host"
   prepare_image_link "$host"
-  nix_fleet build --out-link "result/${host}" --print-out-paths ".#nixosConfigurations.${host}.config.system.build.janusImage"
+  # --no-link: Nix's own link is ./result. The fleet link is result/<host>.
+  out=$(nix_fleet build --no-link --print-out-paths ".#nixosConfigurations.${host}.config.system.build.janusImage")
+  ln -sfn "$out" "result/${host}"
+  printf '%s\n' "$out"
 }
 
 # Lock the commit this janus-build came from. original names the branch
