@@ -533,6 +533,11 @@ in {
     os = mk [
       base
       {
+        janus.network.wans.wan = {
+          uplink = "lan1";
+          mode = "dhcp";
+          role = "default";
+        };
         janus.network.lans.lan = {
           members = ["lan"];
           address = "192.168.10.1";
@@ -575,12 +580,17 @@ in {
     markFile = pkgs.writeText "mark.nft" mark;
     dnsFile = pkgs.writeText "dns.nft" dnsUdp;
     natFile = pkgs.writeText "nat.nft" nat;
+    wanPolicy = os.config.systemd.services.janus-wan-policy.serviceConfig.ExecStart;
+    interceptAfter = os.config.systemd.services.janus-intercept.after;
   in
     pkgs.runCommand "eval-proxy" {
       nativeBuildInputs = [pkgs.sing-box pkgs.jq];
     } ''
       sing-box check -c ${engine}
       jq -e '.inbounds[] | select(.type == "tun" and .auto_route == false)' ${engine} >/dev/null
+      # ADR-0025: policy-routed flows reach tun0, which only the gvisor
+      # stack answers. "system" here silently drops every TCP flow.
+      jq -e '.inbounds[] | select(.type == "tun") | .stack == "gvisor"' ${engine} >/dev/null
       jq -e '.outbounds[] | select(.tag == "direct" and .routing_mark == 74)' ${engine} >/dev/null
       jq -e '[.inbounds[] | select(.type == "tproxy" and .network == "udp" and .listen == "0.0.0.0" and .listen_port == 5353)] | length == 1' ${engine} >/dev/null
       jq -e '[.inbounds[] | select(.type == "tproxy" and .network == "udp" and .listen == "::" and .listen_port == 5353)] | length == 1' ${engine} >/dev/null
@@ -615,6 +625,7 @@ in {
       grep -q 'tproxy to :5353' ${dnsFile}
       grep -q '0x00004a02' ${dnsFile}
       grep -q 'meta l4proto tcp th dport 53 redirect to :5353' ${natFile}
+      grep -q 'oifname "tun0" accept' ${natFile}
       if grep -q 'l4proto udp th dport 53 redirect' ${natFile}; then
         echo "UDP/53 is still NAT-redirected" >&2
         exit 1
@@ -627,6 +638,38 @@ in {
         echo "geo refresh deletes the live rule set" >&2
         exit 1
       fi
+      # A shell that is not on PATH is not callable by name (systemd gives
+      # the helper only runtimeInputs), so re-entry must use $BASH.
+      if grep -a -E -q '(^|[^$A-Za-z_])bash "\$0"' ${proxyBin}; then
+        echo "the helper re-enters itself with a bare bash" >&2
+        exit 1
+      fi
+      grep -a -F -q '"$BASH" "$0"' ${proxyBin}
+      # Style lock: prefer nullglob over compgen -G for glob detection
+      # (see pkgs/janus-engine.sh).
+      if grep -a -E -q '^[^#]*compgen ' ${proxyBin}; then
+        echo "the helper calls compgen, which this bash does not have" >&2
+        exit 1
+      fi
+      grep -a -F -q 'nullglob' ${proxyBin}
+      # tun_up self-heals the tproxy rule that networkd can flush.
+      grep -a -F -q 'tproxy_route' ${proxyBin}
+      case ${lib.escapeShellArg wanPolicy} in
+        */bin/janus-wan-policy) ;;
+        *)
+          echo "janus-wan-policy is not wrapped with its runtime inputs: ${wanPolicy}" >&2
+          exit 1
+          ;;
+      esac
+      grep -q 'systemd-networkd.service' <<'JANUS_INTERCEPT_AFTER'
+      ${lib.concatStringsSep " " interceptAfter}
+      JANUS_INTERCEPT_AFTER
+      # The WAN policy learns carrier DNS from networkctl's JSON, with the
+      # private lease file kept as the fallback for a systemd that has no
+      # JSON resolvers for the link.
+      grep -q 'networkctl status --json=short' ${wanPolicy}
+      grep -q 'netif/leases' ${wanPolicy}
+      grep -q -F '.AddressString // empty' ${wanPolicy}
       echo ok > "$out"
     '';
   eval-proxy-lans = let
@@ -897,6 +940,186 @@ in {
       sing-box check -c ${engine}
       echo ok > "$out"
     '';
+  eval-proxy-noauto = let
+    os = mk [
+      base
+      {
+        janus.network.lans.lan = {
+          members = ["lan"];
+          address = "192.168.10.1";
+          prefixLength = 24;
+        };
+        janus.proxy = {
+          enable = true;
+          groupsAuto = false;
+          defaultTarget = "group:Proxy";
+          nodes.demo = {
+            protocol = "vless";
+            server = "203.0.113.10";
+            port = 443;
+            vless.uuid = "b831381d-6324-4d53-ad4f-8cda48b30811";
+          };
+          groups.Proxy = {
+            members = ["node:demo"];
+            strategy = "manual";
+            default = "demo";
+          };
+        };
+      }
+    ];
+    engine = os.config.system.build.janusEngineConfig;
+  in
+    pkgs.runCommand "eval-proxy-noauto" {
+      nativeBuildInputs = [pkgs.jq pkgs.sing-box];
+    } ''
+      sing-box check -c ${engine}
+      if jq -e '[.outbounds[] | select(.tag == "Auto" or (.tag | startswith("sub:")))] | length > 0' ${engine} >/dev/null; then
+        echo "groupsAuto = false still generated implicit groups" >&2
+        exit 1
+      fi
+      # Router mode: the LAN view's catch rule carries defaultTarget, and
+      # route.final stays direct for traffic outside the views
+      # (janet/janus.janet, "final").
+      jq -e '.route.final == "direct"' ${engine} >/dev/null
+      jq -e 'any(.route.rules[]; .outbound == "Proxy" and (.source_ip_cidr // []) == ["192.168.10.0/24"])' ${engine} >/dev/null
+      jq -e '[.outbounds[] | select(.tag == "Proxy")] | length == 1' ${engine} >/dev/null
+      echo ok > "$out"
+    '';
+  eval-proxy-raw = let
+    os = mk [
+      base
+      {
+        janus.network.lans.lan = {
+          members = ["lan"];
+          address = "192.168.10.1";
+          prefixLength = 24;
+        };
+        janus.proxy = {
+          enable = true;
+          nodes.demo = {
+            protocol = "vless";
+            server = "203.0.113.10";
+            port = 443;
+            vless.uuid = "b831381d-6324-4d53-ad4f-8cda48b30811";
+          };
+          engineSettings = {
+            experimental.clash_api.external_controller = "0.0.0.0:9090";
+            log.level = "debug";
+          };
+        };
+      }
+    ];
+    engine = os.config.system.build.janusEngineConfig;
+  in
+    pkgs.runCommand "eval-proxy-raw" {
+      nativeBuildInputs = [pkgs.jq pkgs.sing-box];
+    } ''
+      sing-box check -c ${engine}
+      jq -e '.experimental.clash_api.external_controller == "0.0.0.0:9090"' ${engine} >/dev/null
+      jq -e '.log.level == "debug"' ${engine} >/dev/null
+      jq -e '.experimental.cache_file.enabled == true' ${engine} >/dev/null
+      jq -e '(.dns.servers | length) > 0' ${engine} >/dev/null
+      if [ "$(grep -c '"experimental"' ${engine})" != 1 ] || [ "$(grep -c '"clash_api"' ${engine})" != 1 ]; then
+        echo "engineSettings produced duplicate JSON keys" >&2
+        exit 1
+      fi
+      echo ok > "$out"
+    '';
+  eval-footprint = let
+    os =
+      mk [
+        base
+        {
+          janus.system.footprint = {
+            dropGnupg = true;
+            trimKernelModules = true;
+            binOnlyNix = true;
+          };
+        }
+      ];
+    kernel = os.config.boot.kernelPackages.kernel;
+    trimmed = kernel.passthru ? janusTrimmed;
+    # Compare the store paths at evaluation time. Interpolating either kernel
+    # into the builder would make it a build dependency, and the router builds
+    # for its board's system, which is not the check's system here, so the
+    # stock baseline must also come from the config's own pkgs.
+    kernelReplaced = "${kernel}" != "${os.pkgs.linuxPackages.kernel}";
+    gnupg = os.pkgs.gnupg.name;
+    packages = map (p: p.name or "unknown") os.config.environment.systemPackages;
+  in
+    pkgs.runCommand "eval-footprint" {} ''
+      # trimKernelModules: the kernel on boot.kernelPackages is the trimmed
+      # derivation, not the stock one, and carries the marker.
+      if [ "${lib.boolToString kernelReplaced}" != true ]; then
+        echo "trimKernelModules did not replace the kernel" >&2
+        exit 1
+      fi
+      if [ "${lib.boolToString trimmed}" != true ]; then
+        echo "trimKernelModules kernel lacks the janusTrimmed marker" >&2
+        exit 1
+      fi
+      # dropGnupg: the overlay replaced gnupg with the stub.
+      if [ ${lib.escapeShellArg gnupg} != "gnupg-stub" ]; then
+        echo "dropGnupg did not replace gnupg" >&2
+        exit 1
+      fi
+      # binOnlyNix: the profile carries the bin-only wrapper, not pkgs.nix.
+      if ! printf '%s\n' ${lib.concatStringsSep " " (map lib.escapeShellArg packages)} | grep -qx 'nix-bin'; then
+        echo "binOnlyNix did not install the wrapper" >&2
+        exit 1
+      fi
+      echo ok > "$out"
+    '';
+  eval-kernel-trim = let
+    trim = import ../modules/janus/system/kernel-trim.nix {inherit lib pkgs;};
+    v = "6.18.0-trim";
+    # A synthetic kernel: enough shape for trimKernel (out, modules, dev,
+    # modDirVersion) and for depmod, without building a real linux.
+    fakeKernel =
+      pkgs.runCommand "fake-kernel-${v}" {
+        outputs = ["out" "modules"];
+        version = v;
+        modDirVersion = v;
+        dev = pkgs.runCommand "fake-kernel-dev-${v}" {} "mkdir -p $out";
+      } ''
+        mkdir -p $out/lib/modules/${v}/build
+        for d in kernel/drivers/net/ethernet kernel/fs kernel/sound kernel/drivers/gpu \
+                 kernel/drivers/net/wireless kernel/net/bluetooth; do
+          mkdir -p $modules/lib/modules/${v}/$d
+          echo keep > $modules/lib/modules/${v}/$d/marker
+        done
+        echo modules.order > $modules/lib/modules/${v}/modules.order
+      '';
+    trimmed = trim.trimKernel fakeKernel;
+    dropped = lib.concatMapStringsSep " " (d: lib.escapeShellArg d) trim.dropDirs;
+  in
+    pkgs.runCommand "eval-kernel-trim" {} ''
+      # The trim really ran on a module tree: dropped dirs are gone, kept
+      # ones survive, and depmod wrote an index for the pruned set.
+      for d in ${dropped}; do
+        if [ -e "${trimmed.modules}/lib/modules/${v}/$d" ]; then
+          echo "trim kept $d" >&2
+          exit 1
+        fi
+      done
+      test -f "${trimmed.modules}/lib/modules/${v}/kernel/drivers/net/ethernet/marker"
+      test -f "${trimmed.modules}/lib/modules/${v}/kernel/fs/marker"
+      test -f "${trimmed.modules}/lib/modules/${v}/modules.dep"
+      # build is a symlink (or, in a synthetic kernel, a dir), so -e not -f.
+      test -e "${trimmed.out}/lib/modules/${v}/build"
+      # The marker and the override passthrough that the assertion relies on.
+      if [ "${lib.boolToString (trimmed.passthru ? janusTrimmed)}" != true ]; then
+        echo "trimmed kernel has no janusTrimmed marker" >&2
+        exit 1
+      fi
+      test "${trimmed.modDirVersion}" = "${v}"
+      # override is forwarded, so NixOS's later .override re-trims.
+      if [ "${lib.boolToString (trimmed.passthru ? override)}" != true ]; then
+        echo "trimmed kernel does not forward override" >&2
+        exit 1
+      fi
+      echo ok > "$out"
+    '';
   eval-proxy-local = let
     os = mk [
       base
@@ -1008,6 +1231,11 @@ in {
             server = "203.0.113.10";
             port = 443;
             trojan.password = "janus-build-check";
+            # uTLS is xray's tlsSettings.fingerprint; the assertion below
+            # keeps the field from being silently dropped again.
+            tls.enable = true;
+            tls.serverName = "www.example.com";
+            tls.utls = "chrome";
           };
           groups.Wave = {
             members = ["node:demo"];
@@ -1045,6 +1273,7 @@ in {
       jq -e 'all(.dns.servers[]; .clientIp == null)' ${engine} >/dev/null
       jq -e '.dns.disableCache != true' ${engine} >/dev/null
       jq -e '.routing.balancers[] | select(.tag == "Wave") | .strategy.type == "roundRobin"' ${engine} >/dev/null
+      jq -e '.outbounds[] | select(.tag == "demo") | .streamSettings.tlsSettings.fingerprint == "chrome"' ${engine} >/dev/null
       jq -e '[.inbounds[] | select(.protocol == "tun" or .type == "tun")] | length == 0' ${engine} >/dev/null
       echo ${lib.escapeShellArg start} | grep -q 'xray run'
       echo ${lib.escapeShellArg mark} | grep -q 'tproxy to :12345'
@@ -1186,7 +1415,12 @@ in {
         };
       }
     ];
-    script = os.config.systemd.services.janus-hostapd-home.serviceConfig.ExecStart;
+    # The ExecStart wrapper builds for the board's system (aarch64); grep
+    # its text through the check's own pkgs so the builder never realizes it.
+    script = pkgs.writeText "eval-wifi-onboard-script" (
+      builtins.unsafeDiscardStringContext
+      os.config.systemd.services.janus-hostapd-home.serviceConfig.ExecStart.text
+    );
     patch = lib.findFirst (p: p.name == "janus-rpi-onboard-wifi") null os.config.boot.kernelPatches;
     member = os.config.systemd.network.networks."30-member-lan-home";
     firmwareNames = lib.concatMapStringsSep " " (p: p.name) (
@@ -1250,7 +1484,11 @@ in {
         };
       }
     ];
-    script = os.config.systemd.services.janus-hostapd-home.serviceConfig.ExecStart;
+    # Same as eval-wifi-onboard: keep the aarch64 wrapper out of the closure.
+    script = pkgs.writeText "eval-wifi-onboard-isolate-script" (
+      builtins.unsafeDiscardStringContext
+      os.config.systemd.services.janus-hostapd-home.serviceConfig.ExecStart.text
+    );
   in
     pkgs.runCommand "eval-wifi-onboard-isolate" {} ''
       grep -q 'bridge link set dev wifi-home isolated on' ${script}
@@ -2028,10 +2266,14 @@ in {
     EOF
     cat > "$bindir/nix" << 'EOF'
     #!/bin/sh
-    if [ "$1" = "--impure" ]; then
-      printf '%s\n' impure
-      exit 0
-    fi
+    # nix_fleet may pass --impure directly (nix --impure ...) or after the
+    # subcommand (nix eval --impure ...); detect it in any position.
+    for a in "$@"; do
+      if [ "$a" = "--impure" ]; then
+        printf '%s\n' impure
+        exit 0
+      fi
+    done
     printf '%s\n' pure
     exit 0
     EOF
@@ -2557,7 +2799,9 @@ in {
       jq -e '.enable == true and .port == 8443 and .passphraseFile == "/var/lib/janus/secrets/web-passphrase" and (.san | index("DNS:router")) and (.san | index("IP:192.168.10.1")) and .hostname == "router"' web.json >/dev/null
       printf '%s\n' ${lib.escapeShellArg stunnel} > stunnel.conf
       grep -q 'IPV6_V6ONLY=0' stunnel.conf
-      grep -q 'accept = \[::\]:8443' stunnel.conf
+      # "*" resolves through getaddrinfo; a literal "[::]" is rejected
+      # (EAI_NONAME) and stunnel would bind v4 only.
+      grep -q 'accept = \*:8443' stunnel.conf
       grep -q 'connect = /run/janus-web/http.sock' stunnel.conf
       printf '%s\n' ${lib.escapeShellArg rules} > rules.nft
       grep 'tcp dport 8443 accept' rules.nft | grep -q br-home
