@@ -196,7 +196,8 @@ deploy_slots() {
   host=$1
   addr=$2
   meta=$(nix_fleet eval --raw ".#nixosConfigurations.${host}.config.environment.etc.\"janus/slots.json\".text")
-  imgs=$(nix_fleet build --print-out-paths ".#nixosConfigurations.${host}.config.system.build.janusSlotImages")
+  # --no-link: ./result is the image-link directory from janus-build build.
+  imgs=$(nix_fleet build --no-link --print-out-paths ".#nixosConfigurations.${host}.config.system.build.janusSlotImages")
   closure=$(tr -d '[:space:]' < "$imgs/toplevel")
   active=$(ssh_to "$addr" "if [ -f /boot/slot ]; then tr -d '[:space:]' < /boot/slot; else printf a; fi")
   if [ "$active" = b ]; then
@@ -689,6 +690,30 @@ set_janus_url() {
   sed -i -E "s|(inputs\\.janus\\.url[[:space:]]*=[[:space:]]*\")[^\"]*(\";)|\\1${url}\\2|" flake.nix
 }
 
+# The store path stays where Nix put it. The fleet link is result/<host>,
+# so a later host does not replace an earlier image. Nix does not create
+# the parent of --out-link. An old ./result symlink is removed so result/
+# can be a directory.
+prepare_image_link() {
+  host=$1
+  host_ok "$host"
+  if [ -L result ]; then
+    rm -f result
+  fi
+  if [ -e result ] && [ ! -d result ]; then
+    echo "janus-build: ./result exists and is not a directory." >&2
+    exit 1
+  fi
+  mkdir -p result
+}
+
+build_host_image() {
+  host=$1
+  require_build_host "$host"
+  prepare_image_link "$host"
+  nix_fleet build --out-link "result/${host}" --print-out-paths ".#nixosConfigurations.${host}.config.system.build.janusImage"
+}
+
 # Lock the commit this janus-build came from. original names the branch
 # and has no rev, so a later `nix flake update janus` can move.
 write_janus_lock() {
@@ -895,16 +920,14 @@ case "$cmd" in
     require_repo
     host=${1:-}
     if [ -n "$host" ]; then
-      require_build_host "$host"
-      nix_fleet build --print-out-paths ".#nixosConfigurations.${host}.config.system.build.janusImage"
+      build_host_image "$host"
     else
       found=0
       for dir in hosts/*; do
         if [ -d "$dir" ]; then
           found=1
           name=$(basename "$dir")
-          require_build_host "$name"
-          nix_fleet build --print-out-paths ".#nixosConfigurations.${name}.config.system.build.janusImage"
+          build_host_image "$name"
         fi
       done
       if [ "$found" = 0 ]; then
@@ -1016,7 +1039,8 @@ case "$cmd" in
       deploy_slots "$host" "$addr"
       exit 0
     fi
-    closure=$(nix_fleet build --print-out-paths ".#nixosConfigurations.${host}.config.system.build.toplevel")
+    # --no-link: ./result is the image-link directory from janus-build build.
+    closure=$(nix_fleet build --no-link --print-out-paths ".#nixosConfigurations.${host}.config.system.build.toplevel")
     dest=$(ssh_dest "$addr")
     ssh_to "$addr" "mount -o remount,rw /nix; mount -o remount,rw /boot || true"
     if ! NIX_SSHOPTS="-o BatchMode=yes -o ConnectTimeout=8" nix copy --to "ssh://${dest}" "$closure"; then

@@ -97,7 +97,7 @@ SSH destinations are `janus.deploy.address`, or the
 | Set a secret | `janus-build secret set <path>` | Reads plaintext on stdin, writes a sops document for the recipients of that path, and does not keep a plaintext file. A one-line credential is the `value` key. A PPPoE file and a node file are YAML. An empty stdin is refused. The plaintext is not passed as a program argument. |
 | Rewrap a shared secret | `janus-build secret rewrap <path> --from <host>` | Asks a router that can decrypt that file, then encrypts to the current recipient set. |
 | Check | `janus-build check [<host>]` | Evaluates the named host, or every host. Prints assertion failures. Builds nothing. Refuses a cross image whose build machine is not this one. |
-| Build | `janus-build build [<host>]` | Builds `images.<host>` for one host or every host. Prints the image path. On a machine other than x86_64, evaluation is impure so `builtins.currentSystem` is this machine. |
+| Build | `janus-build build [<host>]` | Builds `images.<host>` for one host or every host. Prints the store path and links the output directory at `result/<host>`. The image file in that directory is `janus-<hostName>.img`. `janus.system.hostName` defaults to the fleet host name. A later host keeps its own link. On a machine other than x86_64, evaluation is impure so `builtins.currentSystem` is this machine. |
 | Install an image | `janus-build deploy <host>` | Closure deploy, or a state-preserving re-flash (*09* §8). |
 | Push overrides | `janus-build fleet apply` | Committed hot-override projection, over SSH (§4). |
 | Pull overrides | `janus-build fleet pull [<host>]` | Current overrides from one router, or every reachable router, into this repo (§5). |
@@ -267,7 +267,7 @@ not written in that failed run.
 | Command | Effect |
 |---------|--------|
 | `janus-build check [<host>]` | Evaluation and assertions only. Refuses a cross image whose build machine is not this one. |
-| `janus-build build [<host>]` | Image build. No host means every host. A non-x86_64 machine evaluates impurely so `builtins.currentSystem` is that machine. |
+| `janus-build build [<host>]` | Image build. No host means every host. Prints the store path and links the output directory at `result/<host>`. The image file in that directory is `janus-<hostName>.img`. `janus.system.hostName` defaults to the fleet host name. A non-x86_64 machine evaluates impurely so `builtins.currentSystem` is that machine. |
 | `janus-build status [<host>]` | One SSH to `janus status` per host. No host means every host. A down host is named; the others are still printed. |
 | `janus-build backup <host>` | Writes the `janus backup` archive to `./backup/<host>-<utc>.tar` and prints the path. Does not commit it. |
 | `janus-build update [--train <train>]` | Updates the `janus` flake input only. Without `--train`, the URL stays and the lock follows that branch. `--train` changes the train (§0). The user runs `check` and `build` next. |

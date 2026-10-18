@@ -102,7 +102,7 @@ In that shell:
    needs: a PPPoE password, a Wi-Fi passphrase, a subscription URL, a
    manual node, a Tailscale auth key, or the maintenance-page passphrase. The public key from
    the previous step must already exist.
-5. `janus-build build <host>` writes `janus-<host>.img`. The image
+5. `janus-build build <host>` links the output directory at `result/<host>` and prints the store path. The image file in that directory is `janus-<hostName>.img`. `janus.system.hostName` defaults to the host name. The image
    contains that ciphertext. It does not contain the private key.
 6. Flash that image. The state partition starts empty.
 7. SSH in as root with the key from the host configuration. There is no

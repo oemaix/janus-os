@@ -2056,6 +2056,40 @@ in {
     fi
     grep -q 'this machine is aarch64-linux' "$TMPDIR/err"
     grep -q "host 'potato' is set to build on x86_64-linux" "$TMPDIR/err"
+    linkdir=$TMPDIR/links
+    mkdir -p "$linkdir"
+    (
+      cd "$linkdir"
+      ln -s /nix/store/old result
+      prepare_image_link potato
+      test -d result
+      test ! -L result
+      prepare_image_link other
+      test -d result
+    )
+    if ( cd "$linkdir" && rm -rf result && echo x > result && prepare_image_link potato ); then
+      echo "a file named result was accepted" >&2
+      exit 1
+    fi
+    if ( cd "$linkdir" && prepare_image_link '../outside' ); then
+      echo "host name '../outside' was accepted" >&2
+      exit 1
+    fi
+    cat > "$bindir/nix" << 'EOF'
+    #!/bin/sh
+    printf '%s\n' "$*" >> "$JANUS_NIX_LOG"
+    printf '%s\n' /nix/store/fake-image
+    EOF
+    export JANUS_NIX_LOG=$TMPDIR/nix-args
+    export JANUS_UNAME=x86_64
+    require_build_host() { return 0; }
+    (
+      cd "$linkdir"
+      rm -rf result
+      build_host_image potato
+    )
+    grep -F -q -- 'build --out-link result/potato --print-out-paths .#nixosConfigurations.potato.config.system.build.janusImage' "$JANUS_NIX_LOG"
+    test -d "$linkdir/result"
     echo ok > "$out"
   '';
   eval-audit = let
