@@ -447,11 +447,17 @@ in {
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;
-        ProtectSystem = "strict";
+        # "full", not "strict": strict read-only-binds every mount point
+        # in the namespace, including the /var f2fs on the state partition,
+        # and ReadWritePaths cannot undo that for a whole sub-mount. On the
+        # field unit the seed then died with EROFS on /var/lib/janus/root,
+        # the engine tree was never created or chowned, and sing-box looped
+        # on cache.db permission denied (observed 2026-10-18). "full"
+        # protects /usr, /boot, and /etc only; /var stays writable.
+        ProtectSystem = "full";
         ProtectHome = true;
         PrivateTmp = true;
         NoNewPrivileges = true;
-        ReadWritePaths = "/var/lib/janus";
       };
       script = ''
         set -eu
