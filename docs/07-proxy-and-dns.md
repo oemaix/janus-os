@@ -362,11 +362,15 @@ host or a forwarder:
 |------|----------------|
 | `rule-based` | A name in the domestic sets uses the domestic encrypted resolver. A name the LAN will proxy is a fake-IP, or the remote resolver through the tunnel when fake-IP is off. |
 | `proxy-all` | A name the LAN will proxy is a fake-IP, or the remote resolver. Exceptions and `fakeIp.exclude` stay direct and use the domestic resolver. The domestic set does not by itself make a name direct. |
-| `bypass` | Every recursive name uses the domestic encrypted resolvers. Fake-IP is off. The remote resolver is not used. A blocked foreign name gets the domestic answer, which may be forged or empty, and does not get the tunnel. |
+| `bypass` | Every recursive name uses the domestic encrypted resolvers. Fake-IP is off. The remote resolver is not used unless `remote.via = "direct"`, which sends the names outside the domestic sets to the remote resolvers from the WAN, encrypted. A blocked foreign name gets the domestic answer, which may be forged or empty, and does not get the tunnel. |
 
 A `bypass` LAN that sets `fakeIp.enable = true`, or sets
-`remote.resolvers`, fails evaluation. Inherited remote resolvers are not
-used, and inherited `fakeIp.enable = "auto"` is off. A name that
+`remote.resolvers` without `remote.via = "direct"`, fails evaluation.
+Inherited remote resolvers are not used unless `remote.via` is `direct`,
+and inherited `fakeIp.enable = "auto"` is off. With `remote.via =
+"direct"` the domestic sets keep the domestic resolvers and every other
+name goes to the remote resolvers from the WAN: encrypted content, and a
+resolver that sees the WAN address instead of the tunnel exit. A name that
 `rule-based` or `proxy-all` will proxy must not be answered by the
 domestic resolver. Putting such a name in `proxy-all` exceptions is how
 it stays direct and may use the domestic resolver. `forwarders` sends
@@ -409,7 +413,8 @@ query from a LAN
  ├─ recursive = false              → hosts and static leases only
  ├─ hosts / static leases / forwarders → answer
  └─ mode
-     ├─ bypass      → domestic encrypted resolvers, for every name
+     ├─ bypass      → domestic encrypted resolvers, except names outside
+     │                 the domestic sets when remote.via is direct
      ├─ proxy-all   → fake-IP or remote, except exceptions and fakeIp.exclude
      └─ rule-based
          ├─ name ∈ domestic sets   → domestic encrypted resolver (ECS allowed)

@@ -993,7 +993,11 @@
       (array/push servers (dns-server dom-tag domestic-url boot encryption)))
     (def remote-list (or (get remote "resolvers") @[]))
     (var rem-tag nil)
-    (when (not= mode "bypass")
+    # A bypass view ignores the remote resolvers unless via is direct:
+    # there is no tunnel for them, and the domestic/remote split on a
+    # bypass LAN is an explicit choice (docs/07 §7.2).
+    (def remote-direct (= (get remote "via") "direct"))
+    (when (or (not= mode "bypass") remote-direct)
       (each url remote-list (reject-plaintext encryption url))
       (let [remote-url (one-address (string "remote " label) remote-list)]
         (when remote-url
@@ -1001,8 +1005,9 @@
           (def item (dns-server rem-tag remote-url boot encryption))
           # autoGroup = false (ADR-0026) drops the implicit Auto; tunnel DNS
           # then detours through the default target (tunnel-tag falls back
-          # to "direct" when no group matches).
-          (when (= (get remote "via") "tunnel") (put item :detour tunnel-tag))
+          # to "direct" when no group matches). A bypass view never detours:
+          # it has no tunnel.
+          (when (and (not= mode "bypass") (= (get remote "via") "tunnel")) (put item :detour tunnel-tag))
           (array/push servers item))))
     (when (and on (not saw-fake))
       (array/push servers @{
@@ -1034,8 +1039,12 @@
         (push-dns dns-rules @{:query_type @["AAAA"] :action "reject"} cidr inbound))
       (cond
         (= mode "bypass")
-        (when real
-          (push-dns dns-rules @{:action "route" :server real} cidr inbound))
+        (do
+          (each name (or (get domestic "domains") @[])
+            (when real (push-dns dns-rules (domain-item name real) cidr inbound)))
+          (cond
+            rem-tag (push-dns dns-rules @{:action "route" :server rem-tag} cidr inbound)
+            real (push-dns dns-rules @{:action "route" :server real} cidr inbound)))
         (= mode "proxy-all")
         (do
           (each name (or (get fake "exclude") @[])
@@ -1362,6 +1371,10 @@
   (def fake (or (get policy "fakeIp") @{}))
   (def strip (or (get policy "ipv6Answers") "strip-for-proxied"))
   (def target (or (get anchor "defaultTarget") "group:Auto"))
+  (def domestic-all (or (get (or (get policy "domestic") @{}) "resolvers") @[]))
+  (def remote-all (or (get (or (get policy "remote") @{}) "resolvers") @[]))
+  (def remote-direct
+    (and (= mode "bypass") (= (get (or (get policy "remote") @{}) "via") "direct")))
   (def fake-on
     (if (or (= mode "bypass") (= (get policy "recursive") false))
       false
@@ -1372,7 +1385,10 @@
   (def fallback
     (cond
       (= (get policy "recursive") false) "none"
-      (= mode "bypass") "domestic"
+      # A bypass view splits domestic/remote only when via is direct;
+      # otherwise every recursive name stays on the domestic resolvers
+      # (docs/07 §7.2).
+      (= mode "bypass") (if remote-direct "remote" "domestic")
       (= mode "proxy-all") (if fake-on "fake" "remote")
       (= target "block") "block"
       (= target "direct") "domestic"
@@ -1400,13 +1416,11 @@
   (defn place [bag name]
     (when (not (placed? name)) (array/push bag name)))
   (def forward-servers @[])
-  (def domestic-all (or (get (or (get policy "domestic") @{}) "resolvers") @[]))
-  (def remote-all (or (get (or (get policy "remote") @{}) "resolvers") @[]))
   (each url domestic-all (reject-plaintext encryption url))
-  (when (not= mode "bypass")
+  (when (or (not= mode "bypass") remote-direct)
     (each url remote-all (reject-plaintext encryption url)))
   (def domestic-one (one-address "domestic" domestic-all))
-  (def remote-one (if (= mode "bypass") nil (one-address "remote" remote-all)))
+  (def remote-one (if (or (not= mode "bypass") remote-direct) (one-address "remote" remote-all) nil))
   (def domestic-urls (if domestic-one @[domestic-one] @[]))
   (def remote-urls (if remote-one @[remote-one] @[]))
   (when (not= fallback "none")
@@ -1418,7 +1432,7 @@
         (def url (one-address (string "forwarder " domain) urls))
         (place forwarded pattern)
         (array/push forward-servers (xray-ns url @[pattern] direct-qs))))
-    (when (and (= mode "rule-based") (not= fallback "domestic"))
+    (when (and (not= mode "proxy-all") (not= fallback "domestic"))
       (each name (or (get (or (get policy "domestic") @{}) "domains") @[])
         (place real (xray-pattern name)))
       (each name (or (get fake "exclude") @[])

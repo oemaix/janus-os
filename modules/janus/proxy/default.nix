@@ -50,6 +50,8 @@
     then cfg.mode
     else lan.proxy.mode;
 
+  lanVia = lan: pick lan.dns.remote.via dns.remote.via;
+
   lanRules = lan:
     if lan.proxy.rules == null
     then cfg.rules
@@ -57,7 +59,7 @@
 
   lanUrls = lan:
     (pick lan.dns.domestic.resolvers dns.domestic.resolvers)
-    ++ lib.optionals (lanMode lan != "bypass") (pick lan.dns.remote.resolvers dns.remote.resolvers)
+    ++ lib.optionals (lanMode lan != "bypass" || lanVia lan == "direct") (pick lan.dns.remote.resolvers dns.remote.resolvers)
     ++ lib.concatLists (lib.attrValues (pick lan.dns.forwarders dns.forwarders));
 
   bootViews =
@@ -68,7 +70,7 @@
         bootstrap = dns.bootstrap;
         urls =
           dns.domestic.resolvers
-          ++ lib.optionals (cfg.mode != "bypass") dns.remote.resolvers
+          ++ lib.optionals (cfg.mode != "bypass" || dns.remote.via == "direct") dns.remote.resolvers
           ++ lib.concatLists (lib.attrValues dns.forwarders);
       }
     ]
@@ -685,8 +687,8 @@ in {
       })
       lans
       ++ lib.mapAttrsToList (name: lan: {
-        assertion = lanMode lan != "bypass" || lan.dns.remote.resolvers == null;
-        message = "janus.network.lans.${name} is bypass and dns.remote.resolvers is set. A bypass LAN resolves every recursive name on the domestic resolvers.";
+        assertion = lanMode lan != "bypass" || lan.dns.remote.resolvers == null || lanVia lan == "direct";
+        message = "janus.network.lans.${name} is bypass and dns.remote.resolvers is set without dns.remote.via = \"direct\". A bypass LAN resolves every recursive name on the domestic resolvers.";
       })
       lans
       ++ map (view: {

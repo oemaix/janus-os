@@ -448,12 +448,12 @@ in {
           dns.remote.resolvers = mkOption {
             type = types.nullOr (types.listOf types.str);
             default = null;
-            description = "Null inherits janus.dns.remote.resolvers. Setting this on a bypass LAN fails evaluation.";
+            description = "Null inherits janus.dns.remote.resolvers. Setting this on a bypass LAN fails evaluation unless dns.remote.via is direct.";
           };
           dns.remote.via = mkOption {
             type = types.nullOr (types.enum ["tunnel" "direct"]);
             default = null;
-            description = "Null inherits janus.dns.remote.via.";
+            description = "Null inherits janus.dns.remote.via. Direct on a bypass LAN splits non-domestic names onto the remote resolvers from the WAN.";
           };
           dns.fakeIp.enable = mkOption {
             type = types.nullOr (types.either types.bool (types.enum ["auto"]));

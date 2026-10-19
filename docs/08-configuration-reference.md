@@ -184,6 +184,12 @@ value fails evaluation. `carrierResolvers = "fallback-only"` is not
 available for the same one-server limit. `domestic-only` uses the first
 learned WAN address as the domestic server.
 
+`remote.via` defaults to `tunnel`. A bypass LAN has no tunnel, so the
+remote resolvers stay unused and every recursive name is answered by the
+domestic resolvers. `remote.via = "direct"` splits a bypass LAN: the
+domestic sets keep the domestic resolvers, and every other name goes to
+the remote resolvers from the WAN, encrypted (*07* §7.2).
+
 ## 8. `janus.monitoring`
 
 | Option | Type | Default | Description |

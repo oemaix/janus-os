@@ -1238,6 +1238,59 @@ in {
       janus.proxy.enable = true;
     }
   ];
+  eval-proxy-bypass-remote-via-tunnel = fail "eval-proxy-bypass-remote-via-tunnel" [
+    base
+    {
+      janus.network.lans.lan = {
+        members = ["lan"];
+        address = "192.168.10.1";
+        prefixLength = 24;
+        proxy.mode = "bypass";
+        dns.remote = {
+          resolvers = ["https://dns.google/dns-query"];
+          via = "tunnel";
+        };
+      };
+      janus.proxy.enable = true;
+    }
+  ];
+  eval-proxy-bypass-remote-direct = let
+    os = mk [
+      base
+      {
+        janus.dns.domestic.domains = ["example.cn"];
+        janus.network.lans.lan = {
+          members = ["lan"];
+          address = "192.168.10.1";
+          prefixLength = 24;
+          proxy.mode = "bypass";
+          dns.remote.via = "direct";
+        };
+        janus.proxy.enable = true;
+      }
+    ];
+    engine = os.config.system.build.janusEngineConfig;
+  in
+    pkgs.runCommand "eval-proxy-bypass-remote-direct" {
+      nativeBuildInputs = [pkgs.sing-box pkgs.jq];
+    } ''
+      sing-box check -c ${engine}
+      # The remote server exists and goes out the WAN, not a tunnel.
+      jq -e 'any(.dns.servers[]; .tag == "remote-lan-0" and .type == "https" and .server == "1.1.1.1" and (has("detour") | not))' ${engine} >/dev/null
+      # The domestic sets stay on the domestic resolver, before the remote fallback.
+      jq -e '
+        .dns.rules as $r
+        | ($r | to_entries | map(select(.value.domain == ["example.cn"] and .value.server == "domestic-lan-0" and .value.source_ip_cidr == ["192.168.10.0/24"])) | .[0].key) as $dom
+        | ($r | to_entries | map(select(.value.server == "remote-lan-0" and .value.source_ip_cidr == ["192.168.10.0/24"] and .value.domain == null)) | .[0].key) as $rem
+        | ($dom != null) and ($rem != null) and ($dom < $rem)
+      ' ${engine} >/dev/null
+      # A bypass LAN has no fake-IP server.
+      if jq -e 'any(.dns.servers[]; .type == "fakeip")' ${engine} >/dev/null; then
+        echo "bypass direct received a fake-IP server" >&2
+        exit 1
+      fi
+      echo ok > "$out"
+    '';
   eval-proxy-xray-lan = fail "eval-proxy-xray-lan" [
     base
     {
