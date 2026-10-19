@@ -83,6 +83,7 @@ power-cut. Tier 3 ships the profile. The Future list stays after 1.0.
 * Shared HTTP listener and CPU speech (*02* UC-25, FR-SVC-004, D-0062). `janus.edge.api.enable` defaults to false. False adds no listener, certificate, or token. Recognition and synthesis are separate switches and share that listener, its port `8473`, and its sops token. Either fails evaluation while the listener is off. Recognition is released `whisper.cpp` and the multilingual `base` weights. Synthesis is released Piper from <https://github.com/OHF-Voice/piper1-gpl>, with `tts.voice` a locked id `ll_CC-name-quality`. Pins are release tags in `flake.lock` (T-0020). Recognition fails on the Zero 2 W, the Pi 2, the Pi 3, Le Potato, and the VisionFive 2. Synthesis fails on the Zero 2 W and the VisionFive 2. The switches are in the image and default off, so a 1.0 image does not start them. `janus.edge` is the namespace and has no switch. `janus.edge.llm` is the later name for the language-model service and is not an option yet.
 * NXP Ara240 runtime (*02* UC-24, FR-HW-010, FR-SVC-002). Another device calls `janus.edge.api` on the router when it needs an edge LLM of 0.5B to 3B parameters (D-0060, D-0062). The HTTP face is the vendor Chat Completions service (eIQ AAF Connector) in front of AraRT. Zones default to `lan` and `mgmt`. `wan` is refused. AraRT's own socket stays on the board. No board and no USB or PCI ID is accepted yet. The published client library name is `libaraclient_aarch64.so`. Other architectures are not assumed (D-0058). Vision models are out. Speech stays on the CPU.
 * Hailo-10H runtime (*02* UC-24, FR-HW-011, FR-SVC-003, D-0060). Same role and the same model size as the Ara240 row. The module is PCIe, M.2, with its own DRAM. HailoRT is the `master` branch. The HTTP face is HailoRT GenAI, compatible with OpenAI and Ollama, on `janus.edge.api` (D-0062). Hailo-8 and Hailo-8L are not this row. No PCI ID is accepted yet. Vision models are out. Speech stays on the CPU. Hailo's published example is about 2B parameters. 3B is the top of this plan and is not that example.
+* Open Wi-Fi, WPA-Enterprise, a station network added on the router without a rebuild, and captive-portal completion (*06* §11, FR-NET-018, D-0063).
 
 ## 2. Progress
 
@@ -324,6 +325,11 @@ tree does not mean that behavior exists. Stubs are not finished features.
   with the multilingual `base` weights, and released Piper. Speech
   synthesis is not an accelerator model: Hailo runs Piper on the host
   CPU, and NXP's VITS TTS is documented for i.MX NPUs.
+* The station uplink (D-0063, FR-NET-018, *10* §4.11) is specified and not
+  lowered. The allowlist has no `0bda:8179`. An access point on
+  `0bda:8176` still blacklists the `rtl8xxxu` module. The definition
+  assigns `rtl8192cu` to that ID only and leaves `rtl8xxxu` loaded for
+  the station stick.
 * The board image must not contain a compiler or `janus-build`. The `nix`
   binary stays for activation and for `nix-store --import` (*05*, *09*
   §8.2). `nix.enable = false`, nixpkgs sources are absent, and `/nix` is
