@@ -191,6 +191,32 @@ in {
       test "$s2" = 2
       echo ok > "$out"
     '';
+  # The CLI runs with the PATH baked into its wrapper, so a command that
+  # is not on it is a runtime 127 ("awk: command not found"), not a
+  # build error, and nothing in the evaluation-only checks notices.
+  # Every external command pkgs/janus.sh calls must be on that PATH.
+  # Extend the list when janus.sh gains a command.
+  cli-runtime-deps = let
+    system = pkgs.stdenv.hostPlatform.system;
+  in
+    pkgs.runCommand "cli-runtime-deps" {
+      nativeBuildInputs = [pkgs.bash pkgs.coreutils pkgs.gnused];
+    } ''
+      wrapper=${self.packages.${system}.janus-cli}/bin/janus
+      path=$(sed -n 's/^export PATH="\(.*\)"$/\1/p' "$wrapper" | head -1)
+      path=''${path%:\$PATH}
+      if [ -z "$path" ]; then
+        echo "no PATH line in the janus wrapper" >&2
+        exit 1
+      fi
+      for cmd in awk sed find jq ip systemctl head tr cat; do
+        if [ ! -x "$path/$cmd" ]; then
+          echo "janus CLI runtime lacks $cmd" >&2
+          exit 1
+        fi
+      done
+      echo ok > "$out"
+    '';
   cli-init = let
     system = pkgs.stdenv.hostPlatform.system;
   in

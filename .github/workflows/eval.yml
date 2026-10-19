@@ -26,6 +26,7 @@ jobs:
             .#checks.x86_64-linux.cli-init \
             .#checks.x86_64-linux.cli-plan-parser \
             .#checks.x86_64-linux.cli-pull-rotate \
+            .#checks.x86_64-linux.cli-runtime-deps \
             .#checks.x86_64-linux.cli-usage \
             .#checks.x86_64-linux.eval-audit \
             .#checks.x86_64-linux.eval-backup-health \
