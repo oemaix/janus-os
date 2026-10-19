@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-23 |
+| Last updated | 2026-10-25 |
 
 ## 1. Terminology
 
@@ -32,7 +32,7 @@ obligation for that release, not a reason to omit the profile.
 | **Raspberry Pi 4 / CM4** (`rpi4`) | BCM2711 · aarch64 | Pi 4: 1× 1 GbE. CM4: that port on the official IO board. USB 3 NICs are peripherals. | 2 | Tier 2 (D-0016). EEPROM firmware, FAT `config.txt`, hybrid MBR so the bootloader finds the GPT boot partition. One `eth0`; the profile does not choose a WAN. The Pi 400 is not a board: it has no Ethernet jack (D-0032). |
 | **Raspberry Pi 3 / 3+** | BCM2837 · aarch64 | 1× 100 MbE (USB 2 shared) | 2 | Low throughput; fine for tunnel-only use behind another router. FAT `config.txt`, hybrid MBR so the boot ROM finds the GPT boot partition. |
 | **Raspberry Pi Zero 2 W** | BCM2710A1 · aarch64 | Wi-Fi 4 + Bluetooth, no Ethernet | 1 | Owner's lab. 512 MiB RAM. Needs a USB Ethernet peripheral for a wired WAN or LAN. FAT `config.txt`, hybrid MBR. The onboard radio is a 2.4 GHz WPA2 access point (§4.7, D-0043). Bluetooth is present and unused. Not a 500-node target. INA219 UPS overlay is part of this board's lab setup (FR-HW-008). |
-| **Libre Computer Le Potato (AML-S905X-CC)** | S905X · aarch64 | 1× 100 MbE | 1 | Owner's lab. Mainline U-Boot with FIP at raw offset; eMMC or SD. Lab peripherals: Fibocom NL668 as USB Ethernet (§4.2), RTL8188CUS as AP (§4.4), CSR Bluetooth. |
+| **Libre Computer Le Potato (AML-S905X-CC)** | S905X · aarch64 | 1× 100 MbE | 1 | Owner's lab. Mainline U-Boot with FIP at raw offset; eMMC or SD. Lab peripherals: Fibocom NL668 as USB Ethernet (§4.2), RTL8188CUS as AP (§4.4), CSR Bluetooth. The portable pair is §4.10: RTL8188EUS as the station WAN, RTL8188CUS as the access point. |
 | **StarFive VisionFive 2** | JH7110 · riscv64 | 2× 1 GbE | 3 | Needs recent kernel. U-Boot 2026.04 runs from QSPI (D-0047). One GPT image for SD, eMMC, and NVMe. Boot order is eMMC, then SD, then NVMe. No binary cache. v1.3B clocks both MACs from the Motorcomm PHY. The kernel keeps that receive clock running so the DMA reset can finish with no link. |
 | **Raspberry Pi 2 (v1.1)** | BCM2836 · armv7l | 1× 100 MbE | 3 | 32-bit; no cache; RPi 2 v1.2 is BCM2837 and uses the `rpi3` profile. |
 | **Yanyu STX-R19F** (`yanyu-stx-r19f`) | Intel Celeron J1900 (Bay Trail-D) · x86_64 | 4× Intel 82583V GbE on PCIe, SATA SSD. No Wi-Fi, Bluetooth, or WWAN. | 1 | Lab reference x86 board. Legacy AMI BIOS, 4 GiB RAM. The lab OpenWrt install uses GRUB. The Janus image uses Limine. Case labels in §3.1. |
@@ -114,7 +114,7 @@ rail still starts only after the boot ROM has loaded SPL off the card.
 | Class | Purpose | Backing software |
 |-------|---------|------------------|
 | `nic` | Additional Ethernet port (USB 3 GbE, USB 2.5 GbE) | kernel drivers (`r8152`, `ax88179`, `aqc111`); udev naming |
-| `wifi` | Access point for a LAN (STA/uplink mode out of scope for 1.0) | `hostapd`, mac80211 drivers; firmware from `linux-firmware` |
+| `wifi` | Access point for a LAN, or a WPA2 station uplink when the profile lists `sta` (*06* §11, D-0053) | `hostapd` or `wpa_supplicant`, mac80211; firmware from `linux-firmware` |
 | `wwan` | 4G/5G uplink | `usb_modeswitch`, kernel `cdc_ether`/`cdc_ncm`/`rndis_host`/`qmi_wwan`/`cdc_mbim`; `qmicli` / `mbimcli` for QMI and MBIM (ADR-0015) |
 | `bluetooth` | Present on the allowlist. No routing feature is assigned yet (U5). | BlueZ (optional, off by default) |
 | `hmi` | Small LCD/OLED/e-ink status display, optional buttons | `janus-hmi` daemon (framebuffer/SPI drivers), `gpio-keys` |
@@ -176,6 +176,7 @@ are not part of the profile. QMI and MBIM are not how this unit attaches.
 | MediaTek MT7921AU | `0e8d:7961` | wifi (AP) | supported (recent kernel) |
 | Realtek RTL8812AU | `0bda:8812` | wifi | unsupported (out-of-tree driver) |
 | Realtek RTL8188CUS | `0bda:8176` | wifi (AP, 2.4 GHz HT20) | supported via in-tree `rtl8192cu` (§4.4) |
+| Realtek RTL8188EUS | `0bda:8179` | wifi (STA, 2.4 GHz HT20) | supported via in-tree `rtl8xxxu` (§4.10) |
 | Raspberry Pi Zero 2 W onboard CYW43430 | board radio, `match.onboard` | wifi (AP, 2.4 GHz HT20, WPA2) | supported via in-tree `brcmfmac` (§4.7) |
 | Fibocom NL668 (LTE Cat.4) | `05c6:90b6` (product string `Android`) | wwan, Ethernet mode | supported on Le Potato. Same USB ID as other Qualcomm gadgets; the user declares the peripheral. |
 | EigenComm, exposed as a NIC | `19d1:0001` | wwan (ethernet mode, LTE Cat.1) | supported on Zero 2 W |
@@ -208,7 +209,9 @@ both true, and they are not the same driver.
 | Realtek vendor driver plus `hostapd` `rtl871xdrv` | Out of tree. | How people forced AP mode before `rtl8192cu`. Forbidden here (FR-HW-006). |
 
 Janus binds `0bda:8176` to `rtl8192cu` and does not let `rtl8xxxu` claim
-that ID, so the two drivers do not both attach. Any board may declare
+that ID, so the two drivers do not both attach (D-0053). `rtl8xxxu`
+stays loaded: it is the driver for `0bda:8179` (§4.10). A module-wide
+blacklist of `rtl8xxxu` would remove that station. Any board may declare
 this USB id. The Le Potato row in §3 records the lab unit that confirmed
 the stick. Declaring the peripheral copies `rtlwifi/rtl8192cufw.bin`,
 `rtl8192cufw_A.bin`, `rtl8192cufw_B.bin`, and `rtl8192cufw_TMSC.bin` from
@@ -344,6 +347,43 @@ requests a patch under `rtl_nic/`. A missing file is a warning. The driver
 continues with its built-in setup, and the link comes up. The image does
 not ship those files (D-0050). Add them from the pinned `linux-firmware`
 package if a link problem shows up.
+
+### 4.10 RTL8188EUS (`0bda:8179`)
+
+USB ID `0bda:8179` is an RTL8188EU-family device (RTL8188EUS), 2.4 GHz,
+one spatial stream. It is a different chip from the RTL8188CUS in §4.4.
+
+`rtl8xxxu` binds that ID through `rtl8188eu_fops`. Firmware is
+`rtlwifi/rtl8188eufw.bin` in `linux-firmware`. The phy advertises
+station mode. `rtl8188eu_fops` leaves `supports_ap` unset, so the phy
+does not advertise an access point. A series posted to linux-wireless
+on 2026-03-13 sets that flag and reports that clients still fail to
+associate. Mainline does not contain it. An out-of-tree access-point
+driver for this chip stays out (FR-HW-006, D-0010).
+
+The profile lists `sta`. Evaluation fails when this peripheral is an
+access point (FR-NET-018, D-0053). A build is acceptable when `iw list`
+shows station mode for this phy. The station uplink is a WAN with
+`mode = "wifi"` (*06* §4, §11). `wpa_supplicant` associates, networkd
+takes DHCP, and the interface joins the `wan` zone. The dongle keeps
+its permanent MAC.
+
+The portable Le Potato uses this stick as `role = "backup"` and the
+§4.4 stick as the LAN access point. §4.4 assigns `0bda:8176` to
+`rtl8192cu` by USB ID and leaves `rtl8xxxu` loaded. Both radios are
+2.4 GHz HT20 in one case, so the access point uses the upstream
+channel and the expected load is a few clients. With a lease on the
+Ethernet WAN, that WAN keeps the default route (D-0036).
+
+A profile that lists `ap` and `sta` allows either role. One peripheral
+still has one role. These two drivers do not advertise a concurrent
+access point and station on one radio.
+
+Known networks are WPA2-PSK. The SSID is configuration. The passphrase
+is one sops file, the same shape as an access-point passphrase
+(FR-SEC-002). Open networks, WPA-Enterprise, a network added on the
+router without a rebuild, and captive-portal completion are after 1.0
+(*06* §11).
 
 ## 5. Performance notes (guidance for NFR-004/005)
 

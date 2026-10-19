@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-18 |
+| Last updated | 2026-10-19 |
 
 Key words MUST / SHOULD / MAY follow RFC 2119. Priority: **P1** required for
 1.0, **P2** planned, **P3** desirable.
@@ -68,6 +68,7 @@ Key words MUST / SHOULD / MAY follow RFC 2119. Priority: **P1** required for
 | FR-NET-015 | Source NAT (masquerade) from LANs to WANs MUST be enabled by default and be disableable per LAN/WAN pair. | P1 |
 | FR-NET-016 | Hairpin NAT (NAT reflection) SHOULD be supported for port forwards. | P2 |
 | FR-NET-017 | Port forwards (DNAT) MUST be declarable with protocol, external port/range, internal host/port, optional source restriction. | P1 |
+| FR-NET-018 | A Wi-Fi peripheral whose profile lists `sta` MUST be usable as a WAN with `mode = "wifi"`: WPA2-PSK, DHCP after association, the SSID in the configuration, the passphrase in sops (FR-SEC-002). A requested `ap` or `sta` role outside that profile MUST fail evaluation. One peripheral MUST have one role. Open authentication, WPA-Enterprise, a network added on the router without a rebuild, and captive-portal completion are specified and deferred until after 1.0. | P2 |
 | FR-NET-020 | IGMP/MLD proxying between an IPTV WAN and selected LANs MUST be supported. Deferred until after 1.0, together with WAN VLAN and the `iptv` role. | P2 |
 | FR-NET-030 | IPv6 MUST be configurable per WAN: `disabled`, `dhcpv6-pd`, `slaac`, `static`, `passthrough` (PPPoE IPv6CP + PD). | P1 |
 | FR-NET-031 | IPv6 on LAN MUST be configurable: `disabled`, `ula-only`, `delegated` (prefix from PD), with RA and DHCPv6 options. | P1 |

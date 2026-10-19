@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-23 |
+| Last updated | 2026-10-25 |
 
 A row here is a choice that binds implementation and is not an ADR. The
 cited requirement or design section is the text that binds. An accepted
@@ -70,6 +70,7 @@ Undecided rows are open. Implementation does not invent an answer for them.
 | D-0049 | Every boot runs `fsck.f2fs -a --no-kernel-check` on `JANUS_STATE` and does not scan the volume. A timeout, a slow mount, or a missing block device is not corruption. Status 4 or 255 is checked again once the state block device is present. Reformat stays `state.onCorruption` only when that second result is still 4 or 255, or when a finished mount fails, and only while the state block device is present. `janus-state-recover` still runs when `janus-grow-state` fails. The event is written to the journal after boot. `janus-grow-state` grows the state partition up to `state.maximumSize` (default 4 GiB) or the end of the media, and does not shrink. Every boot moves the backup GPT, publishes the partition table again, and waits until the state partuuid exists, including when the partition does not grow. `janus.system.reboot.schedule` (default off) is the maintenance reboot: `monthly`, `yearly`, or a five-field cron whose day-of-week is `*`. The reboot service only reboots. `janus.system.reboot.fsck` is one action on that reboot: it requests `fsck.f2fs -f` on that boot only, and that check has no boot time cap. The on-disk request is removed before the check, so a check that does not finish is not repeated. Further actions are sibling options. | *05* §2, *05* §6, *08* §1, *12* §4 |
 | D-0050 | RTL8153 (`0bda:8153`) and RTL8156 (`0bda:8156`) run on in-tree `r8152` without the `rtl_nic` firmware that driver requests. The image does not ship those files. Add them from the pinned `linux-firmware` package if a link problem shows up. | *10* §4.9, D-0010 |
 | D-0051 | `janus.system.kernelProfile` is `standard` (default) or `compact`. `standard` is the NixOS kernel, so aarch64 and x86_64 keep the binary cache. `compact` is one kernel for every board. It drops sound, desktop and 3D GPUs, compute accelerators, cameras and TV, HDMI-CEC and infrared remotes, industrial I/O and Comedi, InfiniBand, and SAN (Fibre Channel, FCoE, iSCSI, SAS RAID HBAs, the SCSI target, and NVMe-oF). It keeps NIC drivers, Wi-Fi, USB, WWAN, Bluetooth, MMC, the NVMe host, AHCI, f2fs, vfat, virtio, simpledrm, and SoC scanout that does not depend on ALSA. Raspberry Pi HDMI (VC4) depends on ALSA and is not in this profile. The board consoles are serial. The symbols are `modules/janus/system/kernel-profile.nix`. | *13* §3, D-0035, G5 |
+| D-0053 | A Wi-Fi profile lists the modes its in-tree driver advertises. One peripheral has one role. A requested role outside that list fails evaluation. `0bda:8179` is a WPA2 station on `rtl8xxxu`. `0bda:8176` stays on `rtl8192cu` by USB ID, and `rtl8xxxu` stays loaded for the station. A station WAN is `mode = "wifi"`, the SSID in the configuration, the passphrase in sops. The cable is `default` and the station is `backup`. Open networks, a network added without a rebuild, WPA-Enterprise, and captive-portal completion are after 1.0. | *06* §4, *06* §11, *10* §4.10, FR-NET-018 |
 
 ## 2. Undecided
 

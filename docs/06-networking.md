@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-17 |
+| Last updated | 2026-10-25 |
 
 ## 1. Substrate
 
@@ -50,8 +50,8 @@ implementation (FR-NET-005, FR-NET-020).
 
 ```
 janus.network.wans.<name> = {
-  uplink   = "wan" | "wan.35" | "wwan0";        # port, vlan or wwan peripheral
-  mode     = "dhcp" | "static" | "pppoe" | "wwan";
+  uplink   = "wan" | "wan.35" | "wwan0" | "cafe0";  # port, vlan, wwan or wifi peripheral
+  mode     = "dhcp" | "static" | "pppoe" | "wwan" | "wifi";
   role     = "default" | "iptv" | "backup" | "custom";
   metric   = 100;
   dhcp     = { vendorClass, clientId, requestOptions, hostname, sendRelease };
@@ -59,6 +59,8 @@ janus.network.wans.<name> = {
   pppoe    = { username, passwordFile|password, serviceName, mtu, mru,
                lcpEchoInterval, lcpEchoFailure, ipv6 };
   wwan     = { peripheral, apn, pin, auth };
+  wifi     = { networks = [ { ssid; passphraseFile|passphrase|passphraseSecret;
+                              priority; } ]; };
   ipv6     = { mode = "disabled"|"slaac"|"dhcpv6-pd"|"static"|"passthrough";
                prefixDelegationHint; };
   healthCheck = { enable; targets; interval; failures; };
@@ -85,6 +87,18 @@ Semantics:
 * WAN DNS servers learned via DHCP/PPPoE are recorded to
   `/run/janus/wan/<name>/dns` for the DNS policy layer but are **not**
   installed into `resolv.conf` (FR-DNS-002).
+* **`wifi`** associates with `wpa_supplicant` and then takes DHCP, the
+  same client path as `dhcp` (D-0053, FR-NET-018). `uplink` is a `wifi`
+  peripheral whose profile lists `sta`. That peripheral is not also an
+  access point. Each entry in `wifi.networks` is one known WPA2-PSK
+  network. The SSID is configuration. The passphrase is a sops file, the
+  same shape as an access-point passphrase (§11). `priority` is an
+  integer; a higher value is tried first; an unset value is 0. The
+  station uses the dongle's permanent MAC. Health targets stay the
+  existing option: an upstream that does not route `1.1.1.1` and
+  `9.9.9.9` needs targets it does route. On a portable board the
+  Ethernet WAN is `default` and this WAN is `backup`, so a cable with a
+  lease keeps the default route (D-0036).
 
 ## 5. LAN
 
@@ -233,7 +247,53 @@ janus.network.wifi.<name> = { peripheral = "wifi0"; ssid; passphraseFile|passphr
 The Zero 2 W onboard radio is the same kind of access point, declared
 with `match.onboard = true`. It is 2.4 GHz WPA2 (D-0043, *10* §4.7).
 
-Client (STA) mode as a WAN uplink is out of scope for 1.0.
+A peripheral whose profile lists `sta` can instead be a WAN uplink
+(D-0053, FR-NET-018, *10* §4.10):
+
+```
+janus.hardware.peripherals.cafe0 = {
+  class = "wifi";
+  match.usbVendorProduct = "0bda:8179";
+};
+janus.hardware.peripherals.ap0 = {
+  class = "wifi";
+  match.usbVendorProduct = "0bda:8176";
+};
+janus.network.wifi.room = {
+  peripheral = "ap0"; ssid = "janus"; passphraseSecret = "wifi-potato-room"; lan = "lan";
+};
+janus.network.wans.cable = { uplink = "wan"; mode = "dhcp"; role = "default"; };
+janus.network.wans.cafe = {
+  uplink = "cafe0"; mode = "wifi"; role = "backup";
+  wifi.networks = [
+    { ssid = "Cafeteria"; passphraseSecret = "wifi-potato-cafeteria"; priority = 10; }
+  ];
+};
+```
+
+The profile is the list of modes the in-tree driver advertises, `ap`,
+`sta`, or both. The operator picks one role per peripheral. A profile
+that lists both means either role is legal. It does not mean one radio
+is an access point and a station together. Evaluation fails when an
+access point names a peripheral whose profile lacks `ap`, when a
+`mode = "wifi"` WAN names one whose profile lacks `sta`, or when one
+peripheral is used both ways.
+
+`wpa_supplicant` renders `wifi.networks` and networkd runs DHCP on the
+station interface. The interface joins the `wan` zone. The passphrase
+file is one line under `value`, at `secrets/wifi/<host>/<network>.yaml`,
+encrypted to that host.
+
+1.0 joins known WPA2-PSK networks that route when the handshake
+finishes. Four cases stay after 1.0. An open network has no passphrase.
+WPA-Enterprise asks for an identity. A network typed in at the hotel is
+a new block on the state partition, written by a later router command,
+and it is not a hot override of an existing passphrase (FR-OPS-007) and
+not a fleet file. A captive portal is the page a public network shows
+after association, before it routes (airports and many cafés). NAT
+presents the station MAC for every LAN client, so the page is completed
+on the router (Q-0045). A cafeteria whose WPA2 password still leads to
+that page is this later case.
 
 ## 12. Interaction with the proxy layer
 

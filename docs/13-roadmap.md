@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-23 |
+| Last updated | 2026-10-25 |
 
 This file is the implementation plan, the progress of the code, and the
 notes for work that is specified but not started. Choices are *18*.
@@ -77,6 +77,7 @@ power-cut. Tier 3 ships the profile. The Future list stays after 1.0.
 * ROCK Pi 4C (`rockpi-4c`), after 1.0. The lab unit is v1.2. One profile covers that board. It stays out of *10* until the profile exists (D-0046). The shape is in Notes.
 * A per-board kernel profile, `matched` (D-0052). `standard` and `compact` are implemented (D-0051).
 * The maintenance page (*20*) is in the image. The retro console in *20* §7 is the design: no radius, no shadow, no gradient. Some functions and elements are still unusable or only partly worked out. Later work keeps that simple console and works out every function and every element so each behaves clearly and fluidly. The shape is in Notes.
+* Open Wi-Fi, WPA-Enterprise, a station network added on the router without a rebuild, and captive-portal completion (*06* §11, FR-NET-018, D-0053).
 
 ## 2. Progress
 
@@ -292,6 +293,11 @@ tree does not mean that behavior exists. Stubs are not finished features.
   `compact`. The compile-time cut matters while kernel patches still
   force a rebuild, and on riscv64 and armv7l, which have no cache.
   `matched` is not a value (D-0052).
+* The station uplink (D-0053, FR-NET-018, *10* §4.10) is specified and not
+  lowered. The allowlist has no `0bda:8179`. An access point on
+  `0bda:8176` still blacklists the `rtl8xxxu` module. The definition
+  assigns `rtl8192cu` to that ID only and leaves `rtl8xxxu` loaded for
+  the station stick.
 * The board image must not contain a compiler or `janus-build`. The `nix`
   binary stays for activation and for `nix-store --import` (*05*, *09*
   §8.2). `nix.enable = false`, nixpkgs sources are absent, and `/nix` is

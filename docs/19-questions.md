@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-22 |
+| Last updated | 2026-10-25 |
 
 These answers explain a choice that already binds somewhere else. The
 cited ADR, requirement, or section is that place. This list does not
@@ -58,3 +58,5 @@ Each question is `Q-nnnn`. The number is assigned once and is not reused.
 | Q-0042 | Which languages does the maintenance page speak? | English, then Russian, then Persian, then Simplified Chinese. The stored tags are `en`, `ru`, `fa`, and `zh`. The control draws `en`, `ру`, `فا`, and `简中` in every page language. Persian sets `dir="rtl"`. Chinese is left to right. `zh-Hant` is not a page language. The reboot confirmation stays the Latin word `reboot`. See *20* §7 and D-0033. |
 | Q-0043 | Does changing `janus.access.deploy.address` require a new image? | No. `janus-build` evaluates it from the fleet repo when `deploy`, `fleet apply`, `fleet pull`, `status`, or `backup` runs. The router does not use the option. `deploy`, `fleet pull`, `status`, and `backup` read an uncommitted edit. `fleet apply` still refuses a dirty tree. A LAN address can install the age key. A later edit can name a MagicDNS name, the Tailscale IPv4, or an IPv6 literal. A bare IPv6 literal is sent as `root@[address]`. See *08* §10 and *16*. |
 | Q-0044 | Why is a full state check not run on every boot, and why does the state partition stop at 4 GiB? | A full `fsck.f2fs` reads metadata in proportion to the volume. On a slow card that check is long, and a timeout must not wipe the partition. Routers stay up, so the full check runs only when `janus.system.reboot.schedule` fires and `janus.system.reboot.fsck` is set, with no boot time cap. The request is removed before the check, so a check that does not finish is not repeated. The reboot is a system maintenance window; the state check is one action on it. 4 GiB holds router state. A larger or smaller `state.maximumSize` is allowed. A cap below the flashed size does not shrink. See D-0049. |
+| Q-0045 | Why does the café SSID stay in the configuration, and why is the airport page later? | The SSID is not a secret (FR-SEC-002). The passphrase is one sops file, as for an access point. The airport page is a captive portal: the network routes after a browser completes it. NAT presents the station MAC for every LAN client, so that page is completed on the router. A WPA2 network that routes at the end of the handshake is the 1.0 case. See D-0053 and *06* §11. |
+| Q-0046 | Why does one radio not serve the café and the LAN, and why does the access point leave `rtl8xxxu` loaded? | These in-tree drivers do not advertise a concurrent access point and station. Each stick has one role. Unloading `rtl8xxxu` removes the mainline driver for `0bda:8179`. The access-point ID is bound to `rtl8192cu` on its own. See D-0053 and *10* §4.4, §4.10. |
