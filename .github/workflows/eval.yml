@@ -64,6 +64,8 @@ jobs:
             .#checks.x86_64-linux.eval-proxy-bootstrap-empty \
             .#checks.x86_64-linux.eval-proxy-bypass-fakeip \
             .#checks.x86_64-linux.eval-proxy-bypass-remote \
+            .#checks.x86_64-linux.eval-proxy-bypass-remote-direct \
+            .#checks.x86_64-linux.eval-proxy-bypass-remote-via-tunnel \
             .#checks.x86_64-linux.eval-proxy-fallback \
             .#checks.x86_64-linux.eval-proxy-lans \
             .#checks.x86_64-linux.eval-proxy-local \
