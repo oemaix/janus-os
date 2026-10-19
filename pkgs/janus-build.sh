@@ -67,14 +67,17 @@ sops_encrypt() {
     fi
   done
   work=$(mktemp -d)
-  # RETURN runs on every exit from this function, including `set -e`.
-  # The plaintext stays in the temp dir and never enters argv.
+  # RETURN fires only when the function returns; an `exit 1` below ends
+  # the process from inside the function and skips the trap, so those
+  # paths remove the work dir themselves. The plaintext stays in the
+  # temp dir and never enters argv.
   trap 'rm -rf "$work"' RETURN
   cat > "${work}/plain"
   case "$out" in
     secrets/pppoe/*|secrets/nodes/*)
       if [ ! -s "${work}/plain" ]; then
         echo "Refusing an empty secret for ${out}." >&2
+        rm -rf "$work"
         exit 1
       fi
       cp "${work}/plain" "${work}/in"
@@ -85,6 +88,7 @@ sops_encrypt() {
       jq -Rs 'sub("\n+$"; "") | {value: .}' < "${work}/plain" > "${work}/in"
       if ! jq -e '.value | length > 0' "${work}/in" >/dev/null; then
         echo "Refusing an empty secret for ${out}." >&2
+        rm -rf "$work"
         exit 1
       fi
       intype=json
@@ -92,6 +96,7 @@ sops_encrypt() {
   esac
   if ! sops encrypt --age "$keys" --input-type "$intype" --output-type yaml "${work}/in" > "${out}.new"; then
     rm -f "${out}.new"
+    rm -rf "$work"
     exit 1
   fi
   mv "${out}.new" "$out"
@@ -248,6 +253,28 @@ wifi_secrets() {
     | jq -r 'to_entries[] | select(.value.passphraseSecret != null) | "\(.key) \(.value.passphraseSecret)"'
 }
 
+# sops secret names to repo files, "<name><TAB><file>" per line. The
+# fleet ties a name to a file with sops.secrets.<name>.sopsFile
+# (docs/08 §11); the name itself is not the path. Pure evaluation copies
+# the flake source into a store path ending in -source, impure
+# evaluation keeps the real path; the tail after either prefix is the
+# repo-relative file. D-0048.
+secret_files() {
+  nix_fleet eval --json --apply \
+    'c: builtins.mapAttrs (n: v: toString (v.sopsFile or null)) (c.sops.secrets or {})' \
+    ".#nixosConfigurations.${1}.config" \
+    | jq -r 'to_entries[] | select(.value != "") | "\(.key)\t\(.value)"' \
+    | while IFS="$(printf '\t')" read -r name file; do
+        case "$file" in
+          "$PWD"/*) printf '%s\t%s\n' "$name" "${file#"$PWD"/}" ;;
+          *-source/*) printf '%s\t%s\n' "$name" "${file#*-source/}" ;;
+          *)
+            echo "janus-build: sopsFile ${file} for ${name} is not a path in this repo; it was skipped." >&2
+            ;;
+        esac
+      done
+}
+
 apply_leases() {
   host=$1
   addr=$(host_address "$host")
@@ -282,6 +309,11 @@ ssh_dest() {
   esac
 }
 
+# Single-quote one word for a remote command assembled here as a
+# double-quoted string. Plan fields are untrusted data: shq keeps a
+# space or a metacharacter from splitting the word or injecting syntax.
+shq() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
+
 fleet_apply() {
   only=0
   host_arg=""
@@ -312,8 +344,18 @@ fleet_apply() {
       echo "unreachable: ${host}" >> "$plan"
       continue
     fi
-    secrets=$(subscription_secrets "$host" || true)
-    radios=$(wifi_secrets "$host" || true)
+    secrets=$(subscription_secrets "$host") || {
+      echo "janus-build: nix eval failed for ${host} (janus.proxy.subscriptions); the configuration does not evaluate" >&2
+      exit 2
+    }
+    radios=$(wifi_secrets "$host") || {
+      echo "janus-build: nix eval failed for ${host} (janus.network.wifi); the configuration does not evaluate" >&2
+      exit 2
+    }
+    sopsmap=$(secret_files "$host") || {
+      echo "janus-build: nix eval failed for ${host} (sops.secrets); the configuration does not evaluate" >&2
+      exit 2
+    }
     files=""
     if [ "$rev" = unknown ] || [ -z "$rev" ] || ! git cat-file -e "${rev}^{commit}" 2>/dev/null; then
       if [ "$only" != 1 ]; then
@@ -328,55 +370,69 @@ fleet_apply() {
       unknown_diff=1
       while IFS= read -r pair; do
         [ -n "$pair" ] || continue
+        sub=${pair%% *}
         secret=${pair#* }
-        file="secrets/${secret}"
-        if [ -f "$file" ]; then
-          printf 'subscription %s %s\n' "$host" "$file" >> "$plan"
+        file=$(printf '%s\n' "$sopsmap" | awk -F '\t' -v n="$secret" '$1 == n {print $2; exit}')
+        if [ -n "$file" ] && [ -f "$file" ]; then
+          printf 'subscription\t%s\t%s\t%s\n' "$host" "$file" "$sub" >> "$plan"
         else
-          echo "${host}: ${file} is not in this repo, so it was not applied." >&2
+          echo "${host}: ${secret} resolves to no file in this repo, so it was not applied." >&2
         fi
       done <<< "$secrets"
       while IFS= read -r pair; do
         [ -n "$pair" ] || continue
+        ap=${pair%% *}
         secret=${pair#* }
-        file="secrets/${secret}"
-        if [ -f "$file" ]; then
-          printf 'wifi %s %s\n' "$host" "$file" >> "$plan"
+        file=$(printf '%s\n' "$sopsmap" | awk -F '\t' -v n="$secret" '$1 == n {print $2; exit}')
+        if [ -n "$file" ] && [ -f "$file" ]; then
+          printf 'wifi\t%s\t%s\t%s\n' "$host" "$file" "$ap" >> "$plan"
         else
-          echo "${host}: ${file} is not in this repo, so it was not applied." >&2
+          echo "${host}: ${secret} resolves to no file in this repo, so it was not applied." >&2
         fi
       done <<< "$radios"
       if [ -f "hosts/${host}/overrides.nix" ]; then
-        printf 'leases %s -\n' "$host" >> "$plan"
+        printf 'leases\t%s\t%s\t-\n' "$host" "hosts/${host}/overrides.nix" >> "$plan"
       fi
     else
       files=$(git diff --name-only "$rev" HEAD)
     fi
     printf '%s\n' "$files" | while IFS= read -r file; do
       [ -n "$file" ] || continue
-      kind=structural
       case "$file" in
         "hosts/${host}/overrides.nix")
-          kind=leases
-          ;;
-        secrets/wifi/"${host}"/*)
-          kind=wifi
+          printf 'leases\t%s\t%s\t-\n' "$host" "$file" >> "$plan"
           ;;
         secrets/*)
+          # The path alone does not say what consumes a cipher file.
+          # Resolve every subscription and radio pair through the sops
+          # map; each hit is its own plan row because one cipher can
+          # feed several subscriptions. No hit leaves the file
+          # structural. The AP or subscription name is the pair's first
+          # field, as in the unknown-diff branch above.
+          matched=0
           while IFS= read -r pair; do
             [ -n "$pair" ] || continue
-            secret=${pair#* }
-            if [ "$file" = "secrets/${secret}" ]; then
-              kind=subscription
+            resolved=$(printf '%s\n' "$sopsmap" | awk -F '\t' -v n="${pair#* }" '$1 == n {print $2; exit}')
+            if [ "$file" = "$resolved" ]; then
+              printf 'subscription\t%s\t%s\t%s\n' "$host" "$file" "${pair%% *}" >> "$plan"
+              matched=1
             fi
           done <<< "$secrets"
+          while IFS= read -r pair; do
+            [ -n "$pair" ] || continue
+            resolved=$(printf '%s\n' "$sopsmap" | awk -F '\t' -v n="${pair#* }" '$1 == n {print $2; exit}')
+            if [ "$file" = "$resolved" ]; then
+              printf 'wifi\t%s\t%s\t%s\n' "$host" "$file" "${pair%% *}" >> "$plan"
+              matched=1
+            fi
+          done <<< "$radios"
+          if [ "$matched" = 0 ]; then
+            printf '%s %s\n' "$host" "$file" >> "$structural"
+          fi
           ;;
-      esac
-      case "$kind" in
-        structural) printf '%s %s\n' "$host" "$file" >> "$structural" ;;
-        leases) printf 'leases %s -\n' "$host" >> "$plan" ;;
-        wifi) printf 'wifi %s %s\n' "$host" "$file" >> "$plan" ;;
-        subscription) printf 'subscription %s %s\n' "$host" "$file" >> "$plan" ;;
+        *)
+          printf '%s %s\n' "$host" "$file" >> "$structural"
+          ;;
       esac
     done
   done < <(list_hosts "$host_arg")
@@ -397,25 +453,34 @@ fleet_apply() {
         echo "$row" >&2
         ;;
       *)
-        kind=${row%% *}
-        rest=${row#* }
-        host=${rest%% *}
-        file=${rest#* }
+        # Plan rows are tab-separated: kind, host, file, name. The
+        # fields are untrusted data and may contain spaces.
+        IFS="$(printf '\t')" read -r kind host file name <<< "$row"
         addr=$(host_address "$host")
         case "$kind" in
           subscription)
-            name=$(subscription_secrets "$host" | awk -v path="${file#secrets/}" '$2 == path {print $1}')
-            if [ -z "$name" ]; then
-              echo "${file} is not a subscription secret for ${host}." >&2
+            if [ -z "$name" ] || [ "$name" = "$file" ]; then
+              echo "janus-build fleet apply: bad plan row ${row}" >&2
               exit 2
             fi
-            ssh_to "$addr" "umask 077; mkdir -p /var/lib/janus/secrets/inbox; cat > /var/lib/janus/secrets/inbox/${name}.age" < "$file"
-            ssh_to "$addr" "age -d -i /var/lib/janus/secrets/age.key /var/lib/janus/secrets/inbox/${name}.age | janus override set proxy.subscriptions.${name}.url"
+            # The inbox file is a sops document; the router decrypts it
+            # with its own age key (D-0048). `age -d` cannot read sops.
+            # shq quotes the untrusted fields for the remote shell. The
+            # remote shell has no errexit, so the pipeline status is
+            # captured at once; the inbox cipher is removed either way
+            # and the status is kept.
+            box="/var/lib/janus/secrets/inbox/$(printf '%s' "$name" | tr '/' '_').sops"
+            ssh_to "$addr" "umask 077; mkdir -p /var/lib/janus/secrets/inbox; cat > $(shq "$box")" < "$file"
+            ssh_to "$addr" "SOPS_AGE_KEY_FILE=/var/lib/janus/secrets/age.key sops decrypt --extract '[\"value\"]' $(shq "$box") | janus override set proxy.subscriptions.$(shq "$name").url; rc=\$?; rm -f $(shq "$box"); exit \$rc"
             ;;
           wifi)
-            ap=$(basename "$file" .yaml)
-            ssh_to "$addr" "umask 077; mkdir -p /var/lib/janus/secrets/inbox; cat > /var/lib/janus/secrets/inbox/${ap}.age" < "$file"
-            ssh_to "$addr" "age -d -i /var/lib/janus/secrets/age.key /var/lib/janus/secrets/inbox/${ap}.age | janus override set network.wifi.${ap}.passphrase"
+            if [ -z "$name" ] || [ "$name" = "$file" ]; then
+              echo "janus-build fleet apply: bad plan row ${row}" >&2
+              exit 2
+            fi
+            box="/var/lib/janus/secrets/inbox/$(printf '%s' "$name" | tr '/' '_').sops"
+            ssh_to "$addr" "umask 077; mkdir -p /var/lib/janus/secrets/inbox; cat > $(shq "$box")" < "$file"
+            ssh_to "$addr" "SOPS_AGE_KEY_FILE=/var/lib/janus/secrets/age.key sops decrypt --extract '[\"value\"]' $(shq "$box") | janus override set network.wifi.$(shq "$name").passphrase; rc=\$?; rm -f $(shq "$box"); exit \$rc"
             ;;
           leases)
             apply_leases "$host"
@@ -458,11 +523,15 @@ fleet_pull() {
     echo "flake.nix does not import hosts/<name>/overrides.nix." >&2
     exit 2
   fi
-  values=$(mktemp)
-  radios=$(mktemp)
-  leases=$(mktemp)
-  reached=$(mktemp)
-  refs=$(mktemp)
+  # Pulled plaintext lands in these files. /dev/shm is RAM, so prefer
+  # it over a disk-backed TMPDIR.
+  tmp=/dev/shm
+  [ -d /dev/shm ] && [ -w /dev/shm ] || tmp=${TMPDIR:-/tmp}
+  values=$(mktemp "${tmp}/janus-pull-values.XXXXXX")
+  radios=$(mktemp "${tmp}/janus-pull-radios.XXXXXX")
+  leases=$(mktemp "${tmp}/janus-pull-leases.XXXXXX")
+  reached=$(mktemp "${tmp}/janus-pull-reached.XXXXXX")
+  refs=$(mktemp "${tmp}/janus-pull-refs.XXXXXX")
   : > "$values"
   : > "$radios"
   : > "$leases"
@@ -497,9 +566,8 @@ fleet_pull() {
       {host: $host, leases: [to_entries[] | select(.key | startswith("network.lans."))]}
     ' >> "$leases"
   done < <(list_hosts "$host_arg")
-  if [ "$with_secrets" = 1 ]; then
-    echo "The SSH session carried plaintext credentials. No plaintext file was kept." >&2
-  fi
+  last_host=""
+  sopsmap=""
   while IFS= read -r row; do
     [ -n "$row" ] || continue
     host=${row%% *}
@@ -513,7 +581,20 @@ fleet_pull() {
       echo "${host}: ${key} has no urlSecret in this repo." >&2
       exit 2
     fi
-    file="secrets/${secret}"
+    # Rows are grouped by host, so the sops map is one nix eval per
+    # host, not one per row.
+    if [ "$host" != "$last_host" ]; then
+      sopsmap=$(secret_files "$host") || {
+        echo "janus-build: nix eval failed for ${host} (sops.secrets); the configuration does not evaluate" >&2
+        exit 2
+      }
+      last_host=$host
+    fi
+    file=$(printf '%s\n' "$sopsmap" | awk -F '\t' -v n="$secret" '$1 == n {print $2; exit}')
+    if [ -z "$file" ]; then
+      echo "${host}: ${secret} resolves to no sopsFile in this repo." >&2
+      exit 2
+    fi
     if [ "$with_secrets" != 1 ] || [ "$value" = "(redacted)" ]; then
       echo "${host}: ${key} changed. Not fetched."
       continue
@@ -533,7 +614,19 @@ fleet_pull() {
       echo "${host}: ${key} has no passphraseSecret in this repo." >&2
       exit 2
     fi
-    file="secrets/${secret}"
+    # Same per-host sops map cache as the subscription loop above.
+    if [ "$host" != "$last_host" ]; then
+      sopsmap=$(secret_files "$host") || {
+        echo "janus-build: nix eval failed for ${host} (sops.secrets); the configuration does not evaluate" >&2
+        exit 2
+      }
+      last_host=$host
+    fi
+    file=$(printf '%s\n' "$sopsmap" | awk -F '\t' -v n="$secret" '$1 == n {print $2; exit}')
+    if [ -z "$file" ]; then
+      echo "${host}: ${secret} resolves to no sopsFile in this repo." >&2
+      exit 2
+    fi
     if [ "$with_secrets" != 1 ] || [ "$value" = "(redacted)" ]; then
       echo "${host}: ${key} changed. Not fetched."
       continue
@@ -541,16 +634,28 @@ fleet_pull() {
     printf '%s\t%s\t%s\n' "$file" "$host" "$value" >> "${values}.files"
   done < "$radios"
   while IFS= read -r host; do
+    sopsmap=$(secret_files "$host") || {
+      echo "janus-build: nix eval failed for ${host} (sops.secrets); the configuration does not evaluate" >&2
+      exit 2
+    }
+    subs=$(subscription_secrets "$host") || {
+      echo "janus-build: nix eval failed for ${host} (janus.proxy.subscriptions); the configuration does not evaluate" >&2
+      exit 2
+    }
+    wifis=$(wifi_secrets "$host") || {
+      echo "janus-build: nix eval failed for ${host} (janus.network.wifi); the configuration does not evaluate" >&2
+      exit 2
+    }
     while IFS= read -r pair; do
       [ -n "$pair" ] || continue
-      secret=${pair#* }
-      printf '%s %s\n' "secrets/${secret}" "$host" >> "$refs"
-    done <<< "$(subscription_secrets "$host" || true)"
+      file=$(printf '%s\n' "$sopsmap" | awk -F '\t' -v n="${pair#* }" '$1 == n {print $2; exit}')
+      [ -n "$file" ] && printf '%s\t%s\n' "$file" "$host" >> "$refs"
+    done <<< "$subs"
     while IFS= read -r pair; do
       [ -n "$pair" ] || continue
-      secret=${pair#* }
-      printf '%s %s\n' "secrets/${secret}" "$host" >> "$refs"
-    done <<< "$(wifi_secrets "$host" || true)"
+      file=$(printf '%s\n' "$sopsmap" | awk -F '\t' -v n="${pair#* }" '$1 == n {print $2; exit}')
+      [ -n "$file" ] && printf '%s\t%s\n' "$file" "$host" >> "$refs"
+    done <<< "$wifis"
   done < <(list_hosts)
   if [ -f "${values}.files" ]; then
     while IFS= read -r file; do
@@ -571,7 +676,7 @@ fleet_pull() {
           echo "${file} is referenced by ${owner}, which was not reached. The file was left unchanged." >&2
           blocked=1
         fi
-      done < <(awk -v f="$file" '$1 == f {print $2}' "$refs")
+      done < <(awk -F '\t' -v f="$file" '$1 == f {print $2}' "$refs")
       if [ "$blocked" = 1 ]; then
         continue
       fi
@@ -584,7 +689,7 @@ fleet_pull() {
           exit 1
         fi
         pubs+=("$pub")
-      done < <(awk -v f="$file" '$1 == f {print $2}' "$refs")
+      done < <(awk -F '\t' -v f="$file" '$1 == f {print $2}' "$refs")
       if [ "${#pubs[@]}" -eq 0 ]; then
         echo "No referencing host key for ${file}." >&2
         exit 1
@@ -624,6 +729,10 @@ fleet_pull() {
   done < <(list_hosts "$host_arg")
   git diff --stat || true
   rm -f "$values" "${values}.files" "$radios" "$leases" "$reached" "$refs"
+  # Said only after every plaintext temp file is gone.
+  if [ "$with_secrets" = 1 ]; then
+    echo "The SSH session carried plaintext credentials. No plaintext file was kept." >&2
+  fi
 }
 
 write_host() {

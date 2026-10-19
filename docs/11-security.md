@@ -97,10 +97,16 @@ into `/run/secrets` (tmpfs).
 The Nix store holds ciphertext only. The private key is not a build
 output.
 
-A file under `subscription/` or `nodes/` is encrypted to every host that
-references it. Any of those routers can read it. A file under `wifi/`,
-`pppoe/`, `tailscale/`, `wireguard/`, or `web/` is encrypted to that
-host only.
+At `secret set`, a file under `subscription/` or `nodes/` is encrypted
+to every host under `secrets/keys/`, not only those that reference it.
+Any of those routers can read it. `fleet pull` re-encrypts a rotated
+value only to the hosts whose configuration references the file. A file
+under `wifi/`, `pppoe/`, `tailscale/`, `wireguard/`, or `web/` is
+encrypted to that host only. The image ships the sops CLI whenever the
+configuration has sops secrets: `janus-build fleet apply` sends
+ciphertext and the router decrypts it itself (D-0048). The CLI adds
+roughly 50 MiB to the image. `sops-install-secrets` alone cannot do
+that; it is a boot service, not an interactive decryptor.
 
 | Secret | In sops | Notes |
 |--------|---------|-------|

@@ -278,10 +278,89 @@ in {
         exit 1
       fi
       grep -q 'jq -Rs' "$(command -v janus-build)"
+      # fleet apply must decrypt the inbox with sops on the router, not
+      # with age: the board ships no age binary and age cannot read a
+      # sops document (D-0048).
+      if grep -q 'age -d -i' "$(command -v janus-build)"; then
+        echo "fleet apply still decrypts the inbox with age" >&2
+        exit 1
+      fi
+      grep -q 'sops decrypt --extract' "$(command -v janus-build)"
+      grep -q 'secret_files' "$(command -v janus-build)"
+      printf '%s\n' 'https://example.invalid/sub' | janus-build secret set secrets/subscription/main.yaml
+      test -s secrets/subscription/main.yaml
+      if grep -q example.invalid secrets/subscription/main.yaml; then
+        echo "subscription url was stored in plaintext" >&2
+        exit 1
+      fi
+      SOPS_AGE_KEY_FILE="$TMPDIR/age.key" sops -d --extract '["value"]' secrets/subscription/main.yaml > "$TMPDIR/sub"
+      printf '%s' 'https://example.invalid/sub' | cmp - "$TMPDIR/sub"
       janus-build host add other
       janus-build secret keygen other > "$TMPDIR/other.key"
       if SOPS_AGE_KEY_FILE="$TMPDIR/other.key" sops -d --extract '["value"]' secrets/web/potato.yaml > "$TMPDIR/stolen"; then
         echo "maintenance passphrase was readable by another host" >&2
+        exit 1
+      fi
+      echo ok > "$out"
+    '';
+  # Execution-level tests for the fleet-apply plan parser (finding
+  # F-F): cli-init only greps the script text. Here the script is
+  # sourced through its JANUS_BUILD_LIB guard with a mock nix_fleet,
+  # and secret_files, shq, and the plan row read run for real.
+  cli-plan-parser =
+    pkgs.runCommand "cli-plan-parser" {
+      nativeBuildInputs = [pkgs.bash pkgs.jq pkgs.gnused];
+    } ''
+      JANUS_BUILD_LIB=1
+      source ${./../pkgs/janus-build.sh}
+
+      # secret_files strips the *-source store prefix and the repo
+      # prefix, and skips a sopsFile outside the repo.
+      nix_fleet() {
+        jq -n --arg repo "$PWD" '{
+          "ap.yaml": "\($repo)/secrets/wifi/h1/ap.yaml",
+          "main.yaml": "/nix/store/xxx-source/secrets/subscription/main.yaml",
+          "stolen": "/etc/passwd"
+        }'
+      }
+      printf 'ap.yaml\tsecrets/wifi/h1/ap.yaml\nmain.yaml\tsecrets/subscription/main.yaml\n' > expected
+      secret_files h1 2>skipped.log | cmp expected -
+      grep -q 'skipped' skipped.log
+      grep -q '/etc/passwd' skipped.log
+
+      # shq single-quotes an untrusted word: eval roundtrips to the
+      # original string and a metacharacter payload cannot inject.
+      roundtrip() {
+        got=$(eval "printf %s $(shq "$1")")
+        if [ "$got" != "$1" ]; then
+          echo "shq roundtrip failed for: $1" >&2
+          exit 1
+        fi
+      }
+      roundtrip 'my sub'
+      roundtrip "a'b"
+      rm -f /tmp/pwned
+      roundtrip 'x; touch /tmp/pwned; echo'
+      if [ -e /tmp/pwned ]; then
+        echo "shq allowed a command injection" >&2
+        exit 1
+      fi
+
+      # Plan rows parse as kind, host, file, name; a name with a space
+      # survives, and a row without a fourth field trips the bad-row
+      # guard from fleet_apply.
+      row=$(printf 'subscription\th\tf\tmy sub')
+      IFS="$(printf '\t')" read -r kind host file name <<< "$row"
+      test "$kind" = subscription
+      test "$host" = h
+      test "$file" = f
+      test "$name" = "my sub"
+      row=$(printf 'subscription\th\tf')
+      IFS="$(printf '\t')" read -r kind host file name <<< "$row"
+      if [ -z "$name" ] || [ "$name" = "$file" ]; then
+        :
+      else
+        echo "a bad plan row was not caught" >&2
         exit 1
       fi
       echo ok > "$out"
@@ -1406,6 +1485,31 @@ in {
       grep -q ${lib.escapeShellArg os.config.sops.secrets.wifi-eval-home.path} ${script}
       printf '%s\n' ${lib.escapeShellArg secretStart} | grep -q ${lib.escapeShellArg os.config.sops.secrets.wifi-eval-home.path}
       test ${lib.escapeShellArg os.config.sops.secrets.wifi-eval-home.key} = value
+      echo ok > "$out"
+    '';
+  eval-secret-cli = let
+    os = mk [
+      base
+      {
+        janus.proxy.enable = true;
+        janus.proxy.subscriptions.a.urlSecret = "sub-eval";
+        sops.secrets.sub-eval.sopsFile = ./fixtures/sops-placeholder;
+      }
+    ];
+    bare = mk [base];
+    packed = lib.concatStringsSep " " os.config.environment.systemPackages;
+    empty = lib.concatStringsSep " " bare.config.environment.systemPackages;
+  in
+    pkgs.runCommand "eval-secret-cli" {} ''
+      # D-0048: fleet apply decrypts the inbox file on the router, so the
+      # image ships the sops CLI whenever there is a secret to decrypt.
+      printf '%s\n' ${lib.escapeShellArg packed} | grep -qF ${lib.escapeShellArg "${pkgs.sops}"}
+      case ${lib.escapeShellArg empty} in
+        *${lib.escapeShellArg "${pkgs.sops}"}*)
+          echo "sops shipped without any sops secret" >&2
+          exit 1
+          ;;
+      esac
       echo ok > "$out"
     '';
   eval-wifi-onboard = let

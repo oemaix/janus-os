@@ -156,9 +156,10 @@ secrets/nodes/<name>.yaml            # manual proxy-node credential
 secrets/web/<host>.yaml              # maintenance page passphrase, one line
 ```
 
-A host path is encrypted to `secrets/keys/<host>.pub`. A proxy
-subscription file or a manual proxy-node file is encrypted to every host
-whose configuration names that file.
+A host path is encrypted to `secrets/keys/<host>.pub`. At `secret set`,
+a proxy subscription file or a manual proxy-node file is encrypted to
+every host under `secrets/keys/`. `fleet pull` re-encrypts a rotated
+value only to the hosts whose configuration names that file.
 The tree must be a git repository. These commands do not commit.
 
 | Command | Effect |
@@ -209,6 +210,12 @@ the same ciphertext on every host that references it; each of those hosts
 can decrypt it. A changed URL is followed by `janus proxy refresh` for
 that subscription.
 
+The ciphertext file is the one `sops.secrets.<name>.sopsFile` names
+(*08* §11); the secret name itself is not the path. `fleet apply` copies
+it to `/var/lib/janus/secrets/inbox/` and the router decrypts it with
+the sops CLI that the image ships whenever the configuration has sops
+secrets (D-0048). `age` alone cannot read a sops document.
+
 `/etc/janus/build.json` records `configRevision`, the git revision of this
 repo at image build. `fleet apply` diffs that revision to `HEAD`.
 
@@ -241,7 +248,7 @@ remote command is `janus override show --secrets --json`.
 
 | Override | Default | `--with-secrets` |
 |----------|---------|------------------|
-| Subscription URL | Named as changed. Not fetched. | Router decrypts. Build host encrypts to the recipients of the existing `urlSecret` file and writes that file. |
+| Subscription URL | Named as changed. Not fetched. | Router decrypts. Build host re-encrypts to the hosts whose configuration names that `urlSecret` file and writes that file. |
 | Wi-Fi passphrase | Named as changed. Not fetched. | Same, for the existing `passphraseSecret` file. |
 | Static lease | `hosts/<host>/overrides.nix`, which that host's `configuration.nix` already imports. | Same file. Leases are not secrets. |
 
