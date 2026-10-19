@@ -209,8 +209,16 @@ in {
         echo "no PATH line in the janus wrapper" >&2
         exit 1
       fi
+      IFS=':' read -r -a dirs <<< "$path"
       for cmd in awk sed find jq ip systemctl head tr cat; do
-        if [ ! -x "$path/$cmd" ]; then
+        found=
+        for d in "''${dirs[@]}"; do
+          if [ -x "$d/$cmd" ]; then
+            found=1
+            break
+          fi
+        done
+        if [ -z "$found" ]; then
           echo "janus CLI runtime lacks $cmd" >&2
           exit 1
         fi
