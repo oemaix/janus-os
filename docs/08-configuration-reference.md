@@ -65,7 +65,7 @@ learning path: copy, edit values, build.
 | `peripherals.<name>.hmi.profile` | enum | — | `waveshare-1.3-oled-hat` sets the SH1106 panel, SPI pins, and the key map in *10* §4.6. Behaviour is *15*. |
 | `peripherals.<name>.hmi.driver` | enum | from profile | `sh1106` `ssd1306` `st7789` `waveshare-epd-2in13` |
 | `peripherals.<name>.hmi.keys.<name>` | enum | profile default | Replace one key's action: `refresh`, `reboot-hold`, `factory-reset`, `unbound`. The joystick stays navigation. |
-| `peripherals.<name>.wifi.capabilities` | list | from db | `ap` `sta`; assertion if AP requested on non-AP chip |
+| `peripherals.<name>.wifi.capabilities` | list | from db | `ap` `sta`. Empty uses the allowlist. A role outside that list fails evaluation, including an access point on a station-only ID (D-0055). |
 | `peripherals.<name>.power.shutdown.enable` | bool | `true` if the profile knows the discharge sign | Early cutoff while the cell is discharging (*10* §4.5). |
 | `peripherals.<name>.power.shutdown.warnVolts` | float | `3.60` | Must be ≥ the shutdown voltage. |
 | `peripherals.<name>.power.shutdown.volts` | float | `3.50` | Sustained 60 s. MUST NOT be set below 3.50. |
@@ -101,7 +101,8 @@ checked again before reformat (D-0049).
 ### 4.3 `wans.<name>`
 
 See *06 — Networking* §4 for the full shape. Mandatory: `uplink`, `mode`.
-Defaults: `role = "default"`, `metric = 100 + index` (`1100 + index` when
+`mode = "wifi"` is a WPA2 station on a peripheral whose profile lists
+`sta` (D-0055, FR-NET-018). Defaults: `role = "default"`, `metric = 100 + index` (`1100 + index` when
 `role` is `backup`), `ipv6.mode = "disabled"`, `healthCheck.enable =
 (role == "backup" || >1 default WANs)`.
 
@@ -116,8 +117,10 @@ inherit `janus.proxy` when unset (*07* §5, D-0042). `dns` inherits
 
 ### 4.5 `wifi.<name>`, `wifiCountry`, `igmpProxy`
 
-See *06* §10–11. `wifiCountry` is one ISO alpha-2 code for every access
-point. Unset, `cn` is `CN`, `ru` is `RU`, and `ir` is `IR` (D-0054).
+See *06* §10–11. An access point and a `mode = "wifi"` WAN are the two
+roles. One peripheral takes one of them. `wifiCountry` is one ISO alpha-2
+code for every access point. Unset, `cn` is `CN`, `ru` is `RU`, and `ir`
+is `IR` (D-0054).
 
 ## 5. `janus.firewall`
 
@@ -245,6 +248,7 @@ not in git. Public keys are `secrets/keys/<host>.pub`.
 ```text
 secrets/keys/potato.pub
 secrets/wifi/potato/home.yaml
+secrets/wifi/potato/cafeteria.yaml
 secrets/pppoe/potato/main.yaml
 secrets/tailscale/potato.yaml
 secrets/wireguard/potato/uplink.yaml
@@ -276,6 +280,11 @@ the file in its own unit.
 sops.age.keyFile = "/var/lib/janus/secrets/age.key";
 sops.secrets.wifi-potato-home.sopsFile = ./secrets/wifi/potato/home.yaml;
 janus.network.wifi.home.passphraseSecret = "wifi-potato-home";
+sops.secrets.wifi-potato-cafeteria.sopsFile = ./secrets/wifi/potato/cafeteria.yaml;
+janus.network.wans.cafe.wifi.networks = [{
+  ssid = "Cafeteria";
+  passphraseSecret = "wifi-potato-cafeteria";
+}];
 sops.secrets.pppoe-potato-main.sopsFile = ./secrets/pppoe/potato/main.yaml;
 janus.network.wans.main.pppoe.passwordSecret = "pppoe-potato-main";
 sops.secrets.subscription-vendor-a.sopsFile = ./secrets/subscription/vendor-a.yaml;
@@ -322,3 +331,4 @@ export`. `janus-build fleet pull` writes leases into
   unless IPv6 interception is enabled. `bypass` does not warn.
 * `janus.hardware.board` is set and supports every declared peripheral class.
 * A `wwan` peripheral whose USB ID is not on the allowlist fails evaluation.
+* A Wi-Fi role outside the peripheral profile fails evaluation. One peripheral is an access point or a station WAN. A `mode = "wifi"` WAN names a profile that lists `sta`, and its networks are WPA2-PSK (D-0055).

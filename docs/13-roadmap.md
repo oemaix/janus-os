@@ -76,6 +76,7 @@ power-cut. Tier 3 ships the profile. The Future list stays after 1.0.
 * A check that a destination refuses the exit because the address is in Iran, China, or Russia, for example Gemini. A country guessed from the node name, and a connect check (ping, TCP, or a handshake), do not show that refusal.
 * A per-board kernel profile, `matched` (D-0052). `standard` and `compact` are implemented (D-0051).
 * The maintenance page (*20*) is in the image. The retro console in *20* §7 is the design: no radius, no shadow, no gradient. Some functions and elements are still unusable or only partly worked out. Later work keeps that simple console and works out every function and every element so each behaves clearly and fluidly. The shape is in Notes.
+* Open Wi-Fi, WPA-Enterprise, a station network added on the router without a rebuild, and captive-portal completion (*06* §11, FR-NET-018, D-0055).
 
 ## 2. Progress
 
@@ -272,6 +273,11 @@ tree does not mean that behavior exists. Stubs are not finished features.
   `compact`. The compile-time cut matters while kernel patches still
   force a rebuild, and on riscv64 and armv7l, which have no cache.
   `matched` is not a value (D-0052).
+* The station uplink (D-0055, FR-NET-018, *10* §4.11) is specified and not
+  lowered. The allowlist has no `0bda:8179`. An access point on
+  `0bda:8176` still blacklists the `rtl8xxxu` module. The definition
+  assigns `rtl8192cu` to that ID only and leaves `rtl8xxxu` loaded for
+  the station stick.
 * The board image must not contain a compiler or `janus-build`. The `nix`
   binary stays for activation and for `nix-store --import` (*05*, *09*
   §8.2). `nix.enable = false`, nixpkgs sources are absent, and `/nix` is
