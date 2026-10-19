@@ -69,11 +69,19 @@ sops_encrypt() {
   local work
   work=$(mktemp -d)
   # RETURN fires only when the function returns; an `exit 1` below ends
-  # the process from inside the function and skips the trap, so those
-  # paths remove the work dir themselves. The plaintext stays in the
+  # the process from inside the function and skips the trap, and so does
+  # an errexit termination on a failing command. Every risk command
+  # therefore carries its own explicit `|| { ... }` cleanup below. A
+  # signal-level kill skips all of it and can leave the 0700 work dir
+  # behind — accepted as the known boundary. The plaintext stays in the
   # temp dir and never enters argv.
   trap 'rm -rf "$work"' RETURN
-  cat > "${work}/plain"
+  cat > "${work}/plain" || {
+    trap - RETURN
+    rm -rf "$work"
+    echo "Failed to read the plaintext for ${out}." >&2
+    exit 1
+  }
   case "$out" in
     secrets/pppoe/*|secrets/nodes/*)
       if [ ! -s "${work}/plain" ]; then
@@ -81,12 +89,22 @@ sops_encrypt() {
         rm -rf "$work"
         exit 1
       fi
-      cp "${work}/plain" "${work}/in"
+      cp "${work}/plain" "${work}/in" || {
+        trap - RETURN
+        rm -rf "$work"
+        echo "Failed to stage the plaintext for ${out}." >&2
+        exit 1
+      }
       intype=yaml
       ;;
     *)
       # Drop trailing newlines. jq reads the file; the secret is not an argument.
-      jq -Rs 'sub("\n+$"; "") | {value: .}' < "${work}/plain" > "${work}/in"
+      jq -Rs 'sub("\n+$"; "") | {value: .}' < "${work}/plain" > "${work}/in" || {
+        trap - RETURN
+        rm -rf "$work"
+        echo "Failed to encode the secret for ${out}." >&2
+        exit 1
+      }
       if ! jq -e '.value | length > 0' "${work}/in" >/dev/null; then
         echo "Refusing an empty secret for ${out}." >&2
         rm -rf "$work"
@@ -100,7 +118,13 @@ sops_encrypt() {
     rm -rf "$work"
     exit 1
   fi
-  mv "${out}.new" "$out"
+  mv "${out}.new" "$out" || {
+    trap - RETURN
+    rm -rf "$work"
+    rm -f "${out}.new"
+    echo "Failed to install ${out}." >&2
+    exit 1
+  }
   # A RETURN trap is not function-local; left armed it would keep firing
   # on later returns and rm a stale, possibly reused path. Disarm it and
   # remove the work dir explicitly on the success path.
@@ -323,6 +347,7 @@ shq() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
 # One tab-separated plan row: kind, host, file, name. The fields are
 # untrusted data and may contain spaces; a row without a name, or one
 # whose name equals the file, is malformed. Non-zero return = bad row.
+# It sets kind/host/file/name in the caller's scope.
 parse_plan_row() {
   IFS="$(printf '\t')" read -r kind host file name <<< "$1"
   [ -n "$name" ] && [ "$name" != "$file" ]
@@ -495,6 +520,7 @@ fleet_apply() {
           wifi)
             box="/var/lib/janus/secrets/inbox/$(printf '%s' "$name" | tr '/' '_').sops"
             ssh_to "$addr" "umask 077; mkdir -p /var/lib/janus/secrets/inbox; cat > $(shq "$box")" < "$file"
+            # Same $? semantics as the subscription branch above.
             ssh_to "$addr" "SOPS_AGE_KEY_FILE=/var/lib/janus/secrets/age.key sops decrypt --extract '[\"value\"]' $(shq "$box") | janus override set network.wifi.$(shq "$name").passphrase; rc=\$?; rm -f $(shq "$box"); exit \$rc"
             ;;
           leases)
@@ -542,6 +568,17 @@ fleet_pull() {
   # it over a disk-backed TMPDIR.
   tmp=/dev/shm
   [ -d /dev/shm ] && [ -w /dev/shm ] || tmp=${TMPDIR:-/tmp}
+  # Arm the EXIT trap before the first mktemp so a failure anywhere in
+  # the mktemp sequence still cleans up. The five paths start empty and
+  # the trap body tests ${var:-} — nounset-safe on bash 3.2 and 5 alike
+  # — and removes only the paths that were assigned. The trap stays
+  # armed for the whole function by design; the success path disarms it.
+  values=""
+  radios=""
+  leases=""
+  reached=""
+  refs=""
+  trap '[ -n "${values:-}" ] && rm -f "$values" "${values}.files"; [ -n "${radios:-}" ] && rm -f "$radios"; [ -n "${leases:-}" ] && rm -f "$leases"; [ -n "${reached:-}" ] && rm -f "$reached"; [ -n "${refs:-}" ] && rm -f "$refs"; :' EXIT
   values=$(mktemp "${tmp}/janus-pull-values.XXXXXX")
   radios=$(mktemp "${tmp}/janus-pull-radios.XXXXXX")
   leases=$(mktemp "${tmp}/janus-pull-leases.XXXXXX")
@@ -552,14 +589,10 @@ fleet_pull() {
   : > "$leases"
   : > "$reached"
   : > "$refs"
-  # The EXIT trap removes the plaintext temp files on every mid-function
-  # exit (errexit, exit 2); the explicit rm at the end stays as the
-  # idempotent cleanup on the success path. mktemp already creates the
-  # five files 600, but ${values}.files is first written by `>>` below,
-  # and appending does not tighten an existing file's mode — pre-create
-  # it 600 under umask 077 so the plaintext list is never readable by
-  # others, not even briefly.
-  trap 'rm -f "$values" "${values}.files" "$radios" "$leases" "$reached" "$refs"' EXIT
+  # mktemp already creates the five files 600, but ${values}.files is
+  # first written by `>>` below, and appending does not tighten an
+  # existing file's mode — pre-create it 600 under umask 077 so the
+  # plaintext list is never readable by others, not even briefly.
   (umask 077; : > "${values}.files")
   while IFS= read -r host; do
     if ! addr=$(host_address "$host"); then
@@ -579,12 +612,12 @@ fleet_pull() {
     printf '%s\n' "$raw" | jq -r --arg host "$host" '
       to_entries[]
       | select(.key | startswith("proxy.subscriptions."))
-      | "\($host) \(.key) \(.value | gsub("[\\t\\n\\r]"; " "))"
+      | "\($host)\t\(.key)\t\(.value)"
     ' >> "$values"
     printf '%s\n' "$raw" | jq -r --arg host "$host" '
       to_entries[]
       | select(.key | startswith("network.wifi."))
-      | "\($host) \(.key) \(.value | gsub("[\\t\\n\\r]"; " "))"
+      | "\($host)\t\(.key)\t\(.value)"
     ' >> "$radios"
     printf '%s\n' "$raw" | jq -c --arg host "$host" '
       {host: $host, leases: [to_entries[] | select(.key | startswith("network.lans."))]}
@@ -594,10 +627,17 @@ fleet_pull() {
   sopsmap=""
   while IFS= read -r row; do
     [ -n "$row" ] || continue
-    host=${row%% *}
-    rest=${row#* }
-    key=${rest%% *}
-    value=${rest#* }
+    IFS="$(printf '\t')" read -r host key value <<< "$row"
+    # Refuse a value that cannot survive the tab-separated channel
+    # instead of silently rewriting it: .files below always carries the
+    # original bytes. NUL cannot live in a bash variable, so there is
+    # nothing to check for it.
+    case "$value" in
+      *$'\t'*|*$'\n'*|*$'\r'*)
+        echo "${host}: ${key} contains a tab, newline, or carriage return; refusing to pull it." >&2
+        exit 2
+        ;;
+    esac
     name=${key#proxy.subscriptions.}
     name=${name%.url}
     secret=$(subscription_secrets "$host" | awk -F '\t' -v n="$name" '$1 == n {print $2}')
@@ -627,10 +667,14 @@ fleet_pull() {
   done < "$values"
   while IFS= read -r row; do
     [ -n "$row" ] || continue
-    host=${row%% *}
-    rest=${row#* }
-    key=${rest%% *}
-    value=${rest#* }
+    IFS="$(printf '\t')" read -r host key value <<< "$row"
+    # Same loud-refusal rule as the subscription loop above.
+    case "$value" in
+      *$'\t'*|*$'\n'*|*$'\r'*)
+        echo "${host}: ${key} contains a tab, newline, or carriage return; refusing to pull it." >&2
+        exit 2
+        ;;
+    esac
     ap=${key#network.wifi.}
     ap=${ap%.passphrase}
     secret=$(wifi_secrets "$host" | awk -F '\t' -v n="$ap" '$1 == n {print $2}')
@@ -755,6 +799,10 @@ fleet_pull() {
   done < <(list_hosts "$host_arg")
   git diff --stat || true
   rm -f "$values" "${values}.files" "$radios" "$leases" "$reached" "$refs"
+  # The plaintext is gone, so disarm the EXIT trap: the armed window is
+  # exactly the lifetime of the temp files, matching the disarm
+  # discipline of sops_encrypt's RETURN trap.
+  trap - EXIT
   # Said only after every plaintext temp file is gone.
   if [ "$with_secrets" = 1 ]; then
     echo "The SSH session carried plaintext credentials. No plaintext file was kept." >&2

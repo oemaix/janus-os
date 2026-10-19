@@ -311,6 +311,8 @@ in {
     pkgs.runCommand "cli-plan-parser" {
       nativeBuildInputs = [pkgs.bash pkgs.jq pkgs.gnused];
     } ''
+      # The packaged runtime also runs with nounset.
+      set -u
       JANUS_BUILD_LIB=1
       source ${./../pkgs/janus-build.sh}
 
@@ -366,6 +368,113 @@ in {
       done
       echo ok > "$out"
     '';
+  # End-to-end test of fleet_pull --with-secrets: the router's dump
+  # feeds a tab-separated channel whose values must reach sops_encrypt
+  # byte for byte (no gsub rewriting), the five plaintext temp files
+  # must be reaped by the EXIT trap, and a value that cannot survive
+  # the channel (a real tab) is refused loudly with exit 2.
+  cli-pull-rotate =
+    pkgs.runCommand "cli-pull-rotate" {
+      nativeBuildInputs = [pkgs.git pkgs.jq pkgs.bash];
+    } ''
+      # The packaged runtime runs with nounset and pipefail; mirror
+      # both (the builder already supplies -e).
+      set -u
+      set -o pipefail
+      JANUS_BUILD_LIB=1
+      source ${./../pkgs/janus-build.sh}
+
+      repo=$(mktemp -d)
+      cd "$repo"
+      git init -q
+      mkdir -p hosts/h1 secrets/subscription secrets/wifi/h1 secrets/keys
+      printf '{ ... }: { imports = [ ./hosts/h1/overrides.nix ]; }\n' > flake.nix
+      printf '{ ... }: {}\n' > hosts/h1/configuration.nix
+      printf '{ ... }: {}\n' > hosts/h1/overrides.nix
+      printf 'cipher-sub\n' > secrets/subscription/shared.yaml
+      printf 'cipher-wifi\n' > secrets/wifi/h1/living.yaml
+      printf 'age1fake\n' > secrets/keys/h1.pub
+      git add .
+      git -c user.email=t@t -c user.name=t commit -qm baseline
+      # fleet_pull prefers /dev/shm; point TMPDIR at a known dir so the
+      # residue check below covers the fallback path too.
+      export TMPDIR
+      TMPDIR=$(mktemp -d)
+
+      host_address() { printf '%s\n' 10.0.0.1; }
+      # The dump carries a subscription name with a space and an SSID
+      # with a space: the values must arrive byte for byte.
+      dump='{"proxy.subscriptions.my sub.url":"https://example.com/feed v2","network.wifi.living room.passphrase":"new pass 456"}'
+      ssh_to() {
+        shift
+        if [ "$*" = "janus --json override show --secrets" ]; then
+          printf '%s\n' "$dump"
+        else
+          echo "unexpected ssh command: $*" >&2
+          return 1
+        fi
+      }
+      nix_fleet() {
+        # Anchored on the full eval-expression fragments. The order is
+        # significant: the secret_files --apply expression mentions
+        # sops.secrets and ends in .config, so it is matched last.
+        case "$*" in
+          *.config.janus.proxy.subscriptions*) printf '%s' '{"my sub":{"urlSecret":"sub-a"}}' ;;
+          *.config.janus.network.wifi*) printf '%s' '{"living room":{"passphraseSecret":"wifi-a"}}' ;;
+          *sops.secrets*.config*) printf '%s' "{\"sub-a\":\"$PWD/secrets/subscription/shared.yaml\",\"wifi-a\":\"$PWD/secrets/wifi/h1/living.yaml\"}" ;;
+          *) return 1 ;;
+        esac
+      }
+      # Capture mock: the plaintext handed to sops_encrypt is stored so
+      # the test can compare it with the dumped value byte for byte.
+      # The variable is named dest on purpose: runCommand's own $out
+      # must survive to the final echo.
+      capture=$(mktemp -d)
+      sops_encrypt() {
+        dest=$1
+        shift
+        cat > "$capture/$(printf '%s' "$dest" | tr '/' '_')"
+      }
+
+      (fleet_pull --with-secrets) >pull.out 2>pull.err
+      grep -qF 'updated secrets/subscription/shared.yaml' pull.out
+      grep -qF 'updated secrets/wifi/h1/living.yaml' pull.out
+      # awk adds one trailing newline; every byte before it must be the
+      # dumped value exactly, spaces included.
+      printf '%s\n' 'https://example.com/feed v2' > expected-sub
+      cmp expected-sub "$capture/secrets_subscription_shared.yaml"
+      printf '%s\n' 'new pass 456' > expected-wifi
+      cmp expected-wifi "$capture/secrets_wifi_h1_living.yaml"
+      # The only expected stderr line is the plaintext-session notice.
+      printf '%s\n' 'The SSH session carried plaintext credentials. No plaintext file was kept.' > expected-err
+      cmp expected-err pull.err
+      # No janus-pull-* residue: the EXIT trap reaps the five plaintext
+      # temp files. Resolve the temp dir the way fleet_pull does.
+      tmp=/dev/shm
+      [ -d /dev/shm ] && [ -w /dev/shm ] || tmp=$TMPDIR
+      if find "$tmp" -maxdepth 1 -name 'janus-pull-*' -print | grep -q .; then
+        echo "janus-pull temp files leaked in $tmp" >&2
+        exit 1
+      fi
+
+      # Negative path: a value with a real tab cannot survive the
+      # tab-separated channel and must be refused with exit 2, still
+      # with no temp-file residue.
+      dump='{"proxy.subscriptions.my sub.url":"has\ttab"}'
+      rc=0
+      (fleet_pull --with-secrets) >neg.out 2>neg.err || rc=$?
+      if [ "$rc" -ne 2 ]; then
+        echo "fleet_pull with a tabbed value exited $rc, want 2" >&2
+        cat neg.err >&2
+        exit 1
+      fi
+      grep -q 'refusing to pull' neg.err
+      if find "$tmp" -maxdepth 1 -name 'janus-pull-*' -print | grep -q .; then
+        echo "janus-pull temp files leaked on the refusal path" >&2
+        exit 1
+      fi
+      echo ok > "$out"
+    '';
   # End-to-end test of fleet_apply against a minimal fleet fixture:
   # a baseline commit, then a cipher rotation plus a new wifi cipher
   # whose file name differs from the AP name. ssh/nix are mocked, and
@@ -375,6 +484,8 @@ in {
     pkgs.runCommand "cli-plan-build" {
       nativeBuildInputs = [pkgs.git pkgs.jq pkgs.bash pkgs.gnused];
     } ''
+      # The packaged runtime also runs with nounset.
+      set -u
       JANUS_BUILD_LIB=1
       source ${./../pkgs/janus-build.sh}
 
@@ -406,22 +517,43 @@ in {
       set -o pipefail
 
       host_address() { echo 10.0.0.1; }
+      # BADREV toggles the unknown-diff fallback: the version query
+      # answers a revision that is not a commit in this repo.
+      BADREV=
       ssh_to() {
         shift
-        case "$*" in
-          *version*) printf '{"configRevision":"%s"}\n' "$(git rev-parse HEAD~1)" ;;
-          *) printf '%s\n' "$*" >> "$PWD/applied.log" ;;
-        esac
+        # Exact match: the only read-only query fleet_apply may issue.
+        if [ "$*" = "janus version --json" ]; then
+          if [ -n "$BADREV" ]; then
+            printf '{"configRevision":"%s"}\n' "$BADREV"
+          else
+            printf '{"configRevision":"%s"}\n' "$(git rev-parse HEAD~1)"
+          fi
+        else
+          printf '%s\n' "$*" >> "$PWD/applied.log"
+        fi
       }
+      # The subscription set is data so scenarios can grow it without
+      # new commits; it lives outside the repo to keep the tree clean.
+      SUBS_JSON=$TMPDIR/subs.json
+      printf '%s' '{"main":{"urlSecret":"sub-a"},"my sub":{"urlSecret":"sub-a"}}' > "$SUBS_JSON"
       nix_fleet() {
+        # Anchored on a fragment of the full eval expression. The order
+        # is significant: h2 fails everything, and the secret_files
+        # --apply expression mentions sops.secrets and ends in .config,
+        # so it is matched last.
         case "$*" in
           *nixosConfigurations.h2*) return 1 ;;
-          *janus.proxy.subscriptions*) printf '{"main":{"urlSecret":"sub-a"},"my sub":{"urlSecret":"sub-a"}}' ;;
-          *janus.network.wifi*) printf '{"living room":{"passphraseSecret":"wifi-a"}}' ;;
-          *sops.secrets*|*.config*) printf '{"sub-a":"%s/secrets/subscription/shared.yaml","wifi-a":"%s/secrets/wifi/h1/whatever-name.yaml"}' "$PWD" "$PWD" ;;
+          *.config.janus.proxy.subscriptions*) cat "$SUBS_JSON" ;;
+          *.config.janus.network.wifi*) printf '%s' '{"living room":{"passphraseSecret":"wifi-a"}}' ;;
+          *sops.secrets*.config*) printf '{"sub-a":"%s/secrets/subscription/shared.yaml","wifi-a":"%s/secrets/wifi/h1/whatever-name.yaml"}' "$PWD" "$PWD" ;;
           *) return 1 ;;
         esac
       }
+      # apply_leases calls plain `nix`, not nix_fleet; the fixture
+      # overrides.nix sets no janus options, so an empty attrset is the
+      # honest answer and yields no lease rows.
+      nix() { printf '%s' '{}'; }
 
       if ! (fleet_apply); then
         echo "fleet_apply failed on the fixture" >&2
@@ -477,6 +609,95 @@ in {
         cat "$err" >&2
         exit 1
       fi
+
+      # A deleted cipher (rotation) still resolves in the sops map but
+      # has nothing to push: it must fall to the structural branch, not
+      # become a plan row that would fail at apply time.
+      rm -f applied.log
+      git rm -q secrets/subscription/shared.yaml
+      git -c user.email=t@t -c user.name=t commit -qm 'drop shared cipher'
+      rc=0
+      (fleet_apply h1) >"$TMPDIR/apply.out" 2>"$err" || rc=$?
+      if [ "$rc" -ne 2 ]; then
+        echo "fleet_apply with a deleted cipher exited $rc, want 2" >&2
+        cat "$err" >&2
+        exit 1
+      fi
+      grep -q 'outside the hot-override projection' "$err"
+      grep -q 'secrets/subscription/shared.yaml' "$err"
+      if grep -q 'proxy.subscriptions' applied.log 2>/dev/null; then
+        echo "a deleted cipher still produced subscription plan rows:" >&2
+        cat applied.log >&2
+        exit 1
+      fi
+      # With --only-overrides the same deletion is reported as needing
+      # a deploy, and the run succeeds.
+      rc=0
+      (fleet_apply --only-overrides h1) >"$TMPDIR/apply.out" 2>"$err" || rc=$?
+      if [ "$rc" -ne 0 ]; then
+        echo "fleet_apply --only-overrides with a deleted cipher exited $rc, want 0" >&2
+        cat "$err" >&2
+        exit 1
+      fi
+      grep -q 'still need janus-build deploy' "$err"
+      grep -q 'secrets/subscription/shared.yaml' "$err"
+
+      # An unreferenced cipher and an unrelated file are both
+      # structural: outside the hot-override projection.
+      printf 'orphan\n' > secrets/wifi/h1/orphan.yaml
+      printf 'noise\n' > unrelated.txt
+      git add .
+      git -c user.email=t@t -c user.name=t commit -qm 'add unreferenced cipher and noise'
+      rc=0
+      (fleet_apply h1) >"$TMPDIR/apply.out" 2>"$err" || rc=$?
+      if [ "$rc" -ne 2 ]; then
+        echo "fleet_apply with structural-only changes exited $rc, want 2" >&2
+        cat "$err" >&2
+        exit 1
+      fi
+      grep -q 'secrets/wifi/h1/orphan.yaml' "$err"
+      grep -q 'unrelated.txt' "$err"
+
+      # Unknown diff: the router reports a configRevision that is not a
+      # commit in this repo, so --only-overrides projects every pair
+      # through the sops map and exits 2 (unknown_diff). The live wifi
+      # cipher is still applied; the deleted shared cipher is reported.
+      BADREV=0123456789abcdef0123456789abcdef01234567
+      rm -f applied.log
+      rc=0
+      (fleet_apply --only-overrides h1) >"$TMPDIR/apply.out" 2>"$err" || rc=$?
+      if [ "$rc" -ne 2 ]; then
+        echo "the unknown-diff run exited $rc, want 2" >&2
+        cat "$err" >&2
+        exit 1
+      fi
+      grep -q 'the structural diff was not computed' "$err"
+      grep -q 'sub-a resolves to no file' "$err"
+      expect_lines applied.log "janus override set network.wifi.'living room'.passphrase" 1
+      BADREV=
+
+      # shq adversarial: a subscription named with a single quote must
+      # reach the remote command in the shq rewrite form (quote,
+      # backslash, quote, quote).
+      # git rm removed the empty directory along with the file.
+      mkdir -p secrets/subscription
+      printf 'cipher-v3\n' > secrets/subscription/shared.yaml
+      # Targeted add: the unknown-diff run above recreated applied.log,
+      # and the fixture tree must stay clean for require_clean.
+      git add secrets/subscription/shared.yaml
+      git -c user.email=t@t -c user.name=t commit -qm 'restore shared cipher'
+      printf '%s' '{"it'"'"'s mine":{"urlSecret":"sub-a"}}' > "$SUBS_JSON"
+      rm -f applied.log
+      if ! (fleet_apply h1) >"$TMPDIR/apply.out" 2>"$err"; then
+        echo "fleet_apply failed for the single-quoted subscription" >&2
+        cat "$err" >&2
+        exit 1
+      fi
+      # \047 is a single quote and \134 a backslash, so this script
+      # never carries the literal rewrite (quote backslash quote quote)
+      # inside its own quoting.
+      pat=$(printf 'janus override set proxy.subscriptions.\047it\047\134\047\047s mine\047.url')
+      expect_lines applied.log "$pat" 1
       echo ok > "$out"
     '';
   eval-boards = let
