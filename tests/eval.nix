@@ -201,6 +201,11 @@ in {
       janus-build init "$TMPDIR/fleet"
       test -f "$TMPDIR/fleet/flake.nix"
       test -d "$TMPDIR/fleet/.git"
+      # The template must ignore the janus-build artifacts, or the first
+      # build leaves result/ untracked and require_clean blocks apply.
+      test -f "$TMPDIR/fleet/.gitignore"
+      grep -qx 'result/' "$TMPDIR/fleet/.gitignore"
+      grep -qx 'backup/' "$TMPDIR/fleet/.gitignore"
       url=$(sed -n 's/.*inputs\.janus\.url = "\([^"]*\)".*/\1/p' "$TMPDIR/fleet/flake.nix")
       case "$url" in
         github:oemaix/janus-os/*)

@@ -263,7 +263,9 @@ deploy_slots() {
     ssh_to "$addr" "umount /mnt/janus-slot-nix" || true
     exit 1
   fi
-  ssh_to "$addr" "umount /mnt/janus-slot-nix || true; install -d -m 0755 /var/lib/janus && : > /var/lib/janus/deploy-pending && rm -f /var/lib/janus/deploy-confirmed /var/lib/janus/deploy-booted && mount -o remount,ro /boot || true; systemctl reboot"
+  # Detach the reboot: sshd closes this session before the network
+  # drops, otherwise the client hangs on a dead connection.
+  ssh_to "$addr" "umount /mnt/janus-slot-nix || true; install -d -m 0755 /var/lib/janus && : > /var/lib/janus/deploy-pending && rm -f /var/lib/janus/deploy-confirmed /var/lib/janus/deploy-booted && mount -o remount,ro /boot || true; nohup sh -c 'sleep 1; systemctl reboot' >/dev/null 2>&1 & exit 0"
 }
 
 require_clean() {
@@ -1240,7 +1242,8 @@ case "$cmd" in
       ssh_to "$addr" "nix-env -p /nix/var/nix/profiles/system --rollback" || true
       exit 1
     fi
-    ssh_to "$addr" "install -d -m 0755 /var/lib/janus && : > /var/lib/janus/deploy-pending && rm -f /var/lib/janus/deploy-confirmed /var/lib/janus/deploy-booted && mount -o remount,ro /nix || true; mount -o remount,ro /boot || true; systemctl reboot"
+    # Detach the reboot, same as deploy_slots.
+    ssh_to "$addr" "install -d -m 0755 /var/lib/janus && : > /var/lib/janus/deploy-pending && rm -f /var/lib/janus/deploy-confirmed /var/lib/janus/deploy-booted && mount -o remount,ro /nix || true; mount -o remount,ro /boot || true; nohup sh -c 'sleep 1; systemctl reboot' >/dev/null 2>&1 & exit 0"
     ;;
   *)
     usage
