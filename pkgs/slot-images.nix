@@ -63,7 +63,9 @@ stdenvNoCC.mkDerivation {
         if (( mib < min_mib )); then mib=$min_mib; fi
       fi
       truncate -s "''${mib}M" "$out"
-      mkfs.f2fs -f -l "$label" "$out" >&2
+      # mkfs creates the root inode. sload.f2fs -P never updates it, and
+      # the default owner is the build user's getuid()/getgid().
+      mkfs.f2fs -f -l "$label" -R 0:0 "$out" >&2
       fakeroot -- bash -c 'chown -R 0:0 "$1" && sload.f2fs -P -f "$1" -t / "$2"' bash "$src" "$out" >&2
       echo "$mib"
     }
