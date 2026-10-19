@@ -66,6 +66,7 @@ sops_encrypt() {
       keys=$key
     fi
   done
+  local work
   work=$(mktemp -d)
   # RETURN fires only when the function returns; an `exit 1` below ends
   # the process from inside the function and skips the trap, so those
@@ -100,6 +101,11 @@ sops_encrypt() {
     exit 1
   fi
   mv "${out}.new" "$out"
+  # A RETURN trap is not function-local; left armed it would keep firing
+  # on later returns and rm a stale, possibly reused path. Disarm it and
+  # remove the work dir explicitly on the success path.
+  trap - RETURN
+  rm -rf "$work"
 }
 
 host_nix_system() {
@@ -245,12 +251,12 @@ require_clean() {
 
 subscription_secrets() {
   nix_fleet eval --json ".#nixosConfigurations.${1}.config.janus.proxy.subscriptions" \
-    | jq -r 'to_entries[] | select(.value.urlSecret != null) | "\(.key) \(.value.urlSecret)"'
+    | jq -r 'to_entries[] | select(.value.urlSecret != null) | "\(.key)\t\(.value.urlSecret)"'
 }
 
 wifi_secrets() {
   nix_fleet eval --json ".#nixosConfigurations.${1}.config.janus.network.wifi" \
-    | jq -r 'to_entries[] | select(.value.passphraseSecret != null) | "\(.key) \(.value.passphraseSecret)"'
+    | jq -r 'to_entries[] | select(.value.passphraseSecret != null) | "\(.key)\t\(.value.passphraseSecret)"'
 }
 
 # sops secret names to repo files, "<name><TAB><file>" per line. The
@@ -314,6 +320,14 @@ ssh_dest() {
 # space or a metacharacter from splitting the word or injecting syntax.
 shq() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
 
+# One tab-separated plan row: kind, host, file, name. The fields are
+# untrusted data and may contain spaces; a row without a name, or one
+# whose name equals the file, is malformed. Non-zero return = bad row.
+parse_plan_row() {
+  IFS="$(printf '\t')" read -r kind host file name <<< "$1"
+  [ -n "$name" ] && [ "$name" != "$file" ]
+}
+
 fleet_apply() {
   only=0
   host_arg=""
@@ -370,8 +384,7 @@ fleet_apply() {
       unknown_diff=1
       while IFS= read -r pair; do
         [ -n "$pair" ] || continue
-        sub=${pair%% *}
-        secret=${pair#* }
+        IFS="$(printf '\t')" read -r sub secret <<< "$pair"
         file=$(printf '%s\n' "$sopsmap" | awk -F '\t' -v n="$secret" '$1 == n {print $2; exit}')
         if [ -n "$file" ] && [ -f "$file" ]; then
           printf 'subscription\t%s\t%s\t%s\n' "$host" "$file" "$sub" >> "$plan"
@@ -381,8 +394,7 @@ fleet_apply() {
       done <<< "$secrets"
       while IFS= read -r pair; do
         [ -n "$pair" ] || continue
-        ap=${pair%% *}
-        secret=${pair#* }
+        IFS="$(printf '\t')" read -r ap secret <<< "$pair"
         file=$(printf '%s\n' "$sopsmap" | awk -F '\t' -v n="$secret" '$1 == n {print $2; exit}')
         if [ -n "$file" ] && [ -f "$file" ]; then
           printf 'wifi\t%s\t%s\t%s\n' "$host" "$file" "$ap" >> "$plan"
@@ -412,18 +424,22 @@ fleet_apply() {
           matched=0
           while IFS= read -r pair; do
             [ -n "$pair" ] || continue
-            resolved=$(printf '%s\n' "$sopsmap" | awk -F '\t' -v n="${pair#* }" '$1 == n {print $2; exit}')
+            IFS="$(printf '\t')" read -r name secret <<< "$pair"
+            resolved=$(printf '%s\n' "$sopsmap" | awk -F '\t' -v n="$secret" '$1 == n {print $2; exit}')
             if [ "$file" = "$resolved" ]; then
-              printf 'subscription\t%s\t%s\t%s\n' "$host" "$file" "${pair%% *}" >> "$plan"
-              matched=1
+              # A deleted cipher (rotation) still resolves here but has
+              # nothing to push; leave matched=0 so the path falls to
+              # structural as "needs deploy" instead of a plan row that
+              # is doomed to fail at apply time.
+              [ -f "$file" ] && printf 'subscription\t%s\t%s\t%s\n' "$host" "$file" "$name" >> "$plan" && matched=1
             fi
           done <<< "$secrets"
           while IFS= read -r pair; do
             [ -n "$pair" ] || continue
-            resolved=$(printf '%s\n' "$sopsmap" | awk -F '\t' -v n="${pair#* }" '$1 == n {print $2; exit}')
+            IFS="$(printf '\t')" read -r name secret <<< "$pair"
+            resolved=$(printf '%s\n' "$sopsmap" | awk -F '\t' -v n="$secret" '$1 == n {print $2; exit}')
             if [ "$file" = "$resolved" ]; then
-              printf 'wifi\t%s\t%s\t%s\n' "$host" "$file" "${pair%% *}" >> "$plan"
-              matched=1
+              [ -f "$file" ] && printf 'wifi\t%s\t%s\t%s\n' "$host" "$file" "$name" >> "$plan" && matched=1
             fi
           done <<< "$radios"
           if [ "$matched" = 0 ]; then
@@ -454,30 +470,29 @@ fleet_apply() {
         ;;
       *)
         # Plan rows are tab-separated: kind, host, file, name. The
-        # fields are untrusted data and may contain spaces.
-        IFS="$(printf '\t')" read -r kind host file name <<< "$row"
+        # fields are untrusted data and may contain spaces; parse_plan_row
+        # rejects a row with no name or a name equal to the file.
+        if ! parse_plan_row "$row"; then
+          echo "janus-build fleet apply: bad plan row ${row}" >&2
+          exit 2
+        fi
         addr=$(host_address "$host")
         case "$kind" in
           subscription)
-            if [ -z "$name" ] || [ "$name" = "$file" ]; then
-              echo "janus-build fleet apply: bad plan row ${row}" >&2
-              exit 2
-            fi
             # The inbox file is a sops document; the router decrypts it
             # with its own age key (D-0048). `age -d` cannot read sops.
             # shq quotes the untrusted fields for the remote shell. The
-            # remote shell has no errexit, so the pipeline status is
-            # captured at once; the inbox cipher is removed either way
-            # and the status is kept.
+            # remote shell has no errexit; $? is the status of the
+            # pipeline's last command (janus override set). If sops
+            # fails, the pipe starves and override set exits 2 on empty
+            # stdin (the usage fallback in janus.sh), so a decrypt
+            # failure still propagates as non-zero. The inbox cipher is
+            # removed either way and the status is kept.
             box="/var/lib/janus/secrets/inbox/$(printf '%s' "$name" | tr '/' '_').sops"
             ssh_to "$addr" "umask 077; mkdir -p /var/lib/janus/secrets/inbox; cat > $(shq "$box")" < "$file"
             ssh_to "$addr" "SOPS_AGE_KEY_FILE=/var/lib/janus/secrets/age.key sops decrypt --extract '[\"value\"]' $(shq "$box") | janus override set proxy.subscriptions.$(shq "$name").url; rc=\$?; rm -f $(shq "$box"); exit \$rc"
             ;;
           wifi)
-            if [ -z "$name" ] || [ "$name" = "$file" ]; then
-              echo "janus-build fleet apply: bad plan row ${row}" >&2
-              exit 2
-            fi
             box="/var/lib/janus/secrets/inbox/$(printf '%s' "$name" | tr '/' '_').sops"
             ssh_to "$addr" "umask 077; mkdir -p /var/lib/janus/secrets/inbox; cat > $(shq "$box")" < "$file"
             ssh_to "$addr" "SOPS_AGE_KEY_FILE=/var/lib/janus/secrets/age.key sops decrypt --extract '[\"value\"]' $(shq "$box") | janus override set network.wifi.$(shq "$name").passphrase; rc=\$?; rm -f $(shq "$box"); exit \$rc"
@@ -537,6 +552,15 @@ fleet_pull() {
   : > "$leases"
   : > "$reached"
   : > "$refs"
+  # The EXIT trap removes the plaintext temp files on every mid-function
+  # exit (errexit, exit 2); the explicit rm at the end stays as the
+  # idempotent cleanup on the success path. mktemp already creates the
+  # five files 600, but ${values}.files is first written by `>>` below,
+  # and appending does not tighten an existing file's mode — pre-create
+  # it 600 under umask 077 so the plaintext list is never readable by
+  # others, not even briefly.
+  trap 'rm -f "$values" "${values}.files" "$radios" "$leases" "$reached" "$refs"' EXIT
+  (umask 077; : > "${values}.files")
   while IFS= read -r host; do
     if ! addr=$(host_address "$host"); then
       echo "unreachable: ${host}" >&2
@@ -555,12 +579,12 @@ fleet_pull() {
     printf '%s\n' "$raw" | jq -r --arg host "$host" '
       to_entries[]
       | select(.key | startswith("proxy.subscriptions."))
-      | "\($host) \(.key) \(.value)"
+      | "\($host) \(.key) \(.value | gsub("[\\t\\n\\r]"; " "))"
     ' >> "$values"
     printf '%s\n' "$raw" | jq -r --arg host "$host" '
       to_entries[]
       | select(.key | startswith("network.wifi."))
-      | "\($host) \(.key) \(.value)"
+      | "\($host) \(.key) \(.value | gsub("[\\t\\n\\r]"; " "))"
     ' >> "$radios"
     printf '%s\n' "$raw" | jq -c --arg host "$host" '
       {host: $host, leases: [to_entries[] | select(.key | startswith("network.lans."))]}
@@ -576,7 +600,7 @@ fleet_pull() {
     value=${rest#* }
     name=${key#proxy.subscriptions.}
     name=${name%.url}
-    secret=$(subscription_secrets "$host" | awk -v n="$name" '$1 == n {print $2}')
+    secret=$(subscription_secrets "$host" | awk -F '\t' -v n="$name" '$1 == n {print $2}')
     if [ -z "$secret" ]; then
       echo "${host}: ${key} has no urlSecret in this repo." >&2
       exit 2
@@ -609,7 +633,7 @@ fleet_pull() {
     value=${rest#* }
     ap=${key#network.wifi.}
     ap=${ap%.passphrase}
-    secret=$(wifi_secrets "$host" | awk -v n="$ap" '$1 == n {print $2}')
+    secret=$(wifi_secrets "$host" | awk -F '\t' -v n="$ap" '$1 == n {print $2}')
     if [ -z "$secret" ]; then
       echo "${host}: ${key} has no passphraseSecret in this repo." >&2
       exit 2
@@ -648,12 +672,14 @@ fleet_pull() {
     }
     while IFS= read -r pair; do
       [ -n "$pair" ] || continue
-      file=$(printf '%s\n' "$sopsmap" | awk -F '\t' -v n="${pair#* }" '$1 == n {print $2; exit}')
+      IFS="$(printf '\t')" read -r name secret <<< "$pair"
+      file=$(printf '%s\n' "$sopsmap" | awk -F '\t' -v n="$secret" '$1 == n {print $2; exit}')
       [ -n "$file" ] && printf '%s\t%s\n' "$file" "$host" >> "$refs"
     done <<< "$subs"
     while IFS= read -r pair; do
       [ -n "$pair" ] || continue
-      file=$(printf '%s\n' "$sopsmap" | awk -F '\t' -v n="${pair#* }" '$1 == n {print $2; exit}')
+      IFS="$(printf '\t')" read -r name secret <<< "$pair"
+      file=$(printf '%s\n' "$sopsmap" | awk -F '\t' -v n="$secret" '$1 == n {print $2; exit}')
       [ -n "$file" ] && printf '%s\t%s\n' "$file" "$host" >> "$refs"
     done <<< "$wifis"
   done < <(list_hosts)

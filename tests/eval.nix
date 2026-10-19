@@ -346,21 +346,135 @@ in {
         exit 1
       fi
 
-      # Plan rows parse as kind, host, file, name; a name with a space
-      # survives, and a row without a fourth field trips the bad-row
-      # guard from fleet_apply.
+      # Plan rows parse through the real parse_plan_row: kind, host,
+      # file, name; a name with a space survives, and a row without a
+      # fourth field or with name equal to the file is rejected.
       row=$(printf 'subscription\th\tf\tmy sub')
-      IFS="$(printf '\t')" read -r kind host file name <<< "$row"
+      if ! parse_plan_row "$row"; then
+        echo "a good plan row was rejected: $row" >&2
+        exit 1
+      fi
       test "$kind" = subscription
       test "$host" = h
       test "$file" = f
       test "$name" = "my sub"
-      row=$(printf 'subscription\th\tf')
-      IFS="$(printf '\t')" read -r kind host file name <<< "$row"
-      if [ -z "$name" ] || [ "$name" = "$file" ]; then
-        :
-      else
-        echo "a bad plan row was not caught" >&2
+      for row in "$(printf 'subscription\th\tf')" "$(printf 'subscription\th\tf\tf')"; do
+        if parse_plan_row "$row"; then
+          echo "a bad plan row was not caught: $row" >&2
+          exit 1
+        fi
+      done
+      echo ok > "$out"
+    '';
+  # End-to-end test of fleet_apply against a minimal fleet fixture:
+  # a baseline commit, then a cipher rotation plus a new wifi cipher
+  # whose file name differs from the AP name. ssh/nix are mocked, and
+  # the remote command strings fleet_apply assembles are asserted.
+  # The eval-failure path (exit 2) is covered with a second host.
+  cli-plan-build =
+    pkgs.runCommand "cli-plan-build" {
+      nativeBuildInputs = [pkgs.git pkgs.jq pkgs.bash pkgs.gnused];
+    } ''
+      JANUS_BUILD_LIB=1
+      source ${./../pkgs/janus-build.sh}
+
+      repo=$(mktemp -d)
+      cd "$repo"
+      git init -q
+      mkdir -p hosts/h1 secrets/subscription secrets/keys secrets/wifi/h1
+      printf '{}\n' > flake.nix
+      printf '{ ... }: {}\n' > hosts/h1/configuration.nix
+      printf '{ ... }: {}\n' > hosts/h1/overrides.nix
+      printf 'cipher-v1\n' > secrets/subscription/shared.yaml
+      printf 'age1fake\n' > secrets/keys/h1.pub
+      git add .
+      git -c user.email=t@t -c user.name=t commit -qm baseline
+      # Rotation of the shared subscription cipher, and a new wifi
+      # cipher whose file name is deliberately not the AP name.
+      printf 'cipher-v2\n' > secrets/subscription/shared.yaml
+      printf 'wifi-cipher\n' > secrets/wifi/h1/whatever-name.yaml
+      git add .
+      git -c user.email=t@t -c user.name=t commit -qm 'rotate sub, add wifi'
+      # The fixture tree must be clean for require_clean.
+      if [ -n "$(git status --porcelain)" ]; then
+        echo "fixture tree is not clean" >&2
+        exit 1
+      fi
+      # The writeShellApplication runtime runs with pipefail; mirror
+      # it here so a failing nix_fleet is not masked by a succeeding
+      # jq at the end of the pipeline in subscription_secrets.
+      set -o pipefail
+
+      host_address() { echo 10.0.0.1; }
+      ssh_to() {
+        shift
+        case "$*" in
+          *version*) printf '{"configRevision":"%s"}\n' "$(git rev-parse HEAD~1)" ;;
+          *) printf '%s\n' "$*" >> "$PWD/applied.log" ;;
+        esac
+      }
+      nix_fleet() {
+        case "$*" in
+          *nixosConfigurations.h2*) return 1 ;;
+          *janus.proxy.subscriptions*) printf '{"main":{"urlSecret":"sub-a"},"my sub":{"urlSecret":"sub-a"}}' ;;
+          *janus.network.wifi*) printf '{"living room":{"passphraseSecret":"wifi-a"}}' ;;
+          *sops.secrets*|*.config*) printf '{"sub-a":"%s/secrets/subscription/shared.yaml","wifi-a":"%s/secrets/wifi/h1/whatever-name.yaml"}' "$PWD" "$PWD" ;;
+          *) return 1 ;;
+        esac
+      }
+
+      if ! (fleet_apply); then
+        echo "fleet_apply failed on the fixture" >&2
+        exit 1
+      fi
+
+      expect_lines() {
+        got=$(grep -cF "$2" "$1" || true)
+        if [ "$got" != "$3" ]; then
+          echo "expected $3 line(s) matching '$2' in $1, got $got:" >&2
+          cat "$1" >&2
+          exit 1
+        fi
+      }
+      # The shared cipher projects to both subscriptions, each exactly
+      # once; the space in 'my sub' survives as an shq single-quoted
+      # word in the remote command string.
+      expect_lines applied.log "janus override set proxy.subscriptions.'main'.url" 1
+      expect_lines applied.log "janus override set proxy.subscriptions.'my sub'.url" 1
+      # The wifi target is the AP name from the pair, resolved through
+      # the sops map, not the cipher's file name.
+      expect_lines applied.log "janus override set network.wifi.'living room'.passphrase" 1
+      if grep -qF 'whatever-name' applied.log; then
+        echo "an unreferenced cipher file name leaked into the remote commands:" >&2
+        cat applied.log >&2
+        exit 1
+      fi
+      lines=$(wc -l < applied.log)
+      if [ "$lines" -ne 6 ]; then
+        echo "applied.log has $lines lines, want 6 (2 ssh commands x 3 plan rows):" >&2
+        cat applied.log >&2
+        exit 1
+      fi
+
+      # eval-failure path: h2's nix eval fails, so fleet_apply h2 must
+      # exit 2 with "does not evaluate" on stderr.
+      rm applied.log
+      mkdir -p hosts/h2
+      printf '{ ... }: {}\n' > hosts/h2/configuration.nix
+      printf '{ ... }: {}\n' > hosts/h2/overrides.nix
+      git add .
+      git -c user.email=t@t -c user.name=t commit -qm 'add h2'
+      err=$(mktemp)
+      rc=0
+      (fleet_apply h2) 2>"$err" || rc=$?
+      if [ "$rc" -ne 2 ]; then
+        echo "fleet_apply h2 exited $rc, want 2" >&2
+        cat "$err" >&2
+        exit 1
+      fi
+      if ! grep -q 'does not evaluate' "$err"; then
+        echo "fleet_apply h2 stderr lacks 'does not evaluate':" >&2
+        cat "$err" >&2
         exit 1
       fi
       echo ok > "$out"

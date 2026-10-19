@@ -52,9 +52,11 @@ key only. It can encrypt. It cannot decrypt.
    ```
 
    A path under `wifi/`, `pppoe/`, `tailscale/`, or `wireguard/` is
-   encrypted to that host's public key. A path under `subscription/` or
-   `nodes/` is encrypted to every host whose configuration references
-   that file. Replacing one file does not require any other plaintext.
+   encrypted to that host's public key. `secret set` encrypts a path under
+   `subscription/` or `nodes/` to every public key under `secrets/keys/`.
+   `fleet pull` re-encrypts a rotated value to only the hosts whose
+   configuration references that file (D-0049). Replacing one file does
+   not require any other plaintext.
 5. `janus-build fleet pull` with no host reads every reachable router.
    By default it writes non-secret overrides only
    (`hosts/<host>/overrides.nix`) and names secret overrides without

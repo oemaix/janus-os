@@ -22,6 +22,7 @@ jobs:
         run: |
           nix build --print-build-logs \
             .#checks.x86_64-linux.cli-age-key \
+            .#checks.x86_64-linux.cli-plan-build \
             .#checks.x86_64-linux.cli-init \
             .#checks.x86_64-linux.cli-plan-parser \
             .#checks.x86_64-linux.cli-usage \

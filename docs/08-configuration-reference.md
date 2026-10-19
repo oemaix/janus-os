@@ -246,9 +246,11 @@ secrets/web/potato.yaml              # maintenance page passphrase
 ```
 
 `wifi`, `pppoe`, `tailscale`, `wireguard`, and `web` are encrypted to
-that host only. A proxy subscription file and a manual proxy-node file
-are encrypted to every host that references the file. A PPPoE file and a
-manual node file hold the YAML document. The other files hold one value.
+that host only. `secret set` encrypts a proxy subscription file and a
+manual proxy-node file to every public key under `secrets/keys/`; a
+`fleet pull` rotation re-encrypts them to only the hosts that reference
+the file. A PPPoE file and a manual node file hold the YAML document.
+The other files hold one value.
 
 `janus-build secret set` writes a sops document encrypted to the
 recipients of that path. sops-nix decrypts it into `/run/secrets`. A

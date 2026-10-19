@@ -206,8 +206,9 @@ Each reachable router receives its own projection. Static leases are
 passed to `janus override set` as plaintext. Secret files are sent as
 ciphertext. The router decrypts them with its age key and applies the
 override. The build host does not decrypt. A shared subscription file is
-the same ciphertext on every host that references it; each of those hosts
-can decrypt it. A changed URL is followed by `janus proxy refresh` for
+one ciphertext that every host whose public key is under `secrets/keys/`
+can decrypt; `fleet pull` re-encrypts a rotation to the hosts that
+reference it. A changed URL is followed by `janus proxy refresh` for
 that subscription.
 
 The ciphertext file is the one `sops.secrets.<name>.sopsFile` names
