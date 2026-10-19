@@ -153,7 +153,9 @@ in
           if (( mib < min_mib )); then mib=$min_mib; fi
         fi
         truncate -s "''${mib}M" "$out"
-        mkfs.f2fs -f -l "$label" "$out" >&2
+        # mkfs creates the root inode. sload.f2fs -P never updates it, and
+        # the default owner is the build user's getuid()/getgid().
+        mkfs.f2fs -f -l "$label" -R 0:0 "$out" >&2
         fakeroot -- bash -c 'chown -R 0:0 "$1" && sload.f2fs -P -f "$1" -t / "$2"' bash "$src" "$out" >&2
         echo "$mib"
       }
@@ -170,7 +172,8 @@ in
       fi
 
       truncate -s "''${stateMiB}M" state.img
-      mkfs.f2fs -f -l "$stateLabel" state.img
+      # Empty image: the mount root is the mkfs root inode. See make_f2fs.
+      mkfs.f2fs -f -l "$stateLabel" -R 0:0 state.img
 
       mkdir -p bootfiles
       cp -L "$toplevel/kernel" bootfiles/vmlinuz
