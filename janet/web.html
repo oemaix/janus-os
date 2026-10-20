@@ -148,6 +148,10 @@ button, .tab {
   text-align: start;
 }
 button.on, .tab.on { background: var(--inverse-bg); color: var(--inverse-fg); }
+.quiet { align-items: baseline; gap: 0; }
+.quiet > button { padding: 2px 0; }
+.quiet > button.on { background: transparent; color: var(--fg); border-bottom: 1px solid var(--fg); }
+.sep { padding-inline: 0.4em; font-family: var(--mono); font-variant-ligatures: none; }
 #lang-en, #lang-ru { font-family: var(--mono); font-variant-ligatures: none; }
 #lang-fa { font-family: var(--ar); font-variant-ligatures: normal; letter-spacing: 0; }
 #lang-zh { font-family: var(--cjk); letter-spacing: 0; }
@@ -178,8 +182,11 @@ pre:empty { display: none; }
   padding-block: 6px;
 }
 .cluster { display: contents; }
-.lab { white-space: nowrap; }
+.lab { min-width: 0; overflow-wrap: anywhere; }
 .value { unicode-bidi: isolate; min-width: 0; }
+.fp { overflow-wrap: normal; }
+.fp-chunk { display: inline-block; white-space: nowrap; }
+.token { overflow-wrap: normal; }
 .row > .value.text:last-child, .hint { grid-column: 2 / -1; overflow-wrap: anywhere; }
 .row button, .row > .seg { justify-self: stretch; }
 .row > .seg > button { flex: 1 1 auto; }
@@ -217,6 +224,7 @@ button:focus, input:focus, select:focus, .tab:focus { outline: 2px solid var(--b
 .actions, .choice { grid-column: 2 / -1; justify-self: start; margin: 0; }
 .actions { padding-block: 6px; }
 .choice { padding-block: 0 6px; }
+.choice > button { white-space: normal; overflow-wrap: anywhere; max-width: 100%; }
 #result { min-height: 1.2em; margin-top: 12px; }
 #login-msg { grid-column: 2 / -1; min-height: 1.2em; }
 #login-msg:empty { display: none; }
@@ -234,14 +242,18 @@ button:focus, input:focus, select:focus, .tab:focus { outline: 2px solid var(--b
       <div class="alarm ok" id="alarm" data-state="ok" hidden>ok</div>
     </div>
     <div class="bar-end">
-      <div class="seg">
+      <div class="seg quiet">
         <button type="button" id="theme-light" data-i18n="light">light</button>
+        <span class="sep" aria-hidden="true">/</span>
         <button type="button" id="theme-dark" data-i18n="dark">dark</button>
       </div>
-      <div class="seg">
+      <div class="seg quiet">
         <button type="button" id="lang-en">en</button>
+        <span class="sep" aria-hidden="true">/</span>
         <button type="button" id="lang-ru">ру</button>
+        <span class="sep" aria-hidden="true">/</span>
         <button type="button" id="lang-fa">فا</button>
+        <span class="sep" aria-hidden="true">/</span>
         <button type="button" id="lang-zh">简中</button>
       </div>
     </div>
@@ -575,15 +587,45 @@ function addRow(parent, labelNodes, valueNodes) {
   parent.appendChild(row);
 }
 
+function colonToken(text) {
+  var s = String(text || "");
+  var span = document.createElement("span");
+  span.className = "ltr token";
+  if (s.indexOf(":") < 0) {
+    span.textContent = s;
+    return span;
+  }
+  var parts = s.split(":");
+  parts.forEach(function (part, i) {
+    if (i) {
+      span.appendChild(document.createTextNode(":"));
+      span.appendChild(document.createElement("wbr"));
+    }
+    span.appendChild(document.createTextNode(part));
+  });
+  return span;
+}
+
 function setFingerprint(hex) {
   var el = document.getElementById("fp");
   el.textContent = "";
-  var s = String(hex || "");
+  var raw = String(hex || "").trim();
+  var pairs = raw.indexOf(":") >= 0 ? raw.split(":") : (raw.match(/.{1,2}/g) || []);
+  pairs = pairs.filter(function (part) { return part.length > 0; });
+  if (!pairs.length) {
+    if (raw) el.textContent = raw;
+    return;
+  }
   var i = 0;
-  while (i < s.length) {
-    el.appendChild(document.createTextNode(s.slice(i, i + 4)));
-    i += 4;
-    if (i < s.length) el.appendChild(document.createElement("wbr"));
+  while (i < pairs.length) {
+    if (i) el.appendChild(document.createElement("wbr"));
+    var chunk = document.createElement("span");
+    chunk.className = "fp-chunk";
+    var slice = pairs.slice(i, i + 8);
+    var more = i + 8 < pairs.length;
+    chunk.textContent = slice.join(":") + (more ? ":" : "");
+    el.appendChild(chunk);
+    i += 8;
   }
 }
 
@@ -602,7 +644,7 @@ function renderStatus(el, data) {
       if (!wan || typeof wan !== "object") return;
       var state = wan.up === false ? "down" : "up";
       var value = [word(state)];
-      if (wan.address) value.push(lit(wan.address));
+      if (wan.address) value.push(colonToken(wan.address));
       addRow(el, spaced([lit("wan"), lit(wan.name || "")]), value);
     });
   }
@@ -922,7 +964,12 @@ function renderOverrideRows(data) {
   Object.keys(data).forEach(function (key) {
     var item = data[key];
     if (!item || typeof item !== "object" || Array.isArray(item) || item.mac === undefined) return;
-    addRow(leases, [lit(key)], [lit(item.mac + "  " + (item.ip || ""))]);
+    var mark = ".staticLeases.";
+    var at = key.lastIndexOf(mark);
+    var host = at < 0 ? "" : key.slice(at + mark.length);
+    var bits = [colonToken(item.mac), colonToken(item.ip || "")];
+    if (host) addRow(leases, [lit(host)], bits);
+    else addRow(leases, [word("lease")], [colonToken(key)].concat(bits));
   });
 }
 

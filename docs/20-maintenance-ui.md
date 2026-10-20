@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Status | Draft |
-| Version | 0.6.0 |
+| Version | 0.8.0 |
 | Last updated | 2026-10-20 |
 
 The maintenance page is the browser surface deferred by ADR-0007 and
@@ -269,10 +269,11 @@ them.
 Space separates regions. The page does not paint a frame around the
 bar, the strip, a section, a row, a choice, or an action.
 
-The current theme, the current language, the open section, and the
-selected node are `inverse-bg` with `inverse-fg`, and they have no
-border. A resting choice is text on `bg`. An action is text on `bg`.
-Neither has a fill or a border.
+The open section and the selected node are `inverse-bg` with
+`inverse-fg`, and they have no border. Theme and language are text on
+`bg`. A `/` separates the words in each group. The current word has a
+1px `fg` rule under it, and no fill. A resting choice is text on `bg`.
+An action is text on `bg`. Neither has a fill or a border.
 
 A field is `raised` with a 1px `line` along its bottom edge only.
 
@@ -364,17 +365,24 @@ that box, and a shorter row action stretches to that width. The gap is
 `16px`. Below `36rem` the row is one track: label, then value, then
 action.
 
-A label does not break. A strip control does not break; the strip wraps
-by whole control. A value may wrap. A single token wider than the value
-track breaks anywhere. Hyphenation is off.
+A catalog label is one short word and stays on one line. A data name used
+as a label wraps inside the label track when it is wider than that track.
+A strip control does not break; the strip wraps by whole control. A value
+may wrap. A plain token wider than its track breaks anywhere. Hyphenation
+is off.
 
 A read-only value may contain a catalog word and a datum. That is one
 value, not a second field. On a status row, `node` and the node name are
 one value.
 
-The fingerprint is continuous hex. The page inserts a wrap opportunity
-after every four digits. That opportunity is not a character. A selection
-copies the same line as `janus web fingerprint`.
+The fingerprint is the SHA-256 line from `janus web fingerprint`: hex
+pairs separated by colons. The page groups eight pairs, then inserts a
+wrap opportunity, then the next eight, and so on. That opportunity is
+not a character. A selection copies the same line as the command. A
+normal column holds two groups on a line, so the fingerprint is two
+lines. A narrow column holds one group on a line.
+
+An address that contains colons wraps after a colon. The colon stays.
 
 A `pre` block spans all three tracks, keeps its spaces, and wraps
 (`white-space: pre-wrap`). It holds a report (§4). An empty `pre` is
@@ -385,15 +393,15 @@ box from top to bottom.
 
 ### 7.5 Controls
 
-Inverse means the current choice. It does not mark the last press.
-Theme, language, the open section, and the selected node are inverse.
-An action button returns to a resting control when the action returns.
+Inverse means the current section or the current node. It does not mark
+the last press, and it does not mark the theme or the language. An
+action button returns to a resting control when the action returns.
 
 Every control is one of these patterns.
 
 | Pattern | Shape | Rule |
 |---------|-------|------|
-| Choice | Segments that share edges. One segment is inverse. | Theme, language, and the strip. A member list is a choice whose labels are data, drawn in the value track. |
+| Choice | Segments that share edges. One segment is inverse. | The strip, and a member list. A member list is a choice whose labels are data, drawn in the value track. Theme and language are not this pattern. |
 | Read-only row | Label, then a value across the value track and the action track. | No button. |
 | Row action | Label, one field in the value track, one action in the action track. | The action applies to that field. The action is one button, or one segmented group of buttons that all apply to that same field. A field that a section action reads leaves the action track empty. |
 | Pair | Two or more rows. The action is only on the last. Earlier rows leave the action track empty. | The action applies to every field in the pair. The fields still share a width. An empty required field does nothing. |
@@ -437,8 +445,9 @@ and `zh-MO` do not match. No match is `en`. The language does not follow
 `janus.system.region`. The router stores neither choice, and neither
 choice takes a rebuild.
 
-Theme is one segmented control. Language is a second. `16px` separates
-them. Segments share edges. The active segment is inverse.
+Theme is one text row, `light / dark`. Language is a second,
+`en / ру / فا / 简中`. `16px` separates the rows. The current word has
+the `fg` rule. The slash is the separator, not a catalog word.
 
 ### 7.7 Strings
 
@@ -535,7 +544,9 @@ drawn label. A member button shows the node name.
 
 ### 7.8 Picture
 
-Brackets are the inverse control. A field is drawn as dots. `potato` is
+Brackets are the inverse control. The current theme and the current
+language are not bracketed. In these pictures the rule sits under
+`light` and under `en`. A field is drawn as dots. `potato` is
 `blue`. The fingerprint is `cyan`. On the signed-in bar, `ok` is
 `green`. `enter` is a resting row action, on the passphrase row. The
 marks around a picture are the column. The page does not paint that
@@ -543,18 +554,18 @@ frame, and it does not paint a rule on each row.
 
 ```
 +------------------------------------------------------------------+
-| janus                         [light] dark    [en] ру  فا  简中        |
+| janus                         light / dark    en / ру / فا / 简中      |
 +------------------------------------------------------------------+
 | host              potato                                         |
-| fingerprint       aabbccdd                                       |
-|                   eeff00112233                                   |
+| fingerprint       AA:BB:CC:DD:EE:FF:00:11                        |
+|                   22:33:44:55:66:77:88:99                        |
 | passphrase        ..............                       enter     |
 +------------------------------------------------------------------+
 ```
 
 ```
 +------------------------------------------------------------------+
-| janus          ok             [light] dark    [en] ру  فا  简中        |
+| janus          ok             light / dark    en / ру / فا / 简中      |
 +------------------------------------------------------------------+
 | [status]  tunnel  network  overrides  monitoring  system         |
 +------------------------------------------------------------------+
