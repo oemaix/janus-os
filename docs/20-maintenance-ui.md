@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.8.0 |
-| Last updated | 2026-10-20 |
+| Last updated | 2026-10-21 |
 
 The maintenance page is the browser surface deferred by ADR-0007 and
 bounded by FR-ACC-005 and D-0012. It calls the `janus` commands in *14*.
@@ -271,8 +271,10 @@ bar, the strip, a section, a row, a choice, or an action.
 
 The open section and the selected node are `inverse-bg` with
 `inverse-fg`, and they have no border. Theme and language are text on
-`bg`. A `/` separates the words in each group. The current word has a
-1px `fg` rule under it, and no fill. A resting choice is text on `bg`.
+`bg`. A `/` separates the words in each group. The slash is `line`,
+with `0.15em` on each side, so a group stays one compact cluster. The
+current word has a 1px `fg` rule under it, and no fill. A resting
+choice is text on `bg`.
 An action is text on `bg`. Neither has a fill or a border.
 
 A field is `raised` with a 1px `line` along its bottom edge only.
@@ -354,9 +356,12 @@ result line from the section. The section has no frame and no extra
 padding. Its name has one `line` rule under it. A row has no rule. A
 row's block padding is `6px`.
 
-The bar is one line. When it does not fit, the theme choice and the
-language choice wrap together onto the next line of the bar, at the end
-edge. The strip stays the band below. The strip is as wide as its
+The bar is one line. The wordmark and the alarm word are one cluster,
+`12px` apart. At least `40px` separates that cluster from the theme
+group. `40px` separates the theme group from the language group. When
+the line does not fit, the theme choice and the language choice wrap
+together onto the next line of the bar, at the end edge. The strip
+stays the band below. The strip is as wide as its
 controls. It does not draw an empty segment past the last one.
 
 A row has three tracks. The label track is `12rem`. The value track
@@ -445,9 +450,10 @@ and `zh-MO` do not match. No match is `en`. The language does not follow
 `janus.system.region`. The router stores neither choice, and neither
 choice takes a rebuild.
 
-Theme is one text row, `light / dark`. Language is a second,
-`en / ру / فا / 简中`. `16px` separates the rows. The current word has
-the `fg` rule. The slash is the separator, not a catalog word.
+Theme is one compact group, `light / dark`. Language is a second,
+`en / ру / فا / 简中`. The slash is the separator, not a catalog word.
+`40px` separates the two groups. At least `40px` separates them from
+the wordmark and the alarm word. The current word has the `fg` rule.
 
 ### 7.7 Strings
 
@@ -554,7 +560,7 @@ frame, and it does not paint a rule on each row.
 
 ```
 +------------------------------------------------------------------+
-| janus                         light / dark    en / ру / فا / 简中      |
+| janus                 light / dark          en / ру / فا / 简中    |
 +------------------------------------------------------------------+
 | host              potato                                         |
 | fingerprint       AA:BB:CC:DD:EE:FF:00:11                        |
@@ -565,7 +571,7 @@ frame, and it does not paint a rule on each row.
 
 ```
 +------------------------------------------------------------------+
-| janus          ok             light / dark    en / ру / فا / 简中      |
+| janus   ok            light / dark          en / ру / فا / 简中    |
 +------------------------------------------------------------------+
 | [status]  tunnel  network  overrides  monitoring  system         |
 +------------------------------------------------------------------+
