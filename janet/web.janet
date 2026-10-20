@@ -742,6 +742,9 @@
   (expect (string/find "createElement(\"wbr\")" page) "fingerprint wrap")
   (expect (string/find "хост" page) "russian host")
   (expect (string/find "میزبان" page) "persian host")
+  (expect (string/find "简中" page) "chinese label")
+  (expect (string/find "主机" page) "chinese host")
+  (expect (string/find "Noto Sans CJK SC" page) "cjk")
   (expect (not (string/find "toUpperCase" page)) "host case")
   (def palette
     ["002b36" "073642" "93a1a1" "586e75" "eee8d5" "fdf6e3"

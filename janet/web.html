@@ -18,14 +18,24 @@
   var theme = storedTheme === "light" || storedTheme === "dark"
     ? storedTheme
     : (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-  var lang = storedLang === "en" || storedLang === "ru" || storedLang === "fa" ? storedLang : "";
+  function chosen(tag) {
+    var bits = String(tag || "").toLowerCase().split("-");
+    var primary = bits[0];
+    if (primary === "en" || primary === "ru" || primary === "fa") return primary;
+    if (primary !== "zh") return "";
+    for (var n = 1; n < bits.length; n++) {
+      if (bits[n] === "hant" || bits[n] === "tw" || bits[n] === "hk" || bits[n] === "mo") return "";
+    }
+    return "zh";
+  }
+  var lang = chosen(storedLang);
   if (!lang) {
     var list = (navigator.languages && navigator.languages.length) ? navigator.languages : [navigator.language || "en"];
     lang = "en";
     for (var i = 0; i < list.length; i++) {
-      var primary = String(list[i] || "").toLowerCase().split("-")[0];
-      if (primary === "en" || primary === "ru" || primary === "fa") {
-        lang = primary;
+      var hit = chosen(list[i]);
+      if (hit) {
+        lang = hit;
         break;
       }
     }
@@ -55,6 +65,7 @@
   --violet: #4f55c4;
   --mono: ui-monospace, "Cascadia Mono", "DejaVu Sans Mono", "Liberation Mono", "Noto Sans Mono", monospace;
   --ar: "Noto Naskh Arabic", "Noto Sans Arabic", "DejaVu Sans", sans-serif;
+  --cjk: "Noto Sans CJK SC", "Noto Sans SC", "Source Han Sans SC", sans-serif;
   color-scheme: light;
 }
 :root[data-theme="dark"] {
@@ -78,6 +89,7 @@
 * { border-radius: 0; box-shadow: none; }
 html[lang="en"], html[lang="ru"] { font-family: var(--mono); font-variant-ligatures: none; }
 html[lang="fa"] { font-family: var(--ar); letter-spacing: 0; }
+html[lang="zh"] { font-family: var(--cjk); letter-spacing: 0; }
 html, body { margin: 0; background: var(--bg); color: var(--fg); }
 body {
   font-size: 15px;
@@ -109,6 +121,7 @@ body {
   letter-spacing: 0.04em;
 }
 html[lang="fa"] .hd { font-family: var(--ar); font-variant-ligatures: normal; letter-spacing: 0; }
+html[lang="zh"] .hd { font-family: var(--cjk); font-variant-ligatures: normal; letter-spacing: 0; }
 .bar, .bar-start, .bar-end, .seg, .tabs, .actions, .choice {
   display: flex;
   flex-wrap: wrap;
@@ -137,6 +150,7 @@ button, .tab {
 button.on, .tab.on { background: var(--inverse-bg); color: var(--inverse-fg); }
 #lang-en, #lang-ru { font-family: var(--mono); font-variant-ligatures: none; }
 #lang-fa { font-family: var(--ar); font-variant-ligatures: normal; letter-spacing: 0; }
+#lang-zh { font-family: var(--cjk); letter-spacing: 0; }
 button.danger { color: var(--red); }
 button.run { color: var(--yellow); }
 .box {
@@ -228,6 +242,7 @@ button:focus, input:focus, select:focus, .tab:focus { outline: 2px solid var(--b
         <button type="button" id="lang-en">en</button>
         <button type="button" id="lang-ru">ру</button>
         <button type="button" id="lang-fa">فا</button>
+        <button type="button" id="lang-zh">简中</button>
       </div>
     </div>
   </div>
@@ -362,6 +377,23 @@ var STR = {
     "url-test": "آزمون نشانی", fallback: "پشتیبان", "load-balance": "توازن",
     counters: "شمارنده‌ها", "per-host": "به‌ازای میزبان", flows: "جریان‌ها",
     script: "این صفحه به اسکریپت مرورگر نیاز دارد"
+  },
+  zh: {
+    light: "浅色", dark: "深色", host: "主机", fingerprint: "指纹", passphrase: "口令",
+    enter: "进入", rejected: "拒绝", closed: "锁定", status: "状态", tunnel: "隧道",
+    network: "网络", overrides: "覆盖", monitoring: "监测", system: "系统",
+    refresh: "刷新", geo: "地理", subscription: "订阅", group: "分组", node: "节点",
+    select: "选择", test: "测试", show: "显示", restart: "重启", leases: "租约",
+    lease: "租约", set: "设置", unset: "取消", scope: "范围", iface: "接口",
+    traffic: "流量", daily: "每日", monthly: "每月", top: "排行", stats: "统计",
+    check: "检查", flush: "清空", name: "名称", query: "查询", audit: "审计",
+    reboot: "重新启动", "reboot-hint": "输入 reboot", ok: "正常", alarm: "告警",
+    up: "在线", down: "离线", running: "进行中", failed: "失败", image: "镜像",
+    override: "已覆盖", engine: "引擎", drift: "偏离", state: "分区", power: "电源",
+    active: "运行", inactive: "停止", yes: "是", no: "否", selector: "选择",
+    "url-test": "测速", fallback: "回退", "load-balance": "均衡",
+    counters: "计数", "per-host": "按主机", flows: "流",
+    script: "此页面需要浏览器脚本"
   }
 };
 var EXACT = {ok: 1, failed: 1, rejected: 1, closed: 1, alarm: 1, running: 1};
@@ -378,7 +410,7 @@ function t(key) {
 }
 
 function applyLang(lang) {
-  if (lang !== "en" && lang !== "ru" && lang !== "fa") lang = "en";
+  if (lang !== "en" && lang !== "ru" && lang !== "fa" && lang !== "zh") lang = "en";
   document.documentElement.lang = lang;
   document.documentElement.dir = lang === "fa" ? "rtl" : "ltr";
   try { localStorage.setItem("janus-lang", lang); } catch (e) {}
@@ -392,7 +424,7 @@ function applyLang(lang) {
   document.querySelectorAll("[data-state]").forEach(function (el) {
     el.textContent = t(el.getAttribute("data-state"));
   });
-  ["en", "ru", "fa"].forEach(function (tag) {
+  ["en", "ru", "fa", "zh"].forEach(function (tag) {
     document.getElementById("lang-" + tag).classList.toggle("on", tag === lang);
   });
 }
@@ -937,7 +969,7 @@ function boot() {
   setFingerprint(META.fingerprint || "");
   document.getElementById("theme-light").addEventListener("click", function () { theme("light"); });
   document.getElementById("theme-dark").addEventListener("click", function () { theme("dark"); });
-  ["en", "ru", "fa"].forEach(function (tag) {
+  ["en", "ru", "fa", "zh"].forEach(function (tag) {
     document.getElementById("lang-" + tag).addEventListener("click", function () { applyLang(tag); });
   });
   document.getElementById("login-form").addEventListener("submit", function (event) {

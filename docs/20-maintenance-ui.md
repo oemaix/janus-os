@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Status | Draft |
-| Version | 0.5.0 |
+| Version | 0.6.0 |
 | Last updated | 2026-10-20 |
 
 The maintenance page is the browser surface deferred by ADR-0007 and
@@ -287,17 +287,19 @@ control is `red` text on `bg`, with no frame. A hostname value is
 ### 7.2 Type
 
 English and Russian use the mono stack. Persian chrome uses the Arabic
-stack, because a mono face does not join Arabic letters. Weight and size
-are a scale.
+stack, because a mono face does not join Arabic letters. Chinese chrome
+uses the CJK stack. Weight and size are a scale.
 
 | Stack | Faces |
 |-------|-------|
 | Mono | `ui-monospace, "Cascadia Mono", "DejaVu Sans Mono", "Liberation Mono", "Noto Sans Mono", monospace` |
 | Arabic | `"Noto Naskh Arabic", "Noto Sans Arabic", "DejaVu Sans", sans-serif` |
+| CJK | `"Noto Sans CJK SC", "Noto Sans SC", "Source Han Sans SC", sans-serif` |
 
 The mono stack sets `font-variant-ligatures: none`. Letter-spacing on
 the wordmark is `0.06em`, and on a box heading `0.04em`. The Arabic
-stack uses `0`. Letter-spacing on joined Arabic letters is a bug.
+stack and the Chinese stack use `0`. Letter-spacing on joined Arabic
+letters is a bug.
 
 | Role | Size | Weight | Line height |
 |------|------|--------|-------------|
@@ -307,7 +309,7 @@ stack uses `0`. Letter-spacing on joined Arabic letters is a bug.
 | Rows | 15px | 450 | 1.45 |
 | Fingerprint and `pre` | 13px | 450 | 1.4 |
 
-These stay on the mono stack in Persian too, and they stay left to
+These stay on the mono stack in Persian and Chinese too, and they stay left to
 right: the wordmark, a hostname, a fingerprint, an address, a MAC, a
 key, a node name, an interface name, a strategy name, a typed field, and
 CLI error text.
@@ -315,7 +317,7 @@ CLI error text.
 ### 7.3 Case
 
 Latin chrome is lowercase, the same words as the CLI. Russian chrome is
-lowercase. Persian has no case.
+lowercase. Persian and Chinese have no case.
 
 A hostname is not chrome. The page prints the spelling from the
 configuration or from the lease, including its letters' case. `potato`
@@ -414,7 +416,7 @@ members keeps its head and `test`, and draws no member choice.
 
 ### 7.6 Direction, theme, and language
 
-`en` and `ru` set `dir="ltr"`. `fa` sets `dir="rtl"` and `lang="fa"`.
+`en`, `ru`, and `zh` set `dir="ltr"`. `fa` sets `dir="rtl"` and `lang="fa"`.
 Spacing and alignment use logical properties (`padding-inline`,
 `text-align: start`, `margin-inline`). The column sits on the start edge,
 which is the right edge in Persian. The section order in the document
@@ -426,11 +428,12 @@ reverse. The passphrase field and the reboot field are left to right.
 
 The first visit follows `prefers-color-scheme`. The theme control is
 `light` then `dark`, stored in the browser under `janus-theme`. The
-language control is `en`, `ru`, `fa`, in that order, stored under
-`janus-lang`. The drawn labels are `en`, `ру`, and `فا`, in every page
-language. The first
-visit walks `navigator.languages` and takes the first primary tag among
-`en`, `ru`, and `fa`. Otherwise it is `en`. The language does not follow
+language control is `en`, `ru`, `fa`, `zh`, in that order, stored under
+`janus-lang`. The drawn labels are `en`, `ру`, `فا`, and `简中`, in every
+page language. The first visit walks `navigator.languages` and takes
+the first match. `en`, `ru`, and `fa` match their primary tag. `zh`,
+`zh-Hans`, `zh-CN`, and `zh-SG` match `zh`. `zh-Hant`, `zh-TW`, `zh-HK`,
+and `zh-MO` do not match. No match is `en`. The language does not follow
 `janus.system.region`. The router stores neither choice, and neither
 choice takes a rebuild.
 
@@ -462,73 +465,73 @@ reboot field accepts is the Latin word `reboot`. The label and the hint
 are translated. The button shows the catalog word. `select` is not a
 drawn label. A member button shows the node name.
 
-| Key | English | Russian | Persian |
-|-----|---------|---------|---------|
-| `light` | light | светлая | روشن |
-| `dark` | dark | тёмная | تیره |
-| `host` | host | хост | میزبان |
-| `fingerprint` | fingerprint | отпечаток | اثرانگشت |
-| `passphrase` | passphrase | пароль | گذرواژه |
-| `enter` | enter | войти | ورود |
-| `rejected` | rejected | отказано | رد شد |
-| `closed` | closed | закрыто | بسته |
-| `status` | status | состояние | وضعیت |
-| `tunnel` | tunnel | туннель | تونل |
-| `network` | network | сеть | شبکه |
-| `overrides` | overrides | переопределения | بازنویسی |
-| `monitoring` | monitoring | мониторинг | پایش |
-| `system` | system | система | سیستم |
-| `refresh` | refresh | обновить | تازه‌سازی |
-| `geo` | geo | гео | ژئو |
-| `subscription` | subscription | подписка | اشتراک |
-| `group` | group | группа | گروه |
-| `node` | node | узел | گره |
-| `select` | select | выбрать | انتخاب |
-| `test` | test | тест | آزمون |
-| `show` | show | показать | نمایش |
-| `restart` | restart | перезапустить | شروع دوباره |
-| `leases` | leases | аренды | اجاره‌ها |
-| `lease` | lease | аренда | اجاره |
-| `set` | set | задать | ثبت |
-| `unset` | unset | снять | برداشتن |
-| `scope` | scope | охват | دامنه |
-| `iface` | iface | интерфейс | رابط |
-| `traffic` | traffic | трафик | ترافیک |
-| `daily` | daily | сутки | روزانه |
-| `monthly` | monthly | месяц | ماهانه |
-| `top` | top | топ | برترین |
-| `stats` | stats | статистика | آمار |
-| `check` | check | проверить | بررسی |
-| `flush` | flush | сбросить | تخلیه |
-| `name` | name | имя | نام |
-| `query` | query | запрос | پرس‌وجو |
-| `audit` | audit | аудит | بازبینی |
-| `reboot` | reboot | перезагрузка | راه‌اندازی دوباره |
-| `reboot-hint` | type reboot | введите reboot | کلمه reboot را بنویسید |
-| `ok` | ok | ок | سالم |
-| `alarm` | alarm | сбой | هشدار |
-| `up` | up | вкл | وصل |
-| `down` | down | выкл | قطع |
-| `running` | running | идёт | در حال اجرا |
-| `failed` | failed | ошибка | ناموفق |
-| `image` | image | образ | تصویر |
-| `override` | override | замена | بازنویسی |
-| `engine` | engine | движок | موتور |
-| `drift` | drift | расхождение | ناسازگاری |
-| `state` | state | раздел | بخش |
-| `power` | power | питание | توان |
-| `active` | active | активен | فعال |
-| `inactive` | inactive | неактивен | غیرفعال |
-| `yes` | yes | да | بله |
-| `no` | no | нет | خیر |
-| `selector` | selector | выбор | گزینش |
-| `url-test` | url-test | проверка | آزمون نشانی |
-| `fallback` | fallback | запасной | پشتیبان |
-| `load-balance` | load-balance | баланс | توازن |
-| `counters` | counters | счётчики | شمارنده‌ها |
-| `per-host` | per-host | по узлам | به‌ازای میزبان |
-| `flows` | flows | потоки | جریان‌ها |
-| `script` | this page needs the browser script | этой странице нужен сценарий браузера | این صفحه به اسکریپت مرورگر نیاز دارد |
+| Key | English | Russian | Persian | Chinese |
+|-----|---------|---------|---------|---------|
+| `light` | light | светлая | روشن | 浅色 |
+| `dark` | dark | тёмная | تیره | 深色 |
+| `host` | host | хост | میزبان | 主机 |
+| `fingerprint` | fingerprint | отпечаток | اثرانگشت | 指纹 |
+| `passphrase` | passphrase | пароль | گذرواژه | 口令 |
+| `enter` | enter | войти | ورود | 进入 |
+| `rejected` | rejected | отказано | رد شد | 拒绝 |
+| `closed` | closed | закрыто | بسته | 锁定 |
+| `status` | status | состояние | وضعیت | 状态 |
+| `tunnel` | tunnel | туннель | تونل | 隧道 |
+| `network` | network | сеть | شبکه | 网络 |
+| `overrides` | overrides | переопределения | بازنویسی | 覆盖 |
+| `monitoring` | monitoring | мониторинг | پایش | 监测 |
+| `system` | system | система | سیستم | 系统 |
+| `refresh` | refresh | обновить | تازه‌سازی | 刷新 |
+| `geo` | geo | гео | ژئو | 地理 |
+| `subscription` | subscription | подписка | اشتراک | 订阅 |
+| `group` | group | группа | گروه | 分组 |
+| `node` | node | узел | گره | 节点 |
+| `select` | select | выбрать | انتخاب | 选择 |
+| `test` | test | тест | آزمون | 测试 |
+| `show` | show | показать | نمایش | 显示 |
+| `restart` | restart | перезапустить | شروع دوباره | 重启 |
+| `leases` | leases | аренды | اجاره‌ها | 租约 |
+| `lease` | lease | аренда | اجاره | 租约 |
+| `set` | set | задать | ثبت | 设置 |
+| `unset` | unset | снять | برداشتن | 取消 |
+| `scope` | scope | охват | دامنه | 范围 |
+| `iface` | iface | интерфейс | رابط | 接口 |
+| `traffic` | traffic | трафик | ترافیک | 流量 |
+| `daily` | daily | сутки | روزانه | 每日 |
+| `monthly` | monthly | месяц | ماهانه | 每月 |
+| `top` | top | топ | برترین | 排行 |
+| `stats` | stats | статистика | آمار | 统计 |
+| `check` | check | проверить | بررسی | 检查 |
+| `flush` | flush | сбросить | تخلیه | 清空 |
+| `name` | name | имя | نام | 名称 |
+| `query` | query | запрос | پرس‌وجو | 查询 |
+| `audit` | audit | аудит | بازبینی | 审计 |
+| `reboot` | reboot | перезагрузка | راه‌اندازی دوباره | 重新启动 |
+| `reboot-hint` | type reboot | введите reboot | کلمه reboot را بنویسید | 输入 reboot |
+| `ok` | ok | ок | سالم | 正常 |
+| `alarm` | alarm | сбой | هشدار | 告警 |
+| `up` | up | вкл | وصل | 在线 |
+| `down` | down | выкл | قطع | 离线 |
+| `running` | running | идёт | در حال اجرا | 进行中 |
+| `failed` | failed | ошибка | ناموفق | 失败 |
+| `image` | image | образ | تصویر | 镜像 |
+| `override` | override | замена | بازنویسی | 已覆盖 |
+| `engine` | engine | движок | موتور | 引擎 |
+| `drift` | drift | расхождение | ناسازگاری | 偏离 |
+| `state` | state | раздел | بخش | 分区 |
+| `power` | power | питание | توان | 电源 |
+| `active` | active | активен | فعال | 运行 |
+| `inactive` | inactive | неактивен | غیرفعال | 停止 |
+| `yes` | yes | да | بله | 是 |
+| `no` | no | нет | خیر | 否 |
+| `selector` | selector | выбор | گزینش | 选择 |
+| `url-test` | url-test | проверка | آزمون نشانی | 测速 |
+| `fallback` | fallback | запасной | پشتیبان | 回退 |
+| `load-balance` | load-balance | баланс | توازن | 均衡 |
+| `counters` | counters | счётчики | شمارنده‌ها | 计数 |
+| `per-host` | per-host | по узлам | به‌ازای میزبان | 按主机 |
+| `flows` | flows | потоки | جریان‌ها | 流 |
+| `script` | this page needs the browser script | этой странице нужен сценарий браузера | این صفحه به اسکریپت مرورگر نیاز دارد | 此页面需要浏览器脚本 |
 
 ### 7.8 Picture
 
@@ -540,7 +543,7 @@ frame, and it does not paint a rule on each row.
 
 ```
 +------------------------------------------------------------------+
-| janus                         [light] dark    [en] ру  فا        |
+| janus                         [light] dark    [en] ру  فا  简中        |
 +------------------------------------------------------------------+
 | host              potato                                         |
 | fingerprint       aabbccdd                                       |
@@ -551,7 +554,7 @@ frame, and it does not paint a rule on each row.
 
 ```
 +------------------------------------------------------------------+
-| janus          ok             [light] dark    [en] ру  فا        |
+| janus          ok             [light] dark    [en] ру  فا  简中        |
 +------------------------------------------------------------------+
 | [status]  tunnel  network  overrides  monitoring  system         |
 +------------------------------------------------------------------+
