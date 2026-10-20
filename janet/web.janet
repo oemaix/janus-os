@@ -732,19 +732,34 @@
   (def page (slurp html))
   (expect (string/find "border-radius: 0" page) "radius")
   (expect (string/find "box-shadow: none" page) "shadow")
-  (expect (string/find "#ffffff" page) "paper")
-  (expect (string/find "#111111" page) "ink")
-  (expect (string/find "#eeeeee" page) "dark ink")
   (expect (string/find "janus-theme" page) "theme key")
+  (expect (string/find "janus-lang" page) "lang key")
   (expect (string/find "prefers-color-scheme" page) "scheme")
+  (expect (string/find "navigator.languages" page) "languages")
+  (expect (string/find "ui-monospace" page) "mono")
+  (expect (string/find "Noto Naskh Arabic" page) "arabic")
+  (expect (string/find "72ch" page) "measure")
+  (expect (string/find "createElement(\"wbr\")" page) "fingerprint wrap")
+  (expect (string/find "хост" page) "russian host")
+  (expect (string/find "میزبان" page) "persian host")
+  (expect (not (string/find "toUpperCase" page)) "host case")
+  (def palette
+    ["002b36" "073642" "93a1a1" "586e75" "eee8d5" "fdf6e3"
+     "3b94d2" "0674c2" "2aa198" "217d76" "859900" "687800"
+     "b58900" "8f6c00" "f9514e" "d5302d" "e76630" "c44915"
+     "ec549d" "cb347d" "7e84e6" "4f55c4"])
+  (def allowed @{})
+  (each h palette
+    (put allowed h true)
+    (expect (string/find h page) (string "palette " h)))
   (var i 0)
   (while (def at (string/find "#" page i))
     (def hex (string/slice page (+ at 1) (+ at 7)))
     (when (peg/match ~(* (repeat 6 :h) -1) hex)
-      (unless (or (= hex "ffffff") (= hex "111111") (= hex "eeeeee"))
+      (unless (get allowed hex)
         (eprint (string "color " hex))
         (os/exit 1)))
-    (set i (+ at 7)))
+    (set i (+ at 1)))
 
   (def calls @[])
   (defn spy [op args stdin]

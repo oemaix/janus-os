@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Status | Draft |
-| Version | 0.3.0 |
+| Version | 0.5.0 |
 | Last updated | 2026-10-20 |
 
 The maintenance page is the browser surface deferred by ADR-0007 and
@@ -139,8 +139,10 @@ not change. Where each action sits is §7.5.
 | `system` | `janus version --components` | `reboot` |
 
 `status` refreshes every 10 seconds while it is the open section and the
-browser tab is visible. Other sections load on entry and again after an
-action.
+browser tab is visible. Tunnel, overrides, monitoring, and system load
+on entry and again after an action. Network draws its rows from the
+image facts. `show`, `restart`, and `leases` write the report when
+pressed.
 
 `janus traffic top` is requested only when `janus.monitoring.scope` is
 `per-host`. Otherwise the monitoring section shows the scope and no top
@@ -152,6 +154,14 @@ export the log and does not start or stop recording.
 An action shows the catalog word `running`, then `ok` or the CLI error
 text. `running` and `ok` follow the page language. The CLI error text
 does not. There is no progress graphic.
+
+A successful body that is empty, the word `ok`, or an object whose only
+key is `ok` and whose value is true, is an acknowledgement. The result
+line shows the catalog word. The section does not print the body.
+Any other successful body is a report. The section `pre` shows a string
+as the CLI wrote it, and shows other JSON indented. A document the
+section already draws as rows is not printed again. Opening a section
+does not write `ok`.
 
 `reboot` asks for the Latin word `reboot` in a field, in every language.
 Any other text does nothing. The page has no factory reset, no backup,
@@ -225,9 +235,10 @@ webfont and no face from the router. The browser supplies the stack.
 
 ### 7.1 Palette
 
-`bg` is the page. `raised` is a box, a field, and a resting control.
-`fg` is text. `frame` is the box border and the control border. `line`
-is a row rule. `inverse-bg` and `inverse-fg` are the active control.
+`bg` is the page. `raised` is the fill of a field. `fg` is text.
+`line` is the rule under a section name and the rule under a field.
+`frame` stays in the palette and is not painted. `inverse-bg` and
+`inverse-fg` are the current choice.
 
 | Token | Dark | Light |
 |-------|------|-------|
@@ -255,19 +266,23 @@ them.
 | `magenta` | `#ec549d` | `#cb347d` | Reserved |
 | `violet` | `#7e84e6` | `#4f55c4` | Reserved |
 
-The open section, the active theme, the active language, and the
-selected node are `inverse-bg` with `inverse-fg`. Every other control is
-`raised` with `fg` and a 1px `frame`.
+Space separates regions. The page does not paint a frame around the
+bar, the strip, a section, a row, a choice, or an action.
 
-A healthy top bar shows `ok` in `green`. A fault shows `alarm` in `red`,
-and the `status` box frame becomes 2px `red`. Every other frame is 1px
-`frame`. A row rule is 1px `line`. Focus is 2px `blue`, square to the
-control, with no offset and no glow.
+The current theme, the current language, the open section, and the
+selected node are `inverse-bg` with `inverse-fg`, and they have no
+border. A resting choice is text on `bg`. An action is text on `bg`.
+Neither has a fill or a border.
+
+A field is `raised` with a 1px `line` along its bottom edge only.
+
+A healthy bar shows `ok` in `green`. A fault shows `alarm` in `red`.
+The status section does not take a red frame. Focus is 2px `blue`,
+square to the control, with no offset and no glow.
 
 `up` is `green`. `down` is `red`. `running` is `yellow`. The reboot
-control is `red` text and a 1px `red` frame on `raised`. That control is
-the danger exception. A hostname value is `blue`. The fingerprint is
-`cyan`. Every other value is `fg`.
+control is `red` text on `bg`, with no frame. A hostname value is
+`blue`. The fingerprint is `cyan`. Every other value is `fg`.
 
 ### 7.2 Type
 
@@ -330,11 +345,11 @@ then its own label again. The result line is where `ok` or the CLI error
 text stays. The CLI error text is not translated (§7.7).
 
 The column is at most `72ch`, at the start, with `16px` padding. Text
-aligns to the start. The page does not justify. The bar's bottom edge is
-a `frame` rule, and the strip sits on that edge. `12px` separates the
-strip from the result line, and the result line from the box. The box
-padding is `12px`. A row rule is `line` and spans the tracks inside that
-padding.
+aligns to the start. The page does not justify. `16px` separates the bar
+from the strip. `12px` separates the strip from the result line, and the
+result line from the section. The section has no frame and no extra
+padding. Its name has one `line` rule under it. A row has no rule. A
+row's block padding is `6px`.
 
 The bar is one line. When it does not fit, the theme choice and the
 language choice wrap together onto the next line of the bar, at the end
@@ -360,7 +375,8 @@ after every four digits. That opportunity is not a character. A selection
 copies the same line as `janus web fingerprint`.
 
 A `pre` block spans all three tracks, keeps its spaces, and wraps
-(`white-space: pre-wrap`).
+(`white-space: pre-wrap`). It holds a report (§4). An empty `pre` is
+not drawn.
 
 Keyboard order is the document order: the bar, the strip, then the open
 box from top to bottom.
@@ -381,7 +397,7 @@ Every control is one of these patterns.
 | Pair | Two or more rows. The action is only on the last. Earlier rows leave the action track empty. | The action applies to every field in the pair. The fields still share a width. An empty required field does nothing. |
 | Section action | Buttons in the value track, under the heading and before the rows. | No field of their own. Buttons that share a subject share edges. None stays inverse. |
 | Secret | A read-only row, then a row action. | The read-only value is `image` or `override`. The field is write-only and starts empty. The page never shows the stored value. Both rows use the same name as the label. |
-| Danger | A row action drawn in `red`, then a hint. | The hint is the next row: an empty label, and the hint in the value track. The button does nothing until the field is the required word. |
+| Danger | A row action in red text, then a hint. | No frame. The hint is the next row: an empty label, and the hint in the value track. The button does nothing until the field is the required word. |
 
 A choice with no entries is omitted, and so is its row. A group with no
 members keeps its head and `test`, and draws no member choice.
@@ -411,7 +427,8 @@ reverse. The passphrase field and the reboot field are left to right.
 The first visit follows `prefers-color-scheme`. The theme control is
 `light` then `dark`, stored in the browser under `janus-theme`. The
 language control is `en`, `ru`, `fa`, in that order, stored under
-`janus-lang`. The tags are the labels. They are not translated. The first
+`janus-lang`. The drawn labels are `en`, `ру`, and `فا`, in every page
+language. The first
 visit walks `navigator.languages` and takes the first primary tag among
 `en`, `ru`, and `fa`. Otherwise it is `en`. The language does not follow
 `janus.system.region`. The router stores neither choice, and neither
@@ -423,12 +440,22 @@ them. Segments share edges. The active segment is inverse.
 ### 7.7 Strings
 
 The catalog is the whole visible vocabulary. A visible word that is not
-a key below, and is not data, is a bug. Data is not translated: hostnames,
-node names, interface names, group names, subscription names, Wi-Fi names,
-strategy names, scope values, and CLI `message` text. The page maps a body
-that is exactly `ok`, `failed`, `rejected`, `closed`, `alarm`, or `running`
-through the catalog. Any longer message is shown as the CLI wrote it, in
-mono, left to right.
+a key below, and is not data, is a bug. Data is not translated:
+hostnames, node names, interface names, group names, subscription names,
+Wi-Fi names, WAN names, LAN names, zone names, addresses, and a CLI
+`message` longer than one catalog word. A group named `proxy` stays
+`proxy`. A node named `direct` stays `direct`. A WAN named `backup`
+stays `backup`.
+
+A strategy type is not a name. The page maps `Selector`, `URLTest`,
+`Fallback`, and `LoadBalance` to `selector`, `url-test`, `fallback`,
+and `load-balance`. A scope value is the enum `counters`, `per-host`,
+or `flows`. Engine health is `active` or `inactive`. Drift is `yes` or
+`no`. `engine`, `drift`, `state`, and `power` are labels.
+
+The page maps a value that is exactly one catalog key through the
+catalog. `true` is `yes`. `false` is `no`. Any longer message is shown
+as the CLI wrote it, in mono, left to right.
 
 The wordmark `janus` is Latin in every language. The confirmation the
 reboot field accepts is the Latin word `reboot`. The label and the hint
@@ -486,17 +513,34 @@ drawn label. A member button shows the node name.
 | `failed` | failed | ошибка | ناموفق |
 | `image` | image | образ | تصویر |
 | `override` | override | замена | بازنویسی |
+| `engine` | engine | движок | موتور |
+| `drift` | drift | расхождение | ناسازگاری |
+| `state` | state | раздел | بخش |
+| `power` | power | питание | توان |
+| `active` | active | активен | فعال |
+| `inactive` | inactive | неактивен | غیرفعال |
+| `yes` | yes | да | بله |
+| `no` | no | нет | خیر |
+| `selector` | selector | выбор | گزینش |
+| `url-test` | url-test | проверка | آزمون نشانی |
+| `fallback` | fallback | запасной | پشتیبان |
+| `load-balance` | load-balance | баланс | توازن |
+| `counters` | counters | счётчики | شمارنده‌ها |
+| `per-host` | per-host | по узлам | به‌ازای میزبان |
+| `flows` | flows | потоки | جریان‌ها |
 | `script` | this page needs the browser script | этой странице нужен сценарий браузера | این صفحه به اسکریپت مرورگر نیاز دارد |
 
 ### 7.8 Picture
 
 Brackets are the inverse control. A field is drawn as dots. `potato` is
 `blue`. The fingerprint is `cyan`. On the signed-in bar, `ok` is
-`green`. `enter` is a resting row action, on the passphrase row.
+`green`. `enter` is a resting row action, on the passphrase row. The
+marks around a picture are the column. The page does not paint that
+frame, and it does not paint a rule on each row.
 
 ```
 +------------------------------------------------------------------+
-| janus                         [light] dark    [en] ru  fa        |
+| janus                         [light] dark    [en] ру  فا        |
 +------------------------------------------------------------------+
 | host              potato                                         |
 | fingerprint       aabbccdd                                       |
@@ -507,7 +551,7 @@ Brackets are the inverse control. A field is drawn as dots. `potato` is
 
 ```
 +------------------------------------------------------------------+
-| janus          ok             [light] dark    [en] ru  fa        |
+| janus          ok             [light] dark    [en] ру  فا        |
 +------------------------------------------------------------------+
 | [status]  tunnel  network  overrides  monitoring  system         |
 +------------------------------------------------------------------+
