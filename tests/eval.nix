@@ -440,9 +440,10 @@ in {
     rpi2 = board "rpi2";
     rpi4 = board "rpi4";
     vf2 = board "visionfive2";
+    vf2Rxc = lib.findFirst (p: p.name == "janus-vf2-yt8531-rxc") null vf2.config.boot.kernelPatches;
   in
     pkgs.runCommand "eval-tier3-boot" {
-      nativeBuildInputs = [pkgs.gnutar pkgs.xz];
+      nativeBuildInputs = [pkgs.gnutar pkgs.xz pkgs.patch];
       passAsFile = ["bootExtra"];
       bootExtra = builtins.unsafeDiscardStringContext vf2.config.system.build.janusBoardImage.bootExtra;
     } ''
@@ -476,6 +477,33 @@ in {
       list_dts ${vf2.config.boot.kernelPackages.kernel.src} \
         arch/riscv/boot/dts/starfive/jh7110-starfive-visionfive-2-v1.2a.dts \
         arch/riscv/boot/dts/starfive/jh7110-starfive-visionfive-2-v1.3b.dts
+      src=${vf2.config.boot.kernelPackages.kernel.src}
+      phy=drivers/net/phy/motorcomm.c
+      dts=arch/riscv/boot/dts/starfive/jh7110-starfive-visionfive-2-v1.3b.dts
+      rm -rf apply
+      mkdir -p "apply/$(dirname "$phy")" "apply/$(dirname "$dts")"
+      if [ -d "$src" ]; then
+        cp "$src/$phy" "apply/$phy"
+        cp "$src/$dts" "apply/$dts"
+      else
+        tar -tf "$src" > vf2-files
+        phy_in=$(grep -m1 "$phy\$" vf2-files)
+        dts_in=$(grep -m1 "$dts\$" vf2-files)
+        test -n "$phy_in"
+        test -n "$dts_in"
+        tar -xJf "$src" -O "$phy_in" > "apply/$phy"
+        tar -xJf "$src" -O "$dts_in" > "apply/$dts"
+      fi
+      patch -p1 -d apply < ${vf2Rxc.patch}
+      grep -A1 'phydev->dev_flags & PHY_F_RXC_ALWAYS_ON ||' "apply/$phy" > flag-ifs
+      flag_n=$(grep -c 'phydev->dev_flags & PHY_F_RXC_ALWAYS_ON ||' flag-ifs || true)
+      sleep_n=$(grep -c 'motorcomm,auto-sleep-disabled' flag-ifs || true)
+      pll_n=$(grep -c 'motorcomm,keep-pll-enabled' flag-ifs || true)
+      test "$flag_n" = 4
+      test "$sleep_n" = 2
+      test "$pll_n" = 2
+      grep -q motorcomm,keep-pll-enabled "apply/$dts"
+      grep -q motorcomm,auto-sleep-disabled "apply/$dts"
       echo ok > "$out"
     '';
   eval-pppoe-secret = fail "eval-pppoe-secret" [
@@ -2766,41 +2794,40 @@ in {
     base
     {janus.access.web.enable = true;}
   ];
-  cli-age-key =
-    pkgs.runCommand "cli-age-key" {} ''
-      set -eu
-      dir=$TMPDIR/root
-      mkdir -p "$dir/bin" "$dir/secrets"
-      cat > "$dir/bin/systemctl" << 'EOF'
-      #!/bin/sh
-      printf '%s\n' "$*" >> "$JANUS_LOG"
-      if [ "$1" = list-units ]; then
-        printf '%s\n' 'janus-web-tls.service loaded failed'
-        printf '%s\n' 'janus-pppoe-main.service loaded failed'
-        printf '%s\n' 'janus-web.service loaded failed'
-        printf '%s\n' 'janus-hostapd-home.service loaded failed'
-        printf '%s\n' 'janus-tailscale-auth.service loaded failed'
-        printf '%s\n' 'tailscaled.service loaded failed'
-      fi
-      exit 0
-      EOF
-      chmod +x "$dir/bin/systemctl"
-      printf '%s\n' 'AGE-SECRET-KEY-1test' | JANUS_SECRETS_DIR="$dir/secrets" JANUS_LOG="$dir/log" PATH="$dir/bin:$PATH" bash ${../pkgs/janus.sh} secrets install-age-key
-      printf '%s\n' 'AGE-SECRET-KEY-1test' | cmp - "$dir/secrets/age.key"
-      awk '
-        $1 == "restart" && $2 == "sops-install-secrets.service" { sops = NR }
-        $1 == "restart" && $2 == "janus-pppoe-main.service" { pppoe = NR }
-        $1 == "restart" && $2 == "janus-hostapd-home.service" { ap = NR }
-        $1 == "restart" && $2 == "janus-tailscale-auth.service" { auth = NR }
-        $1 == "restart" && $2 == "tailscaled.service" { tail = NR }
-        $1 == "restart" && $2 == "janus-web.service" { web = NR }
-        $1 == "restart" && $2 == "janus-web-tls.service" { tls = NR }
-        END {
-          if (!(sops && pppoe && ap && auth && tail && web && tls && sops < pppoe && sops < ap && sops < auth && auth < tail && web < tls)) exit 1
-        }
-      ' "$dir/log"
-      echo ok > "$out"
-    '';
+  cli-age-key = pkgs.runCommand "cli-age-key" {} ''
+    set -eu
+    dir=$TMPDIR/root
+    mkdir -p "$dir/bin" "$dir/secrets"
+    cat > "$dir/bin/systemctl" << 'EOF'
+    #!/bin/sh
+    printf '%s\n' "$*" >> "$JANUS_LOG"
+    if [ "$1" = list-units ]; then
+      printf '%s\n' 'janus-web-tls.service loaded failed'
+      printf '%s\n' 'janus-pppoe-main.service loaded failed'
+      printf '%s\n' 'janus-web.service loaded failed'
+      printf '%s\n' 'janus-hostapd-home.service loaded failed'
+      printf '%s\n' 'janus-tailscale-auth.service loaded failed'
+      printf '%s\n' 'tailscaled.service loaded failed'
+    fi
+    exit 0
+    EOF
+    chmod +x "$dir/bin/systemctl"
+    printf '%s\n' 'AGE-SECRET-KEY-1test' | JANUS_SECRETS_DIR="$dir/secrets" JANUS_LOG="$dir/log" PATH="$dir/bin:$PATH" bash ${../pkgs/janus.sh} secrets install-age-key
+    printf '%s\n' 'AGE-SECRET-KEY-1test' | cmp - "$dir/secrets/age.key"
+    awk '
+      $1 == "restart" && $2 == "sops-install-secrets.service" { sops = NR }
+      $1 == "restart" && $2 == "janus-pppoe-main.service" { pppoe = NR }
+      $1 == "restart" && $2 == "janus-hostapd-home.service" { ap = NR }
+      $1 == "restart" && $2 == "janus-tailscale-auth.service" { auth = NR }
+      $1 == "restart" && $2 == "tailscaled.service" { tail = NR }
+      $1 == "restart" && $2 == "janus-web.service" { web = NR }
+      $1 == "restart" && $2 == "janus-web-tls.service" { tls = NR }
+      END {
+        if (!(sops && pppoe && ap && auth && tail && web && tls && sops < pppoe && sops < ap && sops < auth && auth < tail && web < tls)) exit 1
+      }
+    ' "$dir/log"
+    echo ok > "$out"
+  '';
   eval-web-sops = let
     os = mk [
       base

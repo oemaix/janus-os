@@ -1,0 +1,68 @@
+--- a/drivers/net/phy/motorcomm.c
++++ b/drivers/net/phy/motorcomm.c
+@@ -1675,7 +1675,11 @@
+ 			goto err_restore_page;
+ 	}
+ 
+-	if (device_property_read_bool(dev, "motorcomm,auto-sleep-disabled")) {
++	/* stmmac sets PHY_F_RXC_ALWAYS_ON. The DMA reset completes only
++	 * while RXC runs, and these PHYs stop that clock with no link.
++	 */
++	if (phydev->dev_flags & PHY_F_RXC_ALWAYS_ON ||
++	    device_property_read_bool(dev, "motorcomm,auto-sleep-disabled")) {
+ 		/* disable auto sleep */
+ 		ret = ytphy_modify_ext(phydev, YT8521_EXTREG_SLEEP_CONTROL1_REG,
+ 				       YT8521_ESC1R_SLEEP_SW, 0);
+@@ -1683,7 +1687,8 @@
+ 			goto err_restore_page;
+ 	}
+ 
+-	if (device_property_read_bool(dev, "motorcomm,keep-pll-enabled")) {
++	if (phydev->dev_flags & PHY_F_RXC_ALWAYS_ON ||
++	    device_property_read_bool(dev, "motorcomm,keep-pll-enabled")) {
+ 		/* enable RXC clock when no wire plug */
+ 		ret = ytphy_modify_ext(phydev, YT8521_CLOCK_GATING_REG,
+ 				       YT8521_CGR_RX_CLK_EN, 0);
+@@ -1803,7 +1808,11 @@
+ 	if (ret < 0)
+ 		return ret;
+ 
+-	if (device_property_read_bool(dev, "motorcomm,auto-sleep-disabled")) {
++	/* stmmac sets PHY_F_RXC_ALWAYS_ON. The DMA reset completes only
++	 * while RXC runs, and this PHY stops that clock with no link.
++	 */
++	if (phydev->dev_flags & PHY_F_RXC_ALWAYS_ON ||
++	    device_property_read_bool(dev, "motorcomm,auto-sleep-disabled")) {
+ 		/* disable auto sleep */
+ 		ret = ytphy_modify_ext_with_lock(phydev,
+ 						 YT8521_EXTREG_SLEEP_CONTROL1_REG,
+@@ -1812,7 +1821,8 @@
+ 			return ret;
+ 	}
+ 
+-	if (device_property_read_bool(dev, "motorcomm,keep-pll-enabled")) {
++	if (phydev->dev_flags & PHY_F_RXC_ALWAYS_ON ||
++	    device_property_read_bool(dev, "motorcomm,keep-pll-enabled")) {
+ 		/* enable RXC clock when no wire plug */
+ 		ret = ytphy_modify_ext_with_lock(phydev,
+ 						 YT8521_CLOCK_GATING_REG,
+--- a/arch/riscv/boot/dts/starfive/jh7110-starfive-visionfive-2-v1.3b.dts
++++ b/arch/riscv/boot/dts/starfive/jh7110-starfive-visionfive-2-v1.3b.dts
+@@ -28,6 +28,8 @@
+ 	motorcomm,tx-clk-adj-enabled;
+ 	motorcomm,tx-clk-100-inverted;
+ 	motorcomm,tx-clk-1000-inverted;
++	motorcomm,keep-pll-enabled;
++	motorcomm,auto-sleep-disabled;
+ 	motorcomm,rx-clk-drv-microamp = <3970>;
+ 	motorcomm,rx-data-drv-microamp = <2910>;
+ 	rx-internal-delay-ps = <1500>;
+@@ -37,6 +39,8 @@
+ &phy1 {
+ 	motorcomm,tx-clk-adj-enabled;
+ 	motorcomm,tx-clk-100-inverted;
++	motorcomm,keep-pll-enabled;
++	motorcomm,auto-sleep-disabled;
+ 	motorcomm,rx-clk-drv-microamp = <3970>;
+ 	motorcomm,rx-data-drv-microamp = <2910>;
+ 	rx-internal-delay-ps = <300>;
