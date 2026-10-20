@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-18 |
+| Last updated | 2026-10-20 |
 
 This file is the implementation plan, the progress of the code, and the
 notes for work that is specified but not started. Choices are *18*.
@@ -123,7 +123,7 @@ tree does not mean that behavior exists. Stubs are not finished features.
   image for SD, eMMC, and NVMe, boot order eMMC then SD then NVMe,
   `eth0`/`eth1`, no WAN chosen, D-0047).
   Yanyu names `lan1`–`lan4` by PCI path and installs Limine
-  (D-0029). The image has not been booted on the lab AMI board. Tier 3
+  (D-0029). The image boots on the lab AMI board. Tier 3
   images are not boot-tested here.
 * The Raspberry Pi Zero 2 W onboard radio is a 2.4 GHz WPA2 access
   point (D-0043). `match.onboard = true`. `hostapd` uses in-tree
@@ -215,8 +215,8 @@ tree does not mean that behavior exists. Stubs are not finished features.
   RA names the IPv6 link-local. Which engine to keep, including different
   DNS policies per LAN, is *07* §2.1.
 * The Yanyu profile names `lan1`–`lan4` by PCI address (*10* §3.1). It
-  does not pick which jack is WAN. Limine on that image has not been
-  booted on the lab AMI board.
+  does not pick which jack is WAN. Limine on that image has booted on
+  the lab AMI board.
 * Battery shutdown arms on the mcuzone `0x40` profile, where a
   negative current means discharge. The Waveshare `0x43` profile stays
   unarmed.

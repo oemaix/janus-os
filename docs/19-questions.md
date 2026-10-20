@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-17 |
+| Last updated | 2026-10-20 |
 
 These answers explain a choice that already binds somewhere else. The
 cited ADR, requirement, or section is that place. This list does not
@@ -50,8 +50,8 @@ Each question is `Q-nnnn`. The number is assigned once and is not reused.
 | Q-0034 | Is fake-IP only for a name that matches an explicit proxy rule? | No. Unmatched names follow `defaultTarget`, and a group target is proxied too. Direct uses the domestic resolver. Block is rejected. See D-0037. |
 | Q-0035 | Why does `strip-for-proxied` stay the default? | A globally routable AAAA lets the host leave the tunnel. An address in the IPv6 fake-IP range is not that leak. Direct names keep a real AAAA. `keep` is the leak. See D-0038. |
 | Q-0036 | Does every LAN share one traffic mode? | No. `janus.proxy.mode` is the inherited default. A guest LAN sets `proxy.mode = "bypass"`. An unset DNS policy then sends every recursive name to the domestic encrypted resolvers, not the carrier and not the tunnel. See D-0042. |
-| Q-0039 | Why is a per-LAN mode not three engines, and why do rules replace instead of append? | Nodes and groups are one pool. The engine matches the LAN by source. An appended list makes the winner depend on two orders. A LAN that wants the owner's rules leaves `proxy.rules` unset, or binds the same Nix list. See D-0042. |
 | Q-0037 | Should DoH and DoT addresses be pinned at build time and refreshed on a timer? | No. The build host is often outside the region, anycast answers differ, a failed lookup would fail the image, and a refresh needs a resolver that itself needs those addresses. The operator may set `janus.dns.bootstrap`. Unset, the preset supplies IP literals. See D-0040. |
 | Q-0038 | Can `janus dns check` pretend to be a LAN client, and do Russia and Iran poison DNS the way China does? | It runs on the router. It cannot show that a phone can still reach another resolver. China forges plaintext answers on the path. Russia and Iran more often lie in the ISP resolver and block by SNI or address. The preset has no bogon list for those two. See D-0041. |
+| Q-0039 | Why is a per-LAN mode not three engines, and why do rules replace instead of append? | Nodes and groups are one pool. The engine matches the LAN by source. An appended list makes the winner depend on two orders. A LAN that wants the owner's rules leaves `proxy.rules` unset, or binds the same Nix list. See D-0042. |
 | Q-0040 | Does the Zero 2 W onboard Wi-Fi work as an access point? | Yes. It is the board's own radio, 2.4 GHz WPA2, on in-tree `brcmfmac` and the redistributable Raspberry Pi wireless firmware. 5 GHz and WPA3 are not this chip. See D-0043 and *10* §4.7. |
-| Q-0041 | Why keep a subscription declared on a router that does not use it? | A shared subscription file is encrypted to every host whose configuration names it. Removing the declaration drops that host from the recipient set. `enable = false` keeps the name and drops the nodes. See D-0044. |
+| Q-0041 | Why keep a subscription declared on a router that does not use it? | A shared subscription file is encrypted by `secret set` to every public key under `secrets/keys/`. Removing the declaration drops that host from the rotation recipient set, not from the existing ciphertext; only a rotation narrows it. `enable = false` keeps the name and drops the nodes. See D-0044 and D-0049. |

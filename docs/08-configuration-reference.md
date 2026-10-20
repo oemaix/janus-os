@@ -127,6 +127,7 @@ See *06* §7–8: `zones`, `policies`, `rules`, `services`, `portForwards`,
 | `subscriptions.<name>` | submodule | | *07* §3.2 |
 | `nodes.<name>` | submodule | | Manual nodes; protocol-specific submodules `vless`, `trojan`, `shadowsocks`, `hysteria2`, `tuic` |
 | `groups.<name>` | submodule | | *07* §4 |
+| `groupsAuto` | bool | `true` | Render the implicit `Auto` and `sub:<name>` groups. `false` requires every target to name a defined group (ADR-0026); sing-box only |
 | `rules` | list | `[]` | Inherited by a LAN that does not set `proxy.rules`. A set LAN list replaces this one. *07* §5, *21*. Empty until written. The example has the `cn`, `ru`, and `ir` lists. |
 | `exceptions` | list | private, iptv | `proxy-all` exceptions. A LAN inherits this list. |
 | `egressWan` | str/null | `null` | Pin engine egress to a WAN |
@@ -137,7 +138,7 @@ See *06* §7–8: `zones`, `policies`, `rules`, `services`, `portForwards`,
 | `engineSettings` | attrs | `{}` | Raw engine config merged last (escape hatch; unsupported) |
 
 Built-in group `Auto`: `url-test` over all subscription nodes unless the
-user defines `groups.Auto`.
+user defines `groups.Auto` or sets `groupsAuto = false` (ADR-0026).
 
 ### 6.1 Node submodule (manual) — common fields
 
@@ -182,6 +183,12 @@ TTL it writes on each routed answer. xray 26 has neither knob, so another
 value fails evaluation. `carrierResolvers = "fallback-only"` is not
 available for the same one-server limit. `domestic-only` uses the first
 learned WAN address as the domestic server.
+
+`remote.via` defaults to `tunnel`. A bypass LAN has no tunnel, so the
+remote resolvers stay unused and every recursive name is answered by the
+domestic resolvers. `remote.via = "direct"` splits a bypass LAN: the
+domestic sets keep the domestic resolvers, and every other name goes to
+the remote resolvers from the WAN, encrypted (*07* §7.2).
 
 ## 8. `janus.monitoring`
 
@@ -245,9 +252,11 @@ secrets/web/potato.yaml              # maintenance page passphrase
 ```
 
 `wifi`, `pppoe`, `tailscale`, `wireguard`, and `web` are encrypted to
-that host only. A proxy subscription file and a manual proxy-node file
-are encrypted to every host that references the file. A PPPoE file and a
-manual node file hold the YAML document. The other files hold one value.
+that host only. `secret set` encrypts a proxy subscription file and a
+manual proxy-node file to every public key under `secrets/keys/`; a
+`fleet pull` rotation re-encrypts them to only the hosts that reference
+the file. A PPPoE file and a manual node file hold the YAML document.
+The other files hold one value.
 
 `janus-build secret set` writes a sops document encrypted to the
 recipients of that path. sops-nix decrypts it into `/run/secrets`. A
@@ -302,7 +311,8 @@ export`. `janus-build fleet pull` writes leases into
 * No two LANs overlap in IPv4 subnet; no LAN overlaps a WAN static subnet.
 * Exactly one `role = "default"` WAN with the lowest metric, or explicit
   metrics for all defaults.
-* Every `target = "group:X"` refers to a defined group or `Auto`.
+* Every `target = "group:X"` refers to a defined group or `Auto`. With
+  `groupsAuto = false` only a defined group is accepted.
 * Every group has a non-empty membership at build time *or* an
   `emptyFallback`.
 * Engine capability check for every node protocol and feature.

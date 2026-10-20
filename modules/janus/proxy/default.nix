@@ -50,6 +50,8 @@
     then cfg.mode
     else lan.proxy.mode;
 
+  lanVia = lan: pick lan.dns.remote.via dns.remote.via;
+
   lanRules = lan:
     if lan.proxy.rules == null
     then cfg.rules
@@ -57,7 +59,7 @@
 
   lanUrls = lan:
     (pick lan.dns.domestic.resolvers dns.domestic.resolvers)
-    ++ lib.optionals (lanMode lan != "bypass") (pick lan.dns.remote.resolvers dns.remote.resolvers)
+    ++ lib.optionals (lanMode lan != "bypass" || lanVia lan == "direct") (pick lan.dns.remote.resolvers dns.remote.resolvers)
     ++ lib.concatLists (lib.attrValues (pick lan.dns.forwarders dns.forwarders));
 
   bootViews =
@@ -68,7 +70,7 @@
         bootstrap = dns.bootstrap;
         urls =
           dns.domestic.resolvers
-          ++ lib.optionals (cfg.mode != "bypass") dns.remote.resolvers
+          ++ lib.optionals (cfg.mode != "bypass" || dns.remote.via == "direct") dns.remote.resolvers
           ++ lib.concatLists (lib.attrValues dns.forwarders);
       }
     ]
@@ -420,7 +422,17 @@ in {
         };
       });
       default = {};
-      description = "Proxy groups. docs/07 §4. Auto exists unless the user defines groups.Auto.";
+      description = "Proxy groups. docs/07 §4. The implicit Auto exists unless groupsAuto is false or the user defines groups.Auto.";
+    };
+    groupsAuto = mkOption {
+      type = types.bool;
+      default = true;
+      description = ''
+        Generate the implicit Auto url-test group over every node, and one
+        url-test group per subscription. Disable for a fully explicit setup:
+        every rule and defaultTarget must then name defined groups, and the
+        engine must be sing-box.
+      '';
     };
     rules = mkOption {
       type = types.listOf (types.submodule {
@@ -638,6 +650,21 @@ in {
           message = "janus.proxy.egressWan '${toString cfg.egressWan}' is not a WAN.";
         }
       ]
+      ++ lib.optionals (!cfg.groupsAuto) [
+        {
+          assertion = cfg.engine == "sing-box";
+          message = "janus.proxy.groupsAuto = false is not expressible by xray (ADR-0006).";
+        }
+        {
+          assertion = cfg.defaultTarget != "Auto" && cfg.defaultTarget != "group:Auto";
+          message = "janus.proxy.groupsAuto = false but defaultTarget names the implicit Auto group.";
+        }
+      ]
+      ++ lib.imap0 (_: rule: {
+        assertion = cfg.groupsAuto || (rule.target != "Auto" && rule.target != "group:Auto");
+        message = "janus.proxy.groupsAuto = false but a rule targets the implicit Auto group.";
+      })
+      cfg.rules
       ++ lib.concatMap (rule:
         map (lan: {
           assertion = config.janus.network.lans ? ${lan};
@@ -660,8 +687,8 @@ in {
       })
       lans
       ++ lib.mapAttrsToList (name: lan: {
-        assertion = lanMode lan != "bypass" || lan.dns.remote.resolvers == null;
-        message = "janus.network.lans.${name} is bypass and dns.remote.resolvers is set. A bypass LAN resolves every recursive name on the domestic resolvers.";
+        assertion = lanMode lan != "bypass" || lan.dns.remote.resolvers == null || lanVia lan == "direct";
+        message = "janus.network.lans.${name} is bypass and dns.remote.resolvers is set without dns.remote.via = \"direct\". A bypass LAN resolves every recursive name on the domestic resolvers.";
       })
       lans
       ++ map (view: {

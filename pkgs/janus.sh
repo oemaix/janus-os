@@ -307,13 +307,68 @@ case "$cmd" in
         systemctl restart "janus-pppoe-${name}.service" 2>/dev/null || networkctl renew "$name" || networkctl reconfigure "$name"
         ;;
       show)
-        if [ "$json" = 1 ]; then
-          printf '{"name":"%s","dns":"%s"}\n' "$name" "$(tr '\n' ' ' < "/run/janus/wan/${name}/dns" 2>/dev/null || true)"
-        else
-          ip -4 addr show
-          echo "DNS:"
-          cat "/run/janus/wan/${name}/dns" 2>/dev/null || true
+        wan_dir="/run/janus/wan/$name"
+        if [ ! -d "$wan_dir" ]; then
+          echo "janus: unknown WAN '$name'. Known WANs:" >&2
+          ls /run/janus/wan/ >&2 2>/dev/null
+          exit 2
         fi
+        # The policy script stamps the link; fall back to the networkd unit
+        # (parent- prefix for PPPoE) for images without the stamp yet.
+        if [ -s "$wan_dir/iface" ]; then
+          iface=$(head -1 "$wan_dir/iface")
+        else
+          # No pipe: with pipefail an early-exiting reader would SIGPIPE sed
+          # and errexit would abort janus wan show.
+          iface=$(sed -n 's/^Name=//p' \
+            "/etc/systemd/network/40-wan-${name}.network" \
+            "/etc/systemd/network/40-wan-parent-${name}.network" 2>/dev/null)
+          iface=${iface%%$'\n'*}
+        fi
+        if [ -z "$iface" ]; then
+          echo "janus: cannot resolve link for WAN '$name'" >&2
+          exit 1
+        fi
+        state=$(cat "/sys/class/net/$iface/operstate" 2>/dev/null)
+        if [ "$json" = 1 ]; then
+          addr=$(ip -4 -o addr show dev "$iface" 2>/dev/null | awk '{print $4; exit}')
+          gw=$(ip -4 route show default dev "$iface" 2>/dev/null | awk '{print $3; exit}')
+          printf '{"name":"%s","link":"%s","state":"%s","address":"%s","gateway":"%s","dns":"%s"}\n' \
+            "$name" "$iface" "$state" "${addr:-}" "${gw:-}" "$(tr '\n' ' ' < "$wan_dir/dns" 2>/dev/null)"
+        else
+          echo "WAN $name (link $iface)"
+          carrier=$(cat "/sys/class/net/$iface/carrier" 2>/dev/null)
+          echo "Link:     operstate=$state carrier=${carrier:-?}"
+          addrs=$(ip -4 -o addr show dev "$iface" 2>/dev/null)
+          echo "Addresses:"
+          awk 'NF {printf "  %s\n", $4}' <<<"$addrs"
+          gw=$(ip -4 route show default dev "$iface" 2>/dev/null | awk '{print $3; exit}')
+          echo "Gateway:  ${gw:-none}"
+          echo "DNS:      $(tr '\n' ' ' < "$wan_dir/dns" 2>/dev/null || echo none)"
+          # The kernel counts valid_lft down, so it is the remaining lease
+          # time. systemd's /run/systemd/netif/leases file holds the total
+          # lifetime and is rewritten on any link save, so neither its value
+          # nor its mtime is a reliable remaining time.
+          vlt=$(awk '{for (i = 1; i <= NF; i++) if ($i == "valid_lft") {print $(i + 1); exit}}' <<<"$addrs")
+          case "$vlt" in
+            '' | forever) ;;
+            *sec)
+              secs=${vlt%sec}
+              case "$secs" in
+                '' | *[!0-9]*) echo "Lease:    $vlt remaining" ;;
+                *)
+                  if [ "$secs" -lt 60 ]; then
+                    echo "Lease:    ${secs}s remaining"
+                  else
+                    echo "Lease:    $((secs / 3600))h $(((secs % 3600) / 60))m remaining"
+                  fi
+                  ;;
+              esac
+              ;;
+            *) echo "Lease:    $vlt remaining" ;;
+          esac
+        fi
+        exit 0
         ;;
       *) usage ;;
     esac

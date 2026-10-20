@@ -3,7 +3,7 @@
   description = "Janus OS, an image-deployed NixOS router";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
-  inputs.sops-nix.url = "github:Mic92/sops-nix/5efb5a6f4f5ab192817d28557dd4d650fa14d866";
+  inputs.sops-nix.url = "github:Mic92/sops-nix/44931708c62937c2b1bf7953902989fa5bb9ee1b";
   inputs.sops-nix.inputs.nixpkgs.follows = "nixpkgs";
 
   outputs = {

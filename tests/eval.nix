@@ -191,6 +191,40 @@ in {
       test "$s2" = 2
       echo ok > "$out"
     '';
+  # The CLI runs with the PATH baked into its wrapper, so a command that
+  # is not on it is a runtime 127 ("awk: command not found"), not a
+  # build error, and nothing in the evaluation-only checks notices.
+  # Every external command pkgs/janus.sh calls must be on that PATH.
+  # Extend the list when janus.sh gains a command.
+  cli-runtime-deps = let
+    system = pkgs.stdenv.hostPlatform.system;
+  in
+    pkgs.runCommand "cli-runtime-deps" {
+      nativeBuildInputs = [pkgs.bash pkgs.coreutils pkgs.gnused];
+    } ''
+      wrapper=${self.packages.${system}.janus-cli}/bin/janus
+      path=$(sed -n 's/^export PATH="\(.*\)"$/\1/p' "$wrapper" | head -1)
+      path=''${path%:\$PATH}
+      if [ -z "$path" ]; then
+        echo "no PATH line in the janus wrapper" >&2
+        exit 1
+      fi
+      IFS=':' read -r -a dirs <<< "$path"
+      for cmd in awk sed find jq ip systemctl head tr cat; do
+        found=
+        for d in "''${dirs[@]}"; do
+          if [ -x "$d/$cmd" ]; then
+            found=1
+            break
+          fi
+        done
+        if [ -z "$found" ]; then
+          echo "janus CLI runtime lacks $cmd" >&2
+          exit 1
+        fi
+      done
+      echo ok > "$out"
+    '';
   cli-init = let
     system = pkgs.stdenv.hostPlatform.system;
   in
@@ -201,6 +235,11 @@ in {
       janus-build init "$TMPDIR/fleet"
       test -f "$TMPDIR/fleet/flake.nix"
       test -d "$TMPDIR/fleet/.git"
+      # The template must ignore the janus-build artifacts, or the first
+      # build leaves result/ untracked and require_clean blocks apply.
+      test -f "$TMPDIR/fleet/.gitignore"
+      grep -qx 'result/' "$TMPDIR/fleet/.gitignore"
+      grep -qx 'backup/' "$TMPDIR/fleet/.gitignore"
       url=$(sed -n 's/.*inputs\.janus\.url = "\([^"]*\)".*/\1/p' "$TMPDIR/fleet/flake.nix")
       case "$url" in
         github:oemaix/janus-os/*)
@@ -278,12 +317,426 @@ in {
         exit 1
       fi
       grep -q 'jq -Rs' "$(command -v janus-build)"
+      # fleet apply must decrypt the inbox with sops on the router, not
+      # with age: the board ships no age binary and age cannot read a
+      # sops document (D-0048).
+      if grep -q 'age -d -i' "$(command -v janus-build)"; then
+        echo "fleet apply still decrypts the inbox with age" >&2
+        exit 1
+      fi
+      grep -q 'sops decrypt --extract' "$(command -v janus-build)"
+      grep -q 'secret_files' "$(command -v janus-build)"
+      printf '%s\n' 'https://example.invalid/sub' | janus-build secret set secrets/subscription/main.yaml
+      test -s secrets/subscription/main.yaml
+      if grep -q example.invalid secrets/subscription/main.yaml; then
+        echo "subscription url was stored in plaintext" >&2
+        exit 1
+      fi
+      SOPS_AGE_KEY_FILE="$TMPDIR/age.key" sops -d --extract '["value"]' secrets/subscription/main.yaml > "$TMPDIR/sub"
+      printf '%s' 'https://example.invalid/sub' | cmp - "$TMPDIR/sub"
       janus-build host add other
       janus-build secret keygen other > "$TMPDIR/other.key"
       if SOPS_AGE_KEY_FILE="$TMPDIR/other.key" sops -d --extract '["value"]' secrets/web/potato.yaml > "$TMPDIR/stolen"; then
         echo "maintenance passphrase was readable by another host" >&2
         exit 1
       fi
+      echo ok > "$out"
+    '';
+  # Execution-level tests for the fleet-apply plan parser (finding
+  # F-F): cli-init only greps the script text. Here the script is
+  # sourced through its JANUS_BUILD_LIB guard with a mock nix_fleet,
+  # and secret_files, shq, and the plan row read run for real.
+  cli-plan-parser =
+    pkgs.runCommand "cli-plan-parser" {
+      nativeBuildInputs = [pkgs.bash pkgs.jq pkgs.gnused];
+    } ''
+      # The packaged runtime also runs with nounset.
+      set -u
+      JANUS_BUILD_LIB=1
+      source ${./../pkgs/janus-build.sh}
+
+      # secret_files strips the *-source store prefix and the repo
+      # prefix, and skips a sopsFile outside the repo.
+      nix_fleet() {
+        jq -n --arg repo "$PWD" '{
+          "ap.yaml": "\($repo)/secrets/wifi/h1/ap.yaml",
+          "main.yaml": "/nix/store/xxx-source/secrets/subscription/main.yaml",
+          "stolen": "/etc/passwd"
+        }'
+      }
+      printf 'ap.yaml\tsecrets/wifi/h1/ap.yaml\nmain.yaml\tsecrets/subscription/main.yaml\n' > expected
+      secret_files h1 2>skipped.log | cmp expected -
+      grep -q 'skipped' skipped.log
+      grep -q '/etc/passwd' skipped.log
+
+      # shq single-quotes an untrusted word: eval roundtrips to the
+      # original string and a metacharacter payload cannot inject.
+      roundtrip() {
+        got=$(eval "printf %s $(shq "$1")")
+        if [ "$got" != "$1" ]; then
+          echo "shq roundtrip failed for: $1" >&2
+          exit 1
+        fi
+      }
+      roundtrip 'my sub'
+      roundtrip "a'b"
+      rm -f /tmp/pwned
+      roundtrip 'x; touch /tmp/pwned; echo'
+      if [ -e /tmp/pwned ]; then
+        echo "shq allowed a command injection" >&2
+        exit 1
+      fi
+
+      # Plan rows parse through the real parse_plan_row: kind, host,
+      # file, name; a name with a space survives, and a row without a
+      # fourth field or with name equal to the file is rejected.
+      row=$(printf 'subscription\th\tf\tmy sub')
+      if ! parse_plan_row "$row"; then
+        echo "a good plan row was rejected: $row" >&2
+        exit 1
+      fi
+      test "$kind" = subscription
+      test "$host" = h
+      test "$file" = f
+      test "$name" = "my sub"
+      for row in "$(printf 'subscription\th\tf')" "$(printf 'subscription\th\tf\tf')"; do
+        if parse_plan_row "$row"; then
+          echo "a bad plan row was not caught: $row" >&2
+          exit 1
+        fi
+      done
+      echo ok > "$out"
+    '';
+  # End-to-end test of fleet_pull --with-secrets: the router's dump
+  # feeds a tab-separated channel whose values must reach sops_encrypt
+  # byte for byte (no gsub rewriting), the five plaintext temp files
+  # must be reaped by the EXIT trap, and a value that cannot survive
+  # the channel (a real tab) is refused loudly with exit 2.
+  cli-pull-rotate =
+    pkgs.runCommand "cli-pull-rotate" {
+      nativeBuildInputs = [pkgs.git pkgs.jq pkgs.bash];
+    } ''
+      # The packaged runtime runs with nounset and pipefail; mirror
+      # both (the builder already supplies -e).
+      set -u
+      set -o pipefail
+      JANUS_BUILD_LIB=1
+      source ${./../pkgs/janus-build.sh}
+
+      repo=$(mktemp -d)
+      cd "$repo"
+      git init -q
+      mkdir -p hosts/h1 secrets/subscription secrets/wifi/h1 secrets/keys
+      printf '{ ... }: { imports = [ ./hosts/h1/overrides.nix ]; }\n' > flake.nix
+      printf '{ ... }: {}\n' > hosts/h1/configuration.nix
+      printf '{ ... }: {}\n' > hosts/h1/overrides.nix
+      printf 'cipher-sub\n' > secrets/subscription/shared.yaml
+      printf 'cipher-wifi\n' > secrets/wifi/h1/living.yaml
+      printf 'age1fake\n' > secrets/keys/h1.pub
+      git add .
+      git -c user.email=t@t -c user.name=t commit -qm baseline
+      # fleet_pull prefers /dev/shm; point TMPDIR at a known dir so the
+      # residue check below covers the fallback path too.
+      export TMPDIR
+      TMPDIR=$(mktemp -d)
+
+      host_address() { printf '%s\n' 10.0.0.1; }
+      # The dump carries a subscription name with a space and an SSID
+      # with a space: the values must arrive byte for byte.
+      dump='{"proxy.subscriptions.my sub.url":"https://example.com/feed v2","network.wifi.living room.passphrase":"new pass 456"}'
+      ssh_to() {
+        shift
+        if [ "$*" = "janus --json override show --secrets" ]; then
+          printf '%s\n' "$dump"
+        else
+          echo "unexpected ssh command: $*" >&2
+          return 1
+        fi
+      }
+      nix_fleet() {
+        # Anchored on the full eval-expression fragments. The order is
+        # significant: the secret_files --apply expression mentions
+        # sops.secrets and ends in .config, so it is matched last.
+        case "$*" in
+          *.config.janus.proxy.subscriptions*) printf '%s' '{"my sub":{"urlSecret":"sub-a"}}' ;;
+          *.config.janus.network.wifi*) printf '%s' '{"living room":{"passphraseSecret":"wifi-a"}}' ;;
+          *sops.secrets*.config*) printf '%s' "{\"sub-a\":\"$PWD/secrets/subscription/shared.yaml\",\"wifi-a\":\"$PWD/secrets/wifi/h1/living.yaml\"}" ;;
+          *) return 1 ;;
+        esac
+      }
+      # Capture mock: the plaintext handed to sops_encrypt is stored so
+      # the test can compare it with the dumped value byte for byte.
+      # The variable is named dest on purpose: runCommand's own $out
+      # must survive to the final echo.
+      capture=$(mktemp -d)
+      sops_encrypt() {
+        dest=$1
+        shift
+        cat > "$capture/$(printf '%s' "$dest" | tr '/' '_')"
+      }
+
+      (fleet_pull --with-secrets) >pull.out 2>pull.err
+      grep -qF 'updated secrets/subscription/shared.yaml' pull.out
+      grep -qF 'updated secrets/wifi/h1/living.yaml' pull.out
+      # awk adds one trailing newline; every byte before it must be the
+      # dumped value exactly, spaces included.
+      printf '%s\n' 'https://example.com/feed v2' > expected-sub
+      cmp expected-sub "$capture/secrets_subscription_shared.yaml"
+      printf '%s\n' 'new pass 456' > expected-wifi
+      cmp expected-wifi "$capture/secrets_wifi_h1_living.yaml"
+      # The only expected stderr line is the plaintext-session notice.
+      printf '%s\n' 'The SSH session carried plaintext credentials. No plaintext file was kept.' > expected-err
+      cmp expected-err pull.err
+      # No janus-pull-* residue: the EXIT trap reaps the five plaintext
+      # temp files. Resolve the temp dir the way fleet_pull does.
+      tmp=/dev/shm
+      [ -d /dev/shm ] && [ -w /dev/shm ] || tmp=$TMPDIR
+      if find "$tmp" -maxdepth 1 -name 'janus-pull-*' -print | grep -q .; then
+        echo "janus-pull temp files leaked in $tmp" >&2
+        exit 1
+      fi
+
+      # Negative path: a value with a real tab cannot survive the
+      # tab-separated channel and must be refused with exit 2, still
+      # with no temp-file residue.
+      dump='{"proxy.subscriptions.my sub.url":"has\ttab"}'
+      rc=0
+      (fleet_pull --with-secrets) >neg.out 2>neg.err || rc=$?
+      if [ "$rc" -ne 2 ]; then
+        echo "fleet_pull with a tabbed value exited $rc, want 2" >&2
+        cat neg.err >&2
+        exit 1
+      fi
+      grep -q 'refusing to pull' neg.err
+      if find "$tmp" -maxdepth 1 -name 'janus-pull-*' -print | grep -q .; then
+        echo "janus-pull temp files leaked on the refusal path" >&2
+        exit 1
+      fi
+      echo ok > "$out"
+    '';
+  # End-to-end test of fleet_apply against a minimal fleet fixture:
+  # a baseline commit, then a cipher rotation plus a new wifi cipher
+  # whose file name differs from the AP name. ssh/nix are mocked, and
+  # the remote command strings fleet_apply assembles are asserted.
+  # The eval-failure path (exit 2) is covered with a second host.
+  cli-plan-build =
+    pkgs.runCommand "cli-plan-build" {
+      nativeBuildInputs = [pkgs.git pkgs.jq pkgs.bash pkgs.gnused];
+    } ''
+      # The packaged runtime also runs with nounset.
+      set -u
+      JANUS_BUILD_LIB=1
+      source ${./../pkgs/janus-build.sh}
+
+      repo=$(mktemp -d)
+      cd "$repo"
+      git init -q
+      mkdir -p hosts/h1 secrets/subscription secrets/keys secrets/wifi/h1
+      printf '{}\n' > flake.nix
+      printf '{ ... }: {}\n' > hosts/h1/configuration.nix
+      printf '{ ... }: {}\n' > hosts/h1/overrides.nix
+      printf 'cipher-v1\n' > secrets/subscription/shared.yaml
+      printf 'age1fake\n' > secrets/keys/h1.pub
+      git add .
+      git -c user.email=t@t -c user.name=t commit -qm baseline
+      # Rotation of the shared subscription cipher, and a new wifi
+      # cipher whose file name is deliberately not the AP name.
+      printf 'cipher-v2\n' > secrets/subscription/shared.yaml
+      printf 'wifi-cipher\n' > secrets/wifi/h1/whatever-name.yaml
+      git add .
+      git -c user.email=t@t -c user.name=t commit -qm 'rotate sub, add wifi'
+      # The fixture tree must be clean for require_clean.
+      if [ -n "$(git status --porcelain)" ]; then
+        echo "fixture tree is not clean" >&2
+        exit 1
+      fi
+      # The writeShellApplication runtime runs with pipefail; mirror
+      # it here so a failing nix_fleet is not masked by a succeeding
+      # jq at the end of the pipeline in subscription_secrets.
+      set -o pipefail
+
+      host_address() { echo 10.0.0.1; }
+      # BADREV toggles the unknown-diff fallback: the version query
+      # answers a revision that is not a commit in this repo.
+      BADREV=
+      ssh_to() {
+        shift
+        # Exact match: the only read-only query fleet_apply may issue.
+        if [ "$*" = "janus version --json" ]; then
+          if [ -n "$BADREV" ]; then
+            printf '{"configRevision":"%s"}\n' "$BADREV"
+          else
+            printf '{"configRevision":"%s"}\n' "$(git rev-parse HEAD~1)"
+          fi
+        else
+          printf '%s\n' "$*" >> "$PWD/applied.log"
+        fi
+      }
+      # The subscription set is data so scenarios can grow it without
+      # new commits; it lives outside the repo to keep the tree clean.
+      SUBS_JSON=$TMPDIR/subs.json
+      printf '%s' '{"main":{"urlSecret":"sub-a"},"my sub":{"urlSecret":"sub-a"}}' > "$SUBS_JSON"
+      nix_fleet() {
+        # Anchored on a fragment of the full eval expression. The order
+        # is significant: h2 fails everything, and the secret_files
+        # --apply expression mentions sops.secrets and ends in .config,
+        # so it is matched last.
+        case "$*" in
+          *nixosConfigurations.h2*) return 1 ;;
+          *.config.janus.proxy.subscriptions*) cat "$SUBS_JSON" ;;
+          *.config.janus.network.wifi*) printf '%s' '{"living room":{"passphraseSecret":"wifi-a"}}' ;;
+          *sops.secrets*.config*) printf '{"sub-a":"%s/secrets/subscription/shared.yaml","wifi-a":"%s/secrets/wifi/h1/whatever-name.yaml"}' "$PWD" "$PWD" ;;
+          *) return 1 ;;
+        esac
+      }
+      # apply_leases calls plain `nix`, not nix_fleet; the fixture
+      # overrides.nix sets no janus options, so an empty attrset is the
+      # honest answer and yields no lease rows.
+      nix() { printf '%s' '{}'; }
+
+      if ! (fleet_apply); then
+        echo "fleet_apply failed on the fixture" >&2
+        exit 1
+      fi
+
+      expect_lines() {
+        got=$(grep -cF "$2" "$1" || true)
+        if [ "$got" != "$3" ]; then
+          echo "expected $3 line(s) matching '$2' in $1, got $got:" >&2
+          cat "$1" >&2
+          exit 1
+        fi
+      }
+      # The shared cipher projects to both subscriptions, each exactly
+      # once; the space in 'my sub' survives as an shq single-quoted
+      # word in the remote command string.
+      expect_lines applied.log "janus override set proxy.subscriptions.'main'.url" 1
+      expect_lines applied.log "janus override set proxy.subscriptions.'my sub'.url" 1
+      # The wifi target is the AP name from the pair, resolved through
+      # the sops map, not the cipher's file name.
+      expect_lines applied.log "janus override set network.wifi.'living room'.passphrase" 1
+      if grep -qF 'whatever-name' applied.log; then
+        echo "an unreferenced cipher file name leaked into the remote commands:" >&2
+        cat applied.log >&2
+        exit 1
+      fi
+      lines=$(wc -l < applied.log)
+      if [ "$lines" -ne 6 ]; then
+        echo "applied.log has $lines lines, want 6 (2 ssh commands x 3 plan rows):" >&2
+        cat applied.log >&2
+        exit 1
+      fi
+
+      # eval-failure path: h2's nix eval fails, so fleet_apply h2 must
+      # exit 2 with "does not evaluate" on stderr.
+      rm applied.log
+      mkdir -p hosts/h2
+      printf '{ ... }: {}\n' > hosts/h2/configuration.nix
+      printf '{ ... }: {}\n' > hosts/h2/overrides.nix
+      git add .
+      git -c user.email=t@t -c user.name=t commit -qm 'add h2'
+      err=$(mktemp)
+      rc=0
+      (fleet_apply h2) 2>"$err" || rc=$?
+      if [ "$rc" -ne 2 ]; then
+        echo "fleet_apply h2 exited $rc, want 2" >&2
+        cat "$err" >&2
+        exit 1
+      fi
+      if ! grep -q 'does not evaluate' "$err"; then
+        echo "fleet_apply h2 stderr lacks 'does not evaluate':" >&2
+        cat "$err" >&2
+        exit 1
+      fi
+
+      # A deleted cipher (rotation) still resolves in the sops map but
+      # has nothing to push: it must fall to the structural branch, not
+      # become a plan row that would fail at apply time.
+      rm -f applied.log
+      git rm -q secrets/subscription/shared.yaml
+      git -c user.email=t@t -c user.name=t commit -qm 'drop shared cipher'
+      rc=0
+      (fleet_apply h1) >"$TMPDIR/apply.out" 2>"$err" || rc=$?
+      if [ "$rc" -ne 2 ]; then
+        echo "fleet_apply with a deleted cipher exited $rc, want 2" >&2
+        cat "$err" >&2
+        exit 1
+      fi
+      grep -q 'outside the hot-override projection' "$err"
+      grep -q 'secrets/subscription/shared.yaml' "$err"
+      if grep -q 'proxy.subscriptions' applied.log 2>/dev/null; then
+        echo "a deleted cipher still produced subscription plan rows:" >&2
+        cat applied.log >&2
+        exit 1
+      fi
+      # With --only-overrides the same deletion is reported as needing
+      # a deploy, and the run succeeds.
+      rc=0
+      (fleet_apply --only-overrides h1) >"$TMPDIR/apply.out" 2>"$err" || rc=$?
+      if [ "$rc" -ne 0 ]; then
+        echo "fleet_apply --only-overrides with a deleted cipher exited $rc, want 0" >&2
+        cat "$err" >&2
+        exit 1
+      fi
+      grep -q 'still need janus-build deploy' "$err"
+      grep -q 'secrets/subscription/shared.yaml' "$err"
+
+      # An unreferenced cipher and an unrelated file are both
+      # structural: outside the hot-override projection.
+      printf 'orphan\n' > secrets/wifi/h1/orphan.yaml
+      printf 'noise\n' > unrelated.txt
+      git add .
+      git -c user.email=t@t -c user.name=t commit -qm 'add unreferenced cipher and noise'
+      rc=0
+      (fleet_apply h1) >"$TMPDIR/apply.out" 2>"$err" || rc=$?
+      if [ "$rc" -ne 2 ]; then
+        echo "fleet_apply with structural-only changes exited $rc, want 2" >&2
+        cat "$err" >&2
+        exit 1
+      fi
+      grep -q 'secrets/wifi/h1/orphan.yaml' "$err"
+      grep -q 'unrelated.txt' "$err"
+
+      # Unknown diff: the router reports a configRevision that is not a
+      # commit in this repo, so --only-overrides projects every pair
+      # through the sops map and exits 2 (unknown_diff). The live wifi
+      # cipher is still applied; the deleted shared cipher is reported.
+      BADREV=0123456789abcdef0123456789abcdef01234567
+      rm -f applied.log
+      rc=0
+      (fleet_apply --only-overrides h1) >"$TMPDIR/apply.out" 2>"$err" || rc=$?
+      if [ "$rc" -ne 2 ]; then
+        echo "the unknown-diff run exited $rc, want 2" >&2
+        cat "$err" >&2
+        exit 1
+      fi
+      grep -q 'the structural diff was not computed' "$err"
+      grep -q 'sub-a resolves to no file' "$err"
+      expect_lines applied.log "janus override set network.wifi.'living room'.passphrase" 1
+      BADREV=
+
+      # shq adversarial: a subscription named with a single quote must
+      # reach the remote command in the shq rewrite form (quote,
+      # backslash, quote, quote).
+      # git rm removed the empty directory along with the file.
+      mkdir -p secrets/subscription
+      printf 'cipher-v3\n' > secrets/subscription/shared.yaml
+      # Targeted add: the unknown-diff run above recreated applied.log,
+      # and the fixture tree must stay clean for require_clean.
+      git add secrets/subscription/shared.yaml
+      git -c user.email=t@t -c user.name=t commit -qm 'restore shared cipher'
+      printf '%s' '{"it'"'"'s mine":{"urlSecret":"sub-a"}}' > "$SUBS_JSON"
+      rm -f applied.log
+      if ! (fleet_apply h1) >"$TMPDIR/apply.out" 2>"$err"; then
+        echo "fleet_apply failed for the single-quoted subscription" >&2
+        cat "$err" >&2
+        exit 1
+      fi
+      # \047 is a single quote and \134 a backslash, so this script
+      # never carries the literal rewrite (quote backslash quote quote)
+      # inside its own quoting.
+      pat=$(printf 'janus override set proxy.subscriptions.\047it\047\134\047\047s mine\047.url')
+      expect_lines applied.log "$pat" 1
       echo ok > "$out"
     '';
   eval-boards = let
@@ -523,12 +976,67 @@ in {
       hash=$(cat ${seed}/seed.hash)
       echo "$hash" | grep -Eq '^[0-9a-f]{64}$'
       test "$(cat ${seed}/seed.generation)" = 1
+      # Without the proxy the seed stays engine-empty: no dashboard,
+      # manifest records null (D-0046).
+      test ! -e ${seed}/engine/ui
+      grep -q '"engine":null' ${seed}/manifest.json
+      echo ok > "$out"
+    '';
+  # The seed must not manage the state directories' modes, and must not
+  # touch root's home at all (found on the 2026-10-20 reflash):
+  #  - install -d -m chmods every listed directory, fighting the
+  #    tmpfiles.rules that own them (engine 2770, subscriptions 0700);
+  #  - /var/lib/janus/root IS root's home (users.users.root.home), and
+  #    ProtectHome makes it read-only inside the unit — install -m died
+  #    with EROFS on a fresh state partition and the boot never got an
+  #    engine tree;
+  #  - engine/ must be group-writable or a fresh-state sing-box cannot
+  #    create cache.db ("initialize cache-file: permission denied").
+  eval-seed-dirs = let
+    os = mk [
+      base
+      {
+        janus.network.lans.lan = {
+          members = ["lan"];
+          address = "192.168.10.1";
+          prefixLength = 24;
+        };
+        janus.proxy.enable = true;
+      }
+    ];
+    script = os.config.systemd.services.janus-seed.script;
+    tmpfiles = lib.concatStringsSep "\n" os.config.systemd.tmpfiles.rules;
+  in
+    pkgs.runCommand "eval-seed-dirs" {} ''
+      printf '%s\n' ${lib.escapeShellArg script} > seed-script
+      # Strip whole-line comments first: the check is about executed
+      # code, and comments are allowed to name the forbidden spell.
+      sed -e 's/^[[:space:]]*#.*$//' -e '/^[[:space:]]*$/d' seed-script > seed-code
+      grep -q 'mkdir -p' seed-code
+      if grep -q 'install -d' seed-code; then
+        echo "the seed still chmods state directories with install -d" >&2
+        exit 1
+      fi
+      if grep -q '/var/lib/janus/root' seed-code; then
+        echo "the seed still manages root's home directory (ProtectHome makes it read-only)" >&2
+        exit 1
+      fi
+      if grep -q '/\. /var/lib/janus' seed-code; then
+        echo "the seed copies with the source/. idiom, which re-applies the store's 0555 root:root onto the state directories" >&2
+        exit 1
+      fi
+      printf '%s\n' ${lib.escapeShellArg tmpfiles} | grep -qx 'd /var/lib/janus/engine 2770 root janus-engine -'
       echo ok > "$out"
     '';
   eval-proxy = let
     os = mk [
       base
       {
+        janus.network.wans.wan = {
+          uplink = "lan1";
+          mode = "dhcp";
+          role = "default";
+        };
         janus.network.lans.lan = {
           members = ["lan"];
           address = "192.168.10.1";
@@ -571,12 +1079,22 @@ in {
     markFile = pkgs.writeText "mark.nft" mark;
     dnsFile = pkgs.writeText "dns.nft" dnsUdp;
     natFile = pkgs.writeText "nat.nft" nat;
+    wanPolicy = os.config.systemd.services.janus-wan-policy.serviceConfig.ExecStart;
+    interceptAfter = os.config.systemd.services.janus-intercept.after;
+    seed = os.config.system.build.janusSeed;
   in
     pkgs.runCommand "eval-proxy" {
       nativeBuildInputs = [pkgs.sing-box pkgs.jq];
     } ''
       sing-box check -c ${engine}
+      # D-0046: with the proxy on, the seed presets the dashboard so the
+      # first boot never waits on a UI download.
+      test -f ${seed}/engine/ui/index.html
+      grep -q '"ui":"preset"' ${seed}/manifest.json
       jq -e '.inbounds[] | select(.type == "tun" and .auto_route == false)' ${engine} >/dev/null
+      # ADR-0025: policy-routed flows reach tun0, which only the gvisor
+      # stack answers. "system" here silently drops every TCP flow.
+      jq -e '.inbounds[] | select(.type == "tun") | .stack == "gvisor"' ${engine} >/dev/null
       jq -e '.outbounds[] | select(.tag == "direct" and .routing_mark == 74)' ${engine} >/dev/null
       jq -e '[.inbounds[] | select(.type == "tproxy" and .network == "udp" and .listen == "0.0.0.0" and .listen_port == 5353)] | length == 1' ${engine} >/dev/null
       jq -e '[.inbounds[] | select(.type == "tproxy" and .network == "udp" and .listen == "::" and .listen_port == 5353)] | length == 1' ${engine} >/dev/null
@@ -611,6 +1129,7 @@ in {
       grep -q 'tproxy to :5353' ${dnsFile}
       grep -q '0x00004a02' ${dnsFile}
       grep -q 'meta l4proto tcp th dport 53 redirect to :5353' ${natFile}
+      grep -q 'oifname "tun0" accept' ${natFile}
       if grep -q 'l4proto udp th dport 53 redirect' ${natFile}; then
         echo "UDP/53 is still NAT-redirected" >&2
         exit 1
@@ -623,6 +1142,38 @@ in {
         echo "geo refresh deletes the live rule set" >&2
         exit 1
       fi
+      # A shell that is not on PATH is not callable by name (systemd gives
+      # the helper only runtimeInputs), so re-entry must use $BASH.
+      if grep -a -E -q '(^|[^$A-Za-z_])bash "\$0"' ${proxyBin}; then
+        echo "the helper re-enters itself with a bare bash" >&2
+        exit 1
+      fi
+      grep -a -F -q '"$BASH" "$0"' ${proxyBin}
+      # Style lock: prefer nullglob over compgen -G for glob detection
+      # (see pkgs/janus-engine.sh).
+      if grep -a -E -q '^[^#]*compgen ' ${proxyBin}; then
+        echo "the helper calls compgen, which this bash does not have" >&2
+        exit 1
+      fi
+      grep -a -F -q 'nullglob' ${proxyBin}
+      # tun_up self-heals the tproxy rule that networkd can flush.
+      grep -a -F -q 'tproxy_route' ${proxyBin}
+      case ${lib.escapeShellArg wanPolicy} in
+        */bin/janus-wan-policy) ;;
+        *)
+          echo "janus-wan-policy is not wrapped with its runtime inputs: ${wanPolicy}" >&2
+          exit 1
+          ;;
+      esac
+      grep -q 'systemd-networkd.service' <<'JANUS_INTERCEPT_AFTER'
+      ${lib.concatStringsSep " " interceptAfter}
+      JANUS_INTERCEPT_AFTER
+      # The WAN policy learns carrier DNS from networkctl's JSON, with the
+      # private lease file kept as the fallback for a systemd that has no
+      # JSON resolvers for the link.
+      grep -q 'networkctl status --json=short' ${wanPolicy}
+      grep -q 'netif/leases' ${wanPolicy}
+      grep -q -F '.AddressString // empty' ${wanPolicy}
       echo ok > "$out"
     '';
   eval-proxy-lans = let
@@ -767,6 +1318,59 @@ in {
       janus.proxy.enable = true;
     }
   ];
+  eval-proxy-bypass-remote-via-tunnel = fail "eval-proxy-bypass-remote-via-tunnel" [
+    base
+    {
+      janus.network.lans.lan = {
+        members = ["lan"];
+        address = "192.168.10.1";
+        prefixLength = 24;
+        proxy.mode = "bypass";
+        dns.remote = {
+          resolvers = ["https://dns.google/dns-query"];
+          via = "tunnel";
+        };
+      };
+      janus.proxy.enable = true;
+    }
+  ];
+  eval-proxy-bypass-remote-direct = let
+    os = mk [
+      base
+      {
+        janus.dns.domestic.domains = ["example.cn"];
+        janus.network.lans.lan = {
+          members = ["lan"];
+          address = "192.168.10.1";
+          prefixLength = 24;
+          proxy.mode = "bypass";
+          dns.remote.via = "direct";
+        };
+        janus.proxy.enable = true;
+      }
+    ];
+    engine = os.config.system.build.janusEngineConfig;
+  in
+    pkgs.runCommand "eval-proxy-bypass-remote-direct" {
+      nativeBuildInputs = [pkgs.sing-box pkgs.jq];
+    } ''
+      sing-box check -c ${engine}
+      # The remote server exists and goes out the WAN, not a tunnel.
+      jq -e 'any(.dns.servers[]; .tag == "remote-lan-0" and .type == "https" and .server == "1.1.1.1" and (has("detour") | not))' ${engine} >/dev/null
+      # The domestic sets stay on the domestic resolver, before the remote fallback.
+      jq -e '
+        .dns.rules as $r
+        | ($r | to_entries | map(select(.value.domain == ["example.cn"] and .value.server == "domestic-lan-0" and .value.source_ip_cidr == ["192.168.10.0/24"])) | .[0].key) as $dom
+        | ($r | to_entries | map(select(.value.server == "remote-lan-0" and .value.source_ip_cidr == ["192.168.10.0/24"] and .value.domain == null)) | .[0].key) as $rem
+        | ($dom != null) and ($rem != null) and ($dom < $rem)
+      ' ${engine} >/dev/null
+      # A bypass LAN has no fake-IP server.
+      if jq -e 'any(.dns.servers[]; .type == "fakeip")' ${engine} >/dev/null; then
+        echo "bypass direct received a fake-IP server" >&2
+        exit 1
+      fi
+      echo ok > "$out"
+    '';
   eval-proxy-xray-lan = fail "eval-proxy-xray-lan" [
     base
     {
@@ -893,6 +1497,186 @@ in {
       sing-box check -c ${engine}
       echo ok > "$out"
     '';
+  eval-proxy-noauto = let
+    os = mk [
+      base
+      {
+        janus.network.lans.lan = {
+          members = ["lan"];
+          address = "192.168.10.1";
+          prefixLength = 24;
+        };
+        janus.proxy = {
+          enable = true;
+          groupsAuto = false;
+          defaultTarget = "group:Proxy";
+          nodes.demo = {
+            protocol = "vless";
+            server = "203.0.113.10";
+            port = 443;
+            vless.uuid = "b831381d-6324-4d53-ad4f-8cda48b30811";
+          };
+          groups.Proxy = {
+            members = ["node:demo"];
+            strategy = "manual";
+            default = "demo";
+          };
+        };
+      }
+    ];
+    engine = os.config.system.build.janusEngineConfig;
+  in
+    pkgs.runCommand "eval-proxy-noauto" {
+      nativeBuildInputs = [pkgs.jq pkgs.sing-box];
+    } ''
+      sing-box check -c ${engine}
+      if jq -e '[.outbounds[] | select(.tag == "Auto" or (.tag | startswith("sub:")))] | length > 0' ${engine} >/dev/null; then
+        echo "groupsAuto = false still generated implicit groups" >&2
+        exit 1
+      fi
+      # Router mode: the LAN view's catch rule carries defaultTarget, and
+      # route.final stays direct for traffic outside the views
+      # (janet/janus.janet, "final").
+      jq -e '.route.final == "direct"' ${engine} >/dev/null
+      jq -e 'any(.route.rules[]; .outbound == "Proxy" and (.source_ip_cidr // []) == ["192.168.10.0/24"])' ${engine} >/dev/null
+      jq -e '[.outbounds[] | select(.tag == "Proxy")] | length == 1' ${engine} >/dev/null
+      echo ok > "$out"
+    '';
+  eval-proxy-raw = let
+    os = mk [
+      base
+      {
+        janus.network.lans.lan = {
+          members = ["lan"];
+          address = "192.168.10.1";
+          prefixLength = 24;
+        };
+        janus.proxy = {
+          enable = true;
+          nodes.demo = {
+            protocol = "vless";
+            server = "203.0.113.10";
+            port = 443;
+            vless.uuid = "b831381d-6324-4d53-ad4f-8cda48b30811";
+          };
+          engineSettings = {
+            experimental.clash_api.external_controller = "0.0.0.0:9090";
+            log.level = "debug";
+          };
+        };
+      }
+    ];
+    engine = os.config.system.build.janusEngineConfig;
+  in
+    pkgs.runCommand "eval-proxy-raw" {
+      nativeBuildInputs = [pkgs.jq pkgs.sing-box];
+    } ''
+      sing-box check -c ${engine}
+      jq -e '.experimental.clash_api.external_controller == "0.0.0.0:9090"' ${engine} >/dev/null
+      jq -e '.log.level == "debug"' ${engine} >/dev/null
+      jq -e '.experimental.cache_file.enabled == true' ${engine} >/dev/null
+      jq -e '(.dns.servers | length) > 0' ${engine} >/dev/null
+      if [ "$(grep -c '"experimental"' ${engine})" != 1 ] || [ "$(grep -c '"clash_api"' ${engine})" != 1 ]; then
+        echo "engineSettings produced duplicate JSON keys" >&2
+        exit 1
+      fi
+      echo ok > "$out"
+    '';
+  eval-footprint = let
+    os =
+      mk [
+        base
+        {
+          janus.system.footprint = {
+            dropGnupg = true;
+            trimKernelModules = true;
+            binOnlyNix = true;
+          };
+        }
+      ];
+    kernel = os.config.boot.kernelPackages.kernel;
+    trimmed = kernel.passthru ? janusTrimmed;
+    # Compare the store paths at evaluation time. Interpolating either kernel
+    # into the builder would make it a build dependency, and the router builds
+    # for its board's system, which is not the check's system here, so the
+    # stock baseline must also come from the config's own pkgs.
+    kernelReplaced = "${kernel}" != "${os.pkgs.linuxPackages.kernel}";
+    gnupg = os.pkgs.gnupg.name;
+    packages = map (p: p.name or "unknown") os.config.environment.systemPackages;
+  in
+    pkgs.runCommand "eval-footprint" {} ''
+      # trimKernelModules: the kernel on boot.kernelPackages is the trimmed
+      # derivation, not the stock one, and carries the marker.
+      if [ "${lib.boolToString kernelReplaced}" != true ]; then
+        echo "trimKernelModules did not replace the kernel" >&2
+        exit 1
+      fi
+      if [ "${lib.boolToString trimmed}" != true ]; then
+        echo "trimKernelModules kernel lacks the janusTrimmed marker" >&2
+        exit 1
+      fi
+      # dropGnupg: the overlay replaced gnupg with the stub.
+      if [ ${lib.escapeShellArg gnupg} != "gnupg-stub" ]; then
+        echo "dropGnupg did not replace gnupg" >&2
+        exit 1
+      fi
+      # binOnlyNix: the profile carries the bin-only wrapper, not pkgs.nix.
+      if ! printf '%s\n' ${lib.concatStringsSep " " (map lib.escapeShellArg packages)} | grep -qx 'nix-bin'; then
+        echo "binOnlyNix did not install the wrapper" >&2
+        exit 1
+      fi
+      echo ok > "$out"
+    '';
+  eval-kernel-trim = let
+    trim = import ../modules/janus/system/kernel-trim.nix {inherit lib pkgs;};
+    v = "6.18.0-trim";
+    # A synthetic kernel: enough shape for trimKernel (out, modules, dev,
+    # modDirVersion) and for depmod, without building a real linux.
+    fakeKernel =
+      pkgs.runCommand "fake-kernel-${v}" {
+        outputs = ["out" "modules"];
+        version = v;
+        modDirVersion = v;
+        dev = pkgs.runCommand "fake-kernel-dev-${v}" {} "mkdir -p $out";
+      } ''
+        mkdir -p $out/lib/modules/${v}/build
+        for d in kernel/drivers/net/ethernet kernel/fs kernel/sound kernel/drivers/gpu \
+                 kernel/drivers/net/wireless kernel/net/bluetooth; do
+          mkdir -p $modules/lib/modules/${v}/$d
+          echo keep > $modules/lib/modules/${v}/$d/marker
+        done
+        echo modules.order > $modules/lib/modules/${v}/modules.order
+      '';
+    trimmed = trim.trimKernel fakeKernel;
+    dropped = lib.concatMapStringsSep " " (d: lib.escapeShellArg d) trim.dropDirs;
+  in
+    pkgs.runCommand "eval-kernel-trim" {} ''
+      # The trim really ran on a module tree: dropped dirs are gone, kept
+      # ones survive, and depmod wrote an index for the pruned set.
+      for d in ${dropped}; do
+        if [ -e "${trimmed.modules}/lib/modules/${v}/$d" ]; then
+          echo "trim kept $d" >&2
+          exit 1
+        fi
+      done
+      test -f "${trimmed.modules}/lib/modules/${v}/kernel/drivers/net/ethernet/marker"
+      test -f "${trimmed.modules}/lib/modules/${v}/kernel/fs/marker"
+      test -f "${trimmed.modules}/lib/modules/${v}/modules.dep"
+      # build is a symlink (or, in a synthetic kernel, a dir), so -e not -f.
+      test -e "${trimmed.out}/lib/modules/${v}/build"
+      # The marker and the override passthrough that the assertion relies on.
+      if [ "${lib.boolToString (trimmed.passthru ? janusTrimmed)}" != true ]; then
+        echo "trimmed kernel has no janusTrimmed marker" >&2
+        exit 1
+      fi
+      test "${trimmed.modDirVersion}" = "${v}"
+      # override is forwarded, so NixOS's later .override re-trims.
+      if [ "${lib.boolToString (trimmed.passthru ? override)}" != true ]; then
+        echo "trimmed kernel does not forward override" >&2
+        exit 1
+      fi
+      echo ok > "$out"
+    '';
   eval-proxy-local = let
     os = mk [
       base
@@ -1004,6 +1788,11 @@ in {
             server = "203.0.113.10";
             port = 443;
             trojan.password = "janus-build-check";
+            # uTLS is xray's tlsSettings.fingerprint; the assertion below
+            # keeps the field from being silently dropped again.
+            tls.enable = true;
+            tls.serverName = "www.example.com";
+            tls.utls = "chrome";
           };
           groups.Wave = {
             members = ["node:demo"];
@@ -1047,6 +1836,7 @@ in {
       jq -e 'all(.dns.servers[]; .clientIp == null)' ${engine} >/dev/null
       jq -e '.dns.disableCache != true' ${engine} >/dev/null
       jq -e '.routing.balancers[] | select(.tag == "Wave") | .strategy.type == "roundRobin"' ${engine} >/dev/null
+      jq -e '.outbounds[] | select(.tag == "demo") | .streamSettings.tlsSettings.fingerprint == "chrome"' ${engine} >/dev/null
       jq -e '[.inbounds[] | select(.protocol == "tun" or .type == "tun")] | length == 0' ${engine} >/dev/null
       echo ${lib.escapeShellArg start} | grep -q 'xray run'
       grep -q 'export XRAY_LOCATION_ASSET=' ${proxyBin}
@@ -1170,6 +1960,31 @@ in {
       test ${lib.escapeShellArg os.config.sops.secrets.wifi-eval-home.key} = value
       echo ok > "$out"
     '';
+  eval-secret-cli = let
+    os = mk [
+      base
+      {
+        janus.proxy.enable = true;
+        janus.proxy.subscriptions.a.urlSecret = "sub-eval";
+        sops.secrets.sub-eval.sopsFile = ./fixtures/sops-placeholder;
+      }
+    ];
+    bare = mk [base];
+    packed = lib.concatStringsSep " " os.config.environment.systemPackages;
+    empty = lib.concatStringsSep " " bare.config.environment.systemPackages;
+  in
+    pkgs.runCommand "eval-secret-cli" {} ''
+      # D-0048: fleet apply decrypts the inbox file on the router, so the
+      # image ships the sops CLI whenever there is a secret to decrypt.
+      printf '%s\n' ${lib.escapeShellArg packed} | grep -qF ${lib.escapeShellArg "${pkgs.sops}"}
+      case ${lib.escapeShellArg empty} in
+        *${lib.escapeShellArg "${pkgs.sops}"}*)
+          echo "sops shipped without any sops secret" >&2
+          exit 1
+          ;;
+      esac
+      echo ok > "$out"
+    '';
   eval-wifi-onboard = let
     os = mk [
       {
@@ -1193,7 +2008,12 @@ in {
         };
       }
     ];
-    script = os.config.systemd.services.janus-hostapd-home.serviceConfig.ExecStart;
+    # The ExecStart wrapper builds for the board's system (aarch64); grep
+    # its text through the check's own pkgs so the builder never realizes it.
+    script = pkgs.writeText "eval-wifi-onboard-script" (
+      builtins.unsafeDiscardStringContext
+      os.config.systemd.services.janus-hostapd-home.serviceConfig.ExecStart.text
+    );
     patch = lib.findFirst (p: p.name == "janus-rpi-onboard-wifi") null os.config.boot.kernelPatches;
     member = os.config.systemd.network.networks."30-member-lan-home";
     firmwareNames = lib.concatMapStringsSep " " (p: p.name) (
@@ -1257,7 +2077,11 @@ in {
         };
       }
     ];
-    script = os.config.systemd.services.janus-hostapd-home.serviceConfig.ExecStart;
+    # Same as eval-wifi-onboard: keep the aarch64 wrapper out of the closure.
+    script = pkgs.writeText "eval-wifi-onboard-isolate-script" (
+      builtins.unsafeDiscardStringContext
+      os.config.systemd.services.janus-hostapd-home.serviceConfig.ExecStart.text
+    );
   in
     pkgs.runCommand "eval-wifi-onboard-isolate" {} ''
       grep -q 'bridge link set dev wifi-home isolated on' ${script}
@@ -2035,10 +2859,14 @@ in {
     EOF
     cat > "$bindir/nix" << 'EOF'
     #!/bin/sh
-    if [ "$1" = "--impure" ]; then
-      printf '%s\n' impure
-      exit 0
-    fi
+    # nix_fleet may pass --impure directly (nix --impure ...) or after the
+    # subcommand (nix eval --impure ...); detect it in any position.
+    for a in "$@"; do
+      if [ "$a" = "--impure" ]; then
+        printf '%s\n' impure
+        exit 0
+      fi
+    done
     printf '%s\n' pure
     exit 0
     EOF
@@ -2601,7 +3429,9 @@ in {
       jq -e '.enable == true and .port == 8443 and .passphraseFile == "/var/lib/janus/secrets/web-passphrase" and (.san | index("DNS:router")) and (.san | index("IP:192.168.10.1")) and .hostname == "router"' web.json >/dev/null
       printf '%s\n' ${lib.escapeShellArg stunnel} > stunnel.conf
       grep -q 'IPV6_V6ONLY=0' stunnel.conf
-      grep -q 'accept = \[::\]:8443' stunnel.conf
+      # "*" resolves through getaddrinfo; a literal "[::]" is rejected
+      # (EAI_NONAME) and stunnel would bind v4 only.
+      grep -q 'accept = \*:8443' stunnel.conf
       grep -q 'connect = /run/janus-web/http.sock' stunnel.conf
       printf '%s\n' ${lib.escapeShellArg rules} > rules.nft
       grep 'tcp dport 8443 accept' rules.nft | grep -q br-home

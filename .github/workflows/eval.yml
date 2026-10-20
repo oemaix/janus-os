@@ -14,47 +14,113 @@ jobs:
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
       - name: Evaluate the phase 1 checks and the options document
+        # Sorted check list from tests/eval.nix. Excluded on purpose:
+        #   - vm-* guests (never run in CI),
+        #   - eval-wifi-onboard-kernel: realizes the aarch64 linux-config
+        #     derivation of the rpi-zero-2w board, which the x86_64 runner
+        #     cannot build without emulation.
         run: |
           nix build --print-build-logs \
+            .#checks.x86_64-linux.cli-age-key \
+            .#checks.x86_64-linux.cli-plan-build \
+            .#checks.x86_64-linux.cli-init \
+            .#checks.x86_64-linux.cli-plan-parser \
+            .#checks.x86_64-linux.cli-pull-rotate \
+            .#checks.x86_64-linux.cli-runtime-deps \
+            .#checks.x86_64-linux.cli-usage \
+            .#checks.x86_64-linux.eval-audit \
+            .#checks.x86_64-linux.eval-backup-health \
+            .#checks.x86_64-linux.eval-bad-uplink \
+            .#checks.x86_64-linux.eval-boards \
+            .#checks.x86_64-linux.eval-boot-install \
+            .#checks.x86_64-linux.eval-boot-slot \
+            .#checks.x86_64-linux.eval-build-host \
+            .#checks.x86_64-linux.eval-dns-listen-unknown \
+            .#checks.x86_64-linux.eval-dns-require-plain \
+            .#checks.x86_64-linux.eval-dns-xray-cache \
+            .#checks.x86_64-linux.eval-footprint \
+            .#checks.x86_64-linux.eval-hmi \
+            .#checks.x86_64-linux.eval-hmi-board \
+            .#checks.x86_64-linux.eval-hmi-key \
+            .#checks.x86_64-linux.eval-hmi-profile \
+            .#checks.x86_64-linux.eval-inline-secret \
+            .#checks.x86_64-linux.eval-kernel-trim \
             .#checks.x86_64-linux.eval-minimal \
             .#checks.x86_64-linux.eval-missing-board \
             .#checks.x86_64-linux.eval-missing-key \
-            .#checks.x86_64-linux.eval-root-writable \
-            .#checks.x86_64-linux.eval-overlap \
-            .#checks.x86_64-linux.eval-bad-uplink \
-            .#checks.x86_64-linux.eval-inline-secret \
-            .#checks.x86_64-linux.eval-wwan \
-            .#checks.x86_64-linux.eval-nix-size \
-            .#checks.x86_64-linux.eval-seed \
-            .#checks.x86_64-linux.eval-router \
-            .#checks.x86_64-linux.eval-vlan \
-            .#checks.x86_64-linux.eval-boards \
-            .#checks.x86_64-linux.eval-boot-slot \
-            .#checks.x86_64-linux.eval-rpi2-mbr \
-            .#checks.x86_64-linux.eval-tier3-boot \
             .#checks.x86_64-linux.eval-monitoring \
             .#checks.x86_64-linux.eval-monitoring-collector \
-            .#checks.x86_64-linux.eval-monitoring-zone \
             .#checks.x86_64-linux.eval-monitoring-iface \
-            .#checks.x86_64-linux.eval-refresh-error \
-            .#checks.x86_64-linux.eval-build-host \
-            .#checks.x86_64-linux.eval-pppoe-secret \
-            .#checks.x86_64-linux.eval-pppoe-file \
-            .#checks.x86_64-linux.eval-hmi \
-            .#checks.x86_64-linux.eval-hmi-board \
-            .#checks.x86_64-linux.eval-hmi-profile \
-            .#checks.x86_64-linux.eval-hmi-key \
+            .#checks.x86_64-linux.eval-monitoring-zone \
+            .#checks.x86_64-linux.eval-nix-size \
+            .#checks.x86_64-linux.eval-overlap \
             .#checks.x86_64-linux.eval-power \
-            .#checks.x86_64-linux.eval-power-x86 \
-            .#checks.x86_64-linux.eval-power-unarmed \
-            .#checks.x86_64-linux.eval-power-low \
             .#checks.x86_64-linux.eval-power-arm \
-            .#checks.x86_64-linux.eval-web \
-            .#checks.x86_64-linux.eval-web-wan \
-            .#checks.x86_64-linux.eval-web-pass \
-            .#checks.x86_64-linux.eval-web-zone \
+            .#checks.x86_64-linux.eval-power-low \
+            .#checks.x86_64-linux.eval-power-unarmed \
+            .#checks.x86_64-linux.eval-power-x86 \
+            .#checks.x86_64-linux.eval-pppoe-file \
+            .#checks.x86_64-linux.eval-pppoe-secret \
+            .#checks.x86_64-linux.eval-proxy \
+            .#checks.x86_64-linux.eval-proxy-bootstrap-empty \
+            .#checks.x86_64-linux.eval-proxy-bypass-fakeip \
+            .#checks.x86_64-linux.eval-proxy-bypass-remote \
+            .#checks.x86_64-linux.eval-proxy-bypass-remote-direct \
+            .#checks.x86_64-linux.eval-proxy-bypass-remote-via-tunnel \
+            .#checks.x86_64-linux.eval-proxy-fallback \
+            .#checks.x86_64-linux.eval-proxy-lans \
             .#checks.x86_64-linux.eval-proxy-local \
+            .#checks.x86_64-linux.eval-proxy-noauto \
+            .#checks.x86_64-linux.eval-proxy-password \
+            .#checks.x86_64-linux.eval-proxy-raw \
+            .#checks.x86_64-linux.eval-proxy-sourcelan \
+            .#checks.x86_64-linux.eval-proxy-xray \
+            .#checks.x86_64-linux.eval-proxy-xray-fallback \
+            .#checks.x86_64-linux.eval-proxy-xray-insecure \
+            .#checks.x86_64-linux.eval-proxy-xray-lan \
+            .#checks.x86_64-linux.eval-refresh-dom \
+            .#checks.x86_64-linux.eval-refresh-dow \
+            .#checks.x86_64-linux.eval-refresh-dow-bad \
+            .#checks.x86_64-linux.eval-refresh-error \
+            .#checks.x86_64-linux.eval-region-ir \
+            .#checks.x86_64-linux.eval-region-ir-empty \
+            .#checks.x86_64-linux.eval-region-ir-off \
+            .#checks.x86_64-linux.eval-region-replace \
+            .#checks.x86_64-linux.eval-region-ru \
+            .#checks.x86_64-linux.eval-remote \
+            .#checks.x86_64-linux.eval-root-writable \
+            .#checks.x86_64-linux.eval-router \
+            .#checks.x86_64-linux.eval-rpi2-mbr \
+            .#checks.x86_64-linux.eval-seed \
+            .#checks.x86_64-linux.eval-seed-dirs \
+            .#checks.x86_64-linux.eval-secret-cli \
+            .#checks.x86_64-linux.eval-slots \
+            .#checks.x86_64-linux.eval-subscription-armor \
+            .#checks.x86_64-linux.eval-subscription-cache \
+            .#checks.x86_64-linux.eval-subscription-dropped-group \
+            .#checks.x86_64-linux.eval-subscription-dropped-member \
+            .#checks.x86_64-linux.eval-tailscale-key \
+            .#checks.x86_64-linux.eval-tailscale-sops \
+            .#checks.x86_64-linux.eval-tier3-boot \
+            .#checks.x86_64-linux.eval-vlan \
+            .#checks.x86_64-linux.eval-web \
+            .#checks.x86_64-linux.eval-web-both \
+            .#checks.x86_64-linux.eval-web-pass \
+            .#checks.x86_64-linux.eval-web-secret \
+            .#checks.x86_64-linux.eval-web-sops \
+            .#checks.x86_64-linux.eval-web-wan \
+            .#checks.x86_64-linux.eval-web-zone \
+            .#checks.x86_64-linux.eval-wifi \
+            .#checks.x86_64-linux.eval-wifi-onboard \
+            .#checks.x86_64-linux.eval-wifi-onboard-5g \
+            .#checks.x86_64-linux.eval-wifi-onboard-board \
+            .#checks.x86_64-linux.eval-wifi-onboard-channel \
+            .#checks.x86_64-linux.eval-wifi-onboard-isolate \
+            .#checks.x86_64-linux.eval-wifi-onboard-two \
+            .#checks.x86_64-linux.eval-wifi-onboard-wpa3 \
+            .#checks.x86_64-linux.eval-wifi-sops \
+            .#checks.x86_64-linux.eval-wwan \
+            .#checks.x86_64-linux.eval-wwan-qmi \
+            .#checks.x86_64-linux.janet-normalizer \
             .#checks.x86_64-linux.limine-bios \
-            .#checks.x86_64-linux.cli-usage \
-            .#checks.x86_64-linux.cli-init \
             .#packages.x86_64-linux.docs-options

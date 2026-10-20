@@ -7,7 +7,7 @@
   pkgs,
   ...
 }: let
-  inherit (lib) mkOption types;
+  inherit (lib) mkOption types mkForce;
   cfg = config.janus.access;
 in {
   options.janus.access = {
@@ -103,6 +103,15 @@ in {
 
     users.users.root.openssh.authorizedKeys.keys = cfg.ssh.authorizedKeys;
 
+    # Force the key file to land as a symlink. The stock etc lowering can
+    # materialise it as a regular file inside the basedir, which the
+    # immutable erofs-metadata overlay then hides (metacopy has no metadata
+    # for it), locking every key out on fresh state.
+    environment.etc."ssh/authorized_keys.d/root" = {
+      mode = "0444";
+      source = mkForce (pkgs.writeText "root-authorized_keys" (lib.concatStringsSep "\n" cfg.ssh.authorizedKeys + "\n"));
+    };
+
     services.openssh = {
       enable = true;
       ports = [cfg.ssh.port];
@@ -172,10 +181,6 @@ in {
       '';
     };
 
-    environment.systemPackages = lib.optional cfg.cli.enable (pkgs.writeShellApplication {
-      name = "janus";
-      runtimeInputs = with pkgs; [jq iproute2 nftables vnstat coreutils systemd util-linux gnutar];
-      text = builtins.readFile ../../../pkgs/janus.sh;
-    });
+    environment.systemPackages = lib.optional cfg.cli.enable (import ../../../pkgs/janus-cli.nix { inherit pkgs; });
   };
 }

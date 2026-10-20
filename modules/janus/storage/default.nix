@@ -92,17 +92,42 @@
 
   # Phase 0 seed is the empty snapshot. The hash and generation are what
   # janus-seed compares, so a later snapshot with a higher generation replaces it.
+  # The engine tree may preset a dashboard (janus.storage.seedEngineUi,
+  # filled by the proxy module): sing-box 1.13 downloads external_ui
+  # synchronously at start, and on a censored first-boot uplink that
+  # download (detour or not — the Proxy group is still empty before the
+  # first subscription refresh) deadlocks the engine before it ever
+  # serves (observed 2026-10-18). Presetting skips the download: sing-box
+  # only fetches when the ui directory is missing.
+  seedUi = config.janus.storage.seedEngineUi;
   janusSeed = pkgs.runCommand "janus-seed" {} ''
     set -eu
     mkdir -p $out/subscriptions $out/geodata $out/engine
+    ${lib.optionalString (seedUi != null) ''
+      mkdir -p $out/engine/ui
+      tar -xf ${seedUi} -C $out/engine/ui
+    ''}
     cat > $out/manifest.json << 'EOF'
-    {"generation":1,"subscriptions":[],"geodata":[],"engine":null}
+    {"generation":1,"subscriptions":[],"geodata":[],"engine":${
+      if seedUi == null then "null" else ''{"ui":"preset"}''
+    }}
     EOF
     echo 1 > $out/seed.generation
     sha256sum $out/manifest.json | cut -d' ' -f1 > $out/seed.hash
   '';
 in {
   options.janus.storage = {
+    # Filled by the proxy module when the engine is on: a tarball whose
+    # contents land in the seed's engine/ui so the first boot does not
+    # depend on downloading a dashboard over a censored uplink. Null keeps
+    # the seed engine-empty. The manifest records only "preset"; the
+    # seed hash covers the manifest, so a changed tarball does not
+    # re-apply over runtime state (generation gates that).
+    seedEngineUi = mkOption {
+      type = types.nullOr types.package;
+      default = null;
+      description = "Tarball expanded into the seed's engine/ui on first boot. Set by the proxy module; null omits the directory.";
+    };
     layout.partitions = mkOption {
       type = types.attrsOf partition;
       default = {
@@ -260,7 +285,7 @@ in {
           nixp=${nixPartUuid}
         fi
         mkdir -p /dev/disk/by-janus
-        for _ in $(seq 1 50); do
+        for _ in $(seq 1 600); do
           [ -b "/dev/disk/by-partuuid/$root" ] && [ -b "/dev/disk/by-partuuid/$nixp" ] && break
           sleep 0.1
         done
@@ -306,7 +331,7 @@ in {
       script = ''
         set -eu
         dev=/dev/disk/by-partuuid/${statePartUuid}
-        for _ in $(seq 1 50); do
+        for _ in $(seq 1 600); do
           [ -b "$dev" ] && break
           sleep 0.1
         done
@@ -376,7 +401,7 @@ in {
       script = ''
         set -eu
         dev=/dev/disk/by-partuuid/${statePartUuid}
-        for _ in $(seq 1 50); do
+        for _ in $(seq 1 600); do
           [ -b "$dev" ] && break
           sleep 0.1
         done
@@ -423,7 +448,7 @@ in {
             part=$(readlink -f "$dev")
             echo change > "/sys/class/block/''${part##*/}/uevent" || true
             label=/dev/disk/by-label/JANUS_STATE
-            for _ in $(seq 1 50); do
+            for _ in $(seq 1 600); do
               [ -e "$label" ] && break
               sleep 0.1
             done
@@ -447,18 +472,33 @@ in {
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;
-        ProtectSystem = "strict";
+        # "full", not "strict": strict read-only-binds every mount point
+        # in the namespace, including the /var f2fs on the state partition,
+        # and ReadWritePaths cannot undo that for a whole sub-mount
+        # (observed 2026-10-18). "full" protects /usr, /boot, and /etc
+        # only; /var stays writable. ProtectHome stays on: it also
+        # read-onlys every user's home directory, and root's home is
+        # /var/lib/janus/root on the state partition — on a fresh state
+        # the seed's install -m died there with EROFS (2026-10-20), which
+        # is why the script below no longer manages that directory at all.
+        ProtectSystem = "full";
         ProtectHome = true;
         PrivateTmp = true;
         NoNewPrivileges = true;
-        ReadWritePaths = "/var/lib/janus";
       };
       script = ''
         set -eu
-        install -d -m 0755 \
+        # mkdir -p, not install -d -m: install with a mode chmods every
+        # listed directory, which fights the tmpfiles.rules that own them
+        # (engine is group-writable for janus-engine; subscriptions is
+        # 0700) and strips the setgid bit. mkdir -p never touches an
+        # existing directory's mode or owner. /var/lib/janus/root is
+        # absent on purpose: it is root's home directory, ProtectHome
+        # makes it read-only inside this unit (fresh-state EROFS,
+        # 2026-10-20), and tmpfiles already creates it 0700.
+        mkdir -p \
           /var/lib/janus/etc \
           /var/lib/janus/etc/ssh \
-          /var/lib/janus/root \
           /var/lib/janus/secrets \
           /var/lib/janus/subscriptions \
           /var/lib/janus/geodata \
@@ -479,9 +519,20 @@ in {
           fi
         fi
         if [ "$apply" = 1 ]; then
-          cp -a ${janusSeed}/subscriptions/. /var/lib/janus/subscriptions/
-          cp -a ${janusSeed}/geodata/. /var/lib/janus/geodata/
-          cp -a ${janusSeed}/engine/. /var/lib/janus/engine/
+          # Per-item copies, never "source/. ": with -a, cp -a src/. dst
+          # re-applies the source directory's own attributes onto the
+          # existing destination directory. The seed store tree is
+          # read-only 0555 root:root, and that copy overwrote engine/'s
+          # tmpfiles 2770 root:janus-engine on the 2026-10-20 fresh boot —
+          # sing-box then could not create cache.db again. Copying each
+          # item lands inside the directory and leaves its mode and
+          # owner alone.
+          for name in subscriptions geodata engine; do
+            for item in ${janusSeed}/$name/*; do
+              [ -e "$item" ] || continue
+              cp -a "$item" "/var/lib/janus/$name/"
+            done
+          done
           cp -a ${janusSeed}/manifest.json /var/lib/janus/manifest.json
           printf '%s %s\n' "$embedded_hash" "$embedded_gen" > "$stamp"
         fi

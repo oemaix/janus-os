@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-18 |
+| Last updated | 2026-10-20 |
 
 ## 1. Objectives
 
@@ -103,7 +103,14 @@ dedicated service users with `StateDirectory=` in their units.
 ## 6. Seeding and recovery
 
 * The store contains `/nix/store/…-janus-seed/` with the build-time
-  snapshot of proxy subscriptions, Geo data and default engine selection.
+  snapshot of proxy subscriptions, Geo data, the default engine
+  selection, and — when the proxy is on — the clash dashboard
+  (`engine/ui`, D-0050): sing-box downloads `external_ui` synchronously
+  at start, which on a censored first-boot uplink deadlocks the engine
+  before the first subscription refresh can populate the proxy group.
+  Presetting the dashboard skips that download; deleting
+  `/var/lib/janus/engine/ui` re-triggers the `engineSettings`
+  `external_ui_download_url` as the manual-update channel.
 * At boot, `janus-seed.service` runs before the engine:
   * if `/var/lib/janus` is missing, empty or its `seed.stamp` differs from
     the embedded seed hash **and** the embedded data is newer than what is

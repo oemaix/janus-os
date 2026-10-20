@@ -122,6 +122,12 @@ tun_up() {
     xray_pin_balancers
     return 0
   fi
+  # Self-heal: networkd or anything else may have flushed the policy
+  # rules between intercept-up and here, and DNS tproxy is dead without
+  # the fwmark 0x4a02 rule.
+  if [ "${JANUS_DNS_TPROXY}" = 1 ]; then
+    tproxy_route
+  fi
   [ "${JANUS_INTERCEPT}" = 1 ] || return 0
   if [ "${JANUS_FAIL_MODE}" = open ]; then
     rule_add
@@ -160,13 +166,19 @@ merge_nodes() {
   out=$(mktemp)
   runtime=$(mktemp)
   echo '[]' > "$runtime"
+  # Detect the glob with nullglob instead of compgen -G: compgen is a
+  # completion-context builtin whose availability does not depend on PATH,
+  # and nullglob states the intent directly and works in every bash build.
   # subscriptions.json lists the enabled subscriptions in this image.
   # A cache left on the state partition for a subscription this router
   # dropped is not a node source (D-0044).
-  if [ -f "$meta" ] && compgen -G '/var/lib/janus/subscriptions/*.json' >/dev/null; then
+  shopt -s nullglob
+  subs=(/var/lib/janus/subscriptions/*.json)
+  shopt -u nullglob
+  if [ -f "$meta" ] && [ "${#subs[@]}" -gt 0 ]; then
     picked=$(mktemp -d)
     count=0
-    for file in /var/lib/janus/subscriptions/*.json; do
+    for file in "${subs[@]}"; do
       name=${file##*/}
       name=${name%.json}
       if jq -e --arg name "$name" 'has($name)' "$meta" >/dev/null; then
@@ -204,8 +216,11 @@ carrier_model() {
     return 0
   fi
   ips=$(mktemp)
-  if compgen -G '/run/janus/wan/*/dns' >/dev/null; then
-    grep -h . /run/janus/wan/*/dns | awk 'NF && !seen[$0]++' > "$ips" || true
+  shopt -s nullglob
+  wan_dns=(/run/janus/wan/*/dns)
+  shopt -u nullglob
+  if [ "${#wan_dns[@]}" -gt 0 ]; then
+    grep -h . "${wan_dns[@]}" | awk 'NF && !seen[$0]++' > "$ips" || true
   else
     : > "$ips"
   fi
@@ -301,9 +316,10 @@ render_config() {
 }
 
 # A function called from `if` ignores set -e, and so does a subshell it starts.
-# A new bash does not, and die() exits only that bash, so the caller can record it.
+# A new bash does not, and die() exits only that bash, so the caller can record
+# it. $BASH because the sandboxed PATH has no bare bash (systemd).
 render_or_fail() {
-  bash "$0" render-internal
+  "$BASH" "$0" render-internal
 }
 
 geo_base() {

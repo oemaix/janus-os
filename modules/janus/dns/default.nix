@@ -48,7 +48,7 @@ in {
     remote.via = mkOption {
       type = types.enum ["tunnel" "direct"];
       default = "tunnel";
-      description = "Path to the remote resolvers.";
+      description = "Path to the remote resolvers. On a bypass LAN or router, tunnel is ignored and every recursive name stays on the domestic resolvers; direct sends the names outside the domestic sets to the remote resolvers from the WAN, encrypted.";
     };
     remote.ecs = mkOption {
       type = types.enum ["allow" "strip"];

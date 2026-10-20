@@ -157,6 +157,8 @@
     rules = map expandRule cfg.rules;
     lans = lanViews;
     subscriptionNames = lib.attrNames enabledSubscriptions;
+    engineSettings = cfg.engineSettings;
+    autoGroup = cfg.groupsAuto;
     dns = {
       carrierResolvers = dns.carrierResolvers;
       encryption = dns.encryption;
@@ -334,15 +336,18 @@
       else sources.geosite
     }/${tag}.srs";
 
-  # Pins are the rule-set files as of 2026-10-13, plus the preset tags
-  # measured on 2026-10-16 (docs/21). geodata.hashes overrides them.
+  # Pins are the rule-set files as of 2026-10-20; the Chocolate4U preset
+  # tag (geosite-ir) was measured on 2026-10-16 (docs/21). The
+  # sing-geosite and sing-geoip rule-set branches are regenerated
+  # upstream, so a pin goes stale whenever they are; geodata.hashes
+  # overrides these.
   # sing-geoip's rule-set branch has no geoip-private.srs, so that tag is compiled below.
   defaultPins = {
-    geosite-private = "sha256-JgSRJD4CZuW6VD9QnKfxOwfW9MLCat4/Z13eoWYfMhM=";
-    geosite-cn = "sha256-fl7aoxVpGOu3MmKfe0qz8DBAuZQEVkOPl2wgRgM/wVw=";
-    geosite-geolocation-cn = "sha256-zVOuqBkm1GscCqE5rffd/u10s9aRO0oBSDspbk6K9Ng=";
+    geosite-private = "sha256-K/+ztWHSJjMDMbzcJdckrRF69E/PiHXUGbvN4Am2osc=";
+    geosite-cn = "sha256-zEsAfzffL/1zOD1Obi4XKEABMturlywaf3CMPiZaIYY=";
+    geosite-geolocation-cn = "sha256-Zz65O2pYYm8i5Nhp/hrGdtbxFoZ7UVGp0hFC39nors8=";
     geosite-category-ads-all = "sha256-hOLteWF6SSyxra8ovwxZoaQq+FSrk1YFuoTg3ro4bIg=";
-    geosite-category-ru = "sha256-VGyEFyPfZ0BxmHqQ4yGtjF8OnOD8DuRgwlj1R9MIaFc=";
+    geosite-category-ru = "sha256-IOcqybTKM3b1/IFmrgnPhQvrc502Pa3JQr6FFeFOb0Q=";
     geosite-ir = "sha256-SuD3qQ/D8Vau+PKihJU3LOuuv4vrNch2+xcF+nhHb4I=";
     geoip-cn = "sha256-ga2lyv2dgxrcSHdvKc3+VclxPZKHyu753pJe8w9mzOQ=";
     geoip-ru = "sha256-vcpc20TNzwlAAB5ZUjhoIqb0/6iyyO6gA0Cqb1hcf50=";
@@ -603,7 +608,13 @@ in {
     users.groups.janus-engine = {};
 
     systemd.tmpfiles.rules = [
-      "d /var/lib/janus/engine 2750 root janus-engine -"
+      # 2770, not 2750: sing-box runs as janus-engine and creates
+      # cache.db inside engine/ on a fresh state partition; group write
+      # is what lets it, and the setgid bit keeps new files group
+      # janus-engine. With 2750 a fresh boot looped on "initialize
+      # cache-file: permission denied" (observed 2026-10-20; the earlier
+      # field units masked it with a manual chown that a reflash wiped).
+      "d /var/lib/janus/engine 2770 root janus-engine -"
       "d /var/lib/janus/geodata 0755 root root -"
       "d /var/lib/janus/subscriptions 0700 root root -"
     ];
@@ -612,7 +623,10 @@ in {
       description = "Fail-closed route for proxied LAN traffic";
       wantedBy = ["multi-user.target"];
       before = ["network-online.target" "janus-engine.service"];
-      after = ["network-pre.target"];
+      # After networkd: it reconfigures interfaces at start and drops
+      # policy-routing rules installed before it.
+      after = ["network-pre.target" "systemd-networkd.service"];
+      wants = ["systemd-networkd.service"];
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;
@@ -752,15 +766,26 @@ in {
       };
     };
 
-    janus.firewall.hooks = lib.mkIf (dns.interceptPlaintext && dnsBridges != []) {
-      preroutingRaw = ''
-        iifname { ${dnsBridgeSet} } meta l4proto tcp th dport 53 redirect to :5353
-      '';
-      inputExtra = ''
-        tcp dport 5353 accept
-        udp dport 5353 accept
-      '';
-    };
+    janus.firewall.hooks = lib.mkMerge [
+      # Proxied LAN traffic is policy-routed to the engine tun, which
+      # matches no zone pair, so the filter hook would drop it (policy
+      # drop). Let the marked flows reach tun0; replies are already
+      # covered by the established rule.
+      (lib.mkIf intercept {
+        forwardExtra = ''
+          iifname { ${bridgeSet} } oifname "tun0" accept
+        '';
+      })
+      (lib.mkIf (dns.interceptPlaintext && dnsBridges != []) {
+        preroutingRaw = ''
+          iifname { ${dnsBridgeSet} } meta l4proto tcp th dport 53 redirect to :5353
+        '';
+        inputExtra = ''
+          tcp dport 5353 accept
+          udp dport 5353 accept
+        '';
+      })
+    ];
 
     networking.nftables.tables.janus_intercept = lib.mkIf intercept {
       family = "inet";
@@ -792,10 +817,30 @@ in {
       content = ''
         chain dns-udp {
           type filter hook prerouting priority mangle; policy accept;
+          # LAN clients that query the router itself (the address DHCP
+          # option 6 hands out) must reach the per-LAN direct inbound that
+          # listens on it, not be pulled into the tproxy detour: a
+          # local-target UDP packet hijacked by tproxy never returns to the
+          # client (observed 2026-10-18; the TCP redirect path is unaffected
+          # because it rewrites the packet instead of rerouting it).
+          fib daddr type local return
           iifname { ${dnsBridgeSet} } meta l4proto udp th dport 53 meta mark set 0x00004a02 tproxy to :5353
         }
       '';
     };
+
+    # The dashboard is a proxy-domain resource: sing-box 1.13 downloads
+    # external_ui synchronously at start, which on a censored first-boot
+    # uplink deadlocks the engine (the Proxy group is still empty before
+    # the first subscription refresh, so even a proxy detour degrades to
+    # a direct egress; observed 2026-10-18). Preset it in the seed
+    # instead; deleting /var/lib/janus/engine/ui re-triggers the
+    # engineSettings download as the manual-update channel. Bump the
+    # sha256 (and this comment) when moving to a newer release.
+    janus.storage.seedEngineUi = lib.mkDefault (pkgs.fetchurl {
+      url = "https://github.com/MetaCubeX/metacubexd/releases/download/v1.273.1/compressed-dist.tgz";
+      sha256 = "a178e00b67acabcda2dcef00afa90be6a7bb261e466a67dad58c8478d9553603";
+    });
 
     system.build.janusEngineConfig = engineConfig;
   };

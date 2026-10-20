@@ -6,6 +6,7 @@
   config,
   lib,
   options,
+  pkgs,
   ...
 }: let
   cfg = config.janus;
@@ -31,6 +32,13 @@ in {
     # The age key is the identity. SSH host keys are not age keys (ADR-0022).
     sops.age.sshKeyPaths = lib.mkDefault [];
     sops.gnupg.sshKeyPaths = lib.mkDefault [];
+    # `janus-build fleet apply` copies a sops file to
+    # /var/lib/janus/secrets/inbox and the router decrypts it there: the
+    # build host keeps no private key (ADR-0022, D-0048).
+    # sops-install-secrets is a boot service, not an interactive
+    # decryptor, so the image ships the CLI whenever there is anything
+    # to decrypt. D-0048.
+    environment.systemPackages = lib.optional (config.sops.secrets != {}) pkgs.sops;
     sops.secrets = lib.mkMerge [
       (lib.genAttrs oneLine (_: {key = lib.mkDefault "value";}))
       (lib.genAttrs pppoe (_: {key = lib.mkDefault "";}))

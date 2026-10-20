@@ -462,7 +462,10 @@
         (def reality (get tls "reality"))
         (when reality
           (put-in node [:tls :reality :publicKey] (get reality "public_key"))
-          (put-in node [:tls :reality :shortId] (get reality "short_id"))))
+          (put-in node [:tls :reality :shortId] (get reality "short_id")))
+        (def utls (get tls "utls"))
+        (when (and utls (get utls "enabled"))
+          (put-in node [:tls :utls] (get utls "fingerprint"))))
       (array/push out node)))
   out)
 
@@ -691,10 +694,26 @@
   (when (empty? mem)
     (eprint (string "janus: group " name " is empty; using " (or (get group "emptyFallback") "direct")))
     (def fb (or (get group "emptyFallback") "direct"))
-    (set mem @[(if (string/has-prefix? "group:" fb) (string/slice fb 6) "direct")]))
+    # The fallback must name an outbound that exists: a defined group,
+    # or the implicit Auto while it is generated. Anything else would
+    # make sing-box refuse to start.
+    (def fb-tag
+      (if (string/has-prefix? "group:" fb)
+        (let [g (string/slice fb 6)]
+          (if (or (get groups g)
+                  (and (= g "Auto") (not= (get model "autoGroup") false)))
+            g "direct"))
+        "direct"))
+    (set mem @[fb-tag]))
   (def ob @{:type (strategy-type strategy) :tag name :outbounds mem})
   (when (= strategy "manual")
-    (put ob :default (or (get group "default") (first mem))))
+    # sing-box refuses to start when the default is not a member
+    # (FATAL: default outbound not found). Fall back to the first member.
+    (def wanted (or (get group "default") (first mem)))
+    (def chosen (if (find |(= $ wanted) mem) wanted (first mem)))
+    (unless (= chosen wanted)
+      (eprint (string "janus: group " name " default " wanted " is not a member; using " chosen)))
+    (put ob :default chosen))
   (def test (or (get group "test") @{}))
   (when (= strategy "url-test")
     (put ob :url (or (get test "url") "https://www.gstatic.com/generate_204"))
@@ -862,14 +881,23 @@
   (each name (keys groups)
     (array/push outbounds (group-outbound model nodes name)))
   (def subs (or (get model "subscriptionNames") @[]))
-  (each sub subs
-    (def tag (string "sub:" sub))
-    (def mem (filter |(string/has-prefix? (string sub "/") $) (map tag-of nodes)))
-    (array/push outbounds
-      (if (empty? mem)
-        @{:type "selector" :tag tag :outbounds @["direct"] :default "direct"}
-        @{:type "urltest" :tag tag :outbounds mem :url "https://www.gstatic.com/generate_204" :interval "5m" :tolerance 50})))
-  (unless (get groups "Auto")
+  (def auto-on (not= (get model "autoGroup") false))
+  (when auto-on
+    (each sub subs
+      (def tag (string "sub:" sub))
+      (def mem (filter |(string/has-prefix? (string sub "/") $) (map tag-of nodes)))
+      (array/push outbounds
+        (if (empty? mem)
+          @{:type "selector" :tag tag :outbounds @["direct"] :default "direct"}
+          @{:type "urltest" :tag tag :outbounds mem :url "https://www.gstatic.com/generate_204" :interval "5m" :tolerance 50}))))
+  # autoGroup=false (and no explicit groups.Auto) skips the implicit
+  # Auto group; tunnel DNS then detours through the default target.
+  (def auto-tag (if (or (get groups "Auto") auto-on) "Auto" nil))
+  (def tunnel-tag
+    (or auto-tag
+        (rule-outbound (or (get model "defaultTarget") "group:Auto"))
+        "direct"))
+  (when auto-tag
     (def all (map tag-of nodes))
     (array/push outbounds
       (if (empty? all)
@@ -965,13 +993,21 @@
       (array/push servers (dns-server dom-tag domestic-url boot encryption)))
     (def remote-list (or (get remote "resolvers") @[]))
     (var rem-tag nil)
-    (when (not= mode "bypass")
+    # A bypass view ignores the remote resolvers unless via is direct:
+    # there is no tunnel for them, and the domestic/remote split on a
+    # bypass LAN is an explicit choice (docs/07 §7.2).
+    (def remote-direct (= (get remote "via") "direct"))
+    (when (or (not= mode "bypass") remote-direct)
       (each url remote-list (reject-plaintext encryption url))
       (let [remote-url (one-address (string "remote " label) remote-list)]
         (when remote-url
           (set rem-tag (string "remote-" label "-0"))
           (def item (dns-server rem-tag remote-url boot encryption))
-          (when (= (get remote "via") "tunnel") (put item :detour "Auto"))
+          # autoGroup = false (ADR-0026) drops the implicit Auto; tunnel DNS
+          # then detours through the default target (tunnel-tag falls back
+          # to "direct" when no group matches). A bypass view never detours:
+          # it has no tunnel.
+          (when (and (not= mode "bypass") (= (get remote "via") "tunnel")) (put item :detour tunnel-tag))
           (array/push servers item))))
     (when (and on (not saw-fake))
       (array/push servers @{
@@ -1003,8 +1039,12 @@
         (push-dns dns-rules @{:query_type @["AAAA"] :action "reject"} cidr inbound))
       (cond
         (= mode "bypass")
-        (when real
-          (push-dns dns-rules @{:action "route" :server real} cidr inbound))
+        (do
+          (each name (or (get domestic "domains") @[])
+            (when real (push-dns dns-rules (domain-item name real) cidr inbound)))
+          (cond
+            rem-tag (push-dns dns-rules @{:action "route" :server rem-tag} cidr inbound)
+            real (push-dns dns-rules @{:action "route" :server real} cidr inbound)))
         (= mode "proxy-all")
         (do
           (each name (or (get fake "exclude") @[])
@@ -1100,6 +1140,10 @@
   (def inbounds @[
     @{:type "tun" :tag "tun-in" :interface_name "tun0"
       :address @["172.19.0.1/30" "fdfe:dcba:9876::1/126"]
+      # gvisor: the system stack does not answer forwarded SYNs that
+      # reach tun0 through policy routing instead of the auto_route
+      # table it expects (ADR-0025).
+      :stack "gvisor"
       :auto_route false :strict_route false}
     @{:type "redirect" :tag "dns-tcp" :listen "::" :listen_port 5353}
     # TProxy delivers a packet only to a socket of the same family.
@@ -1136,6 +1180,7 @@
 (defn xray-stream [node]
   (def tls (at node :tls))
   (def transport (or (at-in node [:transport :type]) "tcp"))
+  (def utls (at-in node [:tls :utls]))
   (def stream @{:network transport :sockopt @{:mark 74}})
   (when (and tls (at tls :enable))
     (def reality (at-in tls [:reality :publicKey]))
@@ -1150,7 +1195,12 @@
         (put stream :security "tls")
         (def settings @{})
         (when (at tls :serverName) (put settings :serverName (at tls :serverName)))
-        (put stream :tlsSettings settings))))
+        (put stream :tlsSettings settings)))
+    # uTLS fingerprint. xray names the field the same in both branches and
+    # rejects an unknown value at xray run -test, so a bad fingerprint fails
+    # the render instead of shipping.
+    (when utls
+      (put-in stream [(if reality :realitySettings :tlsSettings) :fingerprint] utls)))
   (when (not= transport "tcp")
     (def extra @{})
     (when (at-in node [:transport :path]) (put extra :path (at-in node [:transport :path])))
@@ -1321,6 +1371,10 @@
   (def fake (or (get policy "fakeIp") @{}))
   (def strip (or (get policy "ipv6Answers") "strip-for-proxied"))
   (def target (or (get anchor "defaultTarget") "group:Auto"))
+  (def domestic-all (or (get (or (get policy "domestic") @{}) "resolvers") @[]))
+  (def remote-all (or (get (or (get policy "remote") @{}) "resolvers") @[]))
+  (def remote-direct
+    (and (= mode "bypass") (= (get (or (get policy "remote") @{}) "via") "direct")))
   (def fake-on
     (if (or (= mode "bypass") (= (get policy "recursive") false))
       false
@@ -1331,7 +1385,10 @@
   (def fallback
     (cond
       (= (get policy "recursive") false) "none"
-      (= mode "bypass") "domestic"
+      # A bypass view splits domestic/remote only when via is direct;
+      # otherwise every recursive name stays on the domestic resolvers
+      # (docs/07 §7.2).
+      (= mode "bypass") (if remote-direct "remote" "domestic")
       (= mode "proxy-all") (if fake-on "fake" "remote")
       (= target "block") "block"
       (= target "direct") "domestic"
@@ -1359,13 +1416,11 @@
   (defn place [bag name]
     (when (not (placed? name)) (array/push bag name)))
   (def forward-servers @[])
-  (def domestic-all (or (get (or (get policy "domestic") @{}) "resolvers") @[]))
-  (def remote-all (or (get (or (get policy "remote") @{}) "resolvers") @[]))
   (each url domestic-all (reject-plaintext encryption url))
-  (when (not= mode "bypass")
+  (when (or (not= mode "bypass") remote-direct)
     (each url remote-all (reject-plaintext encryption url)))
   (def domestic-one (one-address "domestic" domestic-all))
-  (def remote-one (if (= mode "bypass") nil (one-address "remote" remote-all)))
+  (def remote-one (if (or (not= mode "bypass") remote-direct) (one-address "remote" remote-all) nil))
   (def domestic-urls (if domestic-one @[domestic-one] @[]))
   (def remote-urls (if remote-one @[remote-one] @[]))
   (when (not= fallback "none")
@@ -1377,7 +1432,7 @@
         (def url (one-address (string "forwarder " domain) urls))
         (place forwarded pattern)
         (array/push forward-servers (xray-ns url @[pattern] direct-qs))))
-    (when (and (= mode "rule-based") (not= fallback "domestic"))
+    (when (and (not= mode "proxy-all") (not= fallback "domestic"))
       (each name (or (get (or (get policy "domestic") @{}) "domains") @[])
         (place real (xray-pattern name)))
       (each name (or (get fake "exclude") @[])
@@ -1520,6 +1575,16 @@
   (def i (index-of flag args))
   (if i (get args (+ i 1)) nil))
 
+(defn merge-raw [base over]
+  # engineSettings merges last. JSON keys are strings, the rendered
+  # config uses keywords, so normalize before merging. Arrays replace.
+  (def out (table/clone base))
+  (eachp [k v] over
+    (def nk (if (string? k) (keyword k) k))
+    (def b (get out nk))
+    (put out nk (if (and (table? b) (table? v)) (merge-raw b v) v)))
+  out)
+
 (defn main [&]
   (def args (dyn :args))
   (def cmd
@@ -1548,8 +1613,10 @@
           mode (or (arg-value args "--rule-set") "remote")
           engine (or (arg-value args "--engine") "sing-box")
           dst (or (arg-value args "--output") "-")
-          rendered (if (= engine "xray") (render-xray model nodes) (render model nodes mode))]
-      (write-out dst (json-encode rendered)))
+          rendered (if (= engine "xray") (render-xray model nodes) (render model nodes mode))
+          raw (or (get model "engineSettings") @{})
+          merged (if (empty? raw) rendered (merge-raw rendered raw))]
+      (write-out dst (json-encode merged)))
     "match"
     (let [kind (get args (+ (index-of "match" args) 1))
           pattern (get args (+ (index-of "match" args) 2))
