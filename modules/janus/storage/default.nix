@@ -15,6 +15,16 @@
   # 000000000005 is the Limine BIOS gap. Slot B uses the next two.
   rootBPartUuid = "4a414e55-5300-4000-8000-000000000006";
   nixBPartUuid = "4a414e55-5300-4000-8000-000000000007";
+  # systemd follows a /dev mount with the device unit of that path, and
+  # activates the unit only for a symlink udev created. /nix keeps that
+  # dependency after switch-root, so both udev copies need the same links.
+  slotLinkRules = ''
+    ACTION=="add|change", SUBSYSTEM=="block", IMPORT{cmdline}="janus.slot"
+    ACTION=="add|change", SUBSYSTEM=="block", ENV{janus.slot}!="b", ENV{ID_PART_ENTRY_UUID}=="${rootPartUuid}", SYMLINK+="disk/by-janus/root"
+    ACTION=="add|change", SUBSYSTEM=="block", ENV{janus.slot}!="b", ENV{ID_PART_ENTRY_UUID}=="${nixPartUuid}", SYMLINK+="disk/by-janus/nix"
+    ACTION=="add|change", SUBSYSTEM=="block", ENV{janus.slot}=="b", ENV{ID_PART_ENTRY_UUID}=="${rootBPartUuid}", SYMLINK+="disk/by-janus/root"
+    ACTION=="add|change", SUBSYSTEM=="block", ENV{janus.slot}=="b", ENV{ID_PART_ENTRY_UUID}=="${nixBPartUuid}", SYMLINK+="disk/by-janus/nix"
+  '';
 
   sizeMiB = s: let
     m = builtins.match "([0-9]+)([KMGT]i?B?)" s;
@@ -233,41 +243,8 @@ in {
     boot.initrd.supportedFilesystems = ["f2fs" "vfat"];
     boot.initrd.availableKernelModules = ["f2fs" "vfat" "nls_cp437" "nls_iso8859_1"];
 
-    boot.initrd.systemd.services.janus-slot-select = mkIf cfg.slots.enable {
-      description = "Point / and /nix at the active image slot";
-      requiredBy = ["sysroot.mount"];
-      before = ["sysroot.mount"];
-      after = ["systemd-udev-trigger.service"];
-      unitConfig.DefaultDependencies = false;
-      path = [pkgs.coreutils pkgs.gnugrep];
-      serviceConfig = {
-        Type = "oneshot";
-        RemainAfterExit = true;
-      };
-      script = ''
-        set -eu
-        slot=a
-        for arg in $(cat /proc/cmdline); do
-          case "$arg" in
-            janus.slot=*) slot=''${arg#janus.slot=} ;;
-          esac
-        done
-        if [ "$slot" = b ]; then
-          root=${rootBPartUuid}
-          nixp=${nixBPartUuid}
-        else
-          root=${rootPartUuid}
-          nixp=${nixPartUuid}
-        fi
-        mkdir -p /dev/disk/by-janus
-        for _ in $(seq 1 50); do
-          [ -b "/dev/disk/by-partuuid/$root" ] && [ -b "/dev/disk/by-partuuid/$nixp" ] && break
-          sleep 0.1
-        done
-        ln -sfn "/dev/disk/by-partuuid/$root" /dev/disk/by-janus/root
-        ln -sfn "/dev/disk/by-partuuid/$nixp" /dev/disk/by-janus/nix
-      '';
-    };
+    boot.initrd.services.udev.rules = mkIf cfg.slots.enable slotLinkRules;
+    services.udev.extraRules = mkIf cfg.slots.enable slotLinkRules;
 
     environment.etc."janus/slots.json" = mkIf cfg.slots.enable {
       text = builtins.toJSON {

@@ -2133,8 +2133,13 @@ in {
       base
       {janus.storage.slots.enable = true;}
     ];
+    off = mk [base];
+    slotRule = slot: uuid: link: "ACTION==\"add|change\", SUBSYSTEM==\"block\", ENV{janus.slot}${slot}, ENV{ID_PART_ENTRY_UUID}==\"${uuid}\", SYMLINK+=\"disk/by-janus/${link}\"";
   in
-    pkgs.runCommand "eval-slots" {} ''
+    pkgs.runCommand "eval-slots" {
+      nativeBuildInputs = [pkgs.systemd];
+    } ''
+      set -eu
       test ${lib.escapeShellArg os.config.fileSystems."/".device} = /dev/disk/by-janus/root
       test ${lib.escapeShellArg os.config.fileSystems."/nix".device} = /dev/disk/by-janus/nix
       test ${
@@ -2142,7 +2147,25 @@ in {
         then "yes"
         else "no"
       } = yes
-      echo ${lib.escapeShellArg os.config.boot.initrd.systemd.services.janus-slot-select.script} | grep -q 4a414e55-5300-4000-8000-000000000006
+      test ${
+        if lib.hasAttr "janus-slot-select" os.config.boot.initrd.systemd.services
+        then "yes"
+        else "no"
+      } = no
+      printf '%s\n' ${lib.escapeShellArg os.config.boot.initrd.services.udev.rules} > initrd.rules
+      printf '%s\n' ${lib.escapeShellArg os.config.services.udev.extraRules} > system.rules
+      printf '%s\n' ${lib.escapeShellArg off.config.boot.initrd.services.udev.rules} > off-initrd.rules
+      printf '%s\n' ${lib.escapeShellArg off.config.services.udev.extraRules} > off-system.rules
+      grep -q by-janus off-initrd.rules && exit 1
+      grep -q by-janus off-system.rules && exit 1
+      for rules in initrd.rules system.rules; do
+        grep -qxF 'ACTION=="add|change", SUBSYSTEM=="block", IMPORT{cmdline}="janus.slot"' "$rules"
+        grep -qxF ${lib.escapeShellArg (slotRule ''!="b"'' "4a414e55-5300-4000-8000-000000000002" "root")} "$rules"
+        grep -qxF ${lib.escapeShellArg (slotRule ''!="b"'' "4a414e55-5300-4000-8000-000000000003" "nix")} "$rules"
+        grep -qxF ${lib.escapeShellArg (slotRule ''=="b"'' "4a414e55-5300-4000-8000-000000000006" "root")} "$rules"
+        grep -qxF ${lib.escapeShellArg (slotRule ''=="b"'' "4a414e55-5300-4000-8000-000000000007" "nix")} "$rules"
+      done
+      udevadm verify --no-style --no-summary initrd.rules
       echo ${lib.escapeShellArg os.config.environment.etc."janus/slots.json".text} | grep -q 4a414e55-5300-4000-8000-000000000007
       test -n ${lib.escapeShellArg os.config.system.build.janusSlotImages.name}
       echo ok > "$out"
