@@ -92,6 +92,7 @@ jobs:
             .#checks.x86_64-linux.eval-router \
             .#checks.x86_64-linux.eval-rpi2-mbr \
             .#checks.x86_64-linux.eval-seed \
+            .#checks.x86_64-linux.eval-seed-dirs \
             .#checks.x86_64-linux.eval-secret-cli \
             .#checks.x86_64-linux.eval-slots \
             .#checks.x86_64-linux.eval-subscription-armor \

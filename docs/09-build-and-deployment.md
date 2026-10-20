@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-18 |
+| Last updated | 2026-10-20 |
 
 ## 1. Principles
 
@@ -279,7 +279,7 @@ says so and does not resize the table.
 | VM | `x86_64-test` boots with two virtual NICs. `vm-x86_64-test` checks the mount model. `vm-x86_64-net` checks DHCP, NAT, a static DNS answer, and the WAN/LAN firewall | `checks.vm-*` |
 | Board build | each board's image builds in CI (aarch64 daily, others weekly) | `checks.build-<board>` |
 | Hardware | Tier-1 boards boot-and-route on a lab bench (manual/semi-automated) | release checklist |
-| Chaos | power-cut loop on Tier-1 hardware (NFR-REL-001) | release checklist |
+| Chaos | power-cut loop on Tier-1 hardware (NFR-008) | release checklist |
 
 ## 10. Release
 

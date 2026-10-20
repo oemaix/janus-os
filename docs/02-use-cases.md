@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-17 |
+| Last updated | 2026-10-20 |
 
 ## 1. Personas
 
@@ -131,13 +131,15 @@ requirements it drives (see *03 — Requirements*).
 * **Flow:** Power is cut at an arbitrary moment. On next boot, read-only file
   systems mount unchanged; the state partition is fsck'd and mounted;
   services start with the last successfully written data.
-* **Drives:** FR-STO-*, NFR-REL-*
+* **Drives:** FR-STO-*, NFR-008, NFR-009
 
 ### UC-11 Remote access from behind carrier NAT
 
 * **Actor:** Priya
-* **Flow:** Configure a WireGuard peer to a VPS (or a mesh backend); the
-  router establishes an outbound tunnel at boot; SSH is reachable through it.
+* **Flow:** Enroll the router in a tailnet with Tailscale, optionally
+  against a Headscale `loginServer` (FR-RA-002); the router dials out at
+  boot, and a tailnet peer reaches SSH through the `mgmt` zone (FR-RA-004).
+  A WireGuard peer to a VPS MAY be configured in addition.
 * **Drives:** FR-RA-*
 
 ### UC-12 Watch traffic per interface
@@ -220,19 +222,6 @@ requirements it drives (see *03 — Requirements*).
   URL itself should be written into that shared file.
 * **Drives:** FR-CFG-010, FR-CFG-011, FR-OPS-012, ADR-0021
 
-### UC-22 One fleet, a subset of the subscriptions
-
-* **Actor:** Jonas
-* **Flow:** `common/default.nix` declares subscriptions A, B, and C, each
-  with a `urlSecret`. Every host imports that file, so each ciphertext
-  stays encrypted to every router. `hosts/one` sets
-  `subscriptions.C.enable = false`. `hosts/two` sets
-  `subscriptions.B.enable = false`. Router one refreshes A and B. Router
-  two refreshes A and C. A router that sets neither uses all three. A
-  group that names a disabled subscription fails evaluation. A refresh
-  of `0 4 * * 2,4,6` runs at 04:00 on Tuesday, Thursday, and Saturday.
-* **Drives:** D-0044, FR-CFG-011
-
 ### UC-20 Log a LAN device for a few days
 
 * **Actor:** Mei
@@ -251,3 +240,16 @@ requirements it drives (see *03 — Requirements*).
   `janus.dns.domestic.resolvers` to an encrypted resolver that answers
   inland names. Rebuild on the build host and deploy.
 * **Drives:** FR-PRX-026, FR-PRX-027, FR-PRX-028, FR-DNS-012
+
+### UC-22 One fleet, a subset of the subscriptions
+
+* **Actor:** Jonas
+* **Flow:** `common/default.nix` declares subscriptions A, B, and C, each
+  with a `urlSecret`. Every host imports that file, so each ciphertext
+  stays encrypted to every router. `hosts/one` sets
+  `subscriptions.C.enable = false`. `hosts/two` sets
+  `subscriptions.B.enable = false`. Router one refreshes A and B. Router
+  two refreshes A and C. A router that sets neither uses all three. A
+  group that names a disabled subscription fails evaluation. A refresh
+  of `0 4 * * 2,4,6` runs at 04:00 on Tuesday, Thursday, and Saturday.
+* **Drives:** D-0044, FR-CFG-011

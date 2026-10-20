@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-17 |
+| Last updated | 2026-10-20 |
 
 ## 1. Architectural drivers
 
@@ -127,8 +127,11 @@ engine to keep is *07* §2.1.
    (state, rw); mounts tmpfs `/run`, `/tmp`; sets up `/etc` overlay (lower =
    store-generated `/etc`, upper = tmpfs, with selected paths bind-mounted
    from `/var/lib/janus/etc` e.g. `machine-id`, SSH host keys).
-3. Seed check: if `/var/lib/janus` is empty or fails validation, copy the
-   embedded snapshot (subscriptions, Geo data) from the store.
+3. Seed check (*05* §6): copy the embedded snapshot (subscriptions,
+   Geo data) when `/var/lib/janus` is missing or empty, when its
+   `seed.stamp` is stale against the embedded seed hash and the embedded
+   data is newer, or when the present data fails validation; otherwise
+   keep runtime-refreshed data.
 4. networkd brings up ports, bridges, VLANs, WANs; PPPoE units start.
 5. nftables ruleset loads (before any WAN is up — default-deny from the
    start).

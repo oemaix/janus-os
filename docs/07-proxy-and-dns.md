@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-17 |
+| Last updated | 2026-10-20 |
 
 ## 1. Scope
 
@@ -275,7 +275,7 @@ janus.dns = {
   remote   = { resolvers = [ "https://1.1.1.1/dns-query" "https://dns.google/dns-query" ];
                via = "tunnel"; ecs = "strip"; };
   fakeIp   = { enable = "auto"; v4Range = "198.18.0.0/15"; v6Range = "fc00::/18";
-               exclude = [ "geosite:cn" "*.lan" "geosite:private" ]; };
+               exclude = [ "geosite:cn" "geosite:geolocation-cn" "*.lan" "geosite:private" ]; }; };
   ipv6Answers = "strip-for-proxied";
   interceptPlaintext = true; blockDoT = true; blockKnownDoH = false;
   hosts = { "nas.lan" = "192.168.10.5"; };

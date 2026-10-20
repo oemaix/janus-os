@@ -336,7 +336,7 @@
       else sources.geosite
     }/${tag}.srs";
 
-  # Pins are the rule-set files as of 2026-10-19; the Chocolate4U preset
+  # Pins are the rule-set files as of 2026-10-20; the Chocolate4U preset
   # tag (geosite-ir) was measured on 2026-10-16 (docs/21). The
   # sing-geosite and sing-geoip rule-set branches are regenerated
   # upstream, so a pin goes stale whenever they are; geodata.hashes
@@ -344,10 +344,10 @@
   # sing-geoip's rule-set branch has no geoip-private.srs, so that tag is compiled below.
   defaultPins = {
     geosite-private = "sha256-K/+ztWHSJjMDMbzcJdckrRF69E/PiHXUGbvN4Am2osc=";
-    geosite-cn = "sha256-fnqVvxbGvMfAJbhteJsuG5wU84zjN3fliEFmFcui5A8=";
-    geosite-geolocation-cn = "sha256-5ccUEgJMzfexsopVzGk3ftDoXJLP7d1m4YP6JYPqx9c=";
+    geosite-cn = "sha256-zEsAfzffL/1zOD1Obi4XKEABMturlywaf3CMPiZaIYY=";
+    geosite-geolocation-cn = "sha256-Zz65O2pYYm8i5Nhp/hrGdtbxFoZ7UVGp0hFC39nors8=";
     geosite-category-ads-all = "sha256-hOLteWF6SSyxra8ovwxZoaQq+FSrk1YFuoTg3ro4bIg=";
-    geosite-category-ru = "sha256-RS6q1hRT+T4ukKJLYL096v6OCkTFGRhYbJe71/+eEPM=";
+    geosite-category-ru = "sha256-IOcqybTKM3b1/IFmrgnPhQvrc502Pa3JQr6FFeFOb0Q=";
     geosite-ir = "sha256-SuD3qQ/D8Vau+PKihJU3LOuuv4vrNch2+xcF+nhHb4I=";
     geoip-cn = "sha256-ga2lyv2dgxrcSHdvKc3+VclxPZKHyu753pJe8w9mzOQ=";
     geoip-ru = "sha256-vcpc20TNzwlAAB5ZUjhoIqb0/6iyyO6gA0Cqb1hcf50=";
@@ -608,7 +608,13 @@ in {
     users.groups.janus-engine = {};
 
     systemd.tmpfiles.rules = [
-      "d /var/lib/janus/engine 2750 root janus-engine -"
+      # 2770, not 2750: sing-box runs as janus-engine and creates
+      # cache.db inside engine/ on a fresh state partition; group write
+      # is what lets it, and the setgid bit keeps new files group
+      # janus-engine. With 2750 a fresh boot looped on "initialize
+      # cache-file: permission denied" (observed 2026-10-20; the earlier
+      # field units masked it with a manual chown that a reflash wiped).
+      "d /var/lib/janus/engine 2770 root janus-engine -"
       "d /var/lib/janus/geodata 0755 root root -"
       "d /var/lib/janus/subscriptions 0700 root root -"
     ];

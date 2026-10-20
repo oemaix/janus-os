@@ -982,6 +982,52 @@ in {
       grep -q '"engine":null' ${seed}/manifest.json
       echo ok > "$out"
     '';
+  # The seed must not manage the state directories' modes, and must not
+  # touch root's home at all (found on the 2026-10-20 reflash):
+  #  - install -d -m chmods every listed directory, fighting the
+  #    tmpfiles.rules that own them (engine 2770, subscriptions 0700);
+  #  - /var/lib/janus/root IS root's home (users.users.root.home), and
+  #    ProtectHome makes it read-only inside the unit — install -m died
+  #    with EROFS on a fresh state partition and the boot never got an
+  #    engine tree;
+  #  - engine/ must be group-writable or a fresh-state sing-box cannot
+  #    create cache.db ("initialize cache-file: permission denied").
+  eval-seed-dirs = let
+    os = mk [
+      base
+      {
+        janus.network.lans.lan = {
+          members = ["lan"];
+          address = "192.168.10.1";
+          prefixLength = 24;
+        };
+        janus.proxy.enable = true;
+      }
+    ];
+    script = os.config.systemd.services.janus-seed.script;
+    tmpfiles = lib.concatStringsSep "\n" os.config.systemd.tmpfiles.rules;
+  in
+    pkgs.runCommand "eval-seed-dirs" {} ''
+      printf '%s\n' ${lib.escapeShellArg script} > seed-script
+      # Strip whole-line comments first: the check is about executed
+      # code, and comments are allowed to name the forbidden spell.
+      sed -e 's/^[[:space:]]*#.*$//' -e '/^[[:space:]]*$/d' seed-script > seed-code
+      grep -q 'mkdir -p' seed-code
+      if grep -q 'install -d' seed-code; then
+        echo "the seed still chmods state directories with install -d" >&2
+        exit 1
+      fi
+      if grep -q '/var/lib/janus/root' seed-code; then
+        echo "the seed still manages root's home directory (ProtectHome makes it read-only)" >&2
+        exit 1
+      fi
+      if grep -q '/\. /var/lib/janus' seed-code; then
+        echo "the seed copies with the source/. idiom, which re-applies the store's 0555 root:root onto the state directories" >&2
+        exit 1
+      fi
+      printf '%s\n' ${lib.escapeShellArg tmpfiles} | grep -qx 'd /var/lib/janus/engine 2770 root janus-engine -'
+      echo ok > "$out"
+    '';
   eval-proxy = let
     os = mk [
       base

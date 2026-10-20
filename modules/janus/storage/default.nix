@@ -474,11 +474,13 @@ in {
         RemainAfterExit = true;
         # "full", not "strict": strict read-only-binds every mount point
         # in the namespace, including the /var f2fs on the state partition,
-        # and ReadWritePaths cannot undo that for a whole sub-mount. On the
-        # field unit the seed then died with EROFS on /var/lib/janus/root,
-        # the engine tree was never created or chowned, and sing-box looped
-        # on cache.db permission denied (observed 2026-10-18). "full"
-        # protects /usr, /boot, and /etc only; /var stays writable.
+        # and ReadWritePaths cannot undo that for a whole sub-mount
+        # (observed 2026-10-18). "full" protects /usr, /boot, and /etc
+        # only; /var stays writable. ProtectHome stays on: it also
+        # read-onlys every user's home directory, and root's home is
+        # /var/lib/janus/root on the state partition — on a fresh state
+        # the seed's install -m died there with EROFS (2026-10-20), which
+        # is why the script below no longer manages that directory at all.
         ProtectSystem = "full";
         ProtectHome = true;
         PrivateTmp = true;
@@ -486,10 +488,17 @@ in {
       };
       script = ''
         set -eu
-        install -d -m 0755 \
+        # mkdir -p, not install -d -m: install with a mode chmods every
+        # listed directory, which fights the tmpfiles.rules that own them
+        # (engine is group-writable for janus-engine; subscriptions is
+        # 0700) and strips the setgid bit. mkdir -p never touches an
+        # existing directory's mode or owner. /var/lib/janus/root is
+        # absent on purpose: it is root's home directory, ProtectHome
+        # makes it read-only inside this unit (fresh-state EROFS,
+        # 2026-10-20), and tmpfiles already creates it 0700.
+        mkdir -p \
           /var/lib/janus/etc \
           /var/lib/janus/etc/ssh \
-          /var/lib/janus/root \
           /var/lib/janus/secrets \
           /var/lib/janus/subscriptions \
           /var/lib/janus/geodata \
@@ -510,9 +519,20 @@ in {
           fi
         fi
         if [ "$apply" = 1 ]; then
-          cp -a ${janusSeed}/subscriptions/. /var/lib/janus/subscriptions/
-          cp -a ${janusSeed}/geodata/. /var/lib/janus/geodata/
-          cp -a ${janusSeed}/engine/. /var/lib/janus/engine/
+          # Per-item copies, never "source/. ": with -a, cp -a src/. dst
+          # re-applies the source directory's own attributes onto the
+          # existing destination directory. The seed store tree is
+          # read-only 0555 root:root, and that copy overwrote engine/'s
+          # tmpfiles 2770 root:janus-engine on the 2026-10-20 fresh boot —
+          # sing-box then could not create cache.db again. Copying each
+          # item lands inside the directory and leaves its mode and
+          # owner alone.
+          for name in subscriptions geodata engine; do
+            for item in ${janusSeed}/$name/*; do
+              [ -e "$item" ] || continue
+              cp -a "$item" "/var/lib/janus/$name/"
+            done
+          done
           cp -a ${janusSeed}/manifest.json /var/lib/janus/manifest.json
           printf '%s %s\n' "$embedded_hash" "$embedded_gen" > "$stamp"
         fi
