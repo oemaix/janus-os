@@ -110,6 +110,17 @@ In that shell:
 8. Install the private key from the password manager, once, with
    `janus-build deploy --age-key <host>` on the build machine.
    (`janus secrets install-age-key` on the router does the same thing.)
+   On a terminal, after the router answers SSH, the command prints:
+   paste the age private key, then press Enter and Ctrl-D. If that line
+   does not appear, the address is wrong. Leave the key unpasted.
+   A pipe stays quiet. Input with no `AGE-SECRET-KEY-1` line is refused.
+   SSH uses `janus.access.deploy.address` from this repo. `mkRouter`
+   sets it to the host's attribute name. Set the LAN address, such as
+   `192.168.10.1`, when that name does not resolve. After Tailscale is
+   up, set a MagicDNS name, the Tailscale IPv4, or an IPv6 literal.
+   `deploy`, `status`, `backup`, and `fleet pull` read that edit
+   immediately. `fleet apply` needs a clean git tree. None of these
+   build or install an image.
    PPPoE, Wi-Fi, a subscription URL that is a secret, Tailscale, and the
    maintenance-page passphrase stay unavailable until this step.
 9. `janus proxy refresh` fills a subscription that came from `urlSecret`.

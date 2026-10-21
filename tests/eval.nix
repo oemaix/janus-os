@@ -2794,7 +2794,9 @@ in {
     base
     {janus.access.web.enable = true;}
   ];
-  cli-age-key = pkgs.runCommand "cli-age-key" {} ''
+  cli-age-key = pkgs.runCommand "cli-age-key" {
+    nativeBuildInputs = [pkgs.python3];
+  } ''
     set -eu
     dir=$TMPDIR/root
     mkdir -p "$dir/bin" "$dir/secrets"
@@ -2812,8 +2814,10 @@ in {
     exit 0
     EOF
     chmod +x "$dir/bin/systemctl"
-    printf '%s\n' 'AGE-SECRET-KEY-1test' | JANUS_SECRETS_DIR="$dir/secrets" JANUS_LOG="$dir/log" PATH="$dir/bin:$PATH" bash ${../pkgs/janus.sh} secrets install-age-key
+    printf '%s\n' 'AGE-SECRET-KEY-1test' | JANUS_SECRETS_DIR="$dir/secrets" JANUS_LOG="$dir/log" PATH="$dir/bin:$PATH" bash ${../pkgs/janus.sh} secrets install-age-key 2>"$dir/err"
+    test ! -s "$dir/err"
     printf '%s\n' 'AGE-SECRET-KEY-1test' | cmp - "$dir/secrets/age.key"
+    test "$(stat -c %a "$dir/secrets/age.key")" = 600
     awk '
       $1 == "restart" && $2 == "sops-install-secrets.service" { sops = NR }
       $1 == "restart" && $2 == "janus-pppoe-main.service" { pppoe = NR }
@@ -2826,6 +2830,145 @@ in {
         if (!(sops && pppoe && ap && auth && tail && web && tls && sops < pppoe && sops < ap && sops < auth && auth < tail && web < tls)) exit 1
       }
     ' "$dir/log"
+    printf '%s\n' 'AGE-SECRET-KEY-1old' > "$dir/secrets/age.key"
+    if printf '%s' "" | JANUS_SECRETS_DIR="$dir/secrets" JANUS_LOG="$dir/empty-log" PATH="$dir/bin:$PATH" bash ${../pkgs/janus.sh} secrets install-age-key 2>"$dir/empty-err"; then
+      echo "an empty age key was installed" >&2
+      exit 1
+    fi
+    if printf '\n' | JANUS_SECRETS_DIR="$dir/secrets" JANUS_LOG="$dir/empty-log" PATH="$dir/bin:$PATH" bash ${../pkgs/janus.sh} secrets install-age-key 2>"$dir/nl-err"; then
+      echo "a blank age key was installed" >&2
+      exit 1
+    fi
+    grep -q 'Refusing an age key that has no AGE-SECRET-KEY-1 line.' "$dir/empty-err"
+    grep -q 'Refusing an age key that has no AGE-SECRET-KEY-1 line.' "$dir/nl-err"
+    printf '%s\n' 'AGE-SECRET-KEY-1old' | cmp - "$dir/secrets/age.key"
+    test ! -e "$dir/empty-log"
+    python3 - ${../pkgs/janus.sh} "$dir" << 'PY'
+    import os, pty, select, subprocess, sys
+    script, root = sys.argv[1], sys.argv[2]
+    env = os.environ.copy()
+    env["JANUS_SECRETS_DIR"] = os.path.join(root, "tty-secrets")
+    env["JANUS_LOG"] = os.path.join(root, "tty-log")
+    env["PATH"] = os.path.join(root, "bin") + os.pathsep + env["PATH"]
+    os.makedirs(env["JANUS_SECRETS_DIR"])
+    master, slave = pty.openpty()
+    proc = subprocess.Popen(["bash", script, "secrets", "install-age-key"], stdin=slave, stdout=slave, stderr=slave, env=env)
+    os.close(slave)
+    buf = b""
+    def pump(timeout):
+        global buf
+        while True:
+            ready, _, _ = select.select([master], [], [], timeout)
+            if not ready:
+                return
+            try:
+                chunk = os.read(master, 4096)
+            except OSError:
+                return
+            if not chunk:
+                return
+            buf += chunk
+    pump(2)
+    if b"Paste the age private key, then press Enter and Ctrl-D." not in buf:
+        sys.stderr.write(buf.decode("utf-8", "replace"))
+        sys.exit(1)
+    os.write(master, b"AGE-SECRET-KEY-1tty\n\x04")
+    pump(2)
+    rc = proc.wait(timeout=5)
+    if rc != 0:
+        sys.exit(rc)
+    PY
+    printf '%s\n' 'AGE-SECRET-KEY-1tty' | cmp - "$dir/tty-secrets/age.key"
+    test "$(stat -c %a "$dir/tty-secrets/age.key")" = 600
+    cat > "$dir/bin/ssh" << 'EOF'
+    #!/bin/sh
+    printf '%s\n' "$*" >> "$JANUS_SSH_LOG"
+    probe=0
+    for arg in "$@"; do
+      if [ "$arg" = -n ]; then
+        probe=1
+      fi
+    done
+    if [ "$probe" = 1 ]; then
+      if [ "''${JANUS_SSH_FAIL:-}" = 1 ]; then
+        exit 1
+      fi
+      exit 0
+    fi
+    cat > "$JANUS_KEY_OUT"
+    EOF
+    chmod +x "$dir/bin/ssh"
+    JANUS_BUILD_LIB=1
+    # shellcheck disable=SC1091
+    . ${../pkgs/janus-build.sh}
+    test "$(ssh_dest potato)" = root@potato
+    test "$(ssh_dest 192.168.10.1)" = root@192.168.10.1
+    test "$(ssh_dest 'fd7a:115c:a1e0::1')" = 'root@[fd7a:115c:a1e0::1]'
+    test "$(ssh_dest '[fd7a:115c:a1e0::1]')" = 'root@[fd7a:115c:a1e0::1]'
+    test "$(ssh_dest 'root@[fd7a:115c:a1e0::1]')" = 'root@[fd7a:115c:a1e0::1]'
+    export JANUS_SSH_LOG=$dir/ssh-log JANUS_KEY_OUT=$dir/key-out
+    export PATH="$dir/bin:$PATH"
+    printf '%s\n' 'AGE-SECRET-KEY-1ssh' | install_age_key_over_ssh 'fd7a:115c:a1e0::1' 2>"$dir/ssh-err"
+    test ! -s "$dir/ssh-err"
+    printf '%s\n' 'AGE-SECRET-KEY-1ssh' | cmp - "$dir/key-out"
+    head -n 1 "$dir/ssh-log" | grep -q -- '-n'
+    grep -q 'root@\[fd7a:115c:a1e0::1\] janus secrets install-age-key' "$dir/ssh-log"
+    : > "$dir/ssh-log"
+    rm -f "$dir/key-out"
+    if printf '\n' | install_age_key_over_ssh 192.168.10.1 2>"$dir/ssh-empty"; then
+      echo "an empty key was sent over ssh" >&2
+      exit 1
+    fi
+    grep -q 'Refusing an age key that has no AGE-SECRET-KEY-1 line.' "$dir/ssh-empty"
+    test ! -e "$dir/key-out"
+    test "$(wc -l < "$dir/ssh-log")" -eq 1
+    : > "$dir/ssh-log"
+    rest=$(printf '%s\n' 'AGE-SECRET-KEY-1keep' | (JANUS_SSH_FAIL=1 install_age_key_over_ssh 192.168.10.1 >/dev/null 2>"$dir/ssh-fail" || true; cat))
+    test "$rest" = "AGE-SECRET-KEY-1keep"
+    if grep -q 'Paste the age private key' "$dir/ssh-fail"; then
+      echo "a failed probe printed the paste prompt" >&2
+      exit 1
+    fi
+    python3 - ${../pkgs/janus-build.sh} "$dir" << 'PY'
+    import os, pty, select, subprocess, sys
+    script, root = sys.argv[1], sys.argv[2]
+    env = os.environ.copy()
+    env["JANUS_BUILD_LIB"] = "1"
+    env["JANUS_SSH_LOG"] = os.path.join(root, "tty-ssh-log")
+    env["JANUS_KEY_OUT"] = os.path.join(root, "tty-remote-key")
+    env["PATH"] = os.path.join(root, "bin") + os.pathsep + env["PATH"]
+    env.pop("JANUS_SSH_FAIL", None)
+    master, slave = pty.openpty()
+    proc = subprocess.Popen(
+        ["bash", "-c", '. "$1"; install_age_key_over_ssh "$2"', "bash", script, "192.168.10.1"],
+        stdin=slave, stdout=slave, stderr=slave, env=env,
+    )
+    os.close(slave)
+    buf = b""
+    def pump(timeout):
+        global buf
+        while True:
+            ready, _, _ = select.select([master], [], [], timeout)
+            if not ready:
+                return
+            try:
+                chunk = os.read(master, 4096)
+            except OSError:
+                return
+            if not chunk:
+                return
+            buf += chunk
+    pump(2)
+    if b"Paste the age private key, then press Enter and Ctrl-D." not in buf:
+        sys.stderr.write(buf.decode("utf-8", "replace"))
+        sys.exit(1)
+    os.write(master, b"AGE-SECRET-KEY-1tty\n\x04")
+    pump(2)
+    rc = proc.wait(timeout=5)
+    if rc != 0:
+        sys.exit(rc)
+    PY
+    printf '%s\n' 'AGE-SECRET-KEY-1tty' | cmp - "$dir/tty-remote-key"
     echo ok > "$out"
   '';
   eval-web-sops = let

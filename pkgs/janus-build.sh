@@ -168,14 +168,44 @@ host_address() {
   nix_fleet eval --raw ".#nixosConfigurations.${1}.config.janus.access.deploy.address"
 }
 
+# A value that already contains @ is an SSH destination, so an IPv6 form
+# there is root@[address]. A bare IPv6 literal is wrapped in brackets.
+# ssh://root@[address] is the form nix copy accepts.
+ssh_dest() {
+  case "$1" in
+    *@*) printf '%s\n' "$1" ;;
+    \[*\]) printf 'root@%s\n' "$1" ;;
+    *:*) printf 'root@[%s]\n' "$1" ;;
+    *) printf 'root@%s\n' "$1" ;;
+  esac
+}
+
 ssh_to() {
   addr=$1
   shift
-  case "$addr" in
-    *@*) dest=$addr ;;
-    *) dest="root@${addr}" ;;
-  esac
+  dest=$(ssh_dest "$addr")
   ssh -o BatchMode=yes -o ConnectTimeout=8 "$dest" "$@"
+}
+
+# The probe uses ssh -n so a piped key stays unread until the router
+# answers. The prompt follows that answer. The key is not an argument
+# and the temp file is removed on return.
+install_age_key_over_ssh() {
+  dest=$(ssh_dest "$1")
+  if ! ssh -n -o BatchMode=yes -o ConnectTimeout=8 "$dest" true; then
+    return 1
+  fi
+  if [ -t 0 ]; then
+    echo "Paste the age private key, then press Enter and Ctrl-D." >&2
+  fi
+  work=$(mktemp)
+  trap 'rm -f "$work"' RETURN
+  cat > "$work"
+  if ! grep -q '^AGE-SECRET-KEY-1' "$work"; then
+    echo "Refusing an age key that has no AGE-SECRET-KEY-1 line." >&2
+    return 1
+  fi
+  ssh -o BatchMode=yes -o ConnectTimeout=8 "$dest" janus secrets install-age-key < "$work"
 }
 
 slot_fits() {
@@ -271,13 +301,6 @@ apply_leases() {
       ip=${rest#* }
       ssh_to "$addr" janus override set "network.lans.${lan}.dhcp.staticLeases.${name}" --mac "$mac" --ip "$ip"
     done
-}
-
-ssh_dest() {
-  case "$1" in
-    *@*) printf '%s\n' "$1" ;;
-    *) printf 'root@%s\n' "$1" ;;
-  esac
 }
 
 fleet_apply() {
@@ -1021,8 +1044,8 @@ case "$cmd" in
     host_ok "$host"
     addr=$(host_address "$host")
     if [ "$age_key" = 1 ]; then
-      ssh_to "$addr" janus secrets install-age-key
-      exit 0
+      install_age_key_over_ssh "$addr"
+      exit $?
     fi
     if [ "$confirm" = 1 ]; then
       ssh_to "$addr" "install -d -m 0755 /var/lib/janus && : > /var/lib/janus/deploy-confirmed"

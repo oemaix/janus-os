@@ -10,6 +10,10 @@ Read this file before answering a question about using Janus OS.
   key once. The operator stores it in a password manager. The image
   contains ciphertext and not that key. After boot, `janus-build deploy
   --age-key` or `janus secrets install-age-key` installs it.
+  On a terminal, `install-age-key` prints `Paste the age private key, then press Enter and Ctrl-D.` on stderr. A pipe stays quiet. Input with no `AGE-SECRET-KEY-1` line is refused, and the previous key stays.
+  `deploy --age-key` probes SSH with stdin closed, then prints that line on a terminal. A failed probe prints nothing and does not read stdin. The key is not an argument and is not stored. The second SSH does not allocate a terminal, so the router command stays quiet on that path.
+  `janus.access.deploy.address` is the SSH destination for `deploy`, `fleet apply`, `fleet pull`, `status`, and `backup`. `mkRouter` sets it to the attribute name. A later `hostName` does not move it.
+  `janus-build` reads it from the fleet repo when the command runs. `deploy`, `fleet pull`, `status`, and `backup` read an uncommitted edit. `fleet apply` still refuses a dirty tree. A LAN address can be replaced with a MagicDNS name, the Tailscale IPv4, or an IPv6 literal without a new image. A bare IPv6 literal is sent as `root@[address]` (Q-0043).
   `install-age-key` restarts `sops-install-secrets` when that unit
   exists, then a failed PPPoE unit, then `janus-wifi-secret-<name>` when
   that unit exists and `janus-hostapd-<name>` failed, then failed Wi-Fi

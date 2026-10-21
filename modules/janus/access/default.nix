@@ -74,7 +74,11 @@ in {
       type = types.str;
       default = config.janus.system.hostName;
       defaultText = "janus.system.hostName, or the nixosConfigurations attribute when mkRouter is given name";
-      description = "SSH destination for janus-build deploy and janus-build fleet apply.";
+      description = ''
+        SSH destination for janus-build deploy, fleet apply, fleet pull, status, and backup.
+        janus-build reads it from the fleet repo when the command runs. fleet apply still requires a clean git tree.
+        A new image is not required.
+      '';
     };
   };
 

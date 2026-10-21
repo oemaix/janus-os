@@ -414,10 +414,21 @@ case "$cmd" in
     case "$sub" in
       install-age-key)
         # JANUS_SECRETS_DIR overrides the directory in tests. On the router it is /var/lib/janus/secrets.
+        # The previous key stays until stdin contains an AGE-SECRET-KEY-1 line.
         secrets_dir=${JANUS_SECRETS_DIR:-/var/lib/janus/secrets}
+        if [ -t 0 ]; then
+          echo "Paste the age private key, then press Enter and Ctrl-D." >&2
+        fi
+        work=$(mktemp)
+        cat > "$work"
+        if ! grep -q '^AGE-SECRET-KEY-1' "$work"; then
+          rm -f "$work"
+          echo "Refusing an age key that has no AGE-SECRET-KEY-1 line." >&2
+          exit 1
+        fi
         install -d -m 0700 "$secrets_dir"
-        cat > "${secrets_dir}/age.key"
-        chmod 0600 "${secrets_dir}/age.key"
+        install -m 0600 "$work" "${secrets_dir}/age.key"
+        rm -f "$work"
         if systemctl cat sops-install-secrets.service >/dev/null 2>&1; then
           systemctl restart sops-install-secrets.service
           failed=$(systemctl list-units --failed --no-legend --plain --type=service)

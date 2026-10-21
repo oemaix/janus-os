@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-17 |
+| Last updated | 2026-10-21 |
 
 These answers explain a choice that already binds somewhere else. The
 cited ADR, requirement, or section is that place. This list does not
@@ -56,3 +56,4 @@ Each question is `Q-nnnn`. The number is assigned once and is not reused.
 | Q-0040 | Does the Zero 2 W onboard Wi-Fi work as an access point? | Yes. It is the board's own radio, 2.4 GHz WPA2, on in-tree `brcmfmac` and the redistributable Raspberry Pi wireless firmware. 5 GHz and WPA3 are not this chip. See D-0043 and *10* §4.7. |
 | Q-0041 | Why keep a subscription declared on a router that does not use it? | A shared subscription file is encrypted to every host whose configuration names it. Removing the declaration drops that host from the recipient set. `enable = false` keeps the name and drops the nodes. See D-0044. |
 | Q-0042 | Which languages does the maintenance page speak? | English, then Russian, then Persian, then Simplified Chinese. The stored tags are `en`, `ru`, `fa`, and `zh`. The control draws `en`, `ру`, `فا`, and `简中` in every page language. Persian sets `dir="rtl"`. Chinese is left to right. `zh-Hant` is not a page language. The reboot confirmation stays the Latin word `reboot`. See *20* §7 and D-0033. |
+| Q-0043 | Does changing `janus.access.deploy.address` require a new image? | No. `janus-build` evaluates it from the fleet repo when `deploy`, `fleet apply`, `fleet pull`, `status`, or `backup` runs. The router does not use the option. `deploy`, `fleet pull`, `status`, and `backup` read an uncommitted edit. `fleet apply` still refuses a dirty tree. A LAN address can install the age key. A later edit can name a MagicDNS name, the Tailscale IPv4, or an IPv6 literal. A bare IPv6 literal is sent as `root@[address]`. See *08* §10 and *16*. |

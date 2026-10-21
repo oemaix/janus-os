@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-17 |
+| Last updated | 2026-10-21 |
 
 ## 1. What maintenance is
 
@@ -130,14 +130,20 @@ listener without a rebuild.
    ciphertext. It does not contain the age private key.
 4. Boot; connect to LAN; `ssh root@192.168.10.1` (or the configured address).
 5. Install that host's private key once, from the password manager:
-   `janus secrets install-age-key` (paste). Do not leave the key on the
-   build host. Services that need secrets start when the key appears. A
-   secret that will never live in git can instead be loaded with
-   `janus secrets put`.
+   `janus secrets install-age-key`. On a terminal the command prints
+   `Paste the age private key, then press Enter and Ctrl-D.` A pipe stays
+   quiet. Input with no `AGE-SECRET-KEY-1` line is refused, and the
+   previous key stays. Do not leave the key on the build host. Services
+   that need secrets start when the key appears. A secret that will never
+   live in git can instead be loaded with `janus secrets put`.
 6. `janus status` — verify WAN, DNS, proxy health.
 
-Alternative for step 5: `janus-build deploy --age-key <host>` reads the
-private key on stdin and installs it over SSH. It does not store the key.
+Alternative for step 5: `janus-build deploy --age-key <host>` checks SSH
+with stdin closed. On a terminal it prints the same line only after that
+session answers. A failed session does not read stdin. It does not store
+the key. The SSH destination is `janus.access.deploy.address`, read from
+the fleet repo when the command runs (*16*, Q-0043). A bare IPv6 literal
+is sent as `root@[address]`.
 
 ## 3. Day-2 tasks
 

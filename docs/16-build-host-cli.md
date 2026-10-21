@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-18 |
+| Last updated | 2026-10-21 |
 
 `janus-build` runs on the build host. After the fleet repo exists, every
 command runs in that repo. The router command stays `janus` (*14*). The
@@ -84,8 +84,18 @@ Exit codes match *14*: `0` success, `2` usage or a refused request, `1` a
 runtime failure. A host that does not answer is a failure of that host.
 Hosts that succeeded are left as they are and named in the output.
 
-SSH destinations are `janus.deploy.address`, or the
-`nixosConfigurations` attribute name when the option is unset.
+SSH destinations are `janus.access.deploy.address`. `mkRouter` sets that
+to the `nixosConfigurations` attribute name. The option default is
+`janus.system.hostName`. A later `hostName` does not move this value:
+`mkRouter` sets both at default priority. `deploy`, `fleet apply`,
+`fleet pull`, `status`, and `backup` evaluate it from the fleet repo when
+the command runs. The router does not use it. `deploy`, `fleet pull`,
+`status`, and `backup` read an uncommitted edit. `fleet apply` still
+requires a clean git tree. A new image is not required (Q-0043).
+
+A bare IPv6 literal is passed as `root@[address]`. A value already in
+brackets is kept. A value that contains `@` is used as written, so an
+IPv6 form there is `root@[address]`.
 
 ## 1. Life cycle
 
@@ -166,7 +176,7 @@ The tree must be a git repository. These commands do not commit.
 | `janus-build secret keygen <host>` | Create that host's keypair (§1). Print the private key once. Do not write it into the repo or into `~/.config/janus/`. |
 | `janus-build secret set <path>` | Encrypt stdin to the recipients of `<path>` and write a sops document. A one-line credential is the `value` key. A PPPoE file and a node file are YAML. An empty stdin is refused. The plaintext is not a program argument. `<path>` is one of the paths above. |
 | `janus-build secret rewrap <path> --from <host>` | SSH to `<host>`, which decrypts `<path>`. Encrypt to the recipient set implied by the current configuration. Warn that the session carried plaintext. |
-| `janus-build deploy --age-key <host>` | Read that host's private key on stdin and install it over SSH. Do not store the key. |
+| `janus-build deploy --age-key <host>` | Open one SSH session with stdin closed. When it answers, read that host's private key and send it on a second session. Do not store the key, and do not pass it as an argument. On a terminal, print `Paste the age private key, then press Enter and Ctrl-D.` on stderr only after the first session answers. A failed first session prints nothing and does not read stdin. A pipe stays quiet. Input with no `AGE-SECRET-KEY-1` line is refused. SSH does not allocate a terminal, so the router command stays quiet. |
 
 ## 3. `janus-build deploy`
 
@@ -175,7 +185,7 @@ The tree must be a git repository. These commands do not commit.
 | `janus-build deploy <host>` | Remote closure deploy (*09* §8.2). When `janus.storage.slots.enable` is true, write the inactive ROOT and NIX slot and then toggle the boot entry (*09* §8.4). |
 | `janus-build deploy --preserve-state <host>` | Copy the state set in *09* §8.1 to the build host. Does not flash. The operator flashes, then sends the archive to `janus restore`. |
 | `janus-build deploy --confirm <host>` | Mark the booted generation good after a closure deploy. |
-| `janus-build deploy --age-key <host>` | Install that host's age private key from stdin (§2). |
+| `janus-build deploy --age-key <host>` | Install that host's age private key from stdin (§2). Probe SSH with stdin closed. On a terminal, prompt on stderr after the probe. Input with no `AGE-SECRET-KEY-1` line is refused. |
 
 `deploy` installs a new image. It is how a change outside the hot-override
 allowlist reaches a router. The copy onto the board uses `--max-jobs 0`

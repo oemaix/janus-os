@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-18 |
+| Last updated | 2026-10-21 |
 
 This document defines the **shape and semantics** of the `janus.*` option
 tree. The final, exhaustive reference (every option with type, default,
@@ -225,7 +225,7 @@ learned WAN address as the domestic server.
 | `web.zones` | list | `["lan" "mgmt"]` | `wan` fails evaluation. |
 | `web.passphraseSecret` | str | — | sops secret name. One line in `secrets/web/<host>.yaml`, encrypted to that host (ADR-0023). Not the SSH root password. |
 | `web.passphraseFile` | path | — | File from `janus secrets put`. When `web.enable` is true, exactly one of this and `passphraseSecret` is set. |
-| `deploy.address` | str | the `nixosConfigurations` attribute name | SSH destination for `janus-build deploy` and `janus-build fleet apply`. |
+| `deploy.address` | str | the `nixosConfigurations` attribute name | SSH destination for `janus-build deploy`, `fleet apply`, `fleet pull`, `status`, and `backup`. `janus-build` reads it from the fleet repo when the command runs. `fleet apply` still requires a clean git tree. A new image is not required (Q-0043). |
 
 ## 11. Secrets and hot overrides
 

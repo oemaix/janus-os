@@ -61,6 +61,13 @@
     "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA... you@laptop" # CHANGE ME (required)
   ];
   # janus.access.ssh.passwordAuthentication = true;       # not recommended
+  # SSH destination for janus-build. mkRouter sets this to the
+  # nixosConfigurations attribute name. hostName above does not change it.
+  # Set the LAN address when that name does not resolve. After Tailscale
+  # is up, set a MagicDNS name, the Tailscale IPv4, or an IPv6 literal.
+  # deploy, status, backup, and fleet pull read this file immediately.
+  # fleet apply needs a clean git tree. A new image is not required (Q-0043).
+  # janus.access.deploy.address = "192.168.10.1";
 
   # Maintenance page (*20*). Included only when enable is set. After that,
   # janus web stop pauses it without a rebuild. The passphrase is one line
