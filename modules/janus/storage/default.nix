@@ -27,23 +27,42 @@
   '';
 
   sizeMiB = s: let
-    m = builtins.match "([0-9]+)([KMGT]i?B?)" s;
+    m = builtins.match "([0-9]+)(\\.[0-9]+)?([KMGT]i?B?)" s;
     n =
       if m == null
       then null
       else lib.toInt (lib.elemAt m 0);
+    frac =
+      if m == null || lib.elemAt m 1 == null
+      then ""
+      else lib.removePrefix "." (lib.elemAt m 1);
     unit =
       if m == null
       then ""
-      else lib.elemAt m 1;
+      else lib.elemAt m 2;
+    scale =
+      if lib.hasPrefix "G" unit
+      then 1024
+      else if lib.hasPrefix "M" unit
+      then 1
+      else null;
+    denom = lib.foldl' (acc: _: acc * 10) 1 (lib.stringToCharacters frac);
+    numer =
+      if frac == "" || scale == null
+      then 0
+      else lib.toInt frac * scale;
+    quot = numer / denom;
+    # A fractional size rounds up, so the partition is never short of the request.
+    extra =
+      if frac == "" || scale == null
+      then 0
+      else if numer == quot * denom
+      then quot
+      else quot + 1;
   in
-    if m == null
-    then throw "janus.storage size '${s}' is not a number of MiB or GiB (for example 256M or 1G)."
-    else if lib.hasPrefix "G" unit
-    then n * 1024
-    else if lib.hasPrefix "M" unit
-    then n
-    else throw "janus.storage size '${s}' must use M or G.";
+    if m == null || scale == null
+    then throw "janus.storage size '${s}' is not a number of MiB or GiB (for example 256M, 1G, or 2.5G)."
+    else n * scale + extra;
 
   slackPercent = s: let
     m = builtins.match "([0-9]+)%" s;
@@ -58,7 +77,7 @@
         type = types.nullOr types.str;
         default = null;
         example = "256M";
-        description = "Partition size, such as 256M or 1G. Null sizes the Nix partition from the closure and the state partition from state.minimumSize. A set Nix size is used as given.";
+        description = "Partition size, such as 256M or 1G. Null sizes the Nix partition from the closure plus slack, and at least nix.minimumSize. A set Nix size is used as given, even when it is below nix.minimumSize. A set state size replaces state.minimumSize.";
       };
       fsType = mkOption {
         type = types.enum ["f2fs" "vfat" "erofs" "squashfs"];
@@ -90,15 +109,20 @@
   mounted = mp: lib.filter (p: p.mountPoint == mp) parts;
 
   janusNixPartition =
-    if cfg.layout.partitions.JANUS_NIX.size == null
-    then {
-      mode = "auto";
-      exactMiB = null;
+    {
+      minimumMiB = sizeMiB cfg.nix.minimumSize;
     }
-    else {
-      mode = "exact";
-      exactMiB = sizeMiB cfg.layout.partitions.JANUS_NIX.size;
-    };
+    // (
+      if cfg.layout.partitions.JANUS_NIX.size == null
+      then {
+        mode = "auto";
+        exactMiB = null;
+      }
+      else {
+        mode = "exact";
+        exactMiB = sizeMiB cfg.layout.partitions.JANUS_NIX.size;
+      }
+    );
 
   # Phase 0 seed is the empty snapshot. The hash and generation are what
   # janus-seed compares, so a later snapshot with a higher generation replaces it.
@@ -152,6 +176,11 @@ in {
       type = types.enum ["f2fs" "erofs" "squashfs"];
       default = "f2fs";
       description = "Filesystem for the read-only partitions. f2fs is implemented. erofs and squashfs are reserved and fail evaluation (D-0035).";
+    };
+    nix.minimumSize = mkOption {
+      type = types.str;
+      default = "2.5G";
+      description = "Floor for each Nix partition when JANUS_NIX.size is null. The built size is the closure plus 15%, one 4 KiB node block per file, and 128 MiB, and at least this floor. JANUS_NIX.size may be smaller and is then used as given. With slots, both Nix partitions use the same size.";
     };
     state.minimumSize = mkOption {
       type = types.str;
@@ -514,6 +543,7 @@ in {
           else cfg.layout.partitions.JANUS_STATE.size
         );
         nixSlackPercent = slackPercent cfg.layout.partitions.JANUS_NIX.slack;
+        nixMinMiB = sizeMiB cfg.nix.minimumSize;
         nixSizeMode = janusNixPartition.mode;
         nixExactMiB =
           if janusNixPartition.exactMiB == null
@@ -538,6 +568,7 @@ in {
         closureInfo = pkgs.closureInfo {rootPaths = [config.system.build.toplevel];};
         rootMinMiB = sizeMiB (cfg.layout.partitions.JANUS_ROOT.size or "64M");
         nixSlackPercent = slackPercent cfg.layout.partitions.JANUS_NIX.slack;
+        nixMinMiB = sizeMiB cfg.nix.minimumSize;
         nixSizeMode = janusNixPartition.mode;
         nixExactMiB =
           if janusNixPartition.exactMiB == null

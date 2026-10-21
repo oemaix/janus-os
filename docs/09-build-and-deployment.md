@@ -157,7 +157,10 @@ The image builder is a Nix derivation (no root, no loop mounts) that:
 
 1. Computes the closure of `config.system.build.toplevel`.
 2. Creates file system images:
-   * `nix.img` — `mkfs.f2fs` sized to closure + slack, populated with
+   * `nix.img` — `mkfs.f2fs` sized to the closure plus 15 %, one 4 KiB
+     node block per file, and 128 MiB, and at least `nix.minimumSize`
+     (default 2.5 GiB). `JANUS_NIX.size` may be smaller than that floor
+     and is then used as given. Populated with
      `sload.f2fs` from the closure and `/nix/var` (db, profiles);
    * `root.img` — `mkfs.f2fs`, populated with the skeleton (`/bin/sh`,
      `/usr/bin/env`, mount points, `/etc` lower dir is in the store);
@@ -266,7 +269,13 @@ boot changes the boot entry back. The other slot's files stay where they
 are.
 
 The slot partitions are the size fixed by the flashed image. If the new
-images do not fit, deploy stops and the operator flashes a larger image.
+Nix image does not fit the Nix partition, deploy names that partition
+and stops. The operator flashes a larger image. Without A/B slots,
+4 GiB holds the image while each Nix partition stays at the 2.5 GiB
+floor (3394 MiB with no firmware gap). 8 GiB or more is recommended.
+With A/B slots that floor makes a 6018 MiB image, so 8 GiB is the
+minimum and 16 GiB or more is recommended. A larger closure needs a
+larger card by the same amount.
 A disk that was flashed without the option has no inactive slot; deploy
 says so and does not resize the table.
 

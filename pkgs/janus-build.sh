@@ -212,12 +212,13 @@ slot_fits() {
   addr=$1
   uuid=$2
   img=$3
+  what=$4
   part=$(ssh_to "$addr" "blockdev --getsize64 /dev/disk/by-partuuid/${uuid}")
   part=$(printf '%s' "$part" | tr -d '[:space:]')
   bytes=$(wc -c < "$img")
   bytes=$(printf '%s' "$bytes" | tr -d '[:space:]')
   if [ "$bytes" -gt "$part" ]; then
-    echo "janus-build: the new slot image does not fit the partition. Flash a larger image." >&2
+    echo "janus-build: the new ${what} slot image does not fit the ${what} partition. Flash a larger image." >&2
     exit 1
   fi
 }
@@ -247,8 +248,8 @@ deploy_slots() {
     echo "janus-build: this disk has no inactive slot. Flash an image built with janus.storage.slots.enable." >&2
     exit 1
   fi
-  slot_fits "$addr" "$root_uuid" "$root_img"
-  slot_fits "$addr" "$nix_uuid" "$nix_img"
+  slot_fits "$addr" "$root_uuid" "$root_img" "root"
+  slot_fits "$addr" "$nix_uuid" "$nix_img" "Nix"
   ssh_to "$addr" "mount -o remount,rw /boot || true"
   ssh_to "$addr" "dd of=/dev/disk/by-partuuid/${root_uuid} bs=1M conv=fsync status=none" < "$root_img"
   ssh_to "$addr" "dd of=/dev/disk/by-partuuid/${nix_uuid} bs=1M conv=fsync status=none" < "$nix_img"

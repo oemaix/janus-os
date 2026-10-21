@@ -90,11 +90,43 @@ in {
       base
       {janus.storage.layout.partitions.JANUS_NIX.size = "2048M";}
     ];
+    auto = mk [base];
+    sized = spec:
+      (mk [
+        base
+        {janus.storage.layout.partitions.JANUS_NIX.size = spec;}
+      ]).config.system.build.janusNixPartition.exactMiB;
     part = os.config.system.build.janusNixPartition;
   in
-    pkgs.runCommand "eval-nix-size" {} ''
+    pkgs.runCommand "eval-nix-size" {
+      nativeBuildInputs = [pkgs.bash pkgs.coreutils pkgs.gawk pkgs.findutils];
+    } ''
       test ${part.mode} = exact
       test ${toString part.exactMiB} = 2048
+      test ${toString part.minimumMiB} = 2560
+      test ${toString (sized "1.5M")} = 2
+      test ${toString (sized "512.9M")} = 513
+      test ${toString (sized "2.1G")} = 2151
+      test ${toString (sized "2.5G")} = 2560
+      test ${lib.escapeShellArg auto.config.janus.storage.nix.minimumSize} = 2.5G
+      test ${toString auto.config.system.build.janusNixPartition.minimumMiB} = 2560
+      grep -F -q -- 'f2fs-mib.sh' ${../pkgs/image.nix}
+      grep -F -q -- 'f2fs_partition_mib' ${../pkgs/image.nix}
+      grep -F -q -- 'nix.img "$nixMinMiB" "$nixSlackPercent" ""' ${../pkgs/image.nix}
+      grep -F -q -- 'nix.img 0 0 "$nixExactMiB"' ${../pkgs/image.nix}
+      grep -F -q -- 'f2fs-mib.sh' ${../pkgs/slot-images.nix}
+      grep -F -q -- 'f2fs_partition_mib' ${../pkgs/slot-images.nix}
+      grep -F -q -- 'nix-a.img "$nixMinMiB" "$nixSlackPercent" ""' ${../pkgs/slot-images.nix}
+      grep -F -q -- 'nix-a.img 0 0 "$nixExactMiB"' ${../pkgs/slot-images.nix}
+      . ${../pkgs/f2fs-mib.sh}
+      dir=$(mktemp -d)
+      echo x > "$dir/a"
+      floor=$(f2fs_partition_mib "$dir" 2560 15 "")
+      test "$floor" = 2560
+      auto_mib=$(f2fs_partition_mib "$dir" 64 15 "")
+      test "$auto_mib" -gt 64
+      test "$auto_mib" -lt 2560
+      test "$(f2fs_partition_mib "$dir" 2560 15 32)" = 32
       echo ok > "$out"
     '';
   eval-router = let

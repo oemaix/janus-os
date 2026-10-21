@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-18 |
+| Last updated | 2026-10-22 |
 
 ## 1. Objectives
 
@@ -21,7 +21,7 @@
 |---|-------|-------|----|------|--------------|----------|
 | 1 | `JANUS_BOOT` | `/boot` | FAT32 (board-dependent) | ro | 256 MiB | Board firmware, U-Boot / RPi firmware, kernel, initrd, DTBs, `extlinux.conf` or `config.txt` |
 | 2 | `JANUS_ROOT` | `/` | f2fs | ro | 64 MiB | Directory skeleton, mount points, symlinks into the store |
-| 3 | `JANUS_NIX` | `/nix` | f2fs | ro | sized to closure + 15 % | Nix store and `/nix/var` (profiles, db) |
+| 3 | `JANUS_NIX` | `/nix` | f2fs | ro | closure + 15 % + one 4 KiB block per file + 128 MiB, at least 2.5 GiB | Nix store and `/nix/var` (profiles, db) |
 | 4 | `JANUS_STATE` | `/var` | f2fs | rw | remaining space (min 512 MiB) | All persistent mutable state |
 
 tmpfs mounts: `/run`, `/tmp`, `/etc` overlay upper, `/home` (no interactive
@@ -43,7 +43,21 @@ Notes:
 * Partitions are discovered by label/PARTUUID, never by device name.
 * `janus.storage.slots.enable` (default false) inserts `JANUS_ROOT_B` and
   `JANUS_NIX_B` before `JANUS_STATE`. The boot entry selects the slot.
-  See *09* §8.4.
+  Each Nix slot is the same size. See *09* §8.4.
+* When `JANUS_NIX.size` is null, each Nix partition is the closure plus
+  15 %, one 4 KiB node block per file, and 128 MiB, and at least
+  `nix.minimumSize` (default 2.5 GiB). `JANUS_NIX.size` may be smaller
+  than that floor and is then used as given.
+* Without A/B slots, 4 GiB of storage holds the image while each Nix
+  partition stays at the 2.5 GiB floor. With no firmware gap that image
+  is 3394 MiB, so 4 GiB leaves about 700 MiB. 8 GiB or more is
+  recommended. With A/B slots the same floor makes a 6018 MiB image, so
+  the storage is at least 8 GiB and 16 GiB or more is recommended. A
+  closure that raises the Nix partition above the floor needs a larger
+  card by the same amount.
+* Those sizes are fixed when the card is flashed. A later Nix image that
+  is larger than the flashed Nix partition does not fit. Deploy names
+  the Nix partition and stops.
 
 ## 3. Why f2fs
 
@@ -134,7 +148,7 @@ The state partition is mounted with `noatime`, `lazytime` and f2fs
 
 * `layout.partitions.<label>.{size, fsType, mountPoint, readOnly, options}`
   with defaults as in §2;
-* `state.minimumSize`, `state.onCorruption`;
+* `nix.minimumSize` (default `2.5G`), `state.minimumSize`, `state.onCorruption`;
 * `readOnlyFs = "f2fs" | "erofs" | "squashfs"`. `f2fs` is the implemented
   value. `erofs` and `squashfs` are reserved names and fail evaluation
   until the image builder can populate them (D-0035);

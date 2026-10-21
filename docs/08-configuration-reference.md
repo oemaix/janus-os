@@ -71,7 +71,7 @@ learning path: copy, edit values, build.
 ## 3. `janus.storage`
 
 See *05 — Storage* §8. Key options: `layout.partitions.<label>.{size,
-fsType, mountPoint, readOnly, options}`, `readOnlyFs`, `state.minimumSize`,
+fsType, mountPoint, readOnly, options}`, `readOnlyFs`, `nix.minimumSize`, `state.minimumSize`,
 `state.onCorruption`, `firmwareOffsetMiB` (board default),
 `slots.enable` (default false; duplicate `ROOT` and `NIX`, *09* §8.4).
 

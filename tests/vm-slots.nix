@@ -14,6 +14,7 @@
       ({pkgs, ...}: {
         janus.hardware.board = "x86_64-test";
         janus.storage.slots.enable = true;
+        janus.storage.nix.minimumSize = "64M";
         janus.access.ssh.authorizedKeys = [
           "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyForJanusEval janus-eval"
         ];

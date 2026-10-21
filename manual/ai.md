@@ -103,6 +103,16 @@ Read this file before answering a question about using Janus OS.
 - `janus.storage.slots.enable` defaults to false. With it set, deploy
   writes the inactive ROOT and NIX slot and then changes the boot entry.
   The state partition is shared. Confirm with `janus-build deploy --confirm`.
+  Each Nix partition is the closure plus 15%, one 4 KiB block per file,
+  and 128 MiB, and at least `janus.storage.nix.minimumSize` (default
+  `2.5G`). `JANUS_NIX.size` may be smaller than that floor. Without A/B
+  slots, 4 GiB holds the image while each Nix partition stays at that
+  floor (about 3.3 GiB with no firmware gap). 8 GiB or more is
+  recommended. With A/B slots that floor makes an image of about 5.9 GiB,
+  so 8 GiB is the minimum and 16 GiB or more is recommended. A larger
+  closure needs a larger card by the same amount. A Nix
+  image that does not fit the flashed Nix partition makes deploy name
+  that partition and stop.
 - A Waveshare 1.3" OLED HAT on a Raspberry Pi Zero 2 W, a Raspberry Pi 3,
   or a Raspberry Pi 4 is a status panel. It runs `janus proxy refresh`, `janus proxy select`,
   `janus reboot`, and `janus reset --state --yes`. It does not edit

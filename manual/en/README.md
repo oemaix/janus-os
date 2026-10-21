@@ -238,8 +238,15 @@ A/B slots are off unless the image was built with
 `janus.storage.slots.enable = true`. Flash that image once. Later
 deploys write the other root and store slot, then change the boot entry.
 The state partition is shared, so overrides and the age key stay. Confirm
-the same way. If the new images do not fit the slots from the flash,
-deploy stops and asks for a new flash. A disk flashed without the option
+the same way. If the new Nix image does not fit the Nix partition from
+the flash, deploy names that partition and asks for a new flash. Each
+Nix partition is the closure plus 15%, one 4 KiB block per file, and
+128 MiB, and at least 2.5 GiB. `JANUS_NIX.size` may name a smaller size.
+Without A/B slots, 4 GiB of storage is enough while each Nix partition
+stays at 2.5 GiB; that image is about 3.3 GiB. 8 GiB or more is
+recommended. With A/B slots the image is about 5.9 GiB, so 8 GiB is the
+minimum and 16 GiB or more is recommended. A larger closure needs a
+larger card. A disk flashed without the option
 has no second slot; deploy says so.
 
 ## Connection audit
