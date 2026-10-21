@@ -61,9 +61,34 @@ cmd_cert() {
   chown root:janus-web-tls "$key" "$cert" 2>/dev/null || true
 }
 
+# A sops passphrase lives under /run, which is empty until this boot's
+# sops-install-secrets has written it. Start that install before the file
+# test. Otherwise start exits here and never asks systemd to decrypt.
+ensure_passphrase() {
+  pass=$1
+  if "$systemctl_bin" cat janus-web-secret.service >/dev/null 2>&1; then
+    if ! "$systemctl_bin" start janus-web-secret.service; then
+      echo "janus web could not install the passphrase secret." >&2
+      exit 1
+    fi
+    return 0
+  fi
+  case "$pass" in
+    /run/secrets/*)
+      if "$systemctl_bin" cat sops-install-secrets.service >/dev/null 2>&1; then
+        if ! "$systemctl_bin" start sops-install-secrets.service; then
+          echo "janus web could not install the passphrase secret." >&2
+          exit 1
+        fi
+      fi
+      ;;
+  esac
+}
+
 cmd_start() {
   need_image
   pass=$(pass_path)
+  ensure_passphrase "$pass"
   if [ -z "$pass" ] || [ ! -s "$pass" ]; then
     echo "janus web passphrase file is missing or empty." >&2
     exit 1

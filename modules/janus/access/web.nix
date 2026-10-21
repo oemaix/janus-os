@@ -16,6 +16,13 @@
       && config.sops.secrets ? ${cfg.passphraseSecret}
     then config.sops.secrets.${cfg.passphraseSecret}.path
     else cfg.passphraseFile;
+  pathIsSops = path:
+    path
+    != null
+    && (options ? sops)
+    && lib.any (secret: secret.path == path) (lib.attrValues config.sops.secrets);
+  # passphraseFile may name the same /run/secrets path without the secret option.
+  needsSops = cfg.passphraseSecret != null || pathIsSops cfg.passphraseFile;
   janusCmd = pkgs.writeShellApplication {
     name = "janus";
     runtimeInputs = with pkgs; [jq iproute2 nftables vnstat coreutils systemd util-linux gnutar];
@@ -57,11 +64,14 @@ in {
           message = "janus.access.web has both passphraseFile and passphraseSecret.";
         }
         {
-          assertion = cfg.passphraseSecret == null || (
-            (options ? sops)
-            && (config.sops.secrets ? ${cfg.passphraseSecret})
-            && (builtins.tryEval config.sops.secrets.${cfg.passphraseSecret}.sopsFile).success
-          );
+          assertion =
+            cfg.passphraseSecret
+            == null
+            || (
+              (options ? sops)
+              && (config.sops.secrets ? ${cfg.passphraseSecret})
+              && (builtins.tryEval config.sops.secrets.${cfg.passphraseSecret}.sopsFile).success
+            );
           message = "janus.access.web.passphraseSecret needs sops.secrets.<name>.sopsFile.";
         }
         {
@@ -168,15 +178,31 @@ in {
       };
     };
 
+    systemd.services.janus-web-secret = lib.mkIf needsSops {
+      description = "Maintenance page passphrase";
+      before = ["janus-web.service"];
+      after = ["sops-install-secrets.service"];
+      requires = ["sops-install-secrets.service"];
+      # No Restart. An empty file fails once and stays failed, so
+      # install-age-key can restart it. The page still restarts on a crash.
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        ExecStart = "${pkgs.coreutils}/bin/test -s ${lib.escapeShellArg passPath}";
+      };
+    };
+
     systemd.services.janus-web = {
       description = "Maintenance page";
       wantedBy = ["multi-user.target"];
       after =
         ["janus-web-cert.service" "network-online.target"]
-        ++ lib.optional (cfg.passphraseSecret != null) "sops-install-secrets.service";
+        ++ lib.optional needsSops "sops-install-secrets.service"
+        ++ lib.optional needsSops "janus-web-secret.service";
       requires =
         ["janus-web-cert.service"]
-        ++ lib.optional (cfg.passphraseSecret != null) "sops-install-secrets.service";
+        ++ lib.optional needsSops "sops-install-secrets.service"
+        ++ lib.optional needsSops "janus-web-secret.service";
       unitConfig.ConditionPathExists = "!/var/lib/janus/web/paused";
       environment = {
         JANUS_WEB_JSON = "/etc/janus/web.json";

@@ -271,6 +271,7 @@ and `janus.access.web.passphraseSecret`. That secret is one line in
 zones. `janus web stop` pauses it without a rebuild. `janus web start`
 turns it back on. If the image was built without the switch, `janus web
 start` exits 2. An empty passphrase file makes `janus web start` exit 1.
+When the passphrase is a sops secret, that command installs secrets first. If that install fails, the command says so and exits 1. An empty file still exits 1.
 
 Open `https://<lan-address>:8443/`. The certificate is self-signed.
 Compare the fingerprint on the page with `janus web fingerprint` before

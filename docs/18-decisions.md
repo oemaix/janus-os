@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-18 |
+| Last updated | 2026-10-21 |
 
 A row here is a choice that binds implementation and is not an ADR. The
 cited requirement or design section is the text that binds. An accepted
@@ -73,3 +73,4 @@ Undecided rows are open. Implementation does not invent an answer for them.
 | # | Choice | Where |
 |---|--------|-------|
 | D-0045 | Open. The board-local secret path may go, so a credential arrives only as a sops name. That path is `janus secrets put` on the router, `janus.remoteAccess.tailscale.authKeyFile`, and `janus.access.web.passphraseFile`. There is no `janus secret set` on the board. `janus-build secret set` on the build host stays. | *14* §2, *08* §9, *08* §11 |
+| D-0048 | Open. The username and password of an existing PPPoE WAN may join the hot-override allowlist. Today they are one YAML document in `secrets/pppoe/<host>/<wan>.yaml`, and changing them is a deploy. FR-OPS-007 stands until this row is decided. | *12* §1.1, *14* §3, *08* §11, *16* §4, FR-OPS-007 |

@@ -15,10 +15,18 @@ Read this file before answering a question about using Janus OS.
   `janus.access.deploy.address` is the SSH destination for `deploy`, `fleet apply`, `fleet pull`, `status`, and `backup`. `mkRouter` sets it to the attribute name. A later `hostName` does not move it.
   `janus-build` reads it from the fleet repo when the command runs. `deploy`, `fleet pull`, `status`, and `backup` read an uncommitted edit. `fleet apply` still refuses a dirty tree. A LAN address can be replaced with a MagicDNS name, the Tailscale IPv4, or an IPv6 literal without a new image. A bare IPv6 literal is sent as `root@[address]` (Q-0043).
   `install-age-key` restarts `sops-install-secrets` when that unit
-  exists, then a failed PPPoE unit, then `janus-wifi-secret-<name>` when
+  exists, then a failed PPPoE unit, then a failed `janus-wireguard-secret-<name>`
+  and reconfigures `wg-<name>` when that restart succeeds. If that device
+  is not there yet, it reloads networkd. Then `janus-wifi-secret-<name>` when
   that unit exists and `janus-hostapd-<name>` failed, then failed Wi-Fi
   units, then `janus-tailscale-auth` and `tailscaled` when either failed,
-  then `janus-web` and `janus-web-tls` when either page unit failed. A `urlSecret` subscription stays an empty snapshot until
+  then `janus-web-secret` when that unit exists and a page unit failed,
+  then `janus-web` and `janus-web-tls`. `janus web start` runs
+  `janus-web-secret` or `sops-install-secrets` before it treats a sops
+  passphrase as missing. If that install fails, it says the passphrase
+  secret could not be installed. A `urlSecret` subscription refresh waits
+  for `sops-install-secrets` and still runs when that unit fails, so a hot
+  override or a saved URL still applies. A `urlSecret` subscription stays an empty snapshot until
   `janus proxy refresh`. `subscriptions.<name>.enable` defaults to true.
   False on one host drops that subscription's nodes, snapshot, and timer,
   and keeps `url` or `urlSecret` so the host still names the secret file

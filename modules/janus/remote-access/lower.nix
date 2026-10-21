@@ -4,11 +4,18 @@
 {
   config,
   lib,
+  options,
   pkgs,
   ...
 }: let
   cfg = config.janus.remoteAccess;
   ts = cfg.tailscale;
+  pathIsSops = path:
+    path
+    != null
+    && (options ? sops)
+    && lib.any (secret: secret.path == path) (lib.attrValues config.sops.secrets);
+  wgFromSops = lib.filterAttrs (_: wg: pathIsSops wg.privateKeyFile) cfg.wireguard;
   routes = lib.concatStringsSep "," ts.advertiseRoutes;
   routing =
     if ts.advertiseRoutes != [] && ts.exitNode
@@ -74,6 +81,32 @@ in {
         })
         cfg.wireguard;
       janus.firewall.zones.mgmt.interfaces = ["tailscale0"] ++ map (n: "wg-${n}") (lib.attrNames cfg.wireguard);
+      systemd.services = lib.mkIf (wgFromSops != {}) (
+        {
+          # Wants, not requires. One missing key must not fail every interface.
+          # networkd skips that netdev while the file is empty. After the
+          # oneshot succeeds, install-age-key reconfigures wg-<name>.
+          systemd-networkd = {
+            after = ["sops-install-secrets.service"] ++ map (name: "janus-wireguard-secret-${name}.service") (lib.attrNames wgFromSops);
+            wants = ["sops-install-secrets.service"] ++ map (name: "janus-wireguard-secret-${name}.service") (lib.attrNames wgFromSops);
+          };
+        }
+        // lib.mapAttrs' (name: wg: {
+          name = "janus-wireguard-secret-${name}";
+          value = {
+            description = "WireGuard key for ${name}";
+            before = ["systemd-networkd.service"];
+            after = ["sops-install-secrets.service"];
+            requires = ["sops-install-secrets.service"];
+            serviceConfig = {
+              Type = "oneshot";
+              RemainAfterExit = true;
+              ExecStart = "${pkgs.coreutils}/bin/test -s ${lib.escapeShellArg wg.privateKeyFile}";
+            };
+          };
+        })
+        wgFromSops
+      );
     })
   ];
 }

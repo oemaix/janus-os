@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-18 |
+| Last updated | 2026-10-21 |
 
 This file is the implementation plan, the progress of the code, and the
 notes for work that is specified but not started. Choices are *18*.
@@ -108,10 +108,21 @@ tree does not mean that behavior exists. Stubs are not finished features.
   the `value` key, and a PPPoE file or a node file as YAML. Wi-Fi,
   the maintenance page, Tailscale, a subscription URL, and PPPoE name
   that secret, and the module sets its key. `janus-wifi-secret-<name>`
-  checks the passphrase file and waits for `sops-install-secrets`.
-  `janus-hostapd-<name>` waits for that check. WireGuard and a manual
-  node stay file paths. The fleet sets `sops.secrets.<name>.key` to
-  `value` or `""`. `secret rewrap` is not implemented.
+  waits for `sops-install-secrets` and passes when that file or the hot
+  override `/var/lib/janus/secrets/wifi-<name>` is non-empty. A failed
+  sops unit does not hide the override. `janus-hostapd-<name>` waits for
+  that check and uses the override when it is present. A subscription
+  refresh reads the hot override, then the sops URL, then the saved URL.
+  `janus-web-secret` checks the page passphrase and waits for
+  `sops-install-secrets`. `janus web start` runs that
+  install before it tests the file. A PPPoE password file, a WireGuard
+  private-key file, or a manual-node password file that is a sops path
+  waits for the same install. The module sets `key` to `value` for that
+  PPPoE file, the WireGuard key, and a page passphrase file, and to `""`
+  for the node file. A key set in the fleet wins. WireGuard stays a file
+  path. A missing WireGuard key does not fail `systemd-networkd`. That
+  interface stays down until `install-age-key` reconfigures `wg-<name>`.
+  `secret rewrap` is not implemented.
 * Board profiles: `x86_64-test` (virtio, no raw firmware), NanoPi R4S
   (U-Boot at sector 64, `eth0`/`eth1`, no WAN chosen), Le Potato (U-Boot
   FIP, one `eth0`), Raspberry Pi Zero 2 W (FAT `config.txt`, no Ethernet
@@ -195,6 +206,8 @@ tree does not mean that behavior exists. Stubs are not finished features.
 * Accepted ADRs bind. They are listed in `docs/adr/` and are not restated here.
 * Undecided choices, if any, are *18* §2. Do not invent an answer for one.
   D-0045 asks whether the board-local secret path goes away.
+  D-0048 asks whether an existing PPPoE username and password join the
+  hot-override allowlist.
 * sing-box renders D-0037 through D-0042: fake-IP for names that LAN
   will proxy, `strip-for-proxied` per name, one policy per LAN, region
   bootstrap addresses, and `janus dns check` once per LAN. xray 26 routes

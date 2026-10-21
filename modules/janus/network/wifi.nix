@@ -100,10 +100,12 @@
     pkgs.writeShellScript "hostapd-${name}" ''
       set -euo pipefail
       install -d -m 0755 /run/janus/wifi
-      if [ -s /var/lib/janus/secrets/wifi-${name} ]; then
-        src=/var/lib/janus/secrets/wifi-${name}
+      # The hot override is a board file. It wins over the sops passphrase.
+      over=''${JANUS_WIFI_PASS:-/var/lib/janus/secrets/wifi-${name}}
+      if [ -s "$over" ]; then
+        src=$over
       else
-        src=${lib.escapeShellArg secret}
+        src=''${JANUS_WIFI_SOPS:-${lib.escapeShellArg secret}}
       fi
       if [ ! -s "$src" ]; then
         echo "janus: Wi-Fi ${name} has no passphrase" >&2
@@ -241,13 +243,23 @@ in {
             description = "Wi-Fi passphrase for ${name}";
             before = ["janus-hostapd-${name}.service"];
             after = ["sops-install-secrets.service"];
-            requires = ["sops-install-secrets.service"];
-            # No Restart. An empty file fails once and stays failed, so
+            # wants, not requires. A failed sops unit must not hide a hot override.
+            wants = ["sops-install-secrets.service"];
+            # No Restart. An empty pair of files fails once and stays failed, so
             # install-age-key can restart it. hostapd still restarts on a crash.
             serviceConfig = {
               Type = "oneshot";
               RemainAfterExit = true;
-              ExecStart = "${pkgs.coreutils}/bin/test -s ${lib.escapeShellArg config.sops.secrets.${cfg.wifi.${name}.passphraseSecret}.path}";
+              ExecStart = pkgs.writeShellScript "janus-wifi-secret-${name}" ''
+                set -eu
+                over=''${JANUS_WIFI_PASS:-/var/lib/janus/secrets/wifi-${name}}
+                src=''${JANUS_WIFI_SOPS:-${lib.escapeShellArg config.sops.secrets.${cfg.wifi.${name}.passphraseSecret}.path}}
+                if [ -s "$over" ] || [ -s "$src" ]; then
+                  exit 0
+                fi
+                echo "janus: Wi-Fi ${name} has no passphrase" >&2
+                exit 1
+              '';
             };
           };
         })

@@ -84,7 +84,7 @@ the build host does that (*16* §5).
 
 | Command | Effect |
 |---------|--------|
-| `janus secrets install-age-key` | Read this router's age private key on stdin into `/var/lib/janus/secrets/age.key` (mode `0600`). On a terminal, print `Paste the age private key, then press Enter and Ctrl-D.` on stderr before reading. A pipe stays quiet. Input with no `AGE-SECRET-KEY-1` line is refused, and the previous key stays. Restart `sops-install-secrets`, then a failed PPPoE unit, then `janus-wifi-secret-<name>` when that unit exists and `janus-hostapd-<name>` failed, then failed Wi-Fi units, then `janus-tailscale-auth` and `tailscaled` when either failed, then `janus-web` and `janus-web-tls` when either page unit failed. |
+| `janus secrets install-age-key` | Read this router's age private key on stdin into `/var/lib/janus/secrets/age.key` (mode `0600`). On a terminal, print `Paste the age private key, then press Enter and Ctrl-D.` on stderr before reading. A pipe stays quiet. Input with no `AGE-SECRET-KEY-1` line is refused, and the previous key stays. Restart `sops-install-secrets`, then a failed PPPoE unit, then a failed `janus-wireguard-secret-<name>`. When that restart succeeds, reconfigure `wg-<name>`. If that device is not there yet, reload networkd. Then `janus-wifi-secret-<name>` when that unit exists and `janus-hostapd-<name>` failed, then failed Wi-Fi units, then `janus-tailscale-auth` and `tailscaled` when either failed, then `janus-web-secret` when that unit exists and `janus-web`, `janus-web-tls`, or `janus-web-secret` failed, then `janus-web` and `janus-web-tls`. |
 | `janus secrets put <name>` | Read a secret on stdin for a value that will not enter git |
 
 The age key is created on the build host by `janus-build secret keygen <host>` (*16*). This command installs the private key. It does not generate one. The build host does not keep a copy.
@@ -112,7 +112,7 @@ The page is *20*. These commands switch the listener. They do not change
 
 | Command | Effect |
 |---------|--------|
-| `janus web start` | Start the listener. Exit `2` if `janus.access.web.enable` is false. Exit `1` if the passphrase file is missing or empty. |
+| `janus web start` | Start the listener. Exit `2` if `janus.access.web.enable` is false. Exit `1` if the passphrase file is missing or empty. When `janus-web-secret` exists, or the passphrase path is under `/run/secrets`, start that install before the file test. If the install fails, exit `1` and say the passphrase secret could not be installed. |
 | `janus web stop` | Stop the listener. Does not remove the configuration flag. |
 | `janus web status` | Listening or stopped, port, zones, certificate fingerprint. |
 | `janus web fingerprint` | SHA-256 of the certificate. Exit `2` if the page is not in the image. |

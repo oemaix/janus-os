@@ -1187,17 +1187,65 @@ in {
     ];
     requires = os.config.systemd.services.janus-hostapd-home.requires or [];
     secretRequires = os.config.systemd.services.janus-wifi-secret-home.requires or [];
-    secretStart = lib.concatStringsSep " " (lib.toList os.config.systemd.services.janus-wifi-secret-home.serviceConfig.ExecStart);
+    secretWants = os.config.systemd.services.janus-wifi-secret-home.wants or [];
+    secretStart = os.config.systemd.services.janus-wifi-secret-home.serviceConfig.ExecStart;
     script = os.config.systemd.services.janus-hostapd-home.serviceConfig.ExecStart;
   in
     pkgs.runCommand "eval-wifi-sops" {} ''
+      set -eu
       printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " requires)} | grep -q janus-wifi-secret-home.service
-      printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " secretRequires)} | grep -q sops-install-secrets.service
+      printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " secretWants)} | grep -q sops-install-secrets.service
+      if printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " secretRequires)} | grep -q sops-install-secrets.service; then
+        echo "a failed sops unit must not hide a Wi-Fi override" >&2
+        exit 1
+      fi
       grep -q ${lib.escapeShellArg os.config.sops.secrets.wifi-eval-home.path} ${script}
-      printf '%s\n' ${lib.escapeShellArg secretStart} | grep -q ${lib.escapeShellArg os.config.sops.secrets.wifi-eval-home.path}
+      grep -q '/var/lib/janus/secrets/wifi-home' ${script}
+      awk '
+        /JANUS_WIFI_PASS:-\/var\/lib\/janus\/secrets\/wifi-home/ { over = NR }
+        /JANUS_WIFI_SOPS:-/ { sops = NR }
+        END { if (!(over && sops && over < sops)) exit 1 }
+      ' ${script}
       test ${lib.escapeShellArg os.config.sops.secrets.wifi-eval-home.key} = value
+      dir=$TMPDIR/wifi
+      mkdir -p "$dir"
+      if JANUS_WIFI_PASS=$dir/over JANUS_WIFI_SOPS=$dir/sops ${secretStart}; then
+        echo "empty wifi passphrase was accepted" >&2
+        exit 1
+      fi
+      printf '%s\n' 'from-sops' > "$dir/sops"
+      JANUS_WIFI_PASS=$dir/missing JANUS_WIFI_SOPS=$dir/sops ${secretStart}
+      printf '%s\n' 'from-override' > "$dir/over"
+      rm -f "$dir/sops"
+      JANUS_WIFI_PASS=$dir/over JANUS_WIFI_SOPS=$dir/sops ${secretStart}
       echo ok > "$out"
     '';
+  eval-secret-apply = pkgs.runCommand "eval-secret-apply" {
+    nativeBuildInputs = [pkgs.jq];
+  } ''
+    set -eu
+    sed -n '/^subscription_url()/,/^}/p' ${../pkgs/janus-engine.sh} > fn.sh
+    . ./fn.sh
+    root=$TMPDIR/apply
+    mkdir -p "$root/secrets/subscription" "$root/saved"
+    meta=$root/meta.json
+    export meta
+    printf '%s\n' '{"vendor":{"urlSecret":"subscription/vendor"}}' > "$meta"
+    printf '%s\n' 'https://sops.example/sub' > "$root/secrets/subscription/vendor"
+    printf '%s\n' 'https://saved.example/sub' > "$root/saved/vendor"
+    got=$(JANUS_OVERRIDES=$root/no-overrides JANUS_SECRETS_RUN=$root/secrets JANUS_SUBSCRIPTION_URLS=$root/saved subscription_url vendor)
+    test "$got" = 'https://sops.example/sub'
+    printf '%s\n' '{"proxy.subscriptions.vendor.url":"https://override.example/sub"}' > "$root/overrides.json"
+    got=$(JANUS_OVERRIDES=$root/overrides.json JANUS_SECRETS_RUN=$root/secrets JANUS_SUBSCRIPTION_URLS=$root/saved subscription_url vendor)
+    test "$got" = 'https://override.example/sub'
+    rm -f "$root/secrets/subscription/vendor"
+    got=$(JANUS_OVERRIDES=$root/no-overrides JANUS_SECRETS_RUN=$root/secrets JANUS_SUBSCRIPTION_URLS=$root/saved subscription_url vendor)
+    test "$got" = 'https://saved.example/sub'
+    rm -f "$root/saved/vendor"
+    got=$(JANUS_OVERRIDES=$root/no-overrides JANUS_SECRETS_RUN=$root/secrets JANUS_SUBSCRIPTION_URLS=$root/saved subscription_url vendor)
+    test -z "$got"
+    echo ok > "$out"
+  '';
   eval-wifi-onboard = let
     os = mk [
       {
@@ -1502,7 +1550,7 @@ in {
         janus.remoteAccess.tailscale.enable = true;
         janus.remoteAccess.tailscale.authKeyFile = "/var/lib/janus/secrets/tailscale-authkey";
         janus.remoteAccess.wireguard.uplink = {
-          privateKeyFile = "/run/secrets/wg";
+          privateKeyFile = "/var/lib/janus/secrets/wg";
           address = "10.9.0.2/32";
           peer.publicKey = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa=";
           peer.endpoint = "203.0.113.8:51820";
@@ -1631,12 +1679,18 @@ in {
       test ${lib.escapeShellArg os.config.systemd.timers.janus-proxy-refresh-d.timerConfig.OnCalendar} = 'Sun *-*-* 00:00:00'
       test ${lib.escapeShellArg os.config.systemd.timers.janus-geodata-refresh.timerConfig.OnCalendar} = 'Tue,Thu,Sat *-*-* 04:00:00'
       echo ${lib.escapeShellArg (lib.concatStringsSep " " os.config.systemd.services."janus-proxy-refresh@".after)} | grep -q sops-install-secrets.service
+      echo ${lib.escapeShellArg (lib.concatStringsSep " " (os.config.systemd.services."janus-proxy-refresh@".wants or []))} | grep -q sops-install-secrets.service
+      if echo ${lib.escapeShellArg (lib.concatStringsSep " " (os.config.systemd.services."janus-proxy-refresh@".requires or []))} | grep -q sops-install-secrets.service; then
+        echo "refresh must keep running when sops fails" >&2
+        exit 1
+      fi
       test ${
         if os.config.systemd.timers ? "janus-proxy-refresh-b"
         then "yes"
         else "no"
       } = no
       test ${lib.escapeShellArg os.config.janus.proxy.subscriptions.b.urlSecret} = subscription/b
+      test ${lib.escapeShellArg os.config.sops.secrets."subscription/a".key} = value
       test ${
         if os.config.janus.proxy.subscriptions.b.enable
         then "yes"
@@ -2965,6 +3019,78 @@ in {
       JANUS_BIN=$dir/janus JANUS_OUT=$dir/out ${run} override-set network.lans.home.dhcp.staticLeases.nas aa:bb:cc:dd:ee:ff 10.0.0.5
       grep -q -- '--mac' "$dir/out/args"
       grep -q 10.0.0.5 "$dir/out/args"
+
+      # A sops path must install secrets before the listener. The file is still
+      # absent here, so start exits 1 and does not reach janus-web.
+      mkdir -p "$dir/sops"
+      cat > "$dir/sops/systemctl" << 'EOF'
+      #!/bin/sh
+      printf '%s\n' "$*" >> "$JANUS_LOG"
+      if [ "$1" = cat ] && [ "$2" = janus-web-secret.service ]; then
+        exit 1
+      fi
+      exit 0
+      EOF
+      chmod +x "$dir/sops/systemctl"
+      : > "$dir/sops/log"
+      jq -n --arg pass /run/secrets/web-router '{enable:true, passphraseFile:$pass, paused:"/no/such", cert:"/no/such", key:"/no/such", port:8443, zones:["lan"]}' > "$dir/sops/web.json"
+      if JANUS_WEB_JSON=$dir/sops/web.json JANUS_SYSTEMCTL=$dir/sops/systemctl JANUS_LOG=$dir/sops/log ${web} start 2>"$dir/sops/err"; then
+        echo "missing sops passphrase should exit 1" >&2
+        exit 1
+      fi
+      grep -q 'start sops-install-secrets.service' "$dir/sops/log"
+      if grep -q 'start janus-web.service' "$dir/sops/log"; then
+        echo "listener started before the sops passphrase existed" >&2
+        exit 1
+      fi
+      grep -q 'janus web passphrase file is missing or empty.' "$dir/sops/err"
+      if grep -q 'could not install the passphrase secret' "$dir/sops/err"; then
+        echo "a finished install is not an install failure" >&2
+        exit 1
+      fi
+      cat > "$dir/sops/systemctl-secret" << 'EOF'
+      #!/bin/sh
+      printf '%s\n' "$*" >> "$JANUS_LOG"
+      if [ "$1" = start ] && [ "$2" = janus-web-secret.service ]; then
+        exit 1
+      fi
+      exit 0
+      EOF
+      chmod +x "$dir/sops/systemctl-secret"
+      : > "$dir/sops/log"
+      if JANUS_WEB_JSON=$dir/sops/web.json JANUS_SYSTEMCTL=$dir/sops/systemctl-secret JANUS_LOG=$dir/sops/log ${web} start 2>"$dir/sops/err"; then
+        echo "failed passphrase unit should exit 1" >&2
+        exit 1
+      fi
+      grep -q 'start janus-web-secret.service' "$dir/sops/log"
+      grep -q 'janus web could not install the passphrase secret.' "$dir/sops/err"
+      if grep -q 'passphrase file is missing or empty' "$dir/sops/err"; then
+        echo "a failed install was reported as an empty file" >&2
+        exit 1
+      fi
+      if grep -q 'start sops-install-secrets.service' "$dir/sops/log"; then
+        echo "passphrase unit should be what pulls sops in" >&2
+        exit 1
+      fi
+      if grep -q 'start janus-web.service' "$dir/sops/log"; then
+        echo "listener started after the passphrase unit failed" >&2
+        exit 1
+      fi
+      cat > "$dir/sops/systemctl-ok" << EOF
+      #!/bin/sh
+      printf '%s\n' "\$*" >> "\$JANUS_LOG"
+      if [ "\$1" = start ] && [ "\$2" = janus-web-secret.service ]; then
+        printf '%s\n' secret > "$dir/sops/pass"
+      fi
+      exit 0
+      EOF
+      chmod +x "$dir/sops/systemctl-ok"
+      jq -n --arg pass "$dir/sops/pass" '{enable:true, passphraseFile:$pass, paused:"/no/such", cert:"/no/such", key:"/no/such", port:8443, zones:["lan"]}' > "$dir/sops/web-ok.json"
+      : > "$dir/sops/log"
+      JANUS_WEB_JSON=$dir/sops/web-ok.json JANUS_SYSTEMCTL=$dir/sops/systemctl-ok JANUS_LOG=$dir/sops/log ${web} start 2>"$dir/sops/err"
+      grep -q 'start janus-web-secret.service' "$dir/sops/log"
+      grep -q 'start janus-web.service' "$dir/sops/log"
+      test -s "$dir/sops/pass"
       echo ok > "$out"
     '';
   eval-web-wan = fail "eval-web-wan" [
@@ -2990,6 +3116,7 @@ in {
     printf '%s\n' "$*" >> "$JANUS_LOG"
     if [ "$1" = list-units ]; then
       printf '%s\n' 'janus-web-tls.service loaded failed'
+      printf '%s\n' 'janus-wireguard-secret-uplink.service loaded failed'
       printf '%s\n' 'janus-pppoe-main.service loaded failed'
       printf '%s\n' 'janus-web.service loaded failed'
       printf '%s\n' 'janus-hostapd-home.service loaded failed'
@@ -2999,6 +3126,12 @@ in {
     exit 0
     EOF
     chmod +x "$dir/bin/systemctl"
+    cat > "$dir/bin/networkctl" << 'EOF'
+    #!/bin/sh
+    printf '%s\n' "$*" >> "$JANUS_LOG"
+    exit 0
+    EOF
+    chmod +x "$dir/bin/networkctl"
     printf '%s\n' 'AGE-SECRET-KEY-1test' | JANUS_SECRETS_DIR="$dir/secrets" JANUS_LOG="$dir/log" PATH="$dir/bin:$PATH" bash ${../pkgs/janus.sh} secrets install-age-key 2>"$dir/err"
     test ! -s "$dir/err"
     printf '%s\n' 'AGE-SECRET-KEY-1test' | cmp - "$dir/secrets/age.key"
@@ -3009,12 +3142,62 @@ in {
       $1 == "restart" && $2 == "janus-hostapd-home.service" { ap = NR }
       $1 == "restart" && $2 == "janus-tailscale-auth.service" { auth = NR }
       $1 == "restart" && $2 == "tailscaled.service" { tail = NR }
+      $1 == "restart" && $2 == "janus-web-secret.service" { page = NR }
       $1 == "restart" && $2 == "janus-web.service" { web = NR }
       $1 == "restart" && $2 == "janus-web-tls.service" { tls = NR }
+      $1 == "restart" && $2 == "janus-wireguard-secret-uplink.service" { wg = NR }
+      $1 == "reconfigure" && $2 == "wg-uplink" { re = NR }
+      $1 == "reload" { reload = NR }
       END {
-        if (!(sops && pppoe && ap && auth && tail && web && tls && sops < pppoe && sops < ap && sops < auth && auth < tail && web < tls)) exit 1
+        if (!(sops && pppoe && ap && auth && tail && page && web && tls && wg && re && !reload && sops < pppoe && sops < ap && sops < auth && auth < tail && page < web && web < tls && wg < re)) exit 1
       }
     ' "$dir/log"
+    mkdir -p "$dir/wgfail"
+    cat > "$dir/wgfail/systemctl" << 'EOF'
+    #!/bin/sh
+    printf '%s\n' "$*" >> "$JANUS_LOG"
+    if [ "$1" = list-units ]; then
+      printf '%s\n' 'janus-wireguard-secret-uplink.service loaded failed'
+    fi
+    if [ "$1" = restart ] && [ "$2" = janus-wireguard-secret-uplink.service ]; then
+      exit 1
+    fi
+    exit 0
+    EOF
+    cat > "$dir/wgfail/networkctl" << 'EOF'
+    #!/bin/sh
+    printf '%s\n' "$*" >> "$JANUS_LOG"
+    exit 0
+    EOF
+    chmod +x "$dir/wgfail/systemctl" "$dir/wgfail/networkctl"
+    : > "$dir/wgfail-log"
+    printf '%s\n' 'AGE-SECRET-KEY-1test' | JANUS_SECRETS_DIR="$dir/secrets" JANUS_LOG="$dir/wgfail-log" PATH="$dir/wgfail:$PATH" bash ${../pkgs/janus.sh} secrets install-age-key 2>"$dir/wgfail-err"
+    if grep -q reconfigure "$dir/wgfail-log" || grep -q '^reload$' "$dir/wgfail-log"; then
+      echo "networkctl ran after a failed wireguard secret" >&2
+      exit 1
+    fi
+    mkdir -p "$dir/wgreload"
+    cat > "$dir/wgreload/systemctl" << 'EOF'
+    #!/bin/sh
+    printf '%s\n' "$*" >> "$JANUS_LOG"
+    if [ "$1" = list-units ]; then
+      printf '%s\n' 'janus-wireguard-secret-uplink.service loaded failed'
+    fi
+    exit 0
+    EOF
+    cat > "$dir/wgreload/networkctl" << 'EOF'
+    #!/bin/sh
+    printf '%s\n' "$*" >> "$JANUS_LOG"
+    if [ "$1" = reconfigure ]; then
+      exit 1
+    fi
+    exit 0
+    EOF
+    chmod +x "$dir/wgreload/systemctl" "$dir/wgreload/networkctl"
+    : > "$dir/wgreload-log"
+    printf '%s\n' 'AGE-SECRET-KEY-1test' | JANUS_SECRETS_DIR="$dir/secrets" JANUS_LOG="$dir/wgreload-log" PATH="$dir/wgreload:$PATH" bash ${../pkgs/janus.sh} secrets install-age-key 2>"$dir/wgreload-err"
+    grep -q '^reconfigure wg-uplink$' "$dir/wgreload-log"
+    grep -q '^reload$' "$dir/wgreload-log"
     printf '%s\n' 'AGE-SECRET-KEY-1old' > "$dir/secrets/age.key"
     if printf '%s' "" | JANUS_SECRETS_DIR="$dir/secrets" JANUS_LOG="$dir/empty-log" PATH="$dir/bin:$PATH" bash ${../pkgs/janus.sh} secrets install-age-key 2>"$dir/empty-err"; then
       echo "an empty age key was installed" >&2
@@ -3170,6 +3353,8 @@ in {
     spec = os.config.environment.etc."janus/web.json".text;
     requires = os.config.systemd.services.janus-web.requires or [];
     after = os.config.systemd.services.janus-web.after or [];
+    secretRequires = os.config.systemd.services.janus-web-secret.requires or [];
+    secretStart = os.config.systemd.services.janus-web-secret.serviceConfig.ExecStart;
   in
     pkgs.runCommand "eval-web-sops" {
       nativeBuildInputs = [pkgs.jq];
@@ -3178,9 +3363,106 @@ in {
       printf '%s\n' ${lib.escapeShellArg spec} > web.json
       jq -e '.passphraseFile == "/run/secrets/web-router"' web.json >/dev/null
       printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " requires)} | grep -q sops-install-secrets.service
+      printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " requires)} | grep -q janus-web-secret.service
       printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " after)} | grep -q sops-install-secrets.service
+      printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " secretRequires)} | grep -q sops-install-secrets.service
+      printf '%s\n' ${lib.escapeShellArg secretStart} | grep -q ${lib.escapeShellArg os.config.sops.secrets.web-router.path}
       echo ok > "$out"
     '';
+  eval-sops-file-paths = let
+    os = mk [
+      base
+      {
+        sops.secrets.pppoe-eval.sopsFile = ./fixtures/sops-placeholder;
+        sops.secrets.wg-eval.sopsFile = ./fixtures/sops-placeholder;
+        sops.secrets.wg-kept = {
+          sopsFile = ./fixtures/sops-placeholder;
+          key = "kept";
+        };
+        sops.secrets.node-eval.sopsFile = ./fixtures/sops-placeholder;
+        sops.secrets.web-file.sopsFile = ./fixtures/sops-placeholder;
+        janus.network.wans.main = {
+          uplink = "wan";
+          mode = "pppoe";
+          pppoe = {
+            username = "alice";
+            passwordFile = "/run/secrets/pppoe-eval";
+          };
+        };
+        janus.network.lans.lan = {
+          members = ["lan"];
+          address = "192.168.10.1";
+          prefixLength = 24;
+        };
+        janus.remoteAccess.wireguard.uplink = {
+          privateKeyFile = "/run/secrets/wg-eval";
+          address = "10.9.0.2/32";
+          peer.publicKey = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa=";
+          peer.allowedIPs = ["0.0.0.0/0"];
+        };
+        janus.remoteAccess.wireguard.kept = {
+          privateKeyFile = "/run/secrets/wg-kept";
+          address = "10.9.0.3/32";
+          peer.publicKey = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa=";
+          peer.allowedIPs = ["0.0.0.0/0"];
+        };
+        janus.proxy = {
+          enable = true;
+          nodes.secret = {
+            protocol = "trojan";
+            server = "203.0.113.10";
+            port = 443;
+            trojan.passwordFile = "/run/secrets/node-eval";
+          };
+        };
+        janus.access.web = {
+          enable = true;
+          passphraseFile = "/run/secrets/web-file";
+        };
+      }
+    ];
+  in
+    pkgs.runCommand "eval-sops-file-paths" {} ''
+      set -eu
+      printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " (os.config.systemd.services.janus-pppoe-main.requires or []))} | grep -q sops-install-secrets.service
+      printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " (os.config.systemd.services.janus-engine-prepare.requires or []))} | grep -q sops-install-secrets.service
+      printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " (os.config.systemd.services.systemd-networkd.after or []))} | grep -q sops-install-secrets.service
+      printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " (os.config.systemd.services.systemd-networkd.wants or []))} | grep -q janus-wireguard-secret-uplink.service
+      printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " (os.config.systemd.services.janus-wireguard-secret-uplink.requires or []))} | grep -q sops-install-secrets.service
+      printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " (os.config.systemd.services.janus-web.requires or []))} | grep -q janus-web-secret.service
+      if printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " (os.config.systemd.services.systemd-networkd.requires or []))} | grep -q janus-wireguard-secret-uplink.service; then
+        echo "a wireguard key must not be required by all of networkd" >&2
+        exit 1
+      fi
+      test ${lib.escapeShellArg os.config.sops.secrets.wg-eval.key} = value
+      test ${lib.escapeShellArg os.config.sops.secrets.wg-kept.key} = kept
+      test ${lib.escapeShellArg os.config.sops.secrets.web-file.key} = value
+      test ${lib.escapeShellArg os.config.sops.secrets.pppoe-eval.key} = value
+      test ${lib.escapeShellArg os.config.sops.secrets.node-eval.key} = ""
+      if printf '%s\n' ${lib.escapeShellArg (lib.concatMapStringsSep "\n" (a: a.message) (lib.filter (a: !a.assertion && lib.hasPrefix "A file at /run/secrets/" a.message) os.config.assertions))} | grep -q .; then
+        echo "a declared sops path was missing its sopsFile" >&2
+        exit 1
+      fi
+      sed -n '/^password_from_file()/,/^}/p' ${../pkgs/janus-engine.sh} > password.fn
+      # The function is sourced for this check. The engine script is not executed.
+      . ./password.fn
+      printf '%s\n' 'uuid: abc' 'password: "node-secret"' > node.yaml
+      test "$(password_from_file node.yaml)" = node-secret
+      printf '%s' 'raw-secret' > raw.pw
+      test "$(password_from_file raw.pw)" = raw-secret
+      echo ok > "$out"
+    '';
+  eval-sops-path-missing = fail "eval-sops-path-missing" [
+    base
+    {
+      janus.remoteAccess.wireguard.uplink = {
+        privateKeyFile = "/run/secrets/wg-missing";
+        address = "10.9.0.2/32";
+        peer.publicKey = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa=";
+        peer.allowedIPs = ["0.0.0.0/0"];
+      };
+    }
+  ];
   eval-web-secret = fail "eval-web-secret" [
     base
     {

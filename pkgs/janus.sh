@@ -437,6 +437,16 @@ case "$cmd" in
               janus-pppoe-*.service)
                 systemctl restart "$unit" || true
                 ;;
+              janus-wireguard-secret-*.service)
+                if systemctl restart "$unit"; then
+                  iface=${unit#janus-wireguard-secret-}
+                  iface=wg-${iface%.service}
+                  if command -v networkctl >/dev/null 2>&1; then
+                    # One device. Reload only when that device is not there yet.
+                    networkctl reconfigure "$iface" || networkctl reload || true
+                  fi
+                fi
+                ;;
               janus-hostapd-*.service)
                 secret_unit=janus-wifi-secret-${unit#janus-hostapd-}
                 if systemctl cat "$secret_unit" >/dev/null 2>&1; then
@@ -453,8 +463,12 @@ case "$cmd" in
               ;;
           esac
           # The listener is janus-web-tls and it stops when janus-web restarts, so the page unit comes last.
+          # The passphrase oneshot stays failed when the file was empty, even if the page unit never started.
           case "$failed" in
-            *janus-web.service*|*janus-web-tls.service*)
+            *janus-web-secret.service*|*janus-web.service*|*janus-web-tls.service*)
+              if systemctl cat janus-web-secret.service >/dev/null 2>&1; then
+                systemctl restart janus-web-secret.service || true
+              fi
               systemctl restart janus-web.service || true
               systemctl restart janus-web-tls.service || true
               ;;

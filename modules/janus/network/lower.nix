@@ -3,10 +3,16 @@
 {
   config,
   lib,
+  options,
   pkgs,
   ...
 }: let
   cfg = config.janus.network;
+  pathIsSops = path:
+    path
+    != null
+    && (options ? sops)
+    && lib.any (secret: secret.path == path) (lib.attrValues config.sops.secrets);
   wanNames = lib.attrNames cfg.wans;
   lanNames = lib.attrNames cfg.lans;
 
@@ -363,15 +369,16 @@
   pppService = name: let
     wan = cfg.wans.${name};
     fromSecret = pppFromSecret name;
+    needsSops = wan.pppoe.passwordSecret != null || pathIsSops wan.pppoe.passwordFile;
   in
     lib.optionalAttrs (wan.mode == "pppoe") {
       "janus-pppoe-${name}" = {
         description = "PPPoE WAN ${name}";
         after =
           ["systemd-networkd.service" "network-pre.target"]
-          ++ lib.optional (wan.pppoe.passwordSecret != null) "sops-install-secrets.service";
+          ++ lib.optional needsSops "sops-install-secrets.service";
         wants = ["network-online.target"];
-        requires = lib.optional (wan.pppoe.passwordSecret != null) "sops-install-secrets.service";
+        requires = lib.optional needsSops "sops-install-secrets.service";
         wantedBy = ["multi-user.target"];
         # Empty credentials exit in ExecStartPre. A short RestartSec would
         # otherwise slide under the default start limit and retry forever.

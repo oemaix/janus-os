@@ -228,6 +228,20 @@ carrier_model() {
   rm -f "$ips"
 }
 
+# A board file is the password. A sops node file is the YAML document,
+# with a password key, because secret set stores that document whole.
+password_from_file() {
+  path=$1
+  if grep -q '^password:' "$path"; then
+    pw=$(sed -n 's/^password:[[:space:]]*//p' "$path" | head -n 1)
+    pw=${pw#\"}
+    pw=${pw%\"}
+    printf '%s' "$pw"
+  else
+    cat "$path"
+  fi
+}
+
 apply_passwords() {
   src=$1
   map=/etc/janus/password-files.json
@@ -238,7 +252,7 @@ apply_passwords() {
     if [ ! -f "$path" ]; then
       die "password file ${path} for ${name} is missing"
     fi
-    pw=$(cat "$path")
+    pw=$(password_from_file "$path")
     next=$(mktemp)
     if [ "${JANUS_ENGINE}" = xray ]; then
       jq --arg tag "$name" --arg pw "$pw" \
@@ -390,22 +404,26 @@ subscription_url() {
   name=$1
   key="proxy.subscriptions.${name}.url"
   url=""
-  if [ -f /var/lib/janus/overrides.json ]; then
-    url=$(jq -r --arg k "$key" '.[$k] // empty' /var/lib/janus/overrides.json)
+  # Tests point these at a temp dir. On the router the defaults are the live paths.
+  overrides=${JANUS_OVERRIDES:-/var/lib/janus/overrides.json}
+  secrets_run=${JANUS_SECRETS_RUN:-/run/secrets}
+  saved_dir=${JANUS_SUBSCRIPTION_URLS:-/var/lib/janus/subscription-urls}
+  if [ -f "$overrides" ]; then
+    url=$(jq -r --arg k "$key" '.[$k] // empty' "$overrides")
   fi
   if [ -z "$url" ]; then
     secret=$(jq -r --arg n "$name" '.[$n].urlSecret // empty' "$meta")
-    if [ -n "$secret" ] && [ -s "/run/secrets/${secret}" ]; then
-      case $(head -n 1 "/run/secrets/${secret}") in
+    if [ -n "$secret" ] && [ -s "${secrets_run}/${secret}" ]; then
+      case $(head -n 1 "${secrets_run}/${secret}") in
         "age-encryption.org"*|"-----BEGIN AGE ENCRYPTED FILE-----")
           fail_sub "subscription ${name} secret is age armor; rewrite it with janus-build secret set"
           ;;
         *)
-          url=$(tr -d '\n' < "/run/secrets/${secret}")
+          url=$(tr -d '\n' < "${secrets_run}/${secret}")
           ;;
       esac
-    elif [ -f "/var/lib/janus/subscription-urls/${name}" ]; then
-      url=$(cat "/var/lib/janus/subscription-urls/${name}")
+    elif [ -f "${saved_dir}/${name}" ]; then
+      url=$(cat "${saved_dir}/${name}")
     fi
   fi
   printf '%s' "$url"

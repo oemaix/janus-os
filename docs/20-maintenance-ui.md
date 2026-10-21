@@ -46,8 +46,16 @@ the passphrase or the certificate. The CLI keeps working while the
 listener is stopped.
 
 `janus web start` with a missing or empty passphrase file exits `1` and
-does not listen. The service condition is the same check, so boot does
-not restart the unit.
+does not listen. When the passphrase is a sops secret, that command
+starts `janus-web-secret` first. That oneshot waits for
+`sops-install-secrets` and requires a non-empty file. If the oneshot
+fails, the command says the passphrase secret could not be installed
+and exits `1`. A path under `/run/secrets` without that unit starts
+`sops-install-secrets` itself and uses the same sentence when that unit
+fails. The missing-or-empty sentence is the file check after the install
+has finished. The page service waits for the oneshot. The service
+condition is the same file check, so boot does not restart the unit
+after the file is still empty.
 
 ## 2. Listener
 

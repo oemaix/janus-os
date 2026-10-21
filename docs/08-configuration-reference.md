@@ -255,12 +255,13 @@ one-line credential is the `value` key. A PPPoE file and a manual node
 file are the YAML document. The module sets the key for an option that
 names the secret: `value` for a Wi-Fi passphrase, a page passphrase, a
 Tailscale auth key, and a subscription URL, and the whole document for
-PPPoE. A WireGuard private key is still `privateKeyFile`. `secret set`
-stores it under `value`, and the fleet sets
-`sops.secrets.<name>.key = "value"`. A node file has no secret-name
-option. `secret set` stores the YAML document, and the fleet sets
-`key = ""`. The fleet sets `sops.secrets.<name>.sopsFile` and the janus
-option. It does not decrypt the file in its own unit.
+PPPoE. A page `passphraseFile`, a PPPoE `passwordFile`, or a WireGuard
+`privateKeyFile` that is `/run/secrets/<name>` is one line, so the module
+sets that secret's `key` to `value`. A node `passwordFile` on that path
+is the YAML document, so the module sets `key` to `""`. Each of those is
+`mkDefault`. A key the fleet sets stays. The fleet sets
+`sops.secrets.<name>.sopsFile` and the janus option. It does not decrypt
+the file in its own unit.
 
 ```nix
 sops.age.keyFile = "/var/lib/janus/secrets/age.key";

@@ -112,6 +112,7 @@ host only.
 |--------|---------|-------|
 | PPPoE username and password | yes | Username is low sensitivity but paired with the password; keep both together. |
 | Wi-Fi passphrase | yes | SSID is not a secret; it is broadcast. |
+| Tailscale auth key | yes | One line in `secrets/tailscale/<host>.yaml`, encrypted to that host. `authKeyFile` remains for a file created on the board. |
 | Subscription URL | yes | The node list is volatile data; the URL usually embeds a token and is not. A hot override may replace the URL on the board (mode `0600`) until the user updates sops. |
 | Manual node credentials (UUID, password, REALITY keys) | yes | |
 | WireGuard private key, mesh auth key | yes | |
