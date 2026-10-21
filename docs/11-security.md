@@ -67,6 +67,12 @@
   `CapabilityBoundingSet` limited to `CAP_NET_ADMIN`/`CAP_NET_RAW`/
   `CAP_NET_BIND_SERVICE` where needed, `RestrictAddressFamilies`,
   `SystemCallFilter=@system-service`).
+  `janus-web` is the exception to `NoNewPrivileges`: it runs `janus`
+  through the setuid sudo wrapper (*20* §6). `NoNewPrivileges` would
+  mount that namespace `nosuid`, and the wrapper could not become root.
+  The bounding set omits `CAP_SYS_ADMIN`, so that root child cannot
+  remount the namespace. Janet is the main process and sends readiness
+  itself (`NotifyAccess=main`).
 * The proxy engine runs as `janus-engine` with `CAP_NET_ADMIN` (TUN),
   `CAP_NET_BIND_SERVICE`, and `CAP_NET_RAW`. It may write only
   `/var/lib/janus/engine`. A root oneshot renders the configuration,

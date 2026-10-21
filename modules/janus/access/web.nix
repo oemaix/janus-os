@@ -183,11 +183,14 @@ in {
         JANUS_WEB_HTML = "${../../../janet/web.html}";
         JANUS_WEB_EXEC = "${runCmd}/bin/janus-web-run";
         JANUS_WEB_USE_SUDO = "1";
-        JANUS_WEB_SUDO_BIN = "${pkgs.sudo}/bin/sudo";
+        # The store binary is mode 0555. Only the wrapper has the setuid bit.
+        JANUS_WEB_SUDO_BIN = "${config.security.wrapperDir}/sudo";
         JANUS_WEB_OPENSSL = "${pkgs.openssl}/bin/openssl";
       };
       serviceConfig = {
         Type = "notify";
+        # Janet is this PID (the shell execs it) and writes READY=1 itself.
+        NotifyAccess = "main";
         User = "janus-web";
         Group = "janus-web";
         RuntimeDirectory = "janus-web";
@@ -201,7 +204,13 @@ in {
         ProtectSystem = "strict";
         ProtectHome = true;
         PrivateTmp = true;
-        ReadWritePaths = "/var/lib/janus/web";
+        # true would mount this namespace nosuid, and the sudo wrapper could not become root.
+        NoNewPrivileges = false;
+        # The sudo child is root in this namespace. Without this capability it cannot remount /.
+        CapabilityBoundingSet = "~CAP_SYS_ADMIN";
+        # The mount namespace is shared with that root child, so state
+        # writes need the whole tree, not only the certificate directory.
+        ReadWritePaths = "/var/lib/janus";
       };
     };
 

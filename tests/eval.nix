@@ -2759,7 +2759,17 @@ in {
       test ${lib.escapeShellArg os.config.systemd.services.janus-web.unitConfig.ConditionPathExists} = '!/var/lib/janus/web/paused'
       test ${lib.escapeShellArg os.config.systemd.services.janus-web.serviceConfig.User} = janus-web
       test ${lib.escapeShellArg os.config.systemd.services.janus-web.serviceConfig.Group} = janus-web
+      test ${lib.escapeShellArg os.config.systemd.services.janus-web.serviceConfig.Type} = notify
+      test ${lib.escapeShellArg os.config.systemd.services.janus-web.serviceConfig.NotifyAccess} = main
+      test ${
+        if os.config.systemd.services.janus-web.serviceConfig.NoNewPrivileges or false
+        then "yes"
+        else "no"
+      } = no
+      test ${lib.escapeShellArg os.config.systemd.services.janus-web.serviceConfig.CapabilityBoundingSet} = '~CAP_SYS_ADMIN'
       test ${lib.escapeShellArg os.config.systemd.services.janus-web.serviceConfig.RuntimeDirectoryMode} = 0750
+      test ${lib.escapeShellArg os.config.systemd.services.janus-web.serviceConfig.ReadWritePaths} = /var/lib/janus
+      test ${lib.escapeShellArg os.config.systemd.services.janus-web.environment.JANUS_WEB_SUDO_BIN} = ${lib.escapeShellArg "${os.config.security.wrapperDir}/sudo"}
       test ${lib.escapeShellArg os.config.systemd.services.janus-web-tls.serviceConfig.User} = janus-web-tls
       test ${lib.escapeShellArg os.config.systemd.services.janus-web-tls.serviceConfig.Group} = janus-web-tls
       # janus-web-tls reaches the runtime directory through group janus-web.
@@ -2770,7 +2780,13 @@ in {
         then "yes"
         else "no"
       } = yes
-      grep -q 'chmod 0660 "$sock"' ${../pkgs/janus-web.sh}
+      grep -q 'exec janet "$JANUS_WEB_JANET" serve' ${../pkgs/janus-web.sh}
+      grep -q '(notify-ready)' ${../janet/web.janet}
+      if grep -q systemd-notify ${../pkgs/janus-web.sh}; then
+        echo "readiness must be sent by the main process" >&2
+        exit 1
+      fi
+      grep -q 'os/chmod sock 8r660' ${../janet/web.janet}
       grep -q 'chmod 0640 "$key"' ${../pkgs/janus-web.sh}
       grep -q 'chown root:janus-web-tls "$key" "$cert"' ${../pkgs/janus-web.sh}
       printf '%s\n' ${lib.escapeShellArg os.config.systemd.services.janus-web.environment.JANUS_WEB_EXEC} | grep -q janus-web-run

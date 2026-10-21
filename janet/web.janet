@@ -686,6 +686,14 @@
   (ensure-dirs st)
   st)
 
+(defn notify-ready []
+  (def path (os/getenv "NOTIFY_SOCKET"))
+  (when (and (string? path) (> (length path) 0))
+    # Datagram from this process. systemd accepts it when this PID is the main PID.
+    (def conn (net/connect :unix path :datagram))
+    (net/write conn "READY=1\n")
+    (net/close conn)))
+
 (defn serve []
   (def pass (load-passphrase))
   (when (= pass "")
@@ -699,6 +707,7 @@
   (try (os/rm sock) ([_] nil))
   (def server (net/listen :unix sock))
   (os/chmod sock 8r660)
+  (notify-ready)
   (accept-loop server st))
 
 (defn expect [cond msg]
@@ -871,6 +880,16 @@
   (expect (string/find "200" raw-status) "socket status")
   (expect (string/find "Content-Security-Policy" raw-status) "csp")
   (expect (string/find "Cache-Control: no-store" raw-status) "nostore")
+
+  (def note-path (string runtime "-note"))
+  (def note (net/listen :unix note-path :datagram))
+  (os/setenv "NOTIFY_SOCKET" note-path)
+  (notify-ready)
+  (def note-buf @"")
+  (net/read note 64 note-buf 1)
+  (expect (= (string note-buf) "READY=1\n") "ready datagram")
+  (os/setenv "NOTIFY_SOCKET" nil)
+  (net/close note)
   (os/exit 0))
 
 (defn main [&]

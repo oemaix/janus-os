@@ -124,32 +124,13 @@ cmd_fingerprint() {
 
 cmd_serve() {
   need_image
-  sock=$(field '.socket // "/run/janus-web/http.sock"')
   if [ -z "${JANUS_WEB_JANET:-}" ]; then
     echo "janus-web: JANUS_WEB_JANET is unset" >&2
     exit 1
   fi
-  janet "$JANUS_WEB_JANET" serve &
-  pid=$!
-  i=0
-  while [ "$i" -lt 50 ]; do
-    if [ -S "$sock" ]; then
-      break
-    fi
-    i=$((i + 1))
-    sleep 0.05
-  done
-  if [ ! -S "$sock" ]; then
-    kill "$pid" 2>/dev/null || true
-    wait "$pid" || true
-    echo "janus-web: socket did not appear" >&2
-    exit 1
-  fi
-  chmod 0660 "$sock" || true
-  if [ -n "${NOTIFY_SOCKET:-}" ]; then
-    systemd-notify --ready
-  fi
-  wait "$pid"
+  # Same PID as this shell, so Type=notify can keep NotifyAccess=main.
+  # Janet listens, then writes READY=1 itself.
+  exec janet "$JANUS_WEB_JANET" serve
 }
 
 cmd=${1:-}
