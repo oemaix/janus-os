@@ -124,13 +124,16 @@ in {
       audit = config.janus.monitoring.audit.enable;
     };
 
+    # stunnel parses accept as [host:]port. Brackets mark an optional host,
+    # so "[::]:8443" looks up the name "[::]". ":::port" is the IPv6 wildcard.
+    # IPV6_V6ONLY=0 accepts IPv4 on that socket.
     environment.etc."janus/stunnel.conf".text = ''
       foreground = yes
       syslog = no
       socket = a:IPV6_V6ONLY=0
 
       [janus]
-      accept = [::]:${toString cfg.port}
+      accept = :::${toString cfg.port}
       connect = /run/janus-web/http.sock
       cert = /var/lib/janus/web/cert.pem
       key = /var/lib/janus/web/key.pem

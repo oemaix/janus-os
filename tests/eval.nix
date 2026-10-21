@@ -2638,7 +2638,7 @@ in {
     nets = os.config.environment.etc."janus/lan-nets.json".text;
   in
     pkgs.runCommand "eval-web" {
-      nativeBuildInputs = [pkgs.janet pkgs.openssl pkgs.jq];
+      nativeBuildInputs = [pkgs.janet pkgs.openssl pkgs.jq pkgs.stunnel];
     } ''
       set -eu
       export JANUS_WEB_HTML=${../janet/web.html}
@@ -2652,7 +2652,7 @@ in {
       jq -e '.enable == true and .port == 8443 and .passphraseFile == "/var/lib/janus/secrets/web-passphrase" and (.san | index("DNS:router")) and (.san | index("IP:192.168.10.1")) and .hostname == "router"' web.json >/dev/null
       printf '%s\n' ${lib.escapeShellArg stunnel} > stunnel.conf
       grep -q 'IPV6_V6ONLY=0' stunnel.conf
-      grep -q 'accept = \[::\]:8443' stunnel.conf
+      grep -q 'accept = :::8443' stunnel.conf
       grep -q 'connect = /run/janus-web/http.sock' stunnel.conf
       printf '%s\n' ${lib.escapeShellArg rules} > rules.nft
       grep 'tcp dport 8443 accept' rules.nft | grep -q br-home
@@ -2664,6 +2664,21 @@ in {
       } = yes
       test ${lib.escapeShellArg os.config.systemd.services.janus-web.unitConfig.ConditionPathExists} = '!/var/lib/janus/web/paused'
       test ${lib.escapeShellArg os.config.systemd.services.janus-web.serviceConfig.User} = janus-web
+      test ${lib.escapeShellArg os.config.systemd.services.janus-web.serviceConfig.Group} = janus-web
+      test ${lib.escapeShellArg os.config.systemd.services.janus-web.serviceConfig.RuntimeDirectoryMode} = 0750
+      test ${lib.escapeShellArg os.config.systemd.services.janus-web-tls.serviceConfig.User} = janus-web-tls
+      test ${lib.escapeShellArg os.config.systemd.services.janus-web-tls.serviceConfig.Group} = janus-web-tls
+      # janus-web-tls reaches the runtime directory through group janus-web.
+      # The directory is mode 0750 and the socket is mode 0660. The key is
+      # mode 0640 and group janus-web-tls.
+      test ${
+        if lib.elem "janus-web" os.config.users.users.janus-web-tls.extraGroups
+        then "yes"
+        else "no"
+      } = yes
+      grep -q 'chmod 0660 "$sock"' ${../pkgs/janus-web.sh}
+      grep -q 'chmod 0640 "$key"' ${../pkgs/janus-web.sh}
+      grep -q 'chown root:janus-web-tls "$key" "$cert"' ${../pkgs/janus-web.sh}
       printf '%s\n' ${lib.escapeShellArg os.config.systemd.services.janus-web.environment.JANUS_WEB_EXEC} | grep -q janus-web-run
       printf '%s\n' ${lib.escapeShellArg tmpfiles} | grep -q 'd /var/lib/janus 0755 root root -'
       printf '%s\n' ${lib.escapeShellArg tmpfiles} | grep -q 'd /var/lib/janus/web 0751 root janus-web-tls -'
@@ -2684,6 +2699,66 @@ in {
       JANUS_WEB_JSON=$dir/web.json ${web} ready
       fp=$(JANUS_WEB_JSON=$dir/web.json ${web} fingerprint)
       openssl x509 -in "$dir/cert.pem" -noout -fingerprint -sha256 | grep -q "$fp"
+      sed \
+        -e "s|/var/lib/janus/web/cert.pem|$dir/cert.pem|" \
+        -e "s|/var/lib/janus/web/key.pem|$dir/key.pem|" \
+        -e "s|/run/janus-web/http.sock|$dir/http.sock|" \
+        stunnel.conf > "$dir/stunnel.conf"
+      cat > "$dir/http.janet" << 'EOF'
+      (def path (os/getenv "SOCK"))
+      (def server (net/listen :unix path))
+      (defn serve [conn]
+        (net/read conn 4096)
+        (net/write conn "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok")
+        (:close conn))
+      (net/accept-loop server serve)
+      EOF
+      SOCK=$dir/http.sock janet "$dir/http.janet" > "$dir/http.log" 2>&1 &
+      http_pid=$!
+      for _ in 1 2 3 4 5 6 7 8 9 10; do
+        if test -S "$dir/http.sock"; then
+          break
+        fi
+        sleep 0.1
+      done
+      test -S "$dir/http.sock"
+      stunnel "$dir/stunnel.conf" > "$dir/stunnel.log" 2>&1 &
+      tls_pid=$!
+      answered=no
+      for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+        if ! kill -0 "$tls_pid" 2>/dev/null; then
+          echo "stunnel exited during configuration" >&2
+          cat "$dir/stunnel.log" >&2
+          kill "$http_pid" 2>/dev/null || true
+          exit 1
+        fi
+        if printf 'GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' | openssl s_client -connect 127.0.0.1:8443 -quiet -ign_eof > "$dir/v4.out" 2>"$dir/v4.err"; then
+          :
+        fi
+        if grep -q 'HTTP/1.1 200' "$dir/v4.out"; then
+          answered=yes
+          break
+        fi
+        sleep 0.1
+      done
+      if test "$answered" != yes; then
+        echo "stunnel did not answer https://127.0.0.1:8443" >&2
+        cat "$dir/stunnel.log" "$dir/v4.err" >&2
+        kill "$tls_pid" "$http_pid" 2>/dev/null || true
+        exit 1
+      fi
+      if printf 'GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' | openssl s_client -connect '[::1]:8443' -quiet -ign_eof > "$dir/v6.out" 2>"$dir/v6.err"; then
+        :
+      fi
+      if ! grep -q 'HTTP/1.1 200' "$dir/v6.out"; then
+        echo "stunnel did not answer https://[::1]:8443" >&2
+        cat "$dir/stunnel.log" "$dir/v6.err" >&2
+        kill "$tls_pid" "$http_pid" 2>/dev/null || true
+        exit 1
+      fi
+      kill "$tls_pid" "$http_pid" 2>/dev/null || true
+      wait "$tls_pid" 2>/dev/null || true
+      wait "$http_pid" 2>/dev/null || true
       jq -n '{enable:false}' > "$dir/off.json"
       if JANUS_WEB_JSON=$dir/off.json ${web} start; then
         echo "disabled image should exit 2" >&2
