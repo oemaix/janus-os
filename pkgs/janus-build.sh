@@ -252,11 +252,12 @@ deploy_slots() {
   ssh_to "$addr" "mount -o remount,rw /boot || true"
   ssh_to "$addr" "dd of=/dev/disk/by-partuuid/${root_uuid} bs=1M conv=fsync status=none" < "$root_img"
   ssh_to "$addr" "dd of=/dev/disk/by-partuuid/${nix_uuid} bs=1M conv=fsync status=none" < "$nix_img"
-  if ! ssh_to "$addr" "mkdir -p /mnt/janus-slot-nix && mount -o ro /dev/disk/by-partuuid/${nix_uuid} /mnt/janus-slot-nix && JANUS_SLOT_STORE=/mnt/janus-slot-nix bash -s -- install-slot ${closure} ${next}" < "$JANUS_BOOT_INSTALL"; then
-    ssh_to "$addr" "umount /mnt/janus-slot-nix" || true
+  # / is read-only and the slot root has no /mnt. /run is tmpfs.
+  if ! ssh_to "$addr" "mkdir -p /run/janus-slot-nix && mount -o ro /dev/disk/by-partuuid/${nix_uuid} /run/janus-slot-nix && JANUS_SLOT_STORE=/run/janus-slot-nix bash -s -- install-slot ${closure} ${next}" < "$JANUS_BOOT_INSTALL"; then
+    ssh_to "$addr" "umount /run/janus-slot-nix || true; mount -o remount,ro /boot || true"
     exit 1
   fi
-  ssh_to "$addr" "umount /mnt/janus-slot-nix || true; install -d -m 0755 /var/lib/janus && : > /var/lib/janus/deploy-pending && rm -f /var/lib/janus/deploy-confirmed /var/lib/janus/deploy-booted && mount -o remount,ro /boot || true; systemctl reboot"
+  ssh_to "$addr" "umount /run/janus-slot-nix || true; install -d -m 0755 /var/lib/janus && : > /var/lib/janus/deploy-pending && rm -f /var/lib/janus/deploy-confirmed /var/lib/janus/deploy-booted && mount -o remount,ro /boot || true; systemctl reboot"
 }
 
 require_clean() {

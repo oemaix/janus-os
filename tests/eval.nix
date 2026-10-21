@@ -2233,6 +2233,100 @@ in {
       grep -q '^initramfs initrd followkernel$' "$TMPDIR/boot/config.txt"
       echo ok > "$out"
     '';
+  eval-deploy-slots = pkgs.runCommand "eval-deploy-slots" {
+    nativeBuildInputs = [pkgs.jq pkgs.bash];
+  } ''
+    set -eu
+    dir=$TMPDIR/slot-deploy
+    mkdir -p "$dir/imgs"
+    printf '%s\n' /nix/store/closure > "$dir/imgs/toplevel"
+    printf root-a > "$dir/imgs/root-a.img"
+    printf nix-a > "$dir/imgs/nix-a.img"
+    printf root-b > "$dir/imgs/root-b.img"
+    printf nix-b > "$dir/imgs/nix-b.img"
+    printf 'a\n' > "$dir/active"
+    printf '1\n' > "$dir/install-rc"
+    : > "$dir/ssh-log"
+    printf '\n' > "$dir/boot-install"
+    export JANUS_BOOT_INSTALL=$dir/boot-install
+    JANUS_BUILD_LIB=1
+    # shellcheck disable=SC1091
+    . ${../pkgs/janus-build.sh}
+    nix_fleet() {
+      case "$*" in
+        *slots.json*)
+          printf '%s\n' '{"enable":true,"rootA":"4a414e55-5300-4000-8000-000000000002","nixA":"4a414e55-5300-4000-8000-000000000003","rootB":"4a414e55-5300-4000-8000-000000000006","nixB":"4a414e55-5300-4000-8000-000000000007"}'
+          ;;
+        *janusSlotImages*)
+          printf '%s\n' "$dir/imgs"
+          ;;
+        *)
+          echo "unexpected nix_fleet: $*" >&2
+          return 1
+          ;;
+      esac
+    }
+    ssh_to() {
+      printf '%s\n' "$2" >> "$dir/ssh-log"
+      case "$2" in
+        *'/boot/slot'*)
+          cat "$dir/active"
+          ;;
+        'blockdev --getsize64 '*)
+          printf '%s\n' 1000000
+          ;;
+        'dd of='*)
+          cat >/dev/null
+          ;;
+        *install-slot*)
+          return "$(tr -d '[:space:]' < "$dir/install-rc")"
+          ;;
+        *) ;;
+      esac
+    }
+    if ( deploy_slots via 192.168.10.1 ); then
+      echo "slot deploy continued after install-slot failed" >&2
+      exit 1
+    fi
+    grep -q 'JANUS_SLOT_STORE=/run/janus-slot-nix' "$dir/ssh-log"
+    grep -q 'mkdir -p /run/janus-slot-nix' "$dir/ssh-log"
+    grep -q 'install-slot /nix/store/closure b' "$dir/ssh-log"
+    grep -q 'dd of=/dev/disk/by-partuuid/4a414e55-5300-4000-8000-000000000006' "$dir/ssh-log"
+    grep -q 'dd of=/dev/disk/by-partuuid/4a414e55-5300-4000-8000-000000000007' "$dir/ssh-log"
+    if grep -q '/mnt/' "$dir/ssh-log"; then
+      echo "slot deploy used a mount point on /" >&2
+      exit 1
+    fi
+    if grep -q 'systemctl reboot' "$dir/ssh-log"; then
+      echo "a failed slot deploy rebooted" >&2
+      exit 1
+    fi
+    if grep -q deploy-pending "$dir/ssh-log"; then
+      echo "a failed slot deploy marked the boot pending" >&2
+      exit 1
+    fi
+    tail -n 1 "$dir/ssh-log" | grep -q 'umount /run/janus-slot-nix'
+    tail -n 1 "$dir/ssh-log" | grep -q 'mount -o remount,ro /boot'
+    : > "$dir/ssh-log"
+    printf 'b\n' > "$dir/active"
+    printf '0\n' > "$dir/install-rc"
+    if ! ( deploy_slots via 192.168.10.1 ); then
+      echo "slot deploy stopped after install-slot" >&2
+      exit 1
+    fi
+    grep -q 'install-slot /nix/store/closure a' "$dir/ssh-log"
+    grep -q 'dd of=/dev/disk/by-partuuid/4a414e55-5300-4000-8000-000000000002' "$dir/ssh-log"
+    grep -q 'dd of=/dev/disk/by-partuuid/4a414e55-5300-4000-8000-000000000003' "$dir/ssh-log"
+    if grep -q '/mnt/' "$dir/ssh-log"; then
+      echo "slot deploy used a mount point on /" >&2
+      exit 1
+    fi
+    tail -n 1 "$dir/ssh-log" | grep -q 'umount /run/janus-slot-nix'
+    tail -n 1 "$dir/ssh-log" | grep -q deploy-pending
+    tail -n 1 "$dir/ssh-log" | grep -q 'mount -o remount,ro /boot'
+    tail -n 1 "$dir/ssh-log" | grep -q 'systemctl reboot'
+    echo ok > "$out"
+  '';
 
   eval-hmi = let
     os = mk [
