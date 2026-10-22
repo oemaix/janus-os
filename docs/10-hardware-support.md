@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-21 |
+| Last updated | 2026-10-22 |
 
 ## 1. Terminology
 
@@ -47,7 +47,8 @@ Each board profile (`modules/boards/<board>.nix`) provides:
 * default `janus.network.ports` mapping with human names (`wan`, `lan`);
 * known quirks (e.g. R4S PCIe NIC MAC randomization → stable MAC derived
   from SoC serial; RPi USB NIC enumeration order → match by path);
-* thermal/fan hooks if any; LEDs mapped to states (WAN up, tunnel healthy).
+* thermal/fan hooks if any; onboard status LEDs when the board has them
+  (§3.2 for the NanoPi R4S).
 
 ### 3.1 Yanyu STX-R19F
 
@@ -73,6 +74,17 @@ The case labels on the lab unit, on that same boot:
 | LAN4 | `eth3` | `04:00.0` | `lan4` |
 
 LAN1 was unplugged during the link check, and `01:00.0` had no link. The profile binds `lan1`–`lan4` to those PCI addresses. It does not declare which jack is WAN. The user assigns the role.
+
+### 3.2 NanoPi R4S port LEDs
+
+The WAN and LAN lights are GPIO LEDs in `rk3399-nanopi-r4s.dtb`
+(`green:wan` on GPIO1_A0, `green:lan` on GPIO1_A1). The device tree
+leaves both off. The profile binds `green:wan` to the RTL8111H jack
+(PCI driver `r8169`) and `green:lan` to the RTL8211E jack (driver
+`rk_gmac-dwmac`). The `netdev` trigger lights the LED while that jack
+has link and blinks it on traffic. The red power LED (`red:power` on
+GPIO0_B5) stays on. These LEDs follow the silkscreen. The profile still
+does not choose which jack is the WAN role.
 
 ## 4. Peripherals
 

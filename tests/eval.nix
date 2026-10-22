@@ -338,6 +338,9 @@ in {
     # The boot scripts name store paths. Drop that context so the check
     # evaluates the profiles without building U-Boot or the kernel.
     text = value: lib.escapeShellArg (builtins.unsafeDiscardStringContext value);
+    ledExec = unit: r4s.config.systemd.services.${unit}.serviceConfig.ExecStart;
+    ledScriptOf = unit: lib.head (lib.splitString " " (ledExec unit));
+    ledArg = unit: lib.removePrefix "${ledScriptOf unit} " (ledExec unit);
   in
     pkgs.runCommand "eval-boards" {} ''
       test ${lib.escapeShellArg yanyu.config.systemd.network.links."10-port-lan1".matchConfig.Path} = pci-0000:01:00.0
@@ -353,6 +356,47 @@ in {
       test ${toString r4s.config.janus.storage.firmwareOffsetMiB} = 15
       echo ${text r4s.config.system.build.janusBoardImage.firmwareInstall} | grep -q 'seek=64'
       echo ${lib.escapeShellArg (lib.concatStringsSep " " r4s.config.boot.initrd.availableKernelModules)} | grep -q dw_mmc-rockchip
+      test ${
+        (lib.findFirst (p: p.name == "janus-r4s-netdev-led") (throw "missing R4S netdev LED patch") r4s.config.boot.kernelPatches)
+        .structuredExtraConfig
+        .LEDS_TRIGGER_NETDEV
+        .tristate
+      } = y
+      test ${lib.escapeShellArg (ledArg "janus-r4s-wan-led@")} = %i
+      test ${lib.escapeShellArg (ledArg "janus-r4s-lan-led@")} = %i
+      test ${lib.escapeShellArg r4s.config.systemd.services."janus-r4s-wan-led@".serviceConfig.Restart} = on-failure
+      test ${lib.escapeShellArg r4s.config.systemd.services."janus-r4s-lan-led@".serviceConfig.Restart} = on-failure
+      test ${toString r4s.config.systemd.services."janus-r4s-wan-led@".startLimitBurst} = 6
+      test ${toString r4s.config.systemd.services."janus-r4s-lan-led@".startLimitBurst} = 6
+      check_led() {
+        script=$1
+        led=$2
+        other=$3
+        grep -q "/sys/class/leds/$led" "$script"
+        grep -q '$led/trigger' "$script"
+        grep -q '$led/device_name' "$script"
+        grep -q '$led/link' "$script"
+        grep -q '$led/tx' "$script"
+        grep -q '$led/rx' "$script"
+        grep -q netdev "$script"
+        if grep -q "$other" "$script"; then
+          echo "LED script for $led also names $other" >&2
+          exit 1
+        fi
+      }
+      check_led ${ledScriptOf "janus-r4s-wan-led@"} green:wan green:lan
+      check_led ${ledScriptOf "janus-r4s-lan-led@"} green:lan green:wan
+      rules=${lib.escapeShellArg r4s.config.services.udev.extraRules}
+      printf '%s\n' "$rules" | grep 'DRIVERS=="r8169"' | grep -q 'janus-r4s-wan-led@%k.service'
+      printf '%s\n' "$rules" | grep 'DRIVERS=="rk_gmac-dwmac"' | grep -q 'janus-r4s-lan-led@%k.service'
+      if printf '%s\n' "$rules" | grep 'DRIVERS=="r8169"' | grep -q 'lan-led'; then
+        echo "r8169 is bound to the lan LED" >&2
+        exit 1
+      fi
+      if printf '%s\n' "$rules" | grep 'DRIVERS=="rk_gmac-dwmac"' | grep -q 'wan-led'; then
+        echo "rk_gmac-dwmac is bound to the wan LED" >&2
+        exit 1
+      fi
       echo ${text potato.config.system.build.janusBoardImage.firmwareInstall} | grep -q u-boot.gxl
       if echo ${lib.escapeShellArg (lib.concatStringsSep " " potato.config.boot.initrd.availableKernelModules)} | grep -q sdhci_meson; then
         echo "le potato still requests sdhci_meson" >&2
