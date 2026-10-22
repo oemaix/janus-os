@@ -86,6 +86,14 @@ has link and blinks it on traffic. The red power LED (`red:power` on
 GPIO0_B5) stays on. These LEDs follow the silkscreen. The profile still
 does not choose which jack is the WAN role.
 
+### 3.3 NanoPi R4S WAN firmware
+
+The PCIe jack is an RTL8111H. The kernel names that chip RTL8168h/8111h.
+On open, `r8169` applies `rtl_nic/rtl8168h-2.fw` before its built-in PHY
+setup. The profile copies that redistributable file from the pinned
+`linux-firmware` package. The rest of that collection stays out of the
+image. This board has no radio.
+
 ## 4. Peripherals
 
 ### 4.1 Classes
@@ -148,8 +156,8 @@ are not part of the profile. QMI and MBIM are not how this unit attaches.
 
 | Peripheral | IDs | Class | Status |
 |------------|-----|-------|--------|
-| Realtek RTL8153 USB 3 GbE | `0bda:8153` | nic | supported |
-| Realtek RTL8156 USB 2.5 GbE | `0bda:8156` | nic | supported |
+| Realtek RTL8153 USB 3 GbE | `0bda:8153` | nic | supported via in-tree `r8152` (§4.9) |
+| Realtek RTL8156 USB 2.5 GbE | `0bda:8156` | nic | supported via in-tree `r8152` (§4.9) |
 | ASIX AX88179 | `0b95:1790` | nic | supported |
 | MediaTek MT7612U (e.g. Alfa AWUS036ACM) | `0e8d:7612` | wifi (AP 2.4/5) | supported |
 | MediaTek MT7921AU | `0e8d:7961` | wifi (AP) | supported (recent kernel) |
@@ -187,8 +195,12 @@ both true, and they are not the same driver.
 | Realtek vendor driver plus `hostapd` `rtl871xdrv` | Out of tree. | How people forced AP mode before `rtl8192cu`. Forbidden here (FR-HW-006). |
 
 Janus binds `0bda:8176` to `rtl8192cu` and does not let `rtl8xxxu` claim
-that ID, so the two drivers do not both attach. Firmware comes from
-`linux-firmware` (`rtlwifi/rtl8192cufw*.bin`), which is redistributable.
+that ID, so the two drivers do not both attach. Any board may declare
+this USB id. The Le Potato row in §3 records the lab unit that confirmed
+the stick. Declaring the peripheral copies `rtlwifi/rtl8192cufw.bin`,
+`rtl8192cufw_A.bin`, `rtl8192cufw_B.bin`, and `rtl8192cufw_TMSC.bin` from
+the pinned `linux-firmware` package. The driver picks one of those names
+when the stick starts. The rest of that collection stays out of the image.
 `hostapd` uses `nl80211`. A build is acceptable only when `iw list` on
 that kernel shows `AP` for this phy. Expected use is a small 2.4 GHz
 network, not a fast AP. `rtl8xxxu` on Linux 6.15 or newer is the fallback
@@ -298,6 +310,27 @@ The boot file is the mainline tree `bcm2837-rpi-zero-2-w.dtb`. Its
 compatible string is `raspberrypi,model-zero-2-w`, which is how the
 kernel picks those firmware files. The downstream name
 `bcm2710-rpi-zero-2-w.dtb` is not what this kernel installs.
+
+### 4.8 MediaTek USB firmware
+
+MT7612U (`0e8d:7612`) and MT7921AU (`0e8d:7961`) are USB peripherals.
+The board is not part of the match. Declaring the peripheral copies
+the redistributable files the driver requests out of the pinned
+`linux-firmware` package. The rest of that collection stays out of the
+image.
+
+| USB id | Driver requests |
+|--------|-----------------|
+| `0e8d:7612` | `mt7662.bin`, `mt7662_rom_patch.bin` |
+| `0e8d:7961` | `mediatek/WIFI_RAM_CODE_MT7961_1.bin`, `mediatek/WIFI_MT7961_patch_mcu_1_2_hdr.bin` |
+
+### 4.9 RTL8153 and RTL8156 (`r8152`)
+
+`0bda:8153` and `0bda:8156` use the in-tree driver `r8152`. On open it
+requests a patch under `rtl_nic/`. A missing file is a warning. The driver
+continues with its built-in setup, and the link comes up. The image does
+not ship those files (D-0050). Add them from the pinned `linux-firmware`
+package if a link problem shows up.
 
 ## 5. Performance notes (guidance for NFR-004/005)
 

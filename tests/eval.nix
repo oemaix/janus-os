@@ -341,6 +341,11 @@ in {
     ledExec = unit: r4s.config.systemd.services.${unit}.serviceConfig.ExecStart;
     ledScriptOf = unit: lib.head (lib.splitString " " (ledExec unit));
     ledArg = unit: lib.removePrefix "${ledScriptOf unit} " (ledExec unit);
+    r4sFirmwareNames = lib.concatMapStringsSep " " (p: p.name) (
+      lib.filter (p: lib.isAttrs p && lib.isDerivation p) (
+        lib.flatten r4s.options.hardware.firmware.definitions
+      )
+    );
   in
     pkgs.runCommand "eval-boards" {} ''
       test ${lib.escapeShellArg yanyu.config.systemd.network.links."10-port-lan1".matchConfig.Path} = pci-0000:01:00.0
@@ -395,6 +400,15 @@ in {
       fi
       if printf '%s\n' "$rules" | grep 'DRIVERS=="rk_gmac-dwmac"' | grep -q 'wan-led'; then
         echo "rk_gmac-dwmac is bound to the wan LED" >&2
+        exit 1
+      fi
+      echo ${lib.escapeShellArg r4sFirmwareNames} | grep -q rtl8168h-firmware
+      fw=${r4s.config.hardware.firmware}
+      # buildEnv links the directory. find does not follow that link.
+      n=$(find -L "$fw/lib/firmware" -type f -name 'rtl8168h-2.fw*' | wc -l)
+      test "$((n + 0))" = 1
+      if find -L "$fw/lib/firmware" -type f ! -name 'rtl8168h-2.fw*' | grep -q .; then
+        echo "R4S firmware tree has more than rtl8168h-2.fw" >&2
         exit 1
       fi
       echo ${text potato.config.system.build.janusBoardImage.firmwareInstall} | grep -q u-boot.gxl
@@ -1239,6 +1253,63 @@ in {
       echo ${lib.escapeShellArg (lib.concatStrings os.config.boot.blacklistedKernelModules)} | grep -q rtl8xxxu
       echo ok > "$out"
     '';
+  eval-wifi-mt76 = let
+    names = os:
+      lib.concatMapStringsSep " " (p: p.name) (
+        lib.filter (p: lib.isAttrs p && lib.isDerivation p) (
+          lib.flatten os.options.hardware.firmware.definitions
+        )
+      );
+    declared = id:
+      mk [
+        base
+        {
+          janus.hardware.peripherals.stick = {
+            class = "wifi";
+            match.usbVendorProduct = id;
+          };
+        }
+      ];
+    mt7612 = declared "0e8d:7612";
+    mt7921 = declared "0e8d:7961";
+    rtl = declared "0bda:8176";
+  in
+    pkgs.runCommand "eval-wifi-mt76" {} ''
+      set -eu
+      echo ${lib.escapeShellArg (names mt7612)} | grep -q mt7662-firmware
+      if echo ${lib.escapeShellArg (names mt7612)} | grep -q mt7921-firmware; then
+        echo "MT7612U config also installed MT7921 firmware" >&2
+        exit 1
+      fi
+      fw=${mt7612.config.hardware.firmware}
+      n=$(find -L "$fw/lib/firmware" -type f -name 'mt7662.bin*' | wc -l)
+      test "$n" = 1
+      n=$(find -L "$fw/lib/firmware" -type f -name 'mt7662_rom_patch.bin*' | wc -l)
+      test "$n" = 1
+      n=$(find -L "$fw/lib/firmware" -type f | wc -l)
+      test "$n" = 2
+      echo ${lib.escapeShellArg (names mt7921)} | grep -q mt7921-firmware
+      fw=${mt7921.config.hardware.firmware}
+      n=$(find -L "$fw/lib/firmware" -type f -name 'WIFI_RAM_CODE_MT7961_1.bin*' | wc -l)
+      test "$n" = 1
+      n=$(find -L "$fw/lib/firmware" -type f -name 'WIFI_MT7961_patch_mcu_1_2_hdr.bin*' | wc -l)
+      test "$n" = 1
+      n=$(find -L "$fw/lib/firmware" -type f | wc -l)
+      test "$n" = 2
+      echo ${lib.escapeShellArg (names rtl)} | grep -q rtl8192cu-firmware
+      if echo ${lib.escapeShellArg (names rtl)} | grep -q mt7662-firmware; then
+        echo "RTL8188CUS config installed MT7612 firmware" >&2
+        exit 1
+      fi
+      fw=${rtl.config.hardware.firmware}
+      for f in rtl8192cufw.bin rtl8192cufw_A.bin rtl8192cufw_B.bin rtl8192cufw_TMSC.bin; do
+        n=$(find -L "$fw/lib/firmware" -type f -name "$f*" | wc -l)
+        test "$n" = 1
+      done
+      n=$(find -L "$fw/lib/firmware" -type f | wc -l)
+      test "$n" = 4
+      echo ok > "$out"
+    '';
   eval-wifi-sops = let
     os = mk [
       base
@@ -1671,6 +1742,78 @@ in {
       test ${lib.escapeShellArg os.config.sops.secrets.tailscale-eval.key} = value
       printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " requires)} | grep -q sops-install-secrets.service
       printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " (os.config.systemd.services.janus-tailscale-auth.requiredBy or []))} | grep -q tailscaled.service
+      echo ok > "$out"
+    '';
+  eval-wan-policy = let
+    os = mk [
+      base
+      {
+        janus.network.wans.main = {
+          uplink = "wan";
+          mode = "dhcp";
+        };
+      }
+    ];
+    script = os.config.systemd.services.janus-wan-policy.serviceConfig.ExecStart;
+    ipStub = pkgs.writeShellScript "wan-policy-ip-stub" ''
+      printf '%s\n' "$*" >> "$JANUS_IP_LOG"
+      if [ -n "''${JANUS_IP_FAIL:-}" ]; then
+        exit 1
+      fi
+      case "$1 $2 $3" in
+        "-4 -o addr")
+          printf '%s\n' "2: eth0 inet 10.0.0.2/24 scope global" "2: eth0 inet 10.0.0.3/24 scope global"
+          ;;
+        "-4 route show")
+          printf '%s\n' "default via 10.0.0.1 dev eth0"
+          ;;
+        "rule del from")
+          exit 1
+          ;;
+        "rule add from" | "route replace default")
+          ;;
+        *)
+          echo "unexpected ip: $*" >&2
+          exit 1
+          ;;
+      esac
+    '';
+  in
+    pkgs.runCommand "eval-wan-policy" {} ''
+      set -eu
+      grep -q '/bin/ip ' ${script}
+      grep -q '/bin/awk ' ${script}
+      grep -q 'set -euo pipefail' ${script}
+      grep -q 'while read -r cidr' ${script}
+      if grep -E '(^|[^/[:alnum:]])ip -4' ${script}; then
+        echo "janus-wan-policy calls ip from PATH" >&2
+        exit 1
+      fi
+      if grep -E '(^|[^/[:alnum:]])awk ' ${script}; then
+        echo "janus-wan-policy calls awk from PATH" >&2
+        exit 1
+      fi
+      ip=$(grep -o '/nix/store/[^ ]*/bin/ip' ${script} | head -1)
+      awk=$(grep -o '/nix/store/[^ ]*/bin/awk' ${script} | head -1)
+      test -x "$ip"
+      test -x "$awk"
+      root=$TMPDIR/wan-policy
+      mkdir -p "$root/sys/class/net/eth0"
+      sed -e "s|$ip|${ipStub}|g" -e "s|/run/janus|$root/run|g" -e "s|/sys/class/net|$root/sys/class/net|g" ${script} > "$root/policy"
+      chmod +x "$root/policy"
+      export JANUS_IP_LOG=$root/ip.log
+      if JANUS_IP_FAIL=1 "$root/policy"; then
+        echo "a failed ip was treated as success" >&2
+        exit 1
+      fi
+      : > "$JANUS_IP_LOG"
+      unset JANUS_IP_FAIL
+      "$root/policy"
+      adds=$(grep -c 'rule add from ' "$JANUS_IP_LOG")
+      test "$adds" = 2
+      grep -q 'rule add from 10.0.0.2 ' "$JANUS_IP_LOG"
+      grep -q 'rule add from 10.0.0.3 ' "$JANUS_IP_LOG"
+      grep -q 'route replace default via 10.0.0.1 ' "$JANUS_IP_LOG"
       echo ok > "$out"
     '';
   eval-backup-health = let

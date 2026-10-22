@@ -3,6 +3,7 @@
 # The two onboard NICs are eth0 and eth1. The profile does not choose a WAN jack.
 # The silkscreen WAN and LAN LEDs are GPIO lines with no trigger in the DTB.
 # docs/10 §3.2. WAN is the RTL8111H (r8169). LAN is the RTL8211E (rk_gmac-dwmac).
+# r8169 applies rtl_nic/rtl8168h-2.fw on every open of that chip. docs/10 §3.3.
 {
   config,
   lib,
@@ -21,6 +22,14 @@
     ];
   };
   dtb = "${config.boot.kernelPackages.kernel}/dtbs/rockchip/rk3399-nanopi-r4s.dtb";
+  # One PHY script, copied from the pinned package. The full collection,
+  # and hardware.enableRedistributableFirmware, would also install
+  # Raspberry Pi wireless blobs on a board with no radio.
+  rtl8168hFirmware = import ../janus/hardware/firmware-slice.nix {inherit lib pkgs;} {
+    pname = "rtl8168h-firmware";
+    description = "PHY script for the NanoPi R4S RTL8168h/8111h";
+    paths = ["rtl_nic/rtl8168h-2.fw"];
+  };
   portLeds = {
     wan = {
       driver = "r8169";
@@ -113,6 +122,7 @@ in {
     boot.loader.grub.enable = false;
     boot.loader.systemd-boot.enable = false;
     boot.loader.generic-extlinux-compatible.enable = false;
+    hardware.firmware = [rtl8168hFirmware];
     networking.useNetworkd = lib.mkDefault true;
     networking.useDHCP = lib.mkDefault false;
     system.build.janusBoardImage = {

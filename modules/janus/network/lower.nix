@@ -400,7 +400,7 @@
     };
 
   policyScript = pkgs.writeShellScript "janus-wan-policy" ''
-    set -eu
+    set -euo pipefail
     mkdir -p /run/janus/wan
     ${lib.concatMapStrings (name: let
         wan = cfg.wans.${name};
@@ -425,15 +425,18 @@
           ''
         }
         if [ -e "/sys/class/net/$iface" ]; then
-          addr=$(ip -4 -o addr show dev "$iface" | awk '{print $4}')
-          addr=''${addr%%/*}
-          gw=$(ip -4 route show default dev "$iface" | awk '{print $3; exit}')
-          if [ -n "$addr" ]; then
-            ip rule del from "$addr" lookup "$table" priority "$pri" 2>/dev/null || true
-            ip rule add from "$addr" lookup "$table" priority "$pri"
-          fi
+          # One rule per address. pipefail keeps a failed ip from looking like success.
+          addrs=$(${pkgs.iproute2}/bin/ip -4 -o addr show dev "$iface" | ${pkgs.gawk}/bin/awk '{print $4}')
+          printf '%s\n' "$addrs" | while read -r cidr; do
+            [ -n "$cidr" ] || continue
+            addr=''${cidr%%/*}
+            [ -n "$addr" ] || continue
+            ${pkgs.iproute2}/bin/ip rule del from "$addr" lookup "$table" priority "$pri" 2>/dev/null || true
+            ${pkgs.iproute2}/bin/ip rule add from "$addr" lookup "$table" priority "$pri"
+          done
+          gw=$(${pkgs.iproute2}/bin/ip -4 route show default dev "$iface" | ${pkgs.gawk}/bin/awk '{print $3; exit}')
           if [ -n "$gw" ]; then
-            ip route replace default via "$gw" dev "$iface" table "$table"
+            ${pkgs.iproute2}/bin/ip route replace default via "$gw" dev "$iface" table "$table"
           fi
         fi
       '')
