@@ -5,7 +5,7 @@
 (def fail-limit 5)
 (def fail-seconds 60)
 (def max-sessions 8)
-(def csp "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'")
+(def csp "default-src 'none'; connect-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'")
 
 (def ident
   (peg/compile ~(* (some (+ (range "az") (range "AZ") (range "09") "_" "-" (range ".."))) -1)))
@@ -889,6 +889,7 @@
     (http-round sock "GET" "/api/status" {"Cookie" (string "janus_session=" live-token)} ""))
   (expect (string/find "200" raw-status) "socket status")
   (expect (string/find "Content-Security-Policy" raw-status) "csp")
+  (expect (string/find "connect-src 'self'" raw-status) "csp connect")
   (expect (string/find "Cache-Control: no-store" raw-status) "nostore")
 
   (def note-path (string runtime "-note"))
