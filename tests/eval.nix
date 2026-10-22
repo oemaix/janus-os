@@ -2478,10 +2478,15 @@ in {
       set -eu
       store=$TMPDIR/nix
       closure=/nix/store/closure
+      kern=/nix/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-slotkern/Image
+      kern_real=/nix/store/cccccccccccccccccccccccccccccccc-slotkern-real/Image
+      initrd=/nix/store/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-slotinit/initrd
       mkdir -p "$store''${closure#/nix}" "$TMPDIR/boot/extlinux" "$TMPDIR/state"
       printf 'console=ttyS0\n' > "$store''${closure#/nix}/kernel-params"
-      printf 'new-kernel\n' > "$store''${closure#/nix}/kernel"
-      printf 'new-initrd\n' > "$store''${closure#/nix}/initrd"
+      # The kernel link hops through another /nix/store symlink. The files
+      # exist only under the slot store, so following either link fails.
+      ln -s "$kern" "$store''${closure#/nix}/kernel"
+      ln -s "$initrd" "$store''${closure#/nix}/initrd"
       printf 'old-kernel\n' > "$TMPDIR/boot/vmlinuz"
       printf 'old-initrd\n' > "$TMPDIR/boot/initrd"
       printf 'a\n' > "$TMPDIR/boot/slot"
@@ -2489,9 +2494,49 @@ in {
       printf '%s\n' 'timeout: 0' '/slot-a' '    cmdline: old-a' '/slot-b' '    cmdline: old-b' > "$TMPDIR/boot/limine.conf"
       printf '%s\n' 'kernel=vmlinuz' 'initramfs initrd followkernel' > "$TMPDIR/boot/config.txt"
       printf '%s\n' 'old-a' > "$TMPDIR/boot/cmdline-a.txt"
-      JANUS_BOOT_DIR=$TMPDIR/boot JANUS_STATE_DIR=$TMPDIR/state JANUS_SLOT_STORE=$store bash ${self.packages.${pkgs.stdenv.hostPlatform.system}.bootInstall} install-slot "$closure" b
+      boot_install=${self.packages.${pkgs.stdenv.hostPlatform.system}.bootInstall}
+      src="$store''${closure#/nix}"
+      run_install() {
+        JANUS_BOOT_DIR=$TMPDIR/boot JANUS_STATE_DIR=$TMPDIR/state JANUS_SLOT_STORE=$store bash "$boot_install" install-slot "$closure" "$1"
+      }
+      refuse() {
+        if run_install b >"$TMPDIR/slot-miss.out" 2>"$TMPDIR/slot-miss.err"; then
+          echo "slot install accepted $1" >&2
+          exit 1
+        fi
+        grep -q 'is not in the slot store' "$TMPDIR/slot-miss.err"
+        if [ -e "$TMPDIR/boot/vmlinuz-b" ] || [ -e "$TMPDIR/boot/initrd-b" ] || [ -e "$TMPDIR/boot/cmdline.txt" ]; then
+          echo "a refused slot install changed the boot entry" >&2
+          exit 1
+        fi
+        grep -q old-kernel "$TMPDIR/boot/vmlinuz"
+        test "$(tr -d '[:space:]' < "$TMPDIR/boot/slot")" = a
+      }
+      refuse "a kernel symlink whose target is not in the slot store"
+      mkdir -p "$store/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-slotkern" "$store/store/cccccccccccccccccccccccccccccccc-slotkern-real" "$store/store/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-slotinit" "$store/escaped"
+      ln -s "$kern_real" "$store/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-slotkern/Image"
+      printf 'new-kernel\n' > "$store/store/cccccccccccccccccccccccccccccccc-slotkern-real/Image"
+      printf 'new-initrd\n' > "$store/store/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-slotinit/initrd"
+      printf 'outside-kernel\n' > "$TMPDIR/outside-kernel"
+      ln -sf "$TMPDIR/outside-kernel" "$src/kernel"
+      refuse "a kernel symlink that leaves /nix/store"
+      printf 'escaped-kernel\n' > "$store/escaped/Image"
+      ln -sf /nix/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-slotkern/../../escaped/Image "$src/kernel"
+      refuse "a kernel symlink that climbs out of the slot store"
+      ln -sf "$kern" "$src/kernel"
+      printf 'leaked-params\n' > "$TMPDIR/leaked-params"
+      ln -sf "$TMPDIR/leaked-params" "$src/kernel-params"
+      refuse "a kernel-params symlink"
+      rm -f "$src/kernel-params"
+      printf 'console=ttyS0\n' > "$src/kernel-params"
+      run_install b
+      test ! -h "$TMPDIR/boot/vmlinuz-b"
+      test ! -h "$TMPDIR/boot/initrd-b"
       grep -q new-kernel "$TMPDIR/boot/vmlinuz-b"
+      grep -q new-initrd "$TMPDIR/boot/initrd-b"
+      grep -q "init=$closure/init" "$TMPDIR/boot/cmdline.txt"
       grep -q old-kernel "$TMPDIR/boot/vmlinuz"
+      grep -q old-initrd "$TMPDIR/boot/initrd"
       grep -q '^DEFAULT slot-b$' "$TMPDIR/boot/extlinux.conf"
       grep -q 'janus.slot=b' "$TMPDIR/boot/cmdline.txt"
       test "$(grep -m1 '^/slot-' "$TMPDIR/boot/limine.conf")" = /slot-b
@@ -2504,6 +2549,19 @@ in {
       test "$(grep -m1 '^/slot-' "$TMPDIR/boot/limine.conf")" = /slot-a
       grep -q '^kernel=vmlinuz$' "$TMPDIR/boot/config.txt"
       grep -q '^initramfs initrd followkernel$' "$TMPDIR/boot/config.txt"
+      run_install a
+      test ! -h "$TMPDIR/boot/vmlinuz"
+      test ! -h "$TMPDIR/boot/initrd"
+      grep -q new-kernel "$TMPDIR/boot/vmlinuz"
+      grep -q new-initrd "$TMPDIR/boot/initrd"
+      grep -q new-kernel "$TMPDIR/boot/vmlinuz-b"
+      grep -q new-initrd "$TMPDIR/boot/initrd-b"
+      grep -q "init=$closure/init" "$TMPDIR/boot/cmdline.txt"
+      grep -q 'janus.slot=a' "$TMPDIR/boot/cmdline.txt"
+      grep -q '^DEFAULT slot-a$' "$TMPDIR/boot/extlinux.conf"
+      test "$(grep -m1 '^/slot-' "$TMPDIR/boot/limine.conf")" = /slot-a
+      grep -q '^kernel=vmlinuz$' "$TMPDIR/boot/config.txt"
+      test "$(tr -d '[:space:]' < "$TMPDIR/boot/slot")" = a
       echo ok > "$out"
     '';
   eval-deploy-slots = pkgs.runCommand "eval-deploy-slots" {

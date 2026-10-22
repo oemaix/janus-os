@@ -24,7 +24,9 @@ dnsmasq, OpenSSH, and vnstat. `eval-web` checks the maintenance page model, the 
 runtime pause. `eval-hmi` checks the panel model, the
 Waveshare binding, and `janus reset --state` without `--yes`. It compiles
 the panel and the SPI overlay for the machine running the check. `eval-boot-slot` checks that a Raspberry Pi `config.txt` follows slot B
-onto `initrd-b` and back. `eval-deploy-slots` checks that a slot deploy
+onto `initrd-b` and back, that `kernel` and `initrd` symlinks are read
+from the inactive slot store for both slots, and that a link leaving that
+store is refused. `eval-deploy-slots` checks that a slot deploy
 mounts the inactive store on `/run/janus-slot-nix` and remounts `/boot`
 read-only when that step fails. `eval-power` checks the cell
 cutoff and compiles the Raspberry Pi overlay with that machine's `dtc`.
