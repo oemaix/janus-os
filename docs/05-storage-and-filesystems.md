@@ -22,7 +22,7 @@
 | 1 | `JANUS_BOOT` | `/boot` | FAT32 (board-dependent) | ro | 256 MiB | Board firmware, U-Boot / RPi firmware, kernel, initrd, DTBs, `extlinux.conf` or `config.txt` |
 | 2 | `JANUS_ROOT` | `/` | f2fs | ro | 64 MiB | Directory skeleton, mount points, symlinks into the store |
 | 3 | `JANUS_NIX` | `/nix` | f2fs | ro | closure + 15 % + one 4 KiB block per file + 128 MiB, at least 2.5 GiB | Nix store and `/nix/var` (profiles, db) |
-| 4 | `JANUS_STATE` | `/var` | f2fs | rw | remaining space (min 512 MiB) | All persistent mutable state |
+| 4 | `JANUS_STATE` | `/var` | f2fs | rw | 512 MiB, grown to at most 4 GiB | All persistent mutable state |
 
 tmpfs mounts: `/run`, `/tmp`, `/etc` overlay upper, `/home` (no interactive
 users besides root; root's home is `/var/lib/janus/root` for SSH `known_hosts`
@@ -58,6 +58,10 @@ Notes:
 * Those sizes are fixed when the card is flashed. A later Nix image that
   is larger than the flashed Nix partition does not fit. Deploy names
   the Nix partition and stops.
+* `janus-grow-state` expands `JANUS_STATE` on boot until it reaches
+  `state.maximumSize` (default 4 GiB) or the end of the media. It does
+  not shrink. Space past the cap stays free. `JANUS_STATE.size` replaces
+  the 512 MiB written into the image and is not the cap (D-0049).
 
 ## 3. Why f2fs
 
@@ -123,10 +127,17 @@ dedicated service users with `StateDirectory=` in their units.
     the embedded seed hash **and** the embedded data is newer than what is
     present (or present data fails validation), copy the seed;
   * otherwise keep runtime-refreshed data.
+* Every boot runs `fsck.f2fs -a --no-kernel-check` on `JANUS_STATE`.
+  That repairs a checkpoint the kernel marked bad. It does not scan the
+  volume. A full `fsck.f2fs -f` runs only on the maintenance reboot when
+  `janus.system.reboot.fsck` is set, and that boot does not cap the check.
+  The on-disk request is removed before that check, so a check that does
+  not finish is not repeated (D-0049).
 * If `/var` fails to mount even after fsck, the initrd re-formats the state
   partition (policy `janus.storage.state.onCorruption = "reformat" |
   "halt"`, default `reformat`) so the router still comes up (FR-OPS-005).
-  The event is logged to the HMI (if any) and to the journal.
+  A timeout or a slow mount is not that failure. The event is logged to
+  the HMI (if any) and to the journal after the boot.
 
 ## 7. Write-load budget
 
@@ -148,7 +159,8 @@ The state partition is mounted with `noatime`, `lazytime` and f2fs
 
 * `layout.partitions.<label>.{size, fsType, mountPoint, readOnly, options}`
   with defaults as in §2;
-* `nix.minimumSize` (default `2.5G`), `state.minimumSize`, `state.onCorruption`;
+* `nix.minimumSize` (default `2.5G`), `state.minimumSize`,
+  `state.maximumSize` (default `4G`), `state.onCorruption`;
 * `readOnlyFs = "f2fs" | "erofs" | "squashfs"`. `f2fs` is the implemented
   value. `erofs` and `squashfs` are reserved names and fail evaluation
   until the image builder can populate them (D-0035);

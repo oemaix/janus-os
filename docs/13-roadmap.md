@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-21 |
+| Last updated | 2026-10-22 |
 
 This file is the implementation plan, the progress of the code, and the
 notes for work that is specified but not started. Choices are *18*.
@@ -94,7 +94,10 @@ tree does not mean that behavior exists. Stubs are not finished features.
 * `janus.*` option types, defaults, and the structural assertions in
   *08* §12. Storage is lowered: partition labels, read-only `/` and
   `/nix`, one read-write `/var`, and `system.etc.overlay` with
-  `mutable = false`.
+  `mutable = false`. `JANUS_STATE` grows to at most `state.maximumSize`
+  (default 4 GiB). Boot runs `fsck.f2fs -a --no-kernel-check`. A full
+  check runs only on the maintenance reboot with `janus.system.reboot.fsck`
+  (D-0049).
 * `janus.network` lowers ports, LAN VLANs, WAN `dhcp`/`static`/`pppoe`,
   LAN bridges, DHCPv4, and the IPv6 modes into networkd, pppd, and
   dnsmasq. `janus.firewall` lowers zones, NAT, and port forwards into

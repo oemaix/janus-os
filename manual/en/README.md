@@ -249,6 +249,26 @@ minimum and 16 GiB or more is recommended. A larger closure needs a
 larger card. A disk flashed without the option
 has no second slot; deploy says so.
 
+## State partition
+
+The flashed state partition is 512 MiB. The first boot grows it until it
+reaches 4 GiB or the end of the card, whichever comes first.
+`janus.storage.state.maximumSize` sets a larger or smaller cap. The cap
+does not shrink a partition that is already bigger.
+
+Each boot runs `fsck.f2fs -a` on that partition and does not read the
+whole volume. A check that is only slow does not erase it. If the
+filesystem still cannot be mounted, the default is to format it and
+continue. The journal records that format.
+
+A maintenance reboot is off. Set `janus.system.reboot.schedule` to
+`monthly`, `yearly`, or a five-field cron whose last field is `*`.
+`monthly` is 04:00 on day 1. `yearly` is 04:00 on 1 January.
+`janus.system.reboot.fsck = true` runs a full check of the state
+partition on that reboot and lets the check finish. The request is
+removed before the check starts, so a check that does not finish is not
+repeated.
+
 ## Connection audit
 
 The audit is off unless the image sets `janus.monitoring.audit.enable =

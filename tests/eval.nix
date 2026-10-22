@@ -3609,4 +3609,107 @@ in {
       ' ${engine} >/dev/null
       echo ok > "$out"
     '';
+  eval-state-boot = let
+    os = mk [base];
+    capped = mk [
+      base
+      {janus.storage.state.maximumSize = "1G";}
+    ];
+    monthly = mk [
+      base
+      {
+        janus.system.reboot.schedule = "monthly";
+        janus.system.reboot.fsck = true;
+      }
+    ];
+    yearly = mk [
+      base
+      {janus.system.reboot.schedule = "0 4 1 1 *";}
+    ];
+    padded = mk [
+      base
+      {janus.system.reboot.schedule = "00 04 08 * *";}
+    ];
+    recover = os.config.boot.initrd.systemd.services.janus-state-recover;
+    full = os.config.boot.initrd.systemd.services.janus-state-fsck-full;
+    grow = os.config.boot.initrd.systemd.services.janus-grow-state.script;
+    grow1 = capped.config.boot.initrd.systemd.services.janus-grow-state.script;
+  in
+    pkgs.runCommand "eval-state-boot" {} ''
+      test ${lib.escapeShellArg os.config.janus.storage.state.maximumSize} = 4G
+      test ${lib.escapeShellArg (toString os.config.janus.system.reboot.schedule)} = ""
+      test ${
+        if os.config.systemd.timers ? janus-reboot
+        then "yes"
+        else "no"
+      } = no
+      test ${lib.escapeShellArg recover.serviceConfig.TimeoutStartSec} = 15min
+      test ${lib.escapeShellArg full.serviceConfig.TimeoutStartSec} = infinity
+      test ${lib.escapeShellArg full.unitConfig.ConditionPathExists} = /run/janus/full-fsck
+      grep -F -q -- '--no-kernel-check' <<'EOF'
+      ${recover.script}
+      EOF
+      if grep -F -q -- 'timeout 30' <<'EOF'
+      ${recover.script}
+      EOF
+      then
+        echo "boot fsck still has a 30s timeout" >&2
+        exit 1
+      fi
+      grep -F -q -- 'fsck.f2fs -f' <<'EOF'
+      ${full.script}
+      EOF
+      drop=$(grep -n 'rm -f "$probe/lib/janus/full-fsck"' <<'EOF' | sed -n '1s/:.*//p'
+      ${full.script}
+      EOF
+      )
+      fsckat=$(grep -n 'fsck.f2fs -f' <<'EOF' | sed -n '1s/:.*//p'
+      ${full.script}
+      EOF
+      )
+      if [ -z "$drop" ] || [ -z "$fsckat" ] || [ "$drop" -ge "$fsckat" ]; then
+        echo "the full-fsck request is not dropped before the check" >&2
+        exit 1
+      fi
+      grep -F -q -- 'max_sectors=8388608' <<'EOF'
+      ${grow}
+      EOF
+      grep -F -q -- 'max_sectors=2097152' <<'EOF'
+      ${grow1}
+      EOF
+      test ${lib.escapeShellArg monthly.config.systemd.timers.janus-reboot.timerConfig.OnCalendar} = '*-*-01 04:00:00'
+      test ${lib.escapeShellArg yearly.config.systemd.timers.janus-reboot.timerConfig.OnCalendar} = '*-01-01 04:00:00'
+      test ${lib.escapeShellArg padded.config.systemd.timers.janus-reboot.timerConfig.OnCalendar} = '*-*-08 04:00:00'
+      grep -F -q -- 'systemctl reboot' <<'EOF'
+      ${monthly.config.systemd.services.janus-reboot.script}
+      EOF
+      if grep -F -q -- 'full-fsck' <<'EOF'
+      ${monthly.config.systemd.services.janus-reboot.script}
+      EOF
+      then
+        echo "the reboot service itself requests a full check" >&2
+        exit 1
+      fi
+      grep -F -q -- '/var/lib/janus/full-fsck' <<'EOF'
+      ${monthly.config.systemd.services.janus-reboot-fsck.script}
+      EOF
+      test ${
+        if yearly.config.systemd.services ? janus-reboot-fsck
+        then "yes"
+        else "no"
+      } = no
+      echo ok > "$out"
+    '';
+  eval-state-reboot-fsck = fail "eval-state-reboot-fsck" [
+    base
+    {janus.system.reboot.fsck = true;}
+  ];
+  eval-state-reboot-cron = fail "eval-state-reboot-cron" [
+    base
+    {janus.system.reboot.schedule = "0 4 * * 1";}
+  ];
+  eval-state-reboot-fields = fail "eval-state-reboot-fields" [
+    base
+    {janus.system.reboot.schedule = "0 4 1 *";}
+  ];
 }

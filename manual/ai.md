@@ -113,6 +113,15 @@ Read this file before answering a question about using Janus OS.
   closure needs a larger card by the same amount. A Nix
   image that does not fit the flashed Nix partition makes deploy name
   that partition and stop.
+  The flashed state partition is 512 MiB. The first boot grows it to
+  `janus.storage.state.maximumSize` (default `4G`) or the end of the
+  card. A smaller cap does not shrink. Every boot runs `fsck.f2fs -a`
+  and does not scan the volume. `janus.system.reboot.schedule` is off
+  unless set to `monthly`, `yearly`, or a five-field cron whose
+  day-of-week is `*`. `janus.system.reboot.fsck = true` runs a full
+  check on that reboot only and lets it finish. The request is removed
+  before the check, so a check that does not finish is not repeated
+  (D-0049).
 - A Waveshare 1.3" OLED HAT on a Raspberry Pi Zero 2 W, a Raspberry Pi 3,
   or a Raspberry Pi 4 is a status panel. It runs `janus proxy refresh`, `janus proxy select`,
   `janus reboot`, and `janus reset --state --yes`. It does not edit

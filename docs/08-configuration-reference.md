@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-21 |
+| Last updated | 2026-10-22 |
 
 This document defines the **shape and semantics** of the `janus.*` option
 tree. The final, exhaustive reference (every option with type, default,
@@ -47,6 +47,8 @@ learning path: copy, edit values, build.
 | `journal.persistent` | bool | `false` | Persist journal to state partition (capped). |
 | `journal.maxUse` | str | `"64M"` | |
 | `embedSource` | bool | `true` | Embed the whole flake source tree (`flake.nix`, `flake.lock`, all `.nix` modules) read-only at `/etc/janus/source` (FR-CFG-008). Disable only if the tree contains inline secrets you do not want readable on the device. |
+| `reboot.schedule` | null or str | off | Maintenance reboot. `monthly` is 04:00 on the 1st, `yearly` is 04:00 on 1 January, or a five-field cron whose day-of-week is `*`. Further actions on this reboot are sibling options (D-0049). |
+| `reboot.fsck` | bool | `false` | On that reboot, run a full state check and let it finish. The request is removed before the check, so a check that does not finish is not repeated. A normal boot does not. Requires `reboot.schedule`. |
 | `region` | `cn\|ru\|ir` | `cn` | Reference region. Selects domestic DNS and the `blockQuic` default in *21*. Routing rules stay empty until written. Not a hot override. |
 
 ## 2. `janus.hardware`
@@ -72,8 +74,12 @@ learning path: copy, edit values, build.
 
 See *05 — Storage* §8. Key options: `layout.partitions.<label>.{size,
 fsType, mountPoint, readOnly, options}`, `readOnlyFs`, `nix.minimumSize`, `state.minimumSize`,
-`state.onCorruption`, `firmwareOffsetMiB` (board default),
+`state.maximumSize` (default `4G`; growth stops there or at the end of the
+media, and a smaller cap does not shrink), `state.onCorruption`,
+`firmwareOffsetMiB` (board default),
 `slots.enable` (default false; duplicate `ROOT` and `NIX`, *09* §8.4).
+A normal boot runs `fsck.f2fs -a --no-kernel-check` and does not scan the
+volume (D-0049).
 
 ## 4. `janus.network`
 

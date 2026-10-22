@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-18 |
+| Last updated | 2026-10-22 |
 
 ## 1. Principles
 
@@ -167,8 +167,9 @@ The image builder is a Nix derivation (no root, no loop mounts) that:
    * `boot.img` — `mkfs.vfat` + `mcopy` of kernel, initrd, DTBs,
      board firmware and boot script (`extlinux.conf`, `config.txt`,
      `cmdline.txt`, `limine.conf`, U-Boot binaries as the profile dictates);
-   * `state.img` — empty `mkfs.f2fs` of `state.minimumSize`; expanded to
-     the full media on first boot by `janus-grow-state.service`.
+   * `state.img` — empty `mkfs.f2fs` of `state.minimumSize`; expanded on
+     boot by `janus-grow-state.service` up to `state.maximumSize`
+     (default 4 GiB) or the end of the media.
 3. Writes GPT/MBR with labels and PARTUUIDs, installs raw U-Boot/SPL at the
    profile offsets, concatenates partitions. On the Yanyu image, `limine
    bios-install` writes stage 1 into the image file and stage 2 into

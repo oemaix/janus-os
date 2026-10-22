@@ -71,13 +71,57 @@
     then throw "janus.storage slack '${s}' is not a percentage such as 15%."
     else lib.toInt (lib.elemAt m 0);
 
+  # 512-byte sectors, the same unit sgdisk uses for the 1 MiB backup gap.
+  stateMaxSectors = sizeMiB cfg.state.maximumSize * 2048;
+
+  waitForState = ''
+    dev=/dev/disk/by-partuuid/${statePartUuid}
+    for _ in $(seq 1 50); do
+      [ -b "$dev" ] && break
+      sleep 0.1
+    done
+    if [ ! -b "$dev" ]; then
+      echo "<3>janus: JANUS_STATE did not appear" > /dev/kmsg
+      exit 1
+    fi
+  '';
+
+  reformatState = ''
+    echo "<3>janus: reformatting JANUS_STATE" > /dev/kmsg
+    mkdir -p /run/janus
+    echo reformatted > /run/janus/state-reformatted
+    rm -f /run/janus/full-fsck
+    mkfs.f2fs -f -l JANUS_STATE "$dev"
+    part=$(readlink -f "$dev")
+    echo change > "/sys/class/block/''${part##*/}/uevent" || true
+    label=/dev/disk/by-label/JANUS_STATE
+    for _ in $(seq 1 50); do
+      [ -e "$label" ] && break
+      sleep 0.1
+    done
+    if [ ! -e "$label" ]; then
+      echo "<3>janus: JANUS_STATE label did not appear after reformat" > /dev/kmsg
+      exit 1
+    fi
+  '';
+
+  # /run is moved across switch-root, so the note reaches the real journal.
+  corruptState = ''
+    if [ ${cfg.state.onCorruption} = reformat ]; then
+      ${reformatState}
+    else
+      echo "<3>janus: JANUS_STATE failed to mount and janus.storage.state.onCorruption is halt" > /dev/kmsg
+      exit 1
+    fi
+  '';
+
   partition = types.submodule {
     options = {
       size = mkOption {
         type = types.nullOr types.str;
         default = null;
         example = "256M";
-        description = "Partition size, such as 256M or 1G. Null sizes the Nix partition from the closure plus slack, and at least nix.minimumSize. A set Nix size is used as given, even when it is below nix.minimumSize. A set state size replaces state.minimumSize.";
+        description = "Partition size, such as 256M or 1G. Null sizes the Nix partition from the closure plus slack, and at least nix.minimumSize. A set Nix size is used as given, even when it is below nix.minimumSize. A set state size replaces state.minimumSize. It does not change state.maximumSize.";
       };
       fsType = mkOption {
         type = types.enum ["f2fs" "vfat" "erofs" "squashfs"];
@@ -185,12 +229,18 @@ in {
     state.minimumSize = mkOption {
       type = types.str;
       default = "512M";
-      description = "Minimum size of the state partition. The image uses this size; janus-grow-state expands it on larger media.";
+      description = "Size of the state partition in the image. janus-grow-state expands it on larger media, up to state.maximumSize.";
+    };
+    state.maximumSize = mkOption {
+      type = types.str;
+      default = "4G";
+      example = "8G";
+      description = "Largest size janus-grow-state will give the state partition. Growth also stops at the end of the media. A cap below the flashed size does not shrink the partition. A larger or smaller size is accepted.";
     };
     state.onCorruption = mkOption {
       type = types.enum ["reformat" "halt"];
       default = "reformat";
-      description = "What initrd does when the state filesystem cannot be repaired.";
+      description = "What initrd does when the state filesystem cannot be repaired. A slow check is not corruption.";
     };
     firmwareOffsetMiB = mkOption {
       type = types.ints.unsigned;
@@ -302,7 +352,7 @@ in {
 
     # Grow the partition table before fsck. A failure here must not reformat.
     boot.initrd.systemd.services.janus-grow-state = {
-      description = "Grow the state partition to the end of the disk";
+      description = "Grow the state partition up to its configured cap";
       requiredBy = ["janus-state-recover.service"];
       before = ["janus-state-recover.service" "local-fs-pre.target"];
       after = ["systemd-udev-trigger.service"];
@@ -357,12 +407,24 @@ in {
           exit 1
         fi
         # One megabyte is the backup header the image already reserved.
+        # max_sectors is state.maximumSize. A smaller cap does not shrink.
+        max_sectors=${toString stateMaxSectors}
+        if [ $((end - start + 1)) -ge "$max_sectors" ]; then
+          exit 0
+        fi
         if [ $((last - end)) -le 2048 ]; then
+          exit 0
+        fi
+        want=$((start + max_sectors - 1))
+        if [ "$want" -gt "$last" ]; then
+          want=$last
+        fi
+        if [ "$want" -le "$end" ]; then
           exit 0
         fi
         sgdisk \
           -d "$partNum" \
-          -n "''${partNum}:''${start}:0" \
+          -n "''${partNum}:''${start}:''${want}" \
           -c "''${partNum}:JANUS_STATE" \
           -t "''${partNum}:8300" \
           -u "''${partNum}:4a414e55-5300-4000-8000-000000000004" \
@@ -371,36 +433,32 @@ in {
       '';
     };
 
+    # -a repairs a checkpoint the kernel marked bad. It does not scan the
+    # volume. --no-kernel-check skips the 30-day full scan inside fsck.f2fs.
+    # 15 min bounds a stuck card. A full check has its own unit and no cap.
     boot.initrd.systemd.services.janus-state-recover = {
       description = "Repair or reformat the Janus state partition";
       requiredBy = ["local-fs-pre.target"];
-      before = ["local-fs-pre.target"];
+      before = ["local-fs-pre.target" "janus-state-fsck-full.service"];
       after = ["janus-grow-state.service" "systemd-udev-trigger.service"];
       unitConfig.DefaultDependencies = false;
       path = [pkgs.f2fs-tools pkgs.util-linux pkgs.kmod pkgs.coreutils];
-      serviceConfig.Type = "oneshot";
+      serviceConfig = {
+        Type = "oneshot";
+        TimeoutStartSec = "15min";
+      };
       script = ''
         set -eu
-        dev=/dev/disk/by-partuuid/${statePartUuid}
-        for _ in $(seq 1 50); do
-          [ -b "$dev" ] && break
-          sleep 0.1
-        done
-        if [ ! -b "$dev" ]; then
-          echo "<3>janus: JANUS_STATE did not appear" > /dev/kmsg
-          exit 1
-        fi
+        ${waitForState}
         set +e
-        timeout 30 fsck.f2fs -a "$dev"
+        fsck.f2fs -a --no-kernel-check "$dev"
         fsck_status=$?
         set -e
         # 126/127 means the tool did not run. 0 is clean, 1 corrected,
         # 2 reboot requested, 3 both. 8 is an operational error: fsck did
-        # not finish, and a grown partition has returned this while the
-        # filesystem was still mountable. Those statuses are decided by a
-        # mount. 4 is uncorrected and 255 is a missing superblock. Mounting
-        # those can sit in the kernel, so they follow the corruption policy
-        # without a mount.
+        # not finish, and the filesystem may still mount. 4 is uncorrected
+        # and 255 is a missing superblock. Mounting those can sit in the
+        # kernel, so they follow the corruption policy without a mount.
         if [ "$fsck_status" -eq 126 ] || [ "$fsck_status" -eq 127 ]; then
           echo "<3>janus: fsck.f2fs did not run ($fsck_status)" > /dev/kmsg
           exit 1
@@ -415,34 +473,140 @@ in {
           probe=/run/janus-state-probe
           mkdir -p "$probe"
           set +e
-          timeout 20 mount -t f2fs -o ro "$dev" "$probe"
+          mount -t f2fs -o ro "$dev" "$probe"
           mount_status=$?
           set -e
+          mounted=0
           if mountpoint -q "$probe"; then
+            mounted=1
+            if [ -e "$probe/lib/janus/full-fsck" ]; then
+              mkdir -p /run/janus
+              : > /run/janus/full-fsck
+              echo "<6>janus: full fsck of JANUS_STATE requested" > /dev/kmsg
+            fi
             umount "$probe" || umount -l "$probe"
+          fi
+          if mountpoint -q "$probe"; then
+            echo "<3>janus: JANUS_STATE stayed mounted after the probe" > /dev/kmsg
+            exit 1
+          fi
+          if [ "$mounted" -eq 1 ]; then
+            mount_status=0
           fi
         fi
         if [ "$mount_status" != 0 ]; then
-          if [ ${cfg.state.onCorruption} = reformat ]; then
-            echo "<3>janus: reformatting JANUS_STATE" > /dev/kmsg
-            mkfs.f2fs -f -l JANUS_STATE "$dev"
-            part=$(readlink -f "$dev")
-            echo change > "/sys/class/block/''${part##*/}/uevent" || true
-            label=/dev/disk/by-label/JANUS_STATE
-            for _ in $(seq 1 50); do
-              [ -e "$label" ] && break
-              sleep 0.1
-            done
-            if [ ! -e "$label" ]; then
-              echo "<3>janus: JANUS_STATE label did not appear after reformat" > /dev/kmsg
-              exit 1
-            fi
-          else
-            echo "<3>janus: JANUS_STATE failed to mount and janus.storage.state.onCorruption is halt" > /dev/kmsg
-            exit 1
-          fi
+          ${corruptState}
         fi
         resize.f2fs "$dev"
+      '';
+    };
+
+    # Runs only when recover copied /var/lib/janus/full-fsck into /run.
+    # The on-disk request is removed before fsck -f, so a hang is not repeated.
+    # No start timeout: a full check of a large volume is allowed to finish.
+    boot.initrd.systemd.services.janus-state-fsck-full = {
+      description = "Full check of the Janus state partition";
+      requiredBy = ["local-fs-pre.target"];
+      before = ["local-fs-pre.target"];
+      after = ["janus-state-recover.service"];
+      unitConfig = {
+        DefaultDependencies = false;
+        ConditionPathExists = "/run/janus/full-fsck";
+      };
+      path = [pkgs.f2fs-tools pkgs.util-linux pkgs.kmod pkgs.coreutils];
+      serviceConfig = {
+        Type = "oneshot";
+        TimeoutStartSec = "infinity";
+      };
+      script = ''
+        set -eu
+        ${waitForState}
+        # Drop the on-disk request before the long check. This boot still
+        # runs because /run/janus/full-fsck is already set. A hang or a power
+        # cut then comes up as a normal boot.
+        modprobe f2fs || true
+        probe=/run/janus-state-probe
+        mkdir -p "$probe"
+        set +e
+        mount -t f2fs -o rw "$dev" "$probe"
+        set -e
+        if mountpoint -q "$probe"; then
+          rm -f "$probe/lib/janus/full-fsck"
+          umount "$probe" || umount -l "$probe"
+        fi
+        if mountpoint -q "$probe"; then
+          echo "<3>janus: JANUS_STATE stayed mounted before full fsck" > /dev/kmsg
+          exit 1
+        fi
+        set +e
+        fsck.f2fs -f "$dev"
+        fsck_status=$?
+        set -e
+        if [ "$fsck_status" -eq 126 ] || [ "$fsck_status" -eq 127 ]; then
+          echo "<3>janus: fsck.f2fs -f did not run ($fsck_status)" > /dev/kmsg
+          exit 1
+        fi
+        case "$fsck_status" in
+          4|255)
+            ${corruptState}
+            ;;
+          *)
+            modprobe f2fs || true
+            probe=/run/janus-state-probe
+            mkdir -p "$probe"
+            set +e
+            mount -t f2fs -o rw "$dev" "$probe"
+            mount_status=$?
+            set -e
+            mounted=0
+            if mountpoint -q "$probe"; then
+              mounted=1
+              rm -f "$probe/lib/janus/full-fsck"
+              umount "$probe" || umount -l "$probe"
+            fi
+            if mountpoint -q "$probe"; then
+              echo "<3>janus: JANUS_STATE stayed mounted after full fsck" > /dev/kmsg
+              exit 1
+            fi
+            if [ "$mounted" -eq 1 ]; then
+              mount_status=0
+            fi
+            if [ "$mount_status" != 0 ]; then
+              ${corruptState}
+            else
+              rm -f /run/janus/full-fsck
+              echo "<6>janus: full fsck of JANUS_STATE finished ($fsck_status)" > /dev/kmsg
+            fi
+            ;;
+        esac
+      '';
+    };
+
+    systemd.services.janus-state-reformat-log = {
+      description = "Record a state-partition reformat in the journal";
+      wantedBy = ["multi-user.target"];
+      after = ["systemd-journald.service" "var.mount"];
+      serviceConfig.Type = "oneshot";
+      script = ''
+        if [ -f /run/janus/state-reformatted ]; then
+          echo "janus: reformatted JANUS_STATE during boot" >&2
+        fi
+      '';
+    };
+
+    # Ordered before the maintenance reboot. The reboot service itself stays
+    # in janus.system and only reboots.
+    systemd.services.janus-reboot-fsck = mkIf config.janus.system.reboot.fsck {
+      description = "Request a full state check on the maintenance reboot";
+      requiredBy = ["janus-reboot.service"];
+      before = ["janus-reboot.service"];
+      path = [pkgs.coreutils];
+      serviceConfig.Type = "oneshot";
+      script = ''
+        set -eu
+        install -d -m 0755 /var/lib/janus
+        : > /var/lib/janus/full-fsck
+        sync
       '';
     };
 
@@ -461,10 +625,11 @@ in {
       };
       script = ''
         set -eu
+        # tmpfiles creates /var/lib/janus/root at 0700. ProtectHome follows
+        # the /root symlink onto that directory, so this sandbox cannot chmod it.
         install -d -m 0755 \
           /var/lib/janus/etc \
           /var/lib/janus/etc/ssh \
-          /var/lib/janus/root \
           /var/lib/janus/secrets \
           /var/lib/janus/subscriptions \
           /var/lib/janus/geodata \
