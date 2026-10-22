@@ -240,7 +240,7 @@ in {
     state.onCorruption = mkOption {
       type = types.enum ["reformat" "halt"];
       default = "reformat";
-      description = "What initrd does when the state filesystem cannot be repaired. A slow check is not corruption.";
+      description = "What initrd does when the state filesystem cannot be repaired. A slow check or a missing block device is not corruption.";
     };
     firmwareOffsetMiB = mkOption {
       type = types.ints.unsigned;
@@ -350,10 +350,11 @@ in {
     # Empty regular file so the bind mount has a target on the immutable /etc.
     environment.etc."machine-id".text = "";
 
-    # Grow the partition table before fsck. A failure here must not reformat.
+    # Grow the partition table before fsck. A failure here must not reformat
+    # and must not stop janus-state-recover: that unit only wants this one.
     boot.initrd.systemd.services.janus-grow-state = {
       description = "Grow the state partition up to its configured cap";
-      requiredBy = ["janus-state-recover.service"];
+      wantedBy = ["janus-state-recover.service"];
       before = ["janus-state-recover.service" "local-fs-pre.target"];
       after = ["systemd-udev-trigger.service"];
       unitConfig.DefaultDependencies = false;
@@ -381,7 +382,62 @@ in {
         fi
         # The image places the backup GPT at the end of the file. A larger
         # disk needs that header moved before the last partition can grow.
+        # sgdisk -e also makes the kernel drop partition devices while it
+        # rereads the table. partx publishes them again before any exit,
+        # including the boots that do not change the partition size.
+        # Recover must not run in that gap.
+        publish_state() {
+          updated=0
+          for _ in $(seq 1 10); do
+            if partx -u "$parent"; then
+              updated=1
+              break
+            fi
+            sleep 0.2
+          done
+          # A busy neighbor can make partx fail after the kernel already
+          # has the state node. That must not fail this unit: recover
+          # would then be the only fsck, and it still has to run.
+          if [ "$updated" -ne 1 ]; then
+            echo "<4>janus: partx did not update the disk" > /dev/kmsg
+          fi
+          settled=0
+          for _ in 1 2; do
+            if "${config.boot.initrd.systemd.package}/bin/udevadm" settle --timeout=10; then
+              settled=1
+              break
+            fi
+          done
+          # After a drained queue, two sightings are enough. When settle
+          # did not finish, require a longer run of sightings so the old
+          # node, which udev is about to remove, does not count.
+          need=2
+          if [ "$settled" -ne 1 ]; then
+            echo "<4>janus: udev queue did not settle after the partition reread" > /dev/kmsg
+            need=5
+          fi
+          seen=0
+          stable=0
+          for _ in $(seq 1 50); do
+            if [ -b "$dev" ]; then
+              seen=$((seen + 1))
+              if [ "$seen" -ge "$need" ]; then
+                stable=1
+                break
+              fi
+              sleep 0.2
+            else
+              seen=0
+              sleep 0.1
+            fi
+          done
+          if [ "$stable" -ne 1 ]; then
+            echo "<3>janus: JANUS_STATE did not return after the partition reread" > /dev/kmsg
+            exit 1
+          fi
+        }
         sgdisk -e "$parent"
+        publish_state
         start=""
         end=""
         while read -r line; do
@@ -429,7 +485,7 @@ in {
           -t "''${partNum}:8300" \
           -u "''${partNum}:4a414e55-5300-4000-8000-000000000004" \
           "$parent"
-        partx -u "$parent"
+        publish_state
       '';
     };
 
@@ -450,17 +506,48 @@ in {
       script = ''
         set -eu
         ${waitForState}
-        set +e
-        fsck.f2fs -a --no-kernel-check "$dev"
-        fsck_status=$?
-        set -e
+        run_fsck() {
+          set +e
+          fsck.f2fs -a --no-kernel-check "$dev"
+          fsck_status=$?
+          set -e
+        }
+        # The node can disappear while the kernel rereads the partition
+        # table. The fsck or mount that hit that gap did not see the
+        # filesystem, so it must not select the corruption policy.
+        wait_state_back() {
+          echo "<4>janus: JANUS_STATE block device disappeared; waiting" > /dev/kmsg
+          for _ in $(seq 1 50); do
+            [ -b "$dev" ] && return 0
+            sleep 0.1
+          done
+          echo "<3>janus: JANUS_STATE did not return; not reformatting" > /dev/kmsg
+          exit 1
+        }
+        run_fsck
         # 126/127 means the tool did not run. 0 is clean, 1 corrected,
         # 2 reboot requested, 3 both. 8 is an operational error: fsck did
         # not finish, and the filesystem may still mount. 4 is uncorrected
         # and 255 is a missing superblock. Mounting those can sit in the
         # kernel, so they follow the corruption policy without a mount.
+        # 4 and 255 are repeated once the node is present. One miss while
+        # the kernel is rereading the table is not a verdict.
         if [ "$fsck_status" -eq 126 ] || [ "$fsck_status" -eq 127 ]; then
           echo "<3>janus: fsck.f2fs did not run ($fsck_status)" > /dev/kmsg
+          exit 1
+        fi
+        if [ "$fsck_status" -eq 4 ] || [ "$fsck_status" -eq 255 ] || [ ! -b "$dev" ]; then
+          if [ ! -b "$dev" ]; then
+            wait_state_back
+          fi
+          run_fsck
+          if [ "$fsck_status" -eq 126 ] || [ "$fsck_status" -eq 127 ]; then
+            echo "<3>janus: fsck.f2fs did not run ($fsck_status)" > /dev/kmsg
+            exit 1
+          fi
+        fi
+        if [ ! -b "$dev" ]; then
+          echo "<3>janus: JANUS_STATE is not a block device; not reformatting" > /dev/kmsg
           exit 1
         fi
         action=mount
@@ -468,15 +555,13 @@ in {
           4|255) action=broken ;;
         esac
         mount_status=1
-        if [ "$action" = mount ]; then
-          modprobe f2fs || true
-          probe=/run/janus-state-probe
-          mkdir -p "$probe"
+        probe_once() {
+          mount_status=1
+          mounted=0
           set +e
           mount -t f2fs -o ro "$dev" "$probe"
           mount_status=$?
           set -e
-          mounted=0
           if mountpoint -q "$probe"; then
             mounted=1
             if [ -e "$probe/lib/janus/full-fsck" ]; then
@@ -493,8 +578,27 @@ in {
           if [ "$mounted" -eq 1 ]; then
             mount_status=0
           fi
+        }
+        if [ "$action" = mount ]; then
+          modprobe f2fs || true
+          probe=/run/janus-state-probe
+          mkdir -p "$probe"
+          probe_once
+          # One repeat. A node that returned between the two calls can
+          # fail the first mount and accept the second. A second failure
+          # with the node present is the corruption policy.
+          if [ "$mount_status" != 0 ]; then
+            if [ ! -b "$dev" ]; then
+              wait_state_back
+            fi
+            probe_once
+          fi
         fi
         if [ "$mount_status" != 0 ]; then
+          if [ ! -b "$dev" ]; then
+            echo "<3>janus: JANUS_STATE is not a block device; not reformatting" > /dev/kmsg
+            exit 1
+          fi
           ${corruptState}
         fi
         resize.f2fs "$dev"
@@ -521,22 +625,48 @@ in {
       script = ''
         set -eu
         ${waitForState}
+        # The node can disappear while the kernel rereads the partition
+        # table. Coming back is not corruption. Staying away fails the
+        # unit without mkfs.
+        wait_state_back() {
+          echo "<4>janus: JANUS_STATE block device disappeared; waiting" > /dev/kmsg
+          for _ in $(seq 1 50); do
+            [ -b "$dev" ] && return 0
+            sleep 0.1
+          done
+          echo "<3>janus: JANUS_STATE did not return; not reformatting" > /dev/kmsg
+          exit 1
+        }
+        probe_rw() {
+          mount_status=1
+          mounted=0
+          set +e
+          mount -t f2fs -o rw "$dev" "$probe"
+          mount_status=$?
+          set -e
+          if mountpoint -q "$probe"; then
+            mounted=1
+            rm -f "$probe/lib/janus/full-fsck"
+            umount "$probe" || umount -l "$probe"
+          fi
+          if mountpoint -q "$probe"; then
+            echo "<3>janus: JANUS_STATE stayed mounted" > /dev/kmsg
+            exit 1
+          fi
+          if [ "$mounted" -eq 1 ]; then
+            mount_status=0
+          fi
+        }
         # Drop the on-disk request before the long check. This boot still
         # runs because /run/janus/full-fsck is already set. A hang or a power
         # cut then comes up as a normal boot.
         modprobe f2fs || true
         probe=/run/janus-state-probe
         mkdir -p "$probe"
-        set +e
-        mount -t f2fs -o rw "$dev" "$probe"
-        set -e
-        if mountpoint -q "$probe"; then
-          rm -f "$probe/lib/janus/full-fsck"
-          umount "$probe" || umount -l "$probe"
-        fi
-        if mountpoint -q "$probe"; then
-          echo "<3>janus: JANUS_STATE stayed mounted before full fsck" > /dev/kmsg
-          exit 1
+        probe_rw
+        if [ "$mount_status" != 0 ] && [ ! -b "$dev" ]; then
+          wait_state_back
+          probe_rw
         fi
         set +e
         fsck.f2fs -f "$dev"
@@ -546,32 +676,42 @@ in {
           echo "<3>janus: fsck.f2fs -f did not run ($fsck_status)" > /dev/kmsg
           exit 1
         fi
+        # Same rule as the boot check: 4 or 255 is repeated once the node
+        # is present. A second 4 or 255 is the corruption policy.
+        if [ "$fsck_status" -eq 4 ] || [ "$fsck_status" -eq 255 ] || [ ! -b "$dev" ]; then
+          if [ ! -b "$dev" ]; then
+            wait_state_back
+          fi
+          set +e
+          fsck.f2fs -f "$dev"
+          fsck_status=$?
+          set -e
+          if [ "$fsck_status" -eq 126 ] || [ "$fsck_status" -eq 127 ]; then
+            echo "<3>janus: fsck.f2fs -f did not run ($fsck_status)" > /dev/kmsg
+            exit 1
+          fi
+        fi
+        if [ ! -b "$dev" ]; then
+          echo "<3>janus: JANUS_STATE is not a block device; not reformatting" > /dev/kmsg
+          exit 1
+        fi
         case "$fsck_status" in
           4|255)
             ${corruptState}
             ;;
           *)
-            modprobe f2fs || true
-            probe=/run/janus-state-probe
-            mkdir -p "$probe"
-            set +e
-            mount -t f2fs -o rw "$dev" "$probe"
-            mount_status=$?
-            set -e
-            mounted=0
-            if mountpoint -q "$probe"; then
-              mounted=1
-              rm -f "$probe/lib/janus/full-fsck"
-              umount "$probe" || umount -l "$probe"
-            fi
-            if mountpoint -q "$probe"; then
-              echo "<3>janus: JANUS_STATE stayed mounted after full fsck" > /dev/kmsg
-              exit 1
-            fi
-            if [ "$mounted" -eq 1 ]; then
-              mount_status=0
+            probe_rw
+            if [ "$mount_status" != 0 ]; then
+              if [ ! -b "$dev" ]; then
+                wait_state_back
+              fi
+              probe_rw
             fi
             if [ "$mount_status" != 0 ]; then
+              if [ ! -b "$dev" ]; then
+                echo "<3>janus: JANUS_STATE is not a block device; not reformatting" > /dev/kmsg
+                exit 1
+              fi
               ${corruptState}
             else
               rm -f /run/janus/full-fsck

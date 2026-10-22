@@ -79,7 +79,8 @@ media, and a smaller cap does not shrink), `state.onCorruption`,
 `firmwareOffsetMiB` (board default),
 `slots.enable` (default false; duplicate `ROOT` and `NIX`, *09* §8.4).
 A normal boot runs `fsck.f2fs -a --no-kernel-check` and does not scan the
-volume (D-0049).
+volume. A missing block device is not corruption. Status 4 or 255 is
+checked again before reformat (D-0049).
 
 ## 4. `janus.network`
 

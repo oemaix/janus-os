@@ -62,6 +62,9 @@ Notes:
   `state.maximumSize` (default 4 GiB) or the end of the media. It does
   not shrink. Space past the cap stays free. `JANUS_STATE.size` replaces
   the 512 MiB written into the image and is not the cap (D-0049).
+  Every boot moves the backup GPT and then publishes the partition table
+  again, and waits until the state partuuid exists, including when the
+  partition is already at the cap.
 
 ## 3. Why f2fs
 
@@ -136,8 +139,11 @@ dedicated service users with `StateDirectory=` in their units.
 * If `/var` fails to mount even after fsck, the initrd re-formats the state
   partition (policy `janus.storage.state.onCorruption = "reformat" |
   "halt"`, default `reformat`) so the router still comes up (FR-OPS-005).
-  A timeout or a slow mount is not that failure. The event is logged to
-  the HMI (if any) and to the journal after the boot.
+  A timeout, a slow mount, or a missing block device is not that failure.
+  Status 4 or 255 is checked again once the block device is present, and
+  the policy runs only when that second result is still 4 or 255. A failed
+  `janus-grow-state` does not skip the check. The event is logged to the
+  HMI (if any) and to the journal after the boot.
 
 ## 7. Write-load budget
 

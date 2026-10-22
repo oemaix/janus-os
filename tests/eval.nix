@@ -3819,7 +3819,8 @@ in {
     ];
     recover = os.config.boot.initrd.systemd.services.janus-state-recover;
     full = os.config.boot.initrd.systemd.services.janus-state-fsck-full;
-    grow = os.config.boot.initrd.systemd.services.janus-grow-state.script;
+    growSvc = os.config.boot.initrd.systemd.services.janus-grow-state;
+    grow = growSvc.script;
     grow1 = capped.config.boot.initrd.systemd.services.janus-grow-state.script;
   in
     pkgs.runCommand "eval-state-boot" {} ''
@@ -3863,6 +3864,155 @@ in {
       EOF
       grep -F -q -- 'max_sectors=2097152' <<'EOF'
       ${grow1}
+      EOF
+      bash -n <<'EOF'
+      ${grow}
+      EOF
+      bash -n <<'EOF'
+      ${recover.script}
+      EOF
+      bash -n <<'EOF'
+      ${full.script}
+      EOF
+      awk '
+        /sgdisk -e/ { seen = 1 }
+        seen && /publish_state/ { published = 1 }
+        /exit 0/ && !published { bad = 1 }
+        END { if (bad) exit 1 }
+      ' <<'EOF'
+      ${grow}
+      EOF
+      wanted=${lib.escapeShellArg (lib.concatStringsSep " " growSvc.wantedBy)}
+      required=${lib.escapeShellArg (lib.concatStringsSep " " growSvc.requiredBy)}
+      case " $wanted " in
+        *" janus-state-recover.service "*) ;;
+        *)
+          echo "recover does not want grow" >&2
+          exit 1
+          ;;
+      esac
+      case " $required " in
+        *" janus-state-recover.service "*)
+          echo "recover requires grow, so a partx failure skips fsck" >&2
+          exit 1
+          ;;
+      esac
+      if grep -F -q -- 'settle --timeout=10 || true' <<'EOF'
+      ${grow}
+      EOF
+      then
+        echo "udev settle failure is ignored" >&2
+        exit 1
+      fi
+      awk '
+        /partx did not update/ { partx_msg = NR }
+        /did not return after the partition reread/ { missing = NR }
+        /exit 1/ { exits[++nexit] = NR }
+        END {
+          if (!partx_msg || !missing || missing < partx_msg) {
+            print "partx failure is not followed by the missing-node path" > "/dev/stderr"
+            exit 1
+          }
+          for (i = 1; i <= nexit; i++) {
+            if (exits[i] > partx_msg && exits[i] < missing) {
+              print "partx failure exits before the node is known to be gone" > "/dev/stderr"
+              exit 1
+            }
+          }
+        }
+      ' <<'EOF'
+      ${grow}
+      EOF
+      # Every mkfs must sit in the same small window as a missing-node exit.
+      check_reformat() {
+        awk '
+          {
+            line[NR] = $0
+          }
+          END {
+            mkfs_n = 0
+            for (i = 1; i <= NR; i++) {
+              if (line[i] !~ /mkfs\.f2fs/) continue
+              mkfs_n++
+              guard = 0
+              exited = 0
+              from = i - 25
+              if (from < 1) from = 1
+              for (j = i - 1; j >= from; j--) {
+                if (line[j] ~ /! -b "\$dev"/) {
+                  guard = j
+                  break
+                }
+              }
+              if (!guard) {
+                print "mkfs has no missing-node test in the preceding window" > "/dev/stderr"
+                exit 1
+              }
+              for (j = guard; j < i; j++) {
+                if (line[j] ~ /exit 1/) exited = 1
+              }
+              if (!exited) {
+                print "mkfs is reached when the missing-node branch does not exit" > "/dev/stderr"
+                exit 1
+              }
+            }
+            if (mkfs_n < 1) {
+              print "reformat command is missing" > "/dev/stderr"
+              exit 1
+            }
+          }
+        '
+      }
+      awk '
+        {
+          line[NR] = $0
+        }
+        END {
+          calls = 0
+          broken = 0
+          calls_before = 0
+          for (i = 1; i <= NR; i++) {
+            if (line[i] ~ /^[[:space:]]*run_fsck[[:space:]]*$/) {
+              calls++
+              if (!broken) calls_before = calls
+            }
+            if (line[i] ~ /^[[:space:]]*probe_once[[:space:]]*$/) probes++
+            if (!broken && line[i] ~ /action=broken/) broken = i
+          }
+          if (calls_before < 2 || !broken) {
+            print "status 4 or 255 selects reformat without a second fsck" > "/dev/stderr"
+            exit 1
+          }
+          if (probes < 2) {
+            print "the probe mount is not repeated" > "/dev/stderr"
+            exit 1
+          }
+        }
+      ' <<'EOF'
+      ${recover.script}
+      EOF
+      check_reformat <<'EOF'
+      ${recover.script}
+      EOF
+      awk '
+        /fsck\.f2fs -f/ { fsck++ }
+        /4\|255\)/ && !case_at { case_at = 1; fsck_before = fsck }
+        /^[[:space:]]*probe_rw[[:space:]]*$/ { probes++ }
+        END {
+          if (fsck_before < 2) {
+            print "full fsck status 4 or 255 is not repeated" > "/dev/stderr"
+            exit 1
+          }
+          if (probes < 4) {
+            print "full fsck does not retry the mount when the node returns" > "/dev/stderr"
+            exit 1
+          }
+        }
+      ' <<'EOF'
+      ${full.script}
+      EOF
+      check_reformat <<'EOF'
+      ${full.script}
       EOF
       test ${lib.escapeShellArg monthly.config.systemd.timers.janus-reboot.timerConfig.OnCalendar} = '*-*-01 04:00:00'
       test ${lib.escapeShellArg yearly.config.systemd.timers.janus-reboot.timerConfig.OnCalendar} = '*-01-01 04:00:00'

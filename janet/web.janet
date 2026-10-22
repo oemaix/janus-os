@@ -542,7 +542,10 @@
     {:status 404 :ctype "text/plain; charset=utf-8" :body ""}))
 
 (defn page-html [st]
-  (string/replace (slurp (st :html)) "__JANUS_META__" (json-encode (public-doc st))))
+  # Janet takes the pattern, then the replacement, then the text.
+  # The other order searches the HTML for itself inside the JSON and
+  # returns the public document with the store page untouched.
+  (string/replace "__JANUS_META__" (json-encode (public-doc st)) (slurp (st :html))))
 
 (defn access-line [method path status]
   (string (if method method "-") " " (if path path "-") " " status))
@@ -822,9 +825,16 @@
   (expect (= (length calls) 3) "off allowlist did not run")
   (def hidden (make-state (string runtime "-meta") "secret" spy @{"hostname" "router" "subscriptions" ["secret-sub"] "proxy" true} (fn [] clock) html nil "AA:BB"))
   (def rendered (page-html hidden))
+  (expect (string/find "<!DOCTYPE html>" rendered) "login is html")
+  (expect (string/find "id=\"passphrase\"" rendered) "login has passphrase")
+  (expect (not (string/find "__JANUS_META__" rendered)) "placeholder replaced")
   (expect (string/find "router" rendered) "login shows host")
   (expect (string/find "AA:BB" rendered) "login shows fingerprint")
   (expect (not (string/find "secret-sub" rendered)) "login hides subscriptions")
+  (def login-page
+    (handle hidden {:method "GET" :path "/" :query @{} :headers @{} :body ""}))
+  (expect (= (login-page :status) 200) "login page")
+  (expect (string/find "<!DOCTYPE html>" (login-page :body)) "login page html")
   (def meta-login
     (handle hidden {:method "POST" :path "/login" :query @{} :headers @{} :body "passphrase=secret"}))
   (def meta-token (string/slice (get (meta-login :headers) "Set-Cookie") 14 78))
