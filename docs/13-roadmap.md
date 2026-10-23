@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-22 |
+| Last updated | 2026-10-23 |
 
 This file is the implementation plan, the progress of the code, and the
 notes for work that is specified but not started. Choices are *18*.
@@ -75,6 +75,8 @@ power-cut. Tier 3 ships the profile. The Future list stays after 1.0.
 * Optional local configuration wizard, a front end for the build-host commands in *16*. No hosted build service.
 * A check that a destination refuses the exit because the address is in Iran, China, or Russia, for example Gemini. A country guessed from the node name, and a connect check (ping, TCP, or a handshake), do not show that refusal.
 * ROCK Pi 4C (`rockpi-4c`), after 1.0. The lab unit is v1.2. One profile covers that board. It stays out of *10* until the profile exists (D-0046). The shape is in Notes.
+* A kernel profile, `janus.system.kernelProfile` (D-0051). Not implemented. `compact` is the candidate worth building. `matched` stays optional. The shape is in Notes.
+* The maintenance page (*20*) is in the image. The retro console in *20* §7 is the design: no radius, no shadow, no gradient. Some functions and elements are still unusable or only partly worked out. Later work keeps that simple console and works out every function and every element so each behaves clearly and fluidly. The shape is in Notes.
 
 ## 2. Progress
 
@@ -187,6 +189,7 @@ tree does not mean that behavior exists. Stubs are not finished features.
   off unless set. `janus web stop` pauses the listener without a rebuild.
   Login is a per-host sops passphrase (`secrets/web/<host>.yaml`), not the root password. The page calls the
   allowlisted `janus` commands and does not edit the rest of the configuration.
+  Some functions and elements are still unusable or only partly worked out. Working those out inside the retro console is Future.
 * A mcuzone INA219 at `0x40` reports the cell in `janus status` and powers
   the router off while the cell is discharging, at the thresholds in *10*
   §4.5. The Waveshare address `0x43` stays unarmed.
@@ -213,6 +216,7 @@ tree does not mean that behavior exists. Stubs are not finished features.
   D-0045 asks whether the board-local secret path goes away.
   D-0048 asks whether an existing PPPoE username and password join the
   hot-override allowlist.
+  D-0051 records a kernel profile and does not add the option.
 * sing-box renders D-0037 through D-0042: fake-IP for names that LAN
   will proxy, `strip-for-proxied` per name, one policy per LAN, region
   bootstrap addresses, and `janus dns check` once per LAN. xray 26 routes
@@ -263,6 +267,28 @@ tree does not mean that behavior exists. Stubs are not finished features.
   unarmed.
 * The CSR Bluetooth dongle `0a12:0001` stays on the allowlist. BlueZ stays
   off. No Bluetooth feature is assigned.
+* `janus.system.kernelProfile` is a candidate and is not an option yet
+  (D-0051). It belongs under `janus.system` because `standard` and
+  `compact` are one kernel for every board. `matched` reads
+  `janus.hardware.board` and the declared peripherals. `standard` is the
+  NixOS kernel and stays the default, so aarch64 and x86_64 keep the
+  binary cache. `compact` drops a subsystem only when no household router
+  board, current or later, has a use for it: sound, GPU, cameras,
+  industrial I/O, SAN, and InfiniBand. NIC drivers stay, including ones
+  no current board uses, so a new board does not need a new profile.
+  Wi-Fi, USB, WWAN, MMC, NVMe, AHCI, f2fs, vfat, and virtio for
+  `x86_64-test` stay. The Kconfig list is written when `compact` is
+  implemented, against that rule. On the riscv64 6.18.54 NixOS kernel
+  those trees were 13 616 of 22 886 compiler invocations, about 59 %,
+  and about half of a 64-minute build phase at `-j20`. The flashed image
+  already ships the shrunk module set, so current boards do not gain
+  storage from `compact`. The compile-time cut matters while kernel
+  patches still force a rebuild, and on riscv64 and armv7l, which have
+  no cache. `matched` also drops drivers this board and its peripherals
+  do not use. It stays optional. It would matter for flash smaller than
+  2 GiB, together with `erofs` or `squashfs` (D-0035). Those filesystems
+  are reserved and are not near-term. Storage on the current board list
+  is not the reason to build either profile.
 * The board image must not contain a compiler or `janus-build`. The `nix`
   binary stays for activation and for `nix-store --import` (*05*, *09*
   §8.2). `nix.enable = false`, nixpkgs sources are absent, and `/nix` is
@@ -271,6 +297,15 @@ tree does not mean that behavior exists. Stubs are not finished features.
 * No MCP server is included. One would only repeat `janus-build` before
   that program exists, and a stub that returned invented data would be
   worse than no server.
+* The maintenance page (*20*) listens, logs in, and runs the allowlisted
+  commands. The retro console is the intended design: one column, one
+  geometry for light and dark, and no radius, shadow, gradient, icon,
+  or webfont. The page stays that simple. Some functions and elements
+  are still unusable or only partly worked out. Later work keeps the
+  console and considers every function and every element already on
+  the page, until each behavior is clear and fluid. It does not replace
+  the console with another style, and it does not add a control *20*
+  leaves out.
 
 ## 4. Risks
 
