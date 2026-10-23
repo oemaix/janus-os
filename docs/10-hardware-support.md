@@ -82,8 +82,10 @@ The WAN and LAN lights are GPIO LEDs in `rk3399-nanopi-r4s.dtb`
 leaves both off. The profile binds `green:wan` to the RTL8111H jack
 (PCI driver `r8169`) and `green:lan` to the RTL8211E jack (driver
 `rk_gmac-dwmac`). The `netdev` trigger lights the LED while that jack
-has link and blinks it on traffic. The red power LED (`red:power` on
-GPIO0_B5) stays on. These LEDs follow the silkscreen. The profile still
+has link and blinks it on traffic. Those two lights follow the
+silkscreen. The green SYS light is `red:power` on GPIO0_B5. The profile
+sets its trigger to `heartbeat`, so it blinks while the kernel is
+scheduling. The red PWR light is wired to the supply. The profile still
 does not choose which jack is the WAN role.
 
 ### 3.3 NanoPi R4S WAN firmware

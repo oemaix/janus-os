@@ -368,7 +368,18 @@ in {
         .tristate
       } = y
       test ${
+        (lib.findFirst (p: p.name == "janus-r4s-netdev-led") (throw "missing R4S netdev LED patch") r4s.config.boot.kernelPatches)
+        .structuredExtraConfig
+        .LEDS_TRIGGER_HEARTBEAT
+        .tristate
+      } = y
+      test ${
         if (lib.findFirst (p: p.name == "janus-r4s-sd-uhs") null r4s.config.boot.kernelPatches) == null
+        then "no"
+        else "yes"
+      } = yes
+      test ${
+        if (lib.findFirst (p: p.name == "janus-r4s-sys-led") null r4s.config.boot.kernelPatches) == null
         then "no"
         else "yes"
       } = yes
@@ -538,6 +549,7 @@ in {
     r4s = board "nanopi-r4s";
     vf2Rxc = lib.findFirst (p: p.name == "janus-vf2-yt8531-rxc") null vf2.config.boot.kernelPatches;
     r4sUhs = lib.findFirst (p: p.name == "janus-r4s-sd-uhs") null r4s.config.boot.kernelPatches;
+    r4sSys = lib.findFirst (p: p.name == "janus-r4s-sys-led") null r4s.config.boot.kernelPatches;
   in
     pkgs.runCommand "eval-tier3-boot" {
       nativeBuildInputs = [pkgs.gnutar pkgs.xz pkgs.patch pkgs.dtc pkgs.gcc];
@@ -621,6 +633,7 @@ in {
           '*/scripts/dtc/include-prefixes/*'
       fi
       patch -p1 --fuzz=0 -d r4s-tree < ${r4sUhs.patch}
+      patch -p1 --fuzz=0 -d r4s-tree < ${r4sSys.patch}
       cpp -nostdinc -undef -D__DTS__ -x assembler-with-cpp \
         -I r4s-tree/scripts/dtc/include-prefixes \
         -I r4s-tree/include \
@@ -632,6 +645,13 @@ in {
       grep -q 'no-1-8-v' sdmmc.node
       if grep -q 'sd-uhs-' sdmmc.node; then
         echo "sdmmc still advertises a UHS mode" >&2
+        exit 1
+      fi
+      awk '/led-sys \{/,/^[[:space:]]*\};/' r4s.dts > sysled.node
+      test -s sysled.node
+      grep -q 'linux,default-trigger = "heartbeat"' sysled.node
+      if grep -q 'default-state' sysled.node; then
+        echo "SYS LED still has a default state" >&2
         exit 1
       fi
       echo ok > "$out"
@@ -4215,6 +4235,7 @@ in {
       } = no
       test ${tri r4sPatch.structuredExtraConfig.SOUND} = n
       test ${tri led.structuredExtraConfig.LEDS_TRIGGER_NETDEV} = y
+      test ${tri led.structuredExtraConfig.LEDS_TRIGGER_HEARTBEAT} = y
       echo ok > "$out"
     '';
 }

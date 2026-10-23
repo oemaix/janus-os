@@ -75,6 +75,8 @@ in {
       "net.ifnames=0"
     ];
     # arm64 defconfig builds gpio-leds in and leaves LEDS_TRIGGER_NETDEV off.
+    # The profile turns that trigger on, and turns LEDS_TRIGGER_HEARTBEAT on
+    # for the SYS LED. The green SYS LED is red:power on GPIO0_B5.
     # SDR104 switches the SD I/O rail to 1.8 V and leaves it there. The boot
     # ROM and U-Boot read the card at 3.3 V, so the next start finds no card.
     # High-speed stays. no-1-8-v blocks a later UHS mode from the same switch.
@@ -83,8 +85,13 @@ in {
         name = "janus-r4s-netdev-led";
         patch = null;
         structuredExtraConfig = with lib.kernel; {
+          LEDS_TRIGGER_HEARTBEAT = yes;
           LEDS_TRIGGER_NETDEV = yes;
         };
+      }
+      {
+        name = "janus-r4s-sys-led";
+        patch = ./janus-r4s-sys-led.patch;
       }
       {
         name = "janus-r4s-sd-uhs";

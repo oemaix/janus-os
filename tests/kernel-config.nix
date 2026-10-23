@@ -101,6 +101,7 @@ in
     on armv7 DRM_ROCKCHIP "$armv7"
     on armv7 DRM_MESON "$armv7"
     on aarch64 LEDS_TRIGGER_NETDEV "$arm64"
+    on aarch64 LEDS_TRIGGER_HEARTBEAT "$arm64"
     on x86_64 E1000E "$x86"
     on x86_64 DRM_BOCHS "$x86"
     on x86_64 DRM_VIRTIO_GPU "$x86"
