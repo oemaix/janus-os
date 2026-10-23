@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-22 |
+| Last updated | 2026-10-23 |
 
 ## 1. Terminology
 
@@ -28,7 +28,7 @@ obligation for that release, not a reason to omit the profile.
 
 | Board | SoC / Arch | Ports | Tier | Notes |
 |-------|------------|-------|------|-------|
-| **NanoPi R4S** | RK3399 · aarch64 | 2× 1 GbE (RTL8211E + RTL8111H/PCIe) | 1 | Reference router board. Mainline U-Boot at raw offset (sector 64); GPT. No Wi-Fi. |
+| **NanoPi R4S** | RK3399 · aarch64 | 2× 1 GbE (RTL8211E + RTL8111H/PCIe) | 1 | Reference router board. Mainline U-Boot at raw offset (sector 64); GPT. No Wi-Fi. The SD slot stays at 3.3 V high-speed (§3.4). |
 | **Raspberry Pi 4 / CM4** (`rpi4`) | BCM2711 · aarch64 | Pi 4: 1× 1 GbE. CM4: that port on the official IO board. USB 3 NICs are peripherals. | 2 | Tier 2 (D-0016). EEPROM firmware, FAT `config.txt`, hybrid MBR so the bootloader finds the GPT boot partition. One `eth0`; the profile does not choose a WAN. The Pi 400 is not a board: it has no Ethernet jack (D-0032). |
 | **Raspberry Pi 3 / 3+** | BCM2837 · aarch64 | 1× 100 MbE (USB 2 shared) | 2 | Low throughput; fine for tunnel-only use behind another router. FAT `config.txt`, hybrid MBR so the boot ROM finds the GPT boot partition. |
 | **Raspberry Pi Zero 2 W** | BCM2710A1 · aarch64 | Wi-Fi 4 + Bluetooth, no Ethernet | 1 | Owner's lab. 512 MiB RAM. Needs a USB Ethernet peripheral for a wired WAN or LAN. FAT `config.txt`, hybrid MBR. The onboard radio is a 2.4 GHz WPA2 access point (§4.7, D-0043). Bluetooth is present and unused. Not a 500-node target. INA219 UPS overlay is part of this board's lab setup (FR-HW-008). |
@@ -93,6 +93,17 @@ On open, `r8169` applies `rtl_nic/rtl8168h-2.fw` before its built-in PHY
 setup. The profile copies that redistributable file from the pinned
 `linux-firmware` package. The rest of that collection stays out of the
 image. This board has no radio.
+
+### 3.4 NanoPi R4S SD signalling
+
+The SD slot's I/O rail is RK808 LDO4 (`vcc_sdio`), 1.8 V or 3.3 V. Card
+power stays at 3.0 V. The mainline DTB sets `sd-uhs-sdr104` on `sdmmc`.
+Linux then runs a UHS card at 1.8 V and leaves the rail there. The boot
+ROM and U-Boot need 3.3 V to read the card, so the next start finds no
+card. The profile removes `sd-uhs-sdr104`, keeps `cap-sd-highspeed`, and sets
+`no-1-8-v`. The card stays in high-speed mode at 3.3 V. A later UHS mode
+on the same node cannot switch the rail. A U-Boot that can raise the
+rail still starts only after the boot ROM has loaded SPL off the card.
 
 ## 4. Peripherals
 

@@ -367,6 +367,11 @@ in {
         .LEDS_TRIGGER_NETDEV
         .tristate
       } = y
+      test ${
+        if (lib.findFirst (p: p.name == "janus-r4s-sd-uhs") null r4s.config.boot.kernelPatches) == null
+        then "no"
+        else "yes"
+      } = yes
       test ${lib.escapeShellArg (ledArg "janus-r4s-wan-led@")} = %i
       test ${lib.escapeShellArg (ledArg "janus-r4s-lan-led@")} = %i
       test ${lib.escapeShellArg r4s.config.systemd.services."janus-r4s-wan-led@".serviceConfig.Restart} = on-failure
@@ -530,10 +535,12 @@ in {
     rpi2 = board "rpi2";
     rpi4 = board "rpi4";
     vf2 = board "visionfive2";
+    r4s = board "nanopi-r4s";
     vf2Rxc = lib.findFirst (p: p.name == "janus-vf2-yt8531-rxc") null vf2.config.boot.kernelPatches;
+    r4sUhs = lib.findFirst (p: p.name == "janus-r4s-sd-uhs") null r4s.config.boot.kernelPatches;
   in
     pkgs.runCommand "eval-tier3-boot" {
-      nativeBuildInputs = [pkgs.gnutar pkgs.xz pkgs.patch];
+      nativeBuildInputs = [pkgs.gnutar pkgs.xz pkgs.patch pkgs.dtc pkgs.gcc];
       passAsFile = ["bootExtra"];
       bootExtra = builtins.unsafeDiscardStringContext vf2.config.system.build.janusBoardImage.bootExtra;
     } ''
@@ -567,6 +574,9 @@ in {
       list_dts ${vf2.config.boot.kernelPackages.kernel.src} \
         arch/riscv/boot/dts/starfive/jh7110-starfive-visionfive-2-v1.2a.dts \
         arch/riscv/boot/dts/starfive/jh7110-starfive-visionfive-2-v1.3b.dts
+      list_dts ${r4s.config.boot.kernelPackages.kernel.src} \
+        arch/arm64/boot/dts/rockchip/rk3399-nanopi-r4s.dts \
+        arch/arm64/boot/dts/rockchip/rk3399-nanopi-r4s.dtsi
       src=${vf2.config.boot.kernelPackages.kernel.src}
       phy=drivers/net/phy/motorcomm.c
       dts=arch/riscv/boot/dts/starfive/jh7110-starfive-visionfive-2-v1.3b.dts
@@ -594,6 +604,36 @@ in {
       test "$pll_n" = 2
       grep -q motorcomm,keep-pll-enabled "apply/$dts"
       grep -q motorcomm,auto-sleep-disabled "apply/$dts"
+      r4s_src=${r4s.config.boot.kernelPackages.kernel.src}
+      rm -rf r4s-tree
+      mkdir -p r4s-tree
+      if [ -d "$r4s_src" ]; then
+        mkdir -p r4s-tree/arch/arm64/boot r4s-tree/include r4s-tree/scripts/dtc
+        cp -a "$r4s_src/arch/arm64/boot/dts" r4s-tree/arch/arm64/boot/dts
+        cp -a "$r4s_src/include/dt-bindings" r4s-tree/include/dt-bindings
+        cp -a "$r4s_src/include/uapi" r4s-tree/include/uapi
+        cp -a "$r4s_src/scripts/dtc/include-prefixes" r4s-tree/scripts/dtc/include-prefixes
+      else
+        tar -xJf "$r4s_src" -C r4s-tree --strip-components=1 --wildcards \
+          '*/arch/arm64/boot/dts/*' \
+          '*/include/dt-bindings/*' \
+          '*/include/uapi/*' \
+          '*/scripts/dtc/include-prefixes/*'
+      fi
+      patch -p1 --fuzz=0 -d r4s-tree < ${r4sUhs.patch}
+      cpp -nostdinc -undef -D__DTS__ -x assembler-with-cpp \
+        -I r4s-tree/scripts/dtc/include-prefixes \
+        -I r4s-tree/include \
+        -o r4s.pp r4s-tree/arch/arm64/boot/dts/rockchip/rk3399-nanopi-r4s.dts
+      dtc -q -I dts -O dts -o r4s.dts r4s.pp
+      awk '/mmc@fe320000 \{/,/^[[:space:]]*\};/' r4s.dts > sdmmc.node
+      test -s sdmmc.node
+      grep -q 'cap-sd-highspeed' sdmmc.node
+      grep -q 'no-1-8-v' sdmmc.node
+      if grep -q 'sd-uhs-' sdmmc.node; then
+        echo "sdmmc still advertises a UHS mode" >&2
+        exit 1
+      fi
       echo ok > "$out"
     '';
   eval-pppoe-secret = fail "eval-pppoe-secret" [

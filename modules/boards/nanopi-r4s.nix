@@ -75,6 +75,9 @@ in {
       "net.ifnames=0"
     ];
     # arm64 defconfig builds gpio-leds in and leaves LEDS_TRIGGER_NETDEV off.
+    # SDR104 switches the SD I/O rail to 1.8 V and leaves it there. The boot
+    # ROM and U-Boot read the card at 3.3 V, so the next start finds no card.
+    # High-speed stays. no-1-8-v blocks a later UHS mode from the same switch.
     boot.kernelPatches = [
       {
         name = "janus-r4s-netdev-led";
@@ -82,6 +85,10 @@ in {
         structuredExtraConfig = with lib.kernel; {
           LEDS_TRIGGER_NETDEV = yes;
         };
+      }
+      {
+        name = "janus-r4s-sd-uhs";
+        patch = ./janus-r4s-sd-uhs.patch;
       }
     ];
     systemd.services =
