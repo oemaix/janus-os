@@ -1407,32 +1407,33 @@ in {
       JANUS_WIFI_PASS=$dir/over JANUS_WIFI_SOPS=$dir/sops ${secretStart}
       echo ok > "$out"
     '';
-  eval-secret-apply = pkgs.runCommand "eval-secret-apply" {
-    nativeBuildInputs = [pkgs.jq];
-  } ''
-    set -eu
-    sed -n '/^subscription_url()/,/^}/p' ${../pkgs/janus-engine.sh} > fn.sh
-    . ./fn.sh
-    root=$TMPDIR/apply
-    mkdir -p "$root/secrets/subscription" "$root/saved"
-    meta=$root/meta.json
-    export meta
-    printf '%s\n' '{"vendor":{"urlSecret":"subscription/vendor"}}' > "$meta"
-    printf '%s\n' 'https://sops.example/sub' > "$root/secrets/subscription/vendor"
-    printf '%s\n' 'https://saved.example/sub' > "$root/saved/vendor"
-    got=$(JANUS_OVERRIDES=$root/no-overrides JANUS_SECRETS_RUN=$root/secrets JANUS_SUBSCRIPTION_URLS=$root/saved subscription_url vendor)
-    test "$got" = 'https://sops.example/sub'
-    printf '%s\n' '{"proxy.subscriptions.vendor.url":"https://override.example/sub"}' > "$root/overrides.json"
-    got=$(JANUS_OVERRIDES=$root/overrides.json JANUS_SECRETS_RUN=$root/secrets JANUS_SUBSCRIPTION_URLS=$root/saved subscription_url vendor)
-    test "$got" = 'https://override.example/sub'
-    rm -f "$root/secrets/subscription/vendor"
-    got=$(JANUS_OVERRIDES=$root/no-overrides JANUS_SECRETS_RUN=$root/secrets JANUS_SUBSCRIPTION_URLS=$root/saved subscription_url vendor)
-    test "$got" = 'https://saved.example/sub'
-    rm -f "$root/saved/vendor"
-    got=$(JANUS_OVERRIDES=$root/no-overrides JANUS_SECRETS_RUN=$root/secrets JANUS_SUBSCRIPTION_URLS=$root/saved subscription_url vendor)
-    test -z "$got"
-    echo ok > "$out"
-  '';
+  eval-secret-apply =
+    pkgs.runCommand "eval-secret-apply" {
+      nativeBuildInputs = [pkgs.jq];
+    } ''
+      set -eu
+      sed -n '/^subscription_url()/,/^}/p' ${../pkgs/janus-engine.sh} > fn.sh
+      . ./fn.sh
+      root=$TMPDIR/apply
+      mkdir -p "$root/secrets/subscription" "$root/saved"
+      meta=$root/meta.json
+      export meta
+      printf '%s\n' '{"vendor":{"urlSecret":"subscription/vendor"}}' > "$meta"
+      printf '%s\n' 'https://sops.example/sub' > "$root/secrets/subscription/vendor"
+      printf '%s\n' 'https://saved.example/sub' > "$root/saved/vendor"
+      got=$(JANUS_OVERRIDES=$root/no-overrides JANUS_SECRETS_RUN=$root/secrets JANUS_SUBSCRIPTION_URLS=$root/saved subscription_url vendor)
+      test "$got" = 'https://sops.example/sub'
+      printf '%s\n' '{"proxy.subscriptions.vendor.url":"https://override.example/sub"}' > "$root/overrides.json"
+      got=$(JANUS_OVERRIDES=$root/overrides.json JANUS_SECRETS_RUN=$root/secrets JANUS_SUBSCRIPTION_URLS=$root/saved subscription_url vendor)
+      test "$got" = 'https://override.example/sub'
+      rm -f "$root/secrets/subscription/vendor"
+      got=$(JANUS_OVERRIDES=$root/no-overrides JANUS_SECRETS_RUN=$root/secrets JANUS_SUBSCRIPTION_URLS=$root/saved subscription_url vendor)
+      test "$got" = 'https://saved.example/sub'
+      rm -f "$root/saved/vendor"
+      got=$(JANUS_OVERRIDES=$root/no-overrides JANUS_SECRETS_RUN=$root/secrets JANUS_SUBSCRIPTION_URLS=$root/saved subscription_url vendor)
+      test -z "$got"
+      echo ok > "$out"
+    '';
   eval-wifi-onboard = let
     os = mk [
       {
@@ -2604,100 +2605,101 @@ in {
       test "$(tr -d '[:space:]' < "$TMPDIR/boot/slot")" = a
       echo ok > "$out"
     '';
-  eval-deploy-slots = pkgs.runCommand "eval-deploy-slots" {
-    nativeBuildInputs = [pkgs.jq pkgs.bash];
-  } ''
-    set -eu
-    dir=$TMPDIR/slot-deploy
-    mkdir -p "$dir/imgs"
-    printf '%s\n' /nix/store/closure > "$dir/imgs/toplevel"
-    printf root-a > "$dir/imgs/root-a.img"
-    printf nix-a > "$dir/imgs/nix-a.img"
-    printf root-b > "$dir/imgs/root-b.img"
-    printf nix-b > "$dir/imgs/nix-b.img"
-    printf 'a\n' > "$dir/active"
-    printf '1\n' > "$dir/install-rc"
-    : > "$dir/ssh-log"
-    printf '\n' > "$dir/boot-install"
-    export JANUS_BOOT_INSTALL=$dir/boot-install
-    JANUS_BUILD_LIB=1
-    # shellcheck disable=SC1091
-    . ${../pkgs/janus-build.sh}
-    nix_fleet() {
-      case "$*" in
-        *slots.json*)
-          printf '%s\n' '{"enable":true,"rootA":"4a414e55-5300-4000-8000-000000000002","nixA":"4a414e55-5300-4000-8000-000000000003","rootB":"4a414e55-5300-4000-8000-000000000006","nixB":"4a414e55-5300-4000-8000-000000000007"}'
-          ;;
-        *janusSlotImages*)
-          printf '%s\n' "$dir/imgs"
-          ;;
-        *)
-          echo "unexpected nix_fleet: $*" >&2
-          return 1
-          ;;
-      esac
-    }
-    ssh_to() {
-      printf '%s\n' "$2" >> "$dir/ssh-log"
-      case "$2" in
-        *'/boot/slot'*)
-          cat "$dir/active"
-          ;;
-        'blockdev --getsize64 '*)
-          printf '%s\n' 1000000
-          ;;
-        'dd of='*)
-          cat >/dev/null
-          ;;
-        *install-slot*)
-          return "$(tr -d '[:space:]' < "$dir/install-rc")"
-          ;;
-        *) ;;
-      esac
-    }
-    if ( deploy_slots via 192.168.10.1 ); then
-      echo "slot deploy continued after install-slot failed" >&2
-      exit 1
-    fi
-    grep -q 'JANUS_SLOT_STORE=/run/janus-slot-nix' "$dir/ssh-log"
-    grep -q 'mkdir -p /run/janus-slot-nix' "$dir/ssh-log"
-    grep -q 'install-slot /nix/store/closure b' "$dir/ssh-log"
-    grep -q 'dd of=/dev/disk/by-partuuid/4a414e55-5300-4000-8000-000000000006' "$dir/ssh-log"
-    grep -q 'dd of=/dev/disk/by-partuuid/4a414e55-5300-4000-8000-000000000007' "$dir/ssh-log"
-    if grep -q '/mnt/' "$dir/ssh-log"; then
-      echo "slot deploy used a mount point on /" >&2
-      exit 1
-    fi
-    if grep -q 'systemctl reboot' "$dir/ssh-log"; then
-      echo "a failed slot deploy rebooted" >&2
-      exit 1
-    fi
-    if grep -q deploy-pending "$dir/ssh-log"; then
-      echo "a failed slot deploy marked the boot pending" >&2
-      exit 1
-    fi
-    tail -n 1 "$dir/ssh-log" | grep -q 'umount /run/janus-slot-nix'
-    tail -n 1 "$dir/ssh-log" | grep -q 'mount -o remount,ro /boot'
-    : > "$dir/ssh-log"
-    printf 'b\n' > "$dir/active"
-    printf '0\n' > "$dir/install-rc"
-    if ! ( deploy_slots via 192.168.10.1 ); then
-      echo "slot deploy stopped after install-slot" >&2
-      exit 1
-    fi
-    grep -q 'install-slot /nix/store/closure a' "$dir/ssh-log"
-    grep -q 'dd of=/dev/disk/by-partuuid/4a414e55-5300-4000-8000-000000000002' "$dir/ssh-log"
-    grep -q 'dd of=/dev/disk/by-partuuid/4a414e55-5300-4000-8000-000000000003' "$dir/ssh-log"
-    if grep -q '/mnt/' "$dir/ssh-log"; then
-      echo "slot deploy used a mount point on /" >&2
-      exit 1
-    fi
-    tail -n 1 "$dir/ssh-log" | grep -q 'umount /run/janus-slot-nix'
-    tail -n 1 "$dir/ssh-log" | grep -q deploy-pending
-    tail -n 1 "$dir/ssh-log" | grep -q 'mount -o remount,ro /boot'
-    tail -n 1 "$dir/ssh-log" | grep -q 'systemctl reboot'
-    echo ok > "$out"
-  '';
+  eval-deploy-slots =
+    pkgs.runCommand "eval-deploy-slots" {
+      nativeBuildInputs = [pkgs.jq pkgs.bash];
+    } ''
+      set -eu
+      dir=$TMPDIR/slot-deploy
+      mkdir -p "$dir/imgs"
+      printf '%s\n' /nix/store/closure > "$dir/imgs/toplevel"
+      printf root-a > "$dir/imgs/root-a.img"
+      printf nix-a > "$dir/imgs/nix-a.img"
+      printf root-b > "$dir/imgs/root-b.img"
+      printf nix-b > "$dir/imgs/nix-b.img"
+      printf 'a\n' > "$dir/active"
+      printf '1\n' > "$dir/install-rc"
+      : > "$dir/ssh-log"
+      printf '\n' > "$dir/boot-install"
+      export JANUS_BOOT_INSTALL=$dir/boot-install
+      JANUS_BUILD_LIB=1
+      # shellcheck disable=SC1091
+      . ${../pkgs/janus-build.sh}
+      nix_fleet() {
+        case "$*" in
+          *slots.json*)
+            printf '%s\n' '{"enable":true,"rootA":"4a414e55-5300-4000-8000-000000000002","nixA":"4a414e55-5300-4000-8000-000000000003","rootB":"4a414e55-5300-4000-8000-000000000006","nixB":"4a414e55-5300-4000-8000-000000000007"}'
+            ;;
+          *janusSlotImages*)
+            printf '%s\n' "$dir/imgs"
+            ;;
+          *)
+            echo "unexpected nix_fleet: $*" >&2
+            return 1
+            ;;
+        esac
+      }
+      ssh_to() {
+        printf '%s\n' "$2" >> "$dir/ssh-log"
+        case "$2" in
+          *'/boot/slot'*)
+            cat "$dir/active"
+            ;;
+          'blockdev --getsize64 '*)
+            printf '%s\n' 1000000
+            ;;
+          'dd of='*)
+            cat >/dev/null
+            ;;
+          *install-slot*)
+            return "$(tr -d '[:space:]' < "$dir/install-rc")"
+            ;;
+          *) ;;
+        esac
+      }
+      if ( deploy_slots via 192.168.10.1 ); then
+        echo "slot deploy continued after install-slot failed" >&2
+        exit 1
+      fi
+      grep -q 'JANUS_SLOT_STORE=/run/janus-slot-nix' "$dir/ssh-log"
+      grep -q 'mkdir -p /run/janus-slot-nix' "$dir/ssh-log"
+      grep -q 'install-slot /nix/store/closure b' "$dir/ssh-log"
+      grep -q 'dd of=/dev/disk/by-partuuid/4a414e55-5300-4000-8000-000000000006' "$dir/ssh-log"
+      grep -q 'dd of=/dev/disk/by-partuuid/4a414e55-5300-4000-8000-000000000007' "$dir/ssh-log"
+      if grep -q '/mnt/' "$dir/ssh-log"; then
+        echo "slot deploy used a mount point on /" >&2
+        exit 1
+      fi
+      if grep -q 'systemctl reboot' "$dir/ssh-log"; then
+        echo "a failed slot deploy rebooted" >&2
+        exit 1
+      fi
+      if grep -q deploy-pending "$dir/ssh-log"; then
+        echo "a failed slot deploy marked the boot pending" >&2
+        exit 1
+      fi
+      tail -n 1 "$dir/ssh-log" | grep -q 'umount /run/janus-slot-nix'
+      tail -n 1 "$dir/ssh-log" | grep -q 'mount -o remount,ro /boot'
+      : > "$dir/ssh-log"
+      printf 'b\n' > "$dir/active"
+      printf '0\n' > "$dir/install-rc"
+      if ! ( deploy_slots via 192.168.10.1 ); then
+        echo "slot deploy stopped after install-slot" >&2
+        exit 1
+      fi
+      grep -q 'install-slot /nix/store/closure a' "$dir/ssh-log"
+      grep -q 'dd of=/dev/disk/by-partuuid/4a414e55-5300-4000-8000-000000000002' "$dir/ssh-log"
+      grep -q 'dd of=/dev/disk/by-partuuid/4a414e55-5300-4000-8000-000000000003' "$dir/ssh-log"
+      if grep -q '/mnt/' "$dir/ssh-log"; then
+        echo "slot deploy used a mount point on /" >&2
+        exit 1
+      fi
+      tail -n 1 "$dir/ssh-log" | grep -q 'umount /run/janus-slot-nix'
+      tail -n 1 "$dir/ssh-log" | grep -q deploy-pending
+      tail -n 1 "$dir/ssh-log" | grep -q 'mount -o remount,ro /boot'
+      tail -n 1 "$dir/ssh-log" | grep -q 'systemctl reboot'
+      echo ok > "$out"
+    '';
 
   eval-hmi = let
     os = mk [
@@ -3422,240 +3424,241 @@ in {
     base
     {janus.access.web.enable = true;}
   ];
-  cli-age-key = pkgs.runCommand "cli-age-key" {
-    nativeBuildInputs = [pkgs.python3];
-  } ''
-    set -eu
-    dir=$TMPDIR/root
-    mkdir -p "$dir/bin" "$dir/secrets"
-    cat > "$dir/bin/systemctl" << 'EOF'
-    #!/bin/sh
-    printf '%s\n' "$*" >> "$JANUS_LOG"
-    if [ "$1" = list-units ]; then
-      printf '%s\n' 'janus-web-tls.service loaded failed'
-      printf '%s\n' 'janus-wireguard-secret-uplink.service loaded failed'
-      printf '%s\n' 'janus-pppoe-main.service loaded failed'
-      printf '%s\n' 'janus-web.service loaded failed'
-      printf '%s\n' 'janus-hostapd-home.service loaded failed'
-      printf '%s\n' 'janus-tailscale-auth.service loaded failed'
-      printf '%s\n' 'tailscaled.service loaded failed'
-    fi
-    exit 0
-    EOF
-    chmod +x "$dir/bin/systemctl"
-    cat > "$dir/bin/networkctl" << 'EOF'
-    #!/bin/sh
-    printf '%s\n' "$*" >> "$JANUS_LOG"
-    exit 0
-    EOF
-    chmod +x "$dir/bin/networkctl"
-    printf '%s\n' 'AGE-SECRET-KEY-1test' | JANUS_SECRETS_DIR="$dir/secrets" JANUS_LOG="$dir/log" PATH="$dir/bin:$PATH" bash ${../pkgs/janus.sh} secrets install-age-key 2>"$dir/err"
-    test ! -s "$dir/err"
-    printf '%s\n' 'AGE-SECRET-KEY-1test' | cmp - "$dir/secrets/age.key"
-    test "$(stat -c %a "$dir/secrets/age.key")" = 600
-    awk '
-      $1 == "restart" && $2 == "sops-install-secrets.service" { sops = NR }
-      $1 == "restart" && $2 == "janus-pppoe-main.service" { pppoe = NR }
-      $1 == "restart" && $2 == "janus-hostapd-home.service" { ap = NR }
-      $1 == "restart" && $2 == "janus-tailscale-auth.service" { auth = NR }
-      $1 == "restart" && $2 == "tailscaled.service" { tail = NR }
-      $1 == "restart" && $2 == "janus-web-secret.service" { page = NR }
-      $1 == "restart" && $2 == "janus-web.service" { web = NR }
-      $1 == "restart" && $2 == "janus-web-tls.service" { tls = NR }
-      $1 == "restart" && $2 == "janus-wireguard-secret-uplink.service" { wg = NR }
-      $1 == "reconfigure" && $2 == "wg-uplink" { re = NR }
-      $1 == "reload" { reload = NR }
-      END {
-        if (!(sops && pppoe && ap && auth && tail && page && web && tls && wg && re && !reload && sops < pppoe && sops < ap && sops < auth && auth < tail && page < web && web < tls && wg < re)) exit 1
-      }
-    ' "$dir/log"
-    mkdir -p "$dir/wgfail"
-    cat > "$dir/wgfail/systemctl" << 'EOF'
-    #!/bin/sh
-    printf '%s\n' "$*" >> "$JANUS_LOG"
-    if [ "$1" = list-units ]; then
-      printf '%s\n' 'janus-wireguard-secret-uplink.service loaded failed'
-    fi
-    if [ "$1" = restart ] && [ "$2" = janus-wireguard-secret-uplink.service ]; then
-      exit 1
-    fi
-    exit 0
-    EOF
-    cat > "$dir/wgfail/networkctl" << 'EOF'
-    #!/bin/sh
-    printf '%s\n' "$*" >> "$JANUS_LOG"
-    exit 0
-    EOF
-    chmod +x "$dir/wgfail/systemctl" "$dir/wgfail/networkctl"
-    : > "$dir/wgfail-log"
-    printf '%s\n' 'AGE-SECRET-KEY-1test' | JANUS_SECRETS_DIR="$dir/secrets" JANUS_LOG="$dir/wgfail-log" PATH="$dir/wgfail:$PATH" bash ${../pkgs/janus.sh} secrets install-age-key 2>"$dir/wgfail-err"
-    if grep -q reconfigure "$dir/wgfail-log" || grep -q '^reload$' "$dir/wgfail-log"; then
-      echo "networkctl ran after a failed wireguard secret" >&2
-      exit 1
-    fi
-    mkdir -p "$dir/wgreload"
-    cat > "$dir/wgreload/systemctl" << 'EOF'
-    #!/bin/sh
-    printf '%s\n' "$*" >> "$JANUS_LOG"
-    if [ "$1" = list-units ]; then
-      printf '%s\n' 'janus-wireguard-secret-uplink.service loaded failed'
-    fi
-    exit 0
-    EOF
-    cat > "$dir/wgreload/networkctl" << 'EOF'
-    #!/bin/sh
-    printf '%s\n' "$*" >> "$JANUS_LOG"
-    if [ "$1" = reconfigure ]; then
-      exit 1
-    fi
-    exit 0
-    EOF
-    chmod +x "$dir/wgreload/systemctl" "$dir/wgreload/networkctl"
-    : > "$dir/wgreload-log"
-    printf '%s\n' 'AGE-SECRET-KEY-1test' | JANUS_SECRETS_DIR="$dir/secrets" JANUS_LOG="$dir/wgreload-log" PATH="$dir/wgreload:$PATH" bash ${../pkgs/janus.sh} secrets install-age-key 2>"$dir/wgreload-err"
-    grep -q '^reconfigure wg-uplink$' "$dir/wgreload-log"
-    grep -q '^reload$' "$dir/wgreload-log"
-    printf '%s\n' 'AGE-SECRET-KEY-1old' > "$dir/secrets/age.key"
-    if printf '%s' "" | JANUS_SECRETS_DIR="$dir/secrets" JANUS_LOG="$dir/empty-log" PATH="$dir/bin:$PATH" bash ${../pkgs/janus.sh} secrets install-age-key 2>"$dir/empty-err"; then
-      echo "an empty age key was installed" >&2
-      exit 1
-    fi
-    if printf '\n' | JANUS_SECRETS_DIR="$dir/secrets" JANUS_LOG="$dir/empty-log" PATH="$dir/bin:$PATH" bash ${../pkgs/janus.sh} secrets install-age-key 2>"$dir/nl-err"; then
-      echo "a blank age key was installed" >&2
-      exit 1
-    fi
-    grep -q 'Refusing an age key that has no AGE-SECRET-KEY-1 line.' "$dir/empty-err"
-    grep -q 'Refusing an age key that has no AGE-SECRET-KEY-1 line.' "$dir/nl-err"
-    printf '%s\n' 'AGE-SECRET-KEY-1old' | cmp - "$dir/secrets/age.key"
-    test ! -e "$dir/empty-log"
-    python3 - ${../pkgs/janus.sh} "$dir" << 'PY'
-    import os, pty, select, subprocess, sys
-    script, root = sys.argv[1], sys.argv[2]
-    env = os.environ.copy()
-    env["JANUS_SECRETS_DIR"] = os.path.join(root, "tty-secrets")
-    env["JANUS_LOG"] = os.path.join(root, "tty-log")
-    env["PATH"] = os.path.join(root, "bin") + os.pathsep + env["PATH"]
-    os.makedirs(env["JANUS_SECRETS_DIR"])
-    master, slave = pty.openpty()
-    proc = subprocess.Popen(["bash", script, "secrets", "install-age-key"], stdin=slave, stdout=slave, stderr=slave, env=env)
-    os.close(slave)
-    buf = b""
-    def pump(timeout):
-        global buf
-        while True:
-            ready, _, _ = select.select([master], [], [], timeout)
-            if not ready:
-                return
-            try:
-                chunk = os.read(master, 4096)
-            except OSError:
-                return
-            if not chunk:
-                return
-            buf += chunk
-    pump(2)
-    if b"Paste the age private key, then press Enter and Ctrl-D." not in buf:
-        sys.stderr.write(buf.decode("utf-8", "replace"))
-        sys.exit(1)
-    os.write(master, b"AGE-SECRET-KEY-1tty\n\x04")
-    pump(2)
-    rc = proc.wait(timeout=5)
-    if rc != 0:
-        sys.exit(rc)
-    PY
-    printf '%s\n' 'AGE-SECRET-KEY-1tty' | cmp - "$dir/tty-secrets/age.key"
-    test "$(stat -c %a "$dir/tty-secrets/age.key")" = 600
-    cat > "$dir/bin/ssh" << 'EOF'
-    #!/bin/sh
-    printf '%s\n' "$*" >> "$JANUS_SSH_LOG"
-    probe=0
-    for arg in "$@"; do
-      if [ "$arg" = -n ]; then
-        probe=1
+  cli-age-key =
+    pkgs.runCommand "cli-age-key" {
+      nativeBuildInputs = [pkgs.python3];
+    } ''
+      set -eu
+      dir=$TMPDIR/root
+      mkdir -p "$dir/bin" "$dir/secrets"
+      cat > "$dir/bin/systemctl" << 'EOF'
+      #!/bin/sh
+      printf '%s\n' "$*" >> "$JANUS_LOG"
+      if [ "$1" = list-units ]; then
+        printf '%s\n' 'janus-web-tls.service loaded failed'
+        printf '%s\n' 'janus-wireguard-secret-uplink.service loaded failed'
+        printf '%s\n' 'janus-pppoe-main.service loaded failed'
+        printf '%s\n' 'janus-web.service loaded failed'
+        printf '%s\n' 'janus-hostapd-home.service loaded failed'
+        printf '%s\n' 'janus-tailscale-auth.service loaded failed'
+        printf '%s\n' 'tailscaled.service loaded failed'
       fi
-    done
-    if [ "$probe" = 1 ]; then
-      if [ "''${JANUS_SSH_FAIL:-}" = 1 ]; then
+      exit 0
+      EOF
+      chmod +x "$dir/bin/systemctl"
+      cat > "$dir/bin/networkctl" << 'EOF'
+      #!/bin/sh
+      printf '%s\n' "$*" >> "$JANUS_LOG"
+      exit 0
+      EOF
+      chmod +x "$dir/bin/networkctl"
+      printf '%s\n' 'AGE-SECRET-KEY-1test' | JANUS_SECRETS_DIR="$dir/secrets" JANUS_LOG="$dir/log" PATH="$dir/bin:$PATH" bash ${../pkgs/janus.sh} secrets install-age-key 2>"$dir/err"
+      test ! -s "$dir/err"
+      printf '%s\n' 'AGE-SECRET-KEY-1test' | cmp - "$dir/secrets/age.key"
+      test "$(stat -c %a "$dir/secrets/age.key")" = 600
+      awk '
+        $1 == "restart" && $2 == "sops-install-secrets.service" { sops = NR }
+        $1 == "restart" && $2 == "janus-pppoe-main.service" { pppoe = NR }
+        $1 == "restart" && $2 == "janus-hostapd-home.service" { ap = NR }
+        $1 == "restart" && $2 == "janus-tailscale-auth.service" { auth = NR }
+        $1 == "restart" && $2 == "tailscaled.service" { tail = NR }
+        $1 == "restart" && $2 == "janus-web-secret.service" { page = NR }
+        $1 == "restart" && $2 == "janus-web.service" { web = NR }
+        $1 == "restart" && $2 == "janus-web-tls.service" { tls = NR }
+        $1 == "restart" && $2 == "janus-wireguard-secret-uplink.service" { wg = NR }
+        $1 == "reconfigure" && $2 == "wg-uplink" { re = NR }
+        $1 == "reload" { reload = NR }
+        END {
+          if (!(sops && pppoe && ap && auth && tail && page && web && tls && wg && re && !reload && sops < pppoe && sops < ap && sops < auth && auth < tail && page < web && web < tls && wg < re)) exit 1
+        }
+      ' "$dir/log"
+      mkdir -p "$dir/wgfail"
+      cat > "$dir/wgfail/systemctl" << 'EOF'
+      #!/bin/sh
+      printf '%s\n' "$*" >> "$JANUS_LOG"
+      if [ "$1" = list-units ]; then
+        printf '%s\n' 'janus-wireguard-secret-uplink.service loaded failed'
+      fi
+      if [ "$1" = restart ] && [ "$2" = janus-wireguard-secret-uplink.service ]; then
         exit 1
       fi
       exit 0
-    fi
-    cat > "$JANUS_KEY_OUT"
-    EOF
-    chmod +x "$dir/bin/ssh"
-    JANUS_BUILD_LIB=1
-    # shellcheck disable=SC1091
-    . ${../pkgs/janus-build.sh}
-    test "$(ssh_dest potato)" = root@potato
-    test "$(ssh_dest 192.168.10.1)" = root@192.168.10.1
-    test "$(ssh_dest 'fd7a:115c:a1e0::1')" = 'root@[fd7a:115c:a1e0::1]'
-    test "$(ssh_dest '[fd7a:115c:a1e0::1]')" = 'root@[fd7a:115c:a1e0::1]'
-    test "$(ssh_dest 'root@[fd7a:115c:a1e0::1]')" = 'root@[fd7a:115c:a1e0::1]'
-    export JANUS_SSH_LOG=$dir/ssh-log JANUS_KEY_OUT=$dir/key-out
-    export PATH="$dir/bin:$PATH"
-    printf '%s\n' 'AGE-SECRET-KEY-1ssh' | install_age_key_over_ssh 'fd7a:115c:a1e0::1' 2>"$dir/ssh-err"
-    test ! -s "$dir/ssh-err"
-    printf '%s\n' 'AGE-SECRET-KEY-1ssh' | cmp - "$dir/key-out"
-    head -n 1 "$dir/ssh-log" | grep -q -- '-n'
-    grep -q 'root@\[fd7a:115c:a1e0::1\] janus secrets install-age-key' "$dir/ssh-log"
-    : > "$dir/ssh-log"
-    rm -f "$dir/key-out"
-    if printf '\n' | install_age_key_over_ssh 192.168.10.1 2>"$dir/ssh-empty"; then
-      echo "an empty key was sent over ssh" >&2
-      exit 1
-    fi
-    grep -q 'Refusing an age key that has no AGE-SECRET-KEY-1 line.' "$dir/ssh-empty"
-    test ! -e "$dir/key-out"
-    test "$(wc -l < "$dir/ssh-log")" -eq 1
-    : > "$dir/ssh-log"
-    rest=$(printf '%s\n' 'AGE-SECRET-KEY-1keep' | (JANUS_SSH_FAIL=1 install_age_key_over_ssh 192.168.10.1 >/dev/null 2>"$dir/ssh-fail" || true; cat))
-    test "$rest" = "AGE-SECRET-KEY-1keep"
-    if grep -q 'Paste the age private key' "$dir/ssh-fail"; then
-      echo "a failed probe printed the paste prompt" >&2
-      exit 1
-    fi
-    python3 - ${../pkgs/janus-build.sh} "$dir" << 'PY'
-    import os, pty, select, subprocess, sys
-    script, root = sys.argv[1], sys.argv[2]
-    env = os.environ.copy()
-    env["JANUS_BUILD_LIB"] = "1"
-    env["JANUS_SSH_LOG"] = os.path.join(root, "tty-ssh-log")
-    env["JANUS_KEY_OUT"] = os.path.join(root, "tty-remote-key")
-    env["PATH"] = os.path.join(root, "bin") + os.pathsep + env["PATH"]
-    env.pop("JANUS_SSH_FAIL", None)
-    master, slave = pty.openpty()
-    proc = subprocess.Popen(
-        ["bash", "-c", '. "$1"; install_age_key_over_ssh "$2"', "bash", script, "192.168.10.1"],
-        stdin=slave, stdout=slave, stderr=slave, env=env,
-    )
-    os.close(slave)
-    buf = b""
-    def pump(timeout):
-        global buf
-        while True:
-            ready, _, _ = select.select([master], [], [], timeout)
-            if not ready:
-                return
-            try:
-                chunk = os.read(master, 4096)
-            except OSError:
-                return
-            if not chunk:
-                return
-            buf += chunk
-    pump(2)
-    if b"Paste the age private key, then press Enter and Ctrl-D." not in buf:
-        sys.stderr.write(buf.decode("utf-8", "replace"))
-        sys.exit(1)
-    os.write(master, b"AGE-SECRET-KEY-1tty\n\x04")
-    pump(2)
-    rc = proc.wait(timeout=5)
-    if rc != 0:
-        sys.exit(rc)
-    PY
-    printf '%s\n' 'AGE-SECRET-KEY-1tty' | cmp - "$dir/tty-remote-key"
-    echo ok > "$out"
-  '';
+      EOF
+      cat > "$dir/wgfail/networkctl" << 'EOF'
+      #!/bin/sh
+      printf '%s\n' "$*" >> "$JANUS_LOG"
+      exit 0
+      EOF
+      chmod +x "$dir/wgfail/systemctl" "$dir/wgfail/networkctl"
+      : > "$dir/wgfail-log"
+      printf '%s\n' 'AGE-SECRET-KEY-1test' | JANUS_SECRETS_DIR="$dir/secrets" JANUS_LOG="$dir/wgfail-log" PATH="$dir/wgfail:$PATH" bash ${../pkgs/janus.sh} secrets install-age-key 2>"$dir/wgfail-err"
+      if grep -q reconfigure "$dir/wgfail-log" || grep -q '^reload$' "$dir/wgfail-log"; then
+        echo "networkctl ran after a failed wireguard secret" >&2
+        exit 1
+      fi
+      mkdir -p "$dir/wgreload"
+      cat > "$dir/wgreload/systemctl" << 'EOF'
+      #!/bin/sh
+      printf '%s\n' "$*" >> "$JANUS_LOG"
+      if [ "$1" = list-units ]; then
+        printf '%s\n' 'janus-wireguard-secret-uplink.service loaded failed'
+      fi
+      exit 0
+      EOF
+      cat > "$dir/wgreload/networkctl" << 'EOF'
+      #!/bin/sh
+      printf '%s\n' "$*" >> "$JANUS_LOG"
+      if [ "$1" = reconfigure ]; then
+        exit 1
+      fi
+      exit 0
+      EOF
+      chmod +x "$dir/wgreload/systemctl" "$dir/wgreload/networkctl"
+      : > "$dir/wgreload-log"
+      printf '%s\n' 'AGE-SECRET-KEY-1test' | JANUS_SECRETS_DIR="$dir/secrets" JANUS_LOG="$dir/wgreload-log" PATH="$dir/wgreload:$PATH" bash ${../pkgs/janus.sh} secrets install-age-key 2>"$dir/wgreload-err"
+      grep -q '^reconfigure wg-uplink$' "$dir/wgreload-log"
+      grep -q '^reload$' "$dir/wgreload-log"
+      printf '%s\n' 'AGE-SECRET-KEY-1old' > "$dir/secrets/age.key"
+      if printf '%s' "" | JANUS_SECRETS_DIR="$dir/secrets" JANUS_LOG="$dir/empty-log" PATH="$dir/bin:$PATH" bash ${../pkgs/janus.sh} secrets install-age-key 2>"$dir/empty-err"; then
+        echo "an empty age key was installed" >&2
+        exit 1
+      fi
+      if printf '\n' | JANUS_SECRETS_DIR="$dir/secrets" JANUS_LOG="$dir/empty-log" PATH="$dir/bin:$PATH" bash ${../pkgs/janus.sh} secrets install-age-key 2>"$dir/nl-err"; then
+        echo "a blank age key was installed" >&2
+        exit 1
+      fi
+      grep -q 'Refusing an age key that has no AGE-SECRET-KEY-1 line.' "$dir/empty-err"
+      grep -q 'Refusing an age key that has no AGE-SECRET-KEY-1 line.' "$dir/nl-err"
+      printf '%s\n' 'AGE-SECRET-KEY-1old' | cmp - "$dir/secrets/age.key"
+      test ! -e "$dir/empty-log"
+      python3 - ${../pkgs/janus.sh} "$dir" << 'PY'
+      import os, pty, select, subprocess, sys
+      script, root = sys.argv[1], sys.argv[2]
+      env = os.environ.copy()
+      env["JANUS_SECRETS_DIR"] = os.path.join(root, "tty-secrets")
+      env["JANUS_LOG"] = os.path.join(root, "tty-log")
+      env["PATH"] = os.path.join(root, "bin") + os.pathsep + env["PATH"]
+      os.makedirs(env["JANUS_SECRETS_DIR"])
+      master, slave = pty.openpty()
+      proc = subprocess.Popen(["bash", script, "secrets", "install-age-key"], stdin=slave, stdout=slave, stderr=slave, env=env)
+      os.close(slave)
+      buf = b""
+      def pump(timeout):
+          global buf
+          while True:
+              ready, _, _ = select.select([master], [], [], timeout)
+              if not ready:
+                  return
+              try:
+                  chunk = os.read(master, 4096)
+              except OSError:
+                  return
+              if not chunk:
+                  return
+              buf += chunk
+      pump(2)
+      if b"Paste the age private key, then press Enter and Ctrl-D." not in buf:
+          sys.stderr.write(buf.decode("utf-8", "replace"))
+          sys.exit(1)
+      os.write(master, b"AGE-SECRET-KEY-1tty\n\x04")
+      pump(2)
+      rc = proc.wait(timeout=5)
+      if rc != 0:
+          sys.exit(rc)
+      PY
+      printf '%s\n' 'AGE-SECRET-KEY-1tty' | cmp - "$dir/tty-secrets/age.key"
+      test "$(stat -c %a "$dir/tty-secrets/age.key")" = 600
+      cat > "$dir/bin/ssh" << 'EOF'
+      #!/bin/sh
+      printf '%s\n' "$*" >> "$JANUS_SSH_LOG"
+      probe=0
+      for arg in "$@"; do
+        if [ "$arg" = -n ]; then
+          probe=1
+        fi
+      done
+      if [ "$probe" = 1 ]; then
+        if [ "''${JANUS_SSH_FAIL:-}" = 1 ]; then
+          exit 1
+        fi
+        exit 0
+      fi
+      cat > "$JANUS_KEY_OUT"
+      EOF
+      chmod +x "$dir/bin/ssh"
+      JANUS_BUILD_LIB=1
+      # shellcheck disable=SC1091
+      . ${../pkgs/janus-build.sh}
+      test "$(ssh_dest potato)" = root@potato
+      test "$(ssh_dest 192.168.10.1)" = root@192.168.10.1
+      test "$(ssh_dest 'fd7a:115c:a1e0::1')" = 'root@[fd7a:115c:a1e0::1]'
+      test "$(ssh_dest '[fd7a:115c:a1e0::1]')" = 'root@[fd7a:115c:a1e0::1]'
+      test "$(ssh_dest 'root@[fd7a:115c:a1e0::1]')" = 'root@[fd7a:115c:a1e0::1]'
+      export JANUS_SSH_LOG=$dir/ssh-log JANUS_KEY_OUT=$dir/key-out
+      export PATH="$dir/bin:$PATH"
+      printf '%s\n' 'AGE-SECRET-KEY-1ssh' | install_age_key_over_ssh 'fd7a:115c:a1e0::1' 2>"$dir/ssh-err"
+      test ! -s "$dir/ssh-err"
+      printf '%s\n' 'AGE-SECRET-KEY-1ssh' | cmp - "$dir/key-out"
+      head -n 1 "$dir/ssh-log" | grep -q -- '-n'
+      grep -q 'root@\[fd7a:115c:a1e0::1\] janus secrets install-age-key' "$dir/ssh-log"
+      : > "$dir/ssh-log"
+      rm -f "$dir/key-out"
+      if printf '\n' | install_age_key_over_ssh 192.168.10.1 2>"$dir/ssh-empty"; then
+        echo "an empty key was sent over ssh" >&2
+        exit 1
+      fi
+      grep -q 'Refusing an age key that has no AGE-SECRET-KEY-1 line.' "$dir/ssh-empty"
+      test ! -e "$dir/key-out"
+      test "$(wc -l < "$dir/ssh-log")" -eq 1
+      : > "$dir/ssh-log"
+      rest=$(printf '%s\n' 'AGE-SECRET-KEY-1keep' | (JANUS_SSH_FAIL=1 install_age_key_over_ssh 192.168.10.1 >/dev/null 2>"$dir/ssh-fail" || true; cat))
+      test "$rest" = "AGE-SECRET-KEY-1keep"
+      if grep -q 'Paste the age private key' "$dir/ssh-fail"; then
+        echo "a failed probe printed the paste prompt" >&2
+        exit 1
+      fi
+      python3 - ${../pkgs/janus-build.sh} "$dir" << 'PY'
+      import os, pty, select, subprocess, sys
+      script, root = sys.argv[1], sys.argv[2]
+      env = os.environ.copy()
+      env["JANUS_BUILD_LIB"] = "1"
+      env["JANUS_SSH_LOG"] = os.path.join(root, "tty-ssh-log")
+      env["JANUS_KEY_OUT"] = os.path.join(root, "tty-remote-key")
+      env["PATH"] = os.path.join(root, "bin") + os.pathsep + env["PATH"]
+      env.pop("JANUS_SSH_FAIL", None)
+      master, slave = pty.openpty()
+      proc = subprocess.Popen(
+          ["bash", "-c", '. "$1"; install_age_key_over_ssh "$2"', "bash", script, "192.168.10.1"],
+          stdin=slave, stdout=slave, stderr=slave, env=env,
+      )
+      os.close(slave)
+      buf = b""
+      def pump(timeout):
+          global buf
+          while True:
+              ready, _, _ = select.select([master], [], [], timeout)
+              if not ready:
+                  return
+              try:
+                  chunk = os.read(master, 4096)
+              except OSError:
+                  return
+              if not chunk:
+                  return
+              buf += chunk
+      pump(2)
+      if b"Paste the age private key, then press Enter and Ctrl-D." not in buf:
+          sys.stderr.write(buf.decode("utf-8", "replace"))
+          sys.exit(1)
+      os.write(master, b"AGE-SECRET-KEY-1tty\n\x04")
+      pump(2)
+      rc = proc.wait(timeout=5)
+      if rc != 0:
+          sys.exit(rc)
+      PY
+      printf '%s\n' 'AGE-SECRET-KEY-1tty' | cmp - "$dir/tty-remote-key"
+      echo ok > "$out"
+    '';
   eval-web-sops = let
     os = mk [
       base
@@ -4147,4 +4150,71 @@ in {
     base
     {janus.system.reboot.schedule = "0 4 1 *";}
   ];
+  eval-kernel-profile-matched = fail "eval-kernel-profile-matched" [
+    base
+    {janus.system.kernelProfile = "matched";}
+  ];
+  eval-kernel-profile = let
+    standard = mk [base];
+    compact = mk [
+      base
+      {janus.system.kernelProfile = "compact";}
+    ];
+    r4s = mk [
+      {
+        janus.hardware.board = "nanopi-r4s";
+        janus.access.ssh.authorizedKeys = [key];
+        janus.system.kernelProfile = "compact";
+      }
+    ];
+    patchOf = os:
+      lib.findFirst (p: p.name == "janus-kernel-compact") null os.config.boot.kernelPatches;
+    compactPatch = patchOf compact;
+    r4sPatch = patchOf r4s;
+    tri = v:
+      if v ? content
+      then v.content.tristate or ""
+      else v.tristate or "";
+    sym = name: tri compactPatch.structuredExtraConfig.${name};
+    gone = name:
+      if compactPatch.structuredExtraConfig ? ${name}
+      then "yes"
+      else "no";
+    led = lib.findFirst (p: p.name == "janus-r4s-netdev-led") (throw "missing R4S netdev LED patch") r4s.config.boot.kernelPatches;
+  in
+    pkgs.runCommand "eval-kernel-profile" {} ''
+      test ${lib.escapeShellArg standard.config.janus.system.kernelProfile} = standard
+      test ${
+        if patchOf standard == null
+        then "yes"
+        else "no"
+      } = yes
+      test ${sym "SOUND"} = n
+      test ${sym "DRM_AMDGPU"} = n
+      test ${sym "DRM_I915"} = n
+      test ${sym "MEDIA_SUPPORT"} = n
+      test ${sym "IIO"} = n
+      test ${sym "COMEDI"} = n
+      test ${sym "INFINIBAND"} = n
+      test ${sym "NVME_TARGET"} = n
+      test ${sym "SCSI_QLA_FC"} = n
+      # Not named in the off-list. The built .config is eval-kernel-config.
+      # DRM_VC4 is also unnamed and is still absent: it depends on SND.
+      test ${gone "DRM"} = no
+      test ${gone "DRM_SIMPLEDRM"} = no
+      test ${gone "DRM_ROCKCHIP"} = no
+      test ${gone "DRM_MESON"} = no
+      test ${gone "SCSI_VIRTIO"} = no
+      test ${gone "BLK_DEV_NVME"} = no
+      test ${gone "F2FS_FS"} = no
+      test ${gone "E1000E"} = no
+      test ${
+        if r4sPatch.structuredExtraConfig ? DRM_I915
+        then "yes"
+        else "no"
+      } = no
+      test ${tri r4sPatch.structuredExtraConfig.SOUND} = n
+      test ${tri led.structuredExtraConfig.LEDS_TRIGGER_NETDEV} = y
+      echo ok > "$out"
+    '';
 }

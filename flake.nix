@@ -96,6 +96,7 @@
         vm-x86_64-slots = import ./tests/vm-slots.nix {inherit pkgs self;};
         vm-x86_64-net = import ./tests/vm-net.nix {inherit pkgs nixpkgs self;};
         limine-bios = import ./tests/limine-bios.nix {inherit pkgs;};
+        eval-kernel-config = import ./tests/kernel-config.nix {inherit pkgs self;};
       });
 
     formatter = forAllSystems (pkgs: pkgs.alejandra);

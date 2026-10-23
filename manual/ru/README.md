@@ -132,6 +132,13 @@ nix develop
 Имена параметров —
 [docs/08-configuration-reference.md](../../docs/08-configuration-reference.md).
 `janus-build check <host>` вычисляет конфигурацию и не собирает образ.
+`janus.system.kernelProfile` по умолчанию `standard`: это ядро NixOS, и
+для aarch64 и x86_64 остаётся двоичный кэш. `compact` — то же ядро для
+каждой платы, без звука, настольной и трёхмерной графики, камер,
+промышленных датчиков, InfiniBand и сетевых адаптеров систем хранения.
+Сетевые карты, Wi-Fi, USB, сотовые модемы, SD, NVMe и virtio остаются,
+и последовательная консоль тоже. `compact` имеет смысл, когда патч ядра
+всё равно требует пересборки.
 
 `janus.system.region` — это `cn` (по умолчанию), `ru` или `ir`. От него зависит
 внутренний резолвер. Для `ru` значение `janus.proxy.blockQuic` по

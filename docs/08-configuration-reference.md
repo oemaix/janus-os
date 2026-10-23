@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-22 |
+| Last updated | 2026-10-23 |
 
 This document defines the **shape and semantics** of the `janus.*` option
 tree. The final, exhaustive reference (every option with type, default,
@@ -50,6 +50,7 @@ learning path: copy, edit values, build.
 | `reboot.schedule` | null or str | off | Maintenance reboot. `monthly` is 04:00 on the 1st, `yearly` is 04:00 on 1 January, or a five-field cron whose day-of-week is `*`. Further actions on this reboot are sibling options (D-0049). |
 | `reboot.fsck` | bool | `false` | On that reboot, run a full state check and let it finish. The request is removed before the check, so a check that does not finish is not repeated. A normal boot does not. Requires `reboot.schedule`. |
 | `region` | `cn\|ru\|ir` | `cn` | Reference region. Selects domestic DNS and the `blockQuic` default in *21*. Routing rules stay empty until written. Not a hot override. |
+| `kernelProfile` | `standard\|compact` | `standard` | `standard` is the NixOS kernel. `compact` is one config for every board and drops sound, desktop and 3D GPUs, compute accelerators, cameras and TV, HDMI-CEC and infrared remotes, industrial I/O and Comedi, InfiniBand, and SAN. NIC drivers, Wi-Fi, USB, WWAN, Bluetooth, MMC, the NVMe host, AHCI, simpledrm, SoC scanout that does not depend on ALSA, f2fs, vfat, and virtio stay. Raspberry Pi HDMI depends on ALSA and is not in `compact`. The board consoles are serial (D-0051). A per-board driver cut is not a value (D-0052). |
 
 ## 2. `janus.hardware`
 

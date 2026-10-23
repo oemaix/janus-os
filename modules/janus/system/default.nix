@@ -97,6 +97,8 @@
       then "*-${monthPart}-${dayPart} ${pad2 hour}:${pad2 minute}:00"
       else null;
 in {
+  imports = [./kernel-profile.nix];
+
   options.janus.system = {
     hostName = mkOption {
       type = types.str;

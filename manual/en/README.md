@@ -132,7 +132,13 @@ the install. LAN and SSH do not need the age key.
 Option names are in
 [docs/08-configuration-reference.md](../../docs/08-configuration-reference.md).
 `janus-build check <host>` evaluates the configuration without building
-the image.
+the image. `janus.system.kernelProfile` defaults to `standard`, the
+NixOS kernel, so aarch64 and x86_64 can use the binary cache. `compact`
+is that kernel on every board with sound, desktop and 3D graphics,
+cameras, industrial sensors, InfiniBand, and storage-network adapters
+left out. Network cards, Wi-Fi, USB, cellular modems, SD, NVMe, and
+virtio stay, and the serial console stays. Use `compact` when a kernel
+patch forces a rebuild.
 
 `janus.system.region` is `cn` (the default), `ru`, or `ir`. It chooses the
 domestic resolver. For `ru`, `janus.proxy.blockQuic` defaults to true

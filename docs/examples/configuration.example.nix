@@ -55,6 +55,7 @@
   janus.system = {
     hostName = "janus";
     timeZone = "Asia/Shanghai"; # CHANGE ME
+    # kernelProfile = "compact"; # D-0051. standard, the default, is the NixOS kernel.
   };
 
   janus.access.ssh.authorizedKeys = [

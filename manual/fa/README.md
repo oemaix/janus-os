@@ -129,7 +129,13 @@ LAN و SSH به کلید age نیاز ندارند.
 نام گزینه‌ها در
 [docs/08-configuration-reference.md](../../docs/08-configuration-reference.md)
 است. `janus-build check <host>` پیکربندی را ارزیابی می‌کند و تصویر را
-نمی‌سازد.
+نمی‌سازد. `janus.system.kernelProfile` به‌طور پیش‌فرض `standard` است،
+یعنی هسته NixOS، و برای aarch64 و x86_64 حافظه نهان دودویی می‌ماند.
+`compact` همان هسته برای هر برد است، بدون صدا، گرافیک رومیزی و
+سه‌بعدی، دوربین، حسگر صنعتی، InfiniBand و آداپتور شبکه ذخیره‌سازی.
+کارت شبکه، Wi-Fi، USB، مودم سلولی، SD، NVMe و virtio می‌مانند و
+کنسول سریال هم می‌ماند. `compact` وقتی به کار می‌آید که یک وصله هسته
+بازسازی را ناگزیر کند.
 
 `janus.system.region` برابر `cn` (پیش‌فرض)، `ru` یا `ir` است. حل‌کننده داخلی از
 همین‌جا می‌آید. برای `ru`، `janus.proxy.blockQuic` به‌طور پیش‌فرض درست

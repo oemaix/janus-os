@@ -44,6 +44,12 @@ Read this file before answering a question about using Janus OS.
   On the board, `janus deploy` exits 2 and names `janus-build`. Hot
   overrides cover an existing subscription URL, a static lease on an
   existing LAN, and an existing Wi-Fi passphrase.
+- `janus.system.kernelProfile` is `standard` (default) or `compact` (D-0051).
+  `standard` is the NixOS kernel. `compact` drops sound, desktop and 3D GPUs,
+  cameras, industrial I/O, InfiniBand, and SAN, and keeps NIC drivers, Wi-Fi,
+  USB, WWAN, MMC, NVMe, AHCI, the serial console, and virtio.
+  Raspberry Pi HDMI depends on ALSA and is not in `compact`.
+  `matched` is not a value (D-0052).
 - `janus.system.region` is `cn` (default), `ru`, or `ir`. It selects domestic DNS
   and the `blockQuic` default. That reject follows direct rules; it is
   not a drop of every UDP/443. `janus.proxy.rules` stays empty until
