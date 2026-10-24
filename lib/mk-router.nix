@@ -65,6 +65,10 @@
           janusConfigRevision = configRevision;
           janusRevision = janus.rev or "unknown";
           nixpkgsRevision = nixpkgs.rev or "unknown";
+          # Copies and shell scripts that only carry target paths. Their
+          # builder is this machine, so an x86_64 host does not need qemu
+          # to produce them for an aarch64 board.
+          janusBuildPkgs = nixpkgs.legacyPackages.${buildSystem};
         };
         modules =
           [

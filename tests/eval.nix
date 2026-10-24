@@ -380,11 +380,20 @@ in {
     ledExec = unit: r4s.config.systemd.services.${unit}.serviceConfig.ExecStart;
     ledScriptOf = unit: lib.head (lib.splitString " " (ledExec unit));
     ledArg = unit: lib.removePrefix "${ledScriptOf unit} " (ledExec unit);
-    r4sFirmwareNames = lib.concatMapStringsSep " " (p: p.name) (
-      lib.filter (p: lib.isAttrs p && lib.isDerivation p) (
-        lib.flatten r4s.options.hardware.firmware.definitions
-      )
+    # The script file is built on the host. This is the shell that runs it.
+    ledShebang = lib.escapeShellArg "#!${r4s.pkgs.runtimeShell}";
+    r4sFirmwarePkgs = lib.filter (p: lib.isAttrs p && lib.isDerivation p) (
+      lib.flatten r4s.options.hardware.firmware.definitions
     );
+    r4sFirmwareNames = lib.concatMapStringsSep " " (p: p.name) r4sFirmwarePkgs;
+    # config.hardware.firmware is a buildEnv of the board system. The
+    # check runs on the build host, so link that same package list here.
+    r4sFirmware = pkgs.buildEnv {
+      name = "eval-r4s-firmware";
+      paths = r4sFirmwarePkgs;
+      pathsToLink = ["/lib/firmware"];
+      ignoreCollisions = true;
+    };
   in
     pkgs.runCommand "eval-boards" {} ''
       test ${lib.escapeShellArg yanyu.config.systemd.network.links."10-port-lan1".matchConfig.Path} = pci-0000:01:00.0
@@ -432,6 +441,11 @@ in {
         script=$1
         led=$2
         other=$3
+        shebang=$4
+        if [ "$(head -n 1 "$script")" != "$shebang" ]; then
+          echo "LED script for $led starts with $(head -n 1 "$script")" >&2
+          exit 1
+        fi
         grep -q "/sys/class/leds/$led" "$script"
         grep -q '$led/trigger' "$script"
         grep -q '$led/device_name' "$script"
@@ -444,8 +458,8 @@ in {
           exit 1
         fi
       }
-      check_led ${ledScriptOf "janus-r4s-wan-led@"} green:wan green:lan
-      check_led ${ledScriptOf "janus-r4s-lan-led@"} green:lan green:wan
+      check_led ${ledScriptOf "janus-r4s-wan-led@"} green:wan green:lan ${ledShebang}
+      check_led ${ledScriptOf "janus-r4s-lan-led@"} green:lan green:wan ${ledShebang}
       rules=${lib.escapeShellArg r4s.config.services.udev.extraRules}
       printf '%s\n' "$rules" | grep 'DRIVERS=="r8169"' | grep -q 'janus-r4s-wan-led@%k.service'
       printf '%s\n' "$rules" | grep 'DRIVERS=="rk_gmac-dwmac"' | grep -q 'janus-r4s-lan-led@%k.service'
@@ -458,7 +472,7 @@ in {
         exit 1
       fi
       echo ${lib.escapeShellArg r4sFirmwareNames} | grep -q rtl8168h-firmware
-      fw=${r4s.config.hardware.firmware}
+      fw=${r4sFirmware}
       # buildEnv links the directory. find does not follow that link.
       n=$(find -L "$fw/lib/firmware" -type f -name 'rtl8168h-2.fw*' | wc -l)
       test "$((n + 0))" = 1

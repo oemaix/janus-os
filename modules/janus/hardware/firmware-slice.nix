@@ -4,12 +4,15 @@
 {
   lib,
   pkgs,
+  # Runs the copy. mkRouter passes the build host. The files still come
+  # from the board's linux-firmware.
+  builderPkgs ? pkgs,
 }: {
   pname,
   description,
   paths,
 }:
-pkgs.stdenvNoCC.mkDerivation {
+builderPkgs.stdenvNoCC.mkDerivation {
   inherit pname;
   inherit (pkgs.linux-firmware) version;
   dontUnpack = true;

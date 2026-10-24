@@ -8,6 +8,7 @@
   config,
   lib,
   pkgs,
+  janusBuildPkgs ? pkgs,
   ...
 }: let
   # Same open RK3399 recipe as ubootRockPro64, with the R4S defconfig
@@ -25,7 +26,10 @@
   # One PHY script, copied from the pinned package. The full collection,
   # and hardware.enableRedistributableFirmware, would also install
   # Raspberry Pi wireless blobs on a board with no radio.
-  rtl8168hFirmware = import ../janus/hardware/firmware-slice.nix {inherit lib pkgs;} {
+  rtl8168hFirmware = import ../janus/hardware/firmware-slice.nix {
+    inherit lib pkgs;
+    builderPkgs = janusBuildPkgs;
+  } {
     pname = "rtl8168h-firmware";
     description = "PHY script for the NanoPi R4S RTL8168h/8111h";
     paths = ["rtl_nic/rtl8168h-2.fw"];
@@ -42,26 +46,36 @@
       label = "LAN";
     };
   };
+  # Text only. The builder is the build host; the shebang and sleep
+  # are the board's binaries. An x86_64 check can build this without qemu.
   ledScript = jack: led:
-    pkgs.writeShellScript "janus-r4s-${jack}-led" ''
-      set -eu
-      iface=$1
-      led=/sys/class/leds/${led}
-      n=0
-      while [ ! -e "$led/trigger" ]; do
-        n=$((n + 1))
-        if [ "$n" -gt 50 ]; then
-          echo "janus: $led is not registered" >&2
-          exit 1
-        fi
-        ${pkgs.coreutils}/bin/sleep 0.1
-      done
-      printf '%s\n' netdev > "$led/trigger"
-      printf '%s\n' "$iface" > "$led/device_name"
-      printf '%s\n' 1 > "$led/link"
-      printf '%s\n' 1 > "$led/tx"
-      printf '%s\n' 1 > "$led/rx"
-    '';
+    janusBuildPkgs.writeTextFile {
+      name = "janus-r4s-${jack}-led";
+      executable = true;
+      text = ''
+        #!${pkgs.runtimeShell}
+        set -eu
+        iface=$1
+        led=/sys/class/leds/${led}
+        n=0
+        while [ ! -e "$led/trigger" ]; do
+          n=$((n + 1))
+          if [ "$n" -gt 50 ]; then
+            echo "janus: $led is not registered" >&2
+            exit 1
+          fi
+          ${pkgs.coreutils}/bin/sleep 0.1
+        done
+        printf '%s\n' netdev > "$led/trigger"
+        printf '%s\n' "$iface" > "$led/device_name"
+        printf '%s\n' 1 > "$led/link"
+        printf '%s\n' 1 > "$led/tx"
+        printf '%s\n' 1 > "$led/rx"
+      '';
+      checkPhase = ''
+        ${janusBuildPkgs.stdenv.shellDryRun} "$target"
+      '';
+    };
 in {
   config = lib.mkIf (config.janus.hardware.board == "nanopi-r4s") {
     # Boot partition starts at 16 MiB, past the FIT inside u-boot-rockchip.bin.

@@ -4,6 +4,7 @@
   config,
   lib,
   pkgs,
+  janusBuildPkgs ? pkgs,
   ...
 }: let
   cfg = config.janus.network;
@@ -136,7 +137,10 @@
   # USB ids of declared peripherals. The board is not part of the match.
   declaredUsbIds = lib.mapAttrsToList (_: p: p.match.usbVendorProduct or null) hw;
 
-  firmwareSlice = import ../hardware/firmware-slice.nix {inherit lib pkgs;};
+  firmwareSlice = import ../hardware/firmware-slice.nix {
+    inherit lib pkgs;
+    builderPkgs = janusBuildPkgs;
+  };
   # mt76x2u requests these two names at the firmware root. linux-firmware
   # ships them as links; the copy is a regular file at the requested path.
   mt7612uFirmware = firmwareSlice {
