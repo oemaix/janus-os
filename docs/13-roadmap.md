@@ -109,7 +109,8 @@ tree does not mean that behavior exists. Stubs are not finished features.
   nftables. OpenSSH is key-only. vnstat keeps interface counters.
 * `janus` and `janus-build` implement the phase 1 commands in *14* and
   *16* (`init`, `host add`, `secret keygen`, `secret set`, `check`,
-  `build`, `update`, and the router status commands). The age private
+  `build`, `update`, and the router status commands). `--help` and
+  `--usage` print that command list and exit 0. The age private
   key path is `/var/lib/janus/secrets/age.key`. sops-nix decrypts to
   `/run/secrets` at activation. Every credential in FR-SEC-002 is one
   sops file from `janus-build secret set`: one-line credentials under

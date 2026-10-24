@@ -1,8 +1,55 @@
 # docs/14. deploy and fleet name janus-build.
 usage() {
   echo "janus [--json] <command> [<args>]" >&2
-  echo "See docs/14-cli.md." >&2
+  echo "Run 'janus --help' for the command list." >&2
   exit 2
+}
+
+help() {
+  cat <<'EOF'
+janus [--json] <command> [<args>]
+janus --help
+janus --usage
+
+--help and --usage print this text on stdout and exit 0.
+--json prints one JSON object on stdout and keeps logs on stderr.
+Exit 0 is success. Exit 2 is a usage or validation error. Exit 1 is a runtime failure.
+
+  status
+  proxy refresh [name]
+  proxy geodata refresh
+  proxy select <group> <node>
+  proxy groups
+  proxy test <group>
+  wan restart <name>
+  wan show <name>
+  lan leases [lan]
+  traffic [iface] [--daily|--monthly]
+  traffic top
+  dns query <name>
+  dns flush
+  dns stats
+  dns check
+  logs [unit] [-f]
+  fw list
+  version [--components]
+  reboot
+  reset --state --yes
+  override show [--secrets]
+  override diff
+  override set proxy.subscriptions.<name>.url [<url>]
+  override set network.lans.<name>.dhcp.staticLeases.<host> --mac <mac> --ip <ip>
+  override set network.wifi.<name>.passphrase
+  override unset <key>
+  secrets install-age-key
+  secrets put <name>
+  backup
+  restore --yes
+  audit start|stop|status|export
+  web start|stop|status|fingerprint
+
+deploy and fleet are build-host commands. On the board they exit 2 and name janus-build.
+EOF
 }
 
 json=0
@@ -10,6 +57,12 @@ if [ "${1:-}" = "--json" ]; then
   json=1
   shift
 fi
+case "${1:-}" in
+  --help|--usage)
+    help
+    exit 0
+    ;;
+esac
 cmd=${1:-}
 if [ -z "$cmd" ]; then
   usage

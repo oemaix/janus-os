@@ -4,13 +4,24 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-21 |
+| Last updated | 2026-10-24 |
 
 `janus-build` runs on the build host. After the fleet repo exists, every
 command runs in that repo. The router command stays `janus` (*14*). The
 two names share the project and name different programs. The router image
 does not contain `janus-build`. On the board, `janus deploy` and
 `janus fleet` exit `2` and name the `janus-build` command.
+
+```
+janus-build <command> [<args>]
+janus-build --help
+janus-build --usage
+```
+
+`--help` and `--usage` print the same command list on stdout and exit
+`0`. They do not run a command. With no command, or with an unknown
+command, the program prints the synopsis on stderr, names `--help`, and
+exits `2`.
 
 One fleet repo holds every router. `flake.nix` turns each directory
 `hosts/<name>/` into `nixosConfigurations.<name>`. `init` prepares that

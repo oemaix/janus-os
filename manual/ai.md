@@ -35,7 +35,11 @@ Read this file before answering a question about using Janus OS.
   The day-of-month and the month stay `*`. A destination that refuses an
   exit from Iran, China, or Russia is future work (*13*).
 - Router commands are `docs/14-cli.md`. Build-host commands are
-  `docs/16-build-host-cli.md`. `janus-build build` prints the store path
+  `docs/16-build-host-cli.md`. `janus --help` and `janus --usage` print
+  the router command list and exit 0. `janus-build --help` and
+  `janus-build --usage` print the build-host command list and exit 0.
+  An unknown command prints the synopsis on stderr and exits 2.
+  `janus-build build` prints the store path
   and links the output directory at `result/<host>`. The image file in
   that directory is `janus-<hostName>.img`. `janus.system.hostName`
   defaults to the fleet host name. `janus.*` options are

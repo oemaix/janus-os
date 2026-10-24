@@ -16,7 +16,9 @@ Compute Module 4، Raspberry Pi 2 v1.1،
 StarFive VisionFive 2 و Yanyu STX-R19F (Limine روی legacy BIOS) ساخته
 می‌شود. `janus` و `janus-build` فرمان‌های فاز ۱ و
 همچنین proxy، DNS، fleet، status، backup، deploy و گزارش اتصال را پیاده
-می‌کنند. با `janus.access.web.enable` و یک پرونده گذرواژه، تصویر صفحه
+می‌کنند. `janus --help` و `janus-build --help`
+این فهرست فرمان‌ها را چاپ می‌کنند. `--usage` همان متن را چاپ می‌کند.
+با `janus.access.web.enable` و یک پرونده گذرواژه، تصویر صفحه
 نگهداری را روی درگاه ۸۴۴۳ ارائه می‌کند. روی برد، `janus deploy` با کد ۲ خارج می‌شود و `janus-build` را
 نام می‌برد. کلاهک OLED یک‌وسه‌دهم اینچی Waveshare روی Raspberry Pi Zero 2 W،
 Raspberry Pi 3 یا Raspberry Pi 4 وضعیت را نشان می‌دهد. از روی صفحه می‌توان پروکسی را تازه

@@ -16,7 +16,9 @@ Raspberry Pi 4 and Compute Module 4, the Raspberry Pi 2 v1.1, the
 StarFive VisionFive 2, and the Yanyu STX-R19F
 (Limine on legacy BIOS). `janus` and `janus-build`
 implement the phase 1 commands, plus proxy, DNS, fleet, status, backup,
-deploy, and the connection audit. With `janus.access.web.enable` and a
+deploy, and the connection audit. `janus --help` and `janus-build --help`
+print that command list. `--usage` prints the same text.
+With `janus.access.web.enable` and a
 passphrase file, the image serves a maintenance page on port 8443. On the board, `janus deploy` exits 2
 and names `janus-build`. A Waveshare 1.3" OLED HAT on a Raspberry Pi
 Zero 2 W, a Raspberry Pi 3, or a Raspberry Pi 4 shows status. From the

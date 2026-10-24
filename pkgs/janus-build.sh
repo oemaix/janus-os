@@ -1,8 +1,36 @@
 # docs/16.
 usage() {
-  echo "janus-build <init|host|secret|check|build|update|fleet|status|backup|deploy> [<args>]" >&2
-  echo "See docs/16-build-host-cli.md." >&2
+  echo "janus-build <command> [<args>]" >&2
+  echo "Run 'janus-build --help' for the command list." >&2
   exit 2
+}
+
+help() {
+  cat <<'EOF'
+janus-build <command> [<args>]
+janus-build --help
+janus-build --usage
+
+--help and --usage print this text on stdout and exit 0.
+Exit 0 is success. Exit 2 is a usage or refused request. Exit 1 is a runtime failure.
+
+  init <dir> [--host <name>]
+  host add <name>
+  secret keygen <host>
+  secret set <path>
+  secret rewrap <path> --from <host>
+  check [<host>]
+  build [<host>]
+  update [--train <train>]
+  fleet apply [<host>] [--only-overrides]
+  fleet pull [<host>] [--with-secrets]
+  status [<host>]
+  backup <host>
+  deploy <host>
+  deploy --preserve-state <host>
+  deploy --confirm <host>
+  deploy --age-key <host>
+EOF
 }
 
 later() {
@@ -800,6 +828,12 @@ if [ "${JANUS_BUILD_LIB:-}" = 1 ]; then
   return 0 2>/dev/null || exit 0
 fi
 
+case "${1:-}" in
+  --help|--usage)
+    help
+    exit 0
+    ;;
+esac
 cmd=${1:-}
 if [ -z "$cmd" ]; then
   usage

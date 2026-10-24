@@ -39,5 +39,5 @@ VisionFive boot files name the QSPI SPL and ITB and the QSPI size limits, that t
 VisionFive, and NanoPi R4S device-tree names exist in the kernel source, that the VisionFive YT8531 receive-clock patch applies to that source with the flag in both init conditions, and that the compiled R4S SD node drops `sd-uhs-sdr104` and sets `no-1-8-v`, and that the compiled SYS LED uses the heartbeat trigger. `eval-kernel-profile` checks that `standard` adds no kernel patch and that `compact` turns off sound, a desktop GPU, cameras, industrial I/O, InfiniBand, and the NVMe target, while virtio, NVMe host, f2fs, and the R4S netdev and heartbeat triggers stay in the Nix list. `eval-kernel-config` builds that config for x86_64, aarch64, armv7, and riscv64. Sound, desktop GPUs, cameras, industrial I/O, InfiniBand, and the NVMe target are off in the generated file. Rockchip and Meson scanout stay. The Pi VC4 driver is absent because it depends on ALSA. `eval-boards` includes the Raspberry
 Pi 2, Raspberry Pi 4, and VisionFive 2 profiles. `eval-proxy-local` fetches a page through the
 rendered Shadowsocks outbound and a server on `127.0.0.1`. `cli-usage`
-and `cli-init` cover the phase 1 commands. Golden files for the engines
+covers a missing command, `--help`, and `--usage`. `cli-init` covers the phase 1 commands. Golden files for the engines
 are still absent.

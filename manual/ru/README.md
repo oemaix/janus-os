@@ -15,7 +15,9 @@ NanoPi R4S, Le Potato, Raspberry Pi Zero 2 W, Raspberry Pi 3 / 3+,
 Raspberry Pi 4 и Compute Module 4, Raspberry Pi 2 v1.1, StarFive VisionFive 2 и Yanyu STX-R19F (Limine на
 legacy BIOS). `janus` и `janus-build`
 реализуют команды фазы 1, а также proxy, DNS, fleet, status, backup,
-deploy и журнал соединений. Если в образе заданы `janus.access.web.enable`
+deploy и журнал соединений. `janus --help` и `janus-build --help`
+печатают этот список команд. `--usage` печатает тот же текст.
+Если в образе заданы `janus.access.web.enable`
 и файл пароля, страница обслуживания слушает порт 8443. На плате `janus deploy` завершается с кодом 2
 и называет `janus-build`. OLED-HAT Waveshare 1,3″ на Raspberry Pi Zero 2 W, Raspberry Pi 3 или
 Raspberry Pi 4 показывает состояние. С панели можно обновить прокси,

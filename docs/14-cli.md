@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-21 |
+| Last updated | 2026-10-24 |
 
 This is the contract for the on-router `janus` command. Implementation
 follows this file. The user manual will later show the same commands with
@@ -16,8 +16,14 @@ program, `janus-build` (*16*). On the board, `janus deploy` and
 
 ```
 janus [--json] <command> [<args>]
+janus --help
+janus --usage
 ```
 
+* `--help` and `--usage` print the same command list on stdout and exit
+  `0`. They do not run a command. `--json` before either flag does not
+  change that text. A usage error prints the synopsis on stderr, names
+  `--help`, and exits `2`.
 * `--json` prints one JSON object on stdout and keeps logs on stderr.
   Exit code `0` is success. `2` is a usage or validation error. `1` is a
   runtime failure (refresh failed, engine did not reload).

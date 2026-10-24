@@ -214,13 +214,52 @@ in {
   in
     pkgs.runCommand "cli-usage" {} ''
       set +e
-      ${self.packages.${system}.janus-cli}/bin/janus >/dev/null
+      janus=${self.packages.${system}.janus-cli}/bin/janus
+      build=${self.packages.${system}.janus-build}/bin/janus-build
+      "$janus" >/dev/null 2>"$TMPDIR/none.err"
       s1=$?
-      ${self.packages.${system}.janus-build}/bin/janus-build >/dev/null
+      "$build" >/dev/null 2>"$TMPDIR/none-build.err"
       s2=$?
+      jhelp=$("$janus" --help 2>"$TMPDIR/jhelp.err")
+      s3=$?
+      juse=$("$janus" --usage 2>"$TMPDIR/juse.err")
+      s4=$?
+      jjson=$("$janus" --json --help 2>"$TMPDIR/jjson.err")
+      s5=$?
+      bhelp=$("$build" --help 2>"$TMPDIR/bhelp.err")
+      s6=$?
+      buse=$("$build" --usage 2>"$TMPDIR/buse.err")
+      s7=$?
+      "$janus" nosuch >/dev/null 2>"$TMPDIR/bad.err"
+      s8=$?
+      "$build" nosuch >/dev/null 2>"$TMPDIR/bad-build.err"
+      s9=$?
       set -e
       test "$s1" = 2
       test "$s2" = 2
+      test "$s3" = 0
+      test "$s4" = 0
+      test "$s5" = 0
+      test "$s6" = 0
+      test "$s7" = 0
+      test "$s8" = 2
+      test "$s9" = 2
+      test ! -s "$TMPDIR/jhelp.err"
+      test ! -s "$TMPDIR/juse.err"
+      test ! -s "$TMPDIR/jjson.err"
+      test ! -s "$TMPDIR/bhelp.err"
+      test ! -s "$TMPDIR/buse.err"
+      test "$jhelp" = "$juse"
+      test "$jhelp" = "$jjson"
+      test "$bhelp" = "$buse"
+      printf '%s\n' "$jhelp" | grep -q 'proxy refresh'
+      printf '%s\n' "$jhelp" | grep -q 'secrets install-age-key'
+      printf '%s\n' "$bhelp" | grep -q 'secret keygen'
+      printf '%s\n' "$bhelp" | grep -q 'deploy --age-key'
+      grep -q -- '--help' "$TMPDIR/none.err"
+      grep -q -- '--help' "$TMPDIR/none-build.err"
+      grep -q -- '--help' "$TMPDIR/bad.err"
+      grep -q -- '--help' "$TMPDIR/bad-build.err"
       echo ok > "$out"
     '';
   cli-init = let
