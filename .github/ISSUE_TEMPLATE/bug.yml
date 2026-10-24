@@ -1,0 +1,77 @@
+name: Bug
+description: A supported path does something the manual or the definition suite does not describe.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Title the issue as the failure. A prefix such as `[Bug]` adds nothing.
+
+        Leave out credentials, subscription URLs, age keys, and node lists that name a relay.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Boot, image, or power cut
+        - Network, firewall, or DHCP
+        - Proxy, DNS, or a subscription
+        - janus on the router
+        - janus-build on the build host
+        - Maintenance page
+        - Panel
+        - Monitoring
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: board
+    attributes:
+      label: Board
+      options:
+        - nanopi-r4s
+        - rpi4
+        - rpi3
+        - rpi-zero-2w
+        - le-potato
+        - visionfive2
+        - rpi2
+        - yanyu-stx-r19f
+        - x86_64-test
+        - Build host only
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: revision
+    attributes:
+      label: Revision
+      description: Train, git revision, or the pinned flake input. A `janus` version line is useful when the failure is on the board.
+      placeholder: main
+    validations:
+      required: true
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened
+      description: The command, the option, and the result. Name the manual section or the `docs/` section the result disagrees with, when you know it.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What should have happened
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Log or check output
+      description: The relevant lines only. Redact addresses that identify a relay.
+  - type: checkboxes
+    id: hygiene
+    attributes:
+      label: Before opening
+      options:
+        - label: This report has no credential, subscription URL, age key, or relay list.
+          required: true

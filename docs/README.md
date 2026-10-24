@@ -14,6 +14,8 @@ through an ADR.
 User-facing text lives in the repository root `README.md` and in
 `manual/` (English, Russian, Persian, in that order). `manual/llms.txt`
 points at `manual/ai.md`. This directory stays the definition suite.
+How to report a defect or send a change is
+[CONTRIBUTING.md](../CONTRIBUTING.md).
 What the code already contains, and what it does not, is *13*. Router
 commands are fixed in *14*. Build-host commands are fixed in *16*.
 Choices that are not ADRs are *18*. Explanations are *19*.

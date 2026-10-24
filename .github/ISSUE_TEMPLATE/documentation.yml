@@ -1,0 +1,44 @@
+name: Documentation
+description: A mistake or a gap in the README, the manual, or docs/.
+labels: ["documentation"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        English is the text the other languages follow. A Russian or Persian report names the English section that is wrong, as well as the translation.
+
+        A change to what the router does is a definition change, including a new option name.
+
+        Maintenance-page strings are English, Russian, Persian, and Simplified Chinese. The manual is English, Russian, and Persian.
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where
+      options:
+        - README.md
+        - manual/en
+        - manual/ru
+        - manual/fa
+        - manual/ai.md
+        - docs/
+        - Maintenance page strings
+    validations:
+      required: true
+  - type: input
+    id: place
+    attributes:
+      label: File and section
+      placeholder: manual/en/README.md, Build a router
+    validations:
+      required: true
+  - type: textarea
+    id: wrong
+    attributes:
+      label: What is wrong or missing
+    validations:
+      required: true
+  - type: textarea
+    id: wording
+    attributes:
+      label: Wording you would use
+      description: Optional. English first when the text is user-facing.
