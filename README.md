@@ -18,7 +18,8 @@ flakes, and:
 ## Work on the source
 
 How to report a defect or send a change is
-[CONTRIBUTING.md](CONTRIBUTING.md).
+[CONTRIBUTING.md](CONTRIBUTING.md). How to report a vulnerability is
+[SECURITY.md](SECURITY.md).
 
 `nix develop` opens the development shell. Inside it, run programs
 directly (`janet`, `janus-build`).

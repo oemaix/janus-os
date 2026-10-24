@@ -16,7 +16,7 @@ operating system belongs here.
 
 Title an issue as the failure or the change. A prefix such as `[Bug]` adds nothing.
 
-A vulnerability goes to [private vulnerability reporting](https://github.com/oemaix/janus-os/security/advisories/new). A public issue is the wrong place for it.
+A vulnerability is reported as [SECURITY.md](SECURITY.md) describes.
 
 Issues and pull requests stay free of credentials, subscription URLs, age keys, and node lists that name a relay. The repository stays free of those ([docs/00-vision-and-scope.md](docs/00-vision-and-scope.md) §9).
 

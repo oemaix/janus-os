@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-17 |
+| Last updated | 2026-10-25 |
 
 ## 1. Assets
 
@@ -199,4 +199,5 @@ not document two first-class paths.
 Janus has no on-device updates by design. Security fixes ship as new
 releases; users rebuild. The changelog flags CVE-driven releases, and the
 `janus` CLI can print the image's component versions for comparison
-(`janus version --components`).
+(`janus version --components`). How to report a vulnerability is
+[SECURITY.md](../SECURITY.md).
