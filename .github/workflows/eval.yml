@@ -19,6 +19,10 @@ jobs:
         #   - eval-wifi-onboard-kernel: realizes the aarch64 linux-config
         #     derivation of the rpi-zero-2w board, which the x86_64 runner
         #     cannot build without emulation.
+        #   - eval-wifi-rockpi: the rockpi-4c profile pulls an aarch64
+        #     hostapd, so its derivation cannot be built on the x86_64
+        #     runner (platform mismatch). Upstream's own workflow leaves
+        #     it out for the same reason.
         run: |
           nix build --print-build-logs \
             .#checks.x86_64-linux.cli-age-key \
@@ -133,7 +137,6 @@ jobs:
             .#checks.x86_64-linux.eval-wifi-onboard-isolate \
             .#checks.x86_64-linux.eval-wifi-onboard-two \
             .#checks.x86_64-linux.eval-wifi-onboard-wpa3 \
-            .#checks.x86_64-linux.eval-wifi-rockpi \
             .#checks.x86_64-linux.eval-wifi-rockpi-wpa3 \
             .#checks.x86_64-linux.eval-wifi-sops \
             .#checks.x86_64-linux.eval-wwan \
