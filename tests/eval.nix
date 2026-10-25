@@ -367,6 +367,7 @@ in {
       ];
     yanyu = one "yanyu-stx-r19f";
     r4s = one "nanopi-r4s";
+    rock = one "rockpi-4c";
     potato = one "le-potato";
     zero = one "rpi-zero-2w";
     rpi = one "rpi3";
@@ -480,6 +481,42 @@ in {
         echo "R4S firmware tree has more than rtl8168h-2.fw" >&2
         exit 1
       fi
+      test ${toString rock.config.janus.storage.firmwareOffsetMiB} = 15
+      test ${lib.escapeShellArg (lib.head (lib.attrNames rock.config.janus.network.ports))} = eth0
+      test ${toString (lib.length (lib.attrNames rock.config.janus.network.ports))} = 1
+      echo ${text rock.config.system.build.janusBoardImage.firmwareInstall} | grep -q 'seek=64'
+      echo ${text rock.config.system.build.janusBoardImage.firmwareInstall} | grep -q u-boot-rockchip.bin
+      echo ${text rock.config.system.build.janusBoardImage.firmwareInstall} | grep -q rock-pi-4c-rk3399_defconfig
+      grep -q 'mmc0 mmc1' ${../modules/boards/janus-rockpi-4c-boot.patch}
+      grep -q 'bootmenu_0=eMMC, then SD=setenv boot_targets mmc0 mmc1; bootflow scan -lb' ${../modules/boards/janus-rockpi-4c-boot.patch}
+      grep -q 'bootmenu_1=SD card=setenv boot_targets mmc1; bootflow scan -lb' ${../modules/boards/janus-rockpi-4c-boot.patch}
+      grep -q 'CONFIG_BOOTCOMMAND="bootmenu"' ${../modules/boards/janus-rockpi-4c-boot.patch}
+      if grep -F -q '; boot\0' ${../modules/boards/janus-rockpi-4c-boot.patch}; then
+        echo "ROCK Pi 4C menu command boot reruns bootcmd" >&2
+        exit 1
+      fi
+      if echo ${text rock.config.system.build.janusBoardImage.firmwareInstall} | grep -q u-boot-rockchip-spi.bin; then
+        echo "ROCK Pi 4C image programs SPI" >&2
+        exit 1
+      fi
+      echo ${text rock.config.system.build.janusBoardImage.dtbName} | grep -q rk3399-rock-pi-4c.dtb
+      echo ${lib.escapeShellArg (lib.concatStringsSep " " rock.config.boot.kernelParams)} | grep -q 'console=ttyS2,1500000n8'
+      echo ${lib.escapeShellArg (lib.concatStringsSep " " rock.config.boot.initrd.availableKernelModules)} | grep -q dw_mmc-rockchip
+      echo ${lib.escapeShellArg (lib.concatStringsSep " " rock.config.boot.initrd.availableKernelModules)} | grep -q sdhci-of-arasan
+      echo ${lib.escapeShellArg (lib.concatStringsSep " " rock.config.boot.initrd.availableKernelModules)} | grep -q phy-rockchip-emmc
+      mods=${lib.escapeShellArg (lib.concatStringsSep " " rock.config.boot.blacklistedKernelModules)}
+      printf '%s\n' "$mods" | grep -q brcmfmac
+      printf '%s\n' "$mods" | grep -q hci_uart
+      if printf '%s\n' "$mods" | grep -q btusb; then
+        echo "ROCK Pi 4C blacklists btusb" >&2
+        exit 1
+      fi
+      test ${
+        if rock.config.hardware.enableRedistributableFirmware
+        then "yes"
+        else "no"
+      } = no
+      test ${toString (lib.length rock.config.boot.kernelPatches)} = 0
       echo ${text potato.config.system.build.janusBoardImage.firmwareInstall} | grep -q u-boot.gxl
       if echo ${lib.escapeShellArg (lib.concatStringsSep " " potato.config.boot.initrd.availableKernelModules)} | grep -q sdhci_meson; then
         echo "le potato still requests sdhci_meson" >&2
@@ -600,12 +637,13 @@ in {
     rpi4 = board "rpi4";
     vf2 = board "visionfive2";
     r4s = board "nanopi-r4s";
+    rock = board "rockpi-4c";
     vf2Rxc = lib.findFirst (p: p.name == "janus-vf2-yt8531-rxc") null vf2.config.boot.kernelPatches;
     r4sUhs = lib.findFirst (p: p.name == "janus-r4s-sd-uhs") null r4s.config.boot.kernelPatches;
     r4sSys = lib.findFirst (p: p.name == "janus-r4s-sys-led") null r4s.config.boot.kernelPatches;
   in
     pkgs.runCommand "eval-tier3-boot" {
-      nativeBuildInputs = [pkgs.gnutar pkgs.xz pkgs.patch pkgs.dtc pkgs.gcc];
+      nativeBuildInputs = [pkgs.gnutar pkgs.xz pkgs.bzip2 pkgs.patch pkgs.dtc pkgs.gcc];
       passAsFile = ["bootExtra"];
       bootExtra = builtins.unsafeDiscardStringContext vf2.config.system.build.janusBoardImage.bootExtra;
     } ''
@@ -642,6 +680,21 @@ in {
       list_dts ${r4s.config.boot.kernelPackages.kernel.src} \
         arch/arm64/boot/dts/rockchip/rk3399-nanopi-r4s.dts \
         arch/arm64/boot/dts/rockchip/rk3399-nanopi-r4s.dtsi
+      list_dts ${rock.config.boot.kernelPackages.kernel.src} \
+        arch/arm64/boot/dts/rockchip/rk3399-rock-pi-4c.dts \
+        arch/arm64/boot/dts/rockchip/rk3399-rock-pi-4.dtsi
+      awk '/^  ubootRockPi4 = buildUBoot \{/,/^  \};/' ${self.inputs.nixpkgs}/pkgs/misc/uboot/default.nix > rock4.slice
+      grep -q rock-pi-4-rk3399_defconfig rock4.slice
+      if grep -q u-boot-rockchip.bin rock4.slice; then
+        echo "ubootRockPi4 installs u-boot-rockchip.bin; the 4C override needs another look" >&2
+        exit 1
+      fi
+      if [ -d ${pkgs.ubootRockPi4.src} ]; then
+        test -f ${pkgs.ubootRockPi4.src}/configs/rock-pi-4c-rk3399_defconfig
+      else
+        tar -tf ${pkgs.ubootRockPi4.src} > uboot.listing
+        grep -q 'configs/rock-pi-4c-rk3399_defconfig$' uboot.listing
+      fi
       src=${vf2.config.boot.kernelPackages.kernel.src}
       phy=drivers/net/phy/motorcomm.c
       dts=arch/riscv/boot/dts/starfive/jh7110-starfive-visionfive-2-v1.3b.dts
@@ -1358,6 +1411,8 @@ in {
       test ${lib.escapeShellArg os.config.systemd.network.networks."30-member-lan-home".networkConfig.Bridge} = br-lan
       test ${lib.escapeShellArg os.config.systemd.network.networks."30-member-lan-home".matchConfig.Name} = wifi-home
       grep -q 'wpa_passphrase=%s' ${script}
+      grep -q 'country_code=CN' ${script}
+      grep -q 'ieee80211d=1' ${script}
       grep -q ${lib.escapeShellArg "ssid='ja\$nus'"} ${script}
       if grep -q '<<' ${script}; then
         echo "hostapd config is still a shell heredoc" >&2
@@ -1366,6 +1421,66 @@ in {
       echo ${lib.escapeShellArg (lib.concatStrings os.config.boot.blacklistedKernelModules)} | grep -q rtl8xxxu
       echo ok > "$out"
     '';
+  eval-wifi-country = let
+    wifi = extra:
+      mk [
+        base
+        {
+          janus.security.allowInlineSecrets = true;
+          janus.hardware.peripherals.stick = {
+            class = "wifi";
+            match.usbVendorProduct = "0bda:8176";
+          };
+          janus.network.lans.lan = {
+            members = ["home"];
+            address = "192.168.10.1";
+            prefixLength = 24;
+          };
+          janus.network.wifi.home = {
+            peripheral = "stick";
+            ssid = "janus";
+            passphrase = "secret-pass";
+            lan = "lan";
+          };
+        }
+        extra
+      ];
+    ru = wifi {janus.system.region = "ru";};
+    ir = wifi {janus.system.region = "ir";};
+    over = wifi {janus.network.wifiCountry = "DE";};
+    scriptOf = os: os.config.systemd.services.janus-hostapd-home.serviceConfig.ExecStart;
+  in
+    pkgs.runCommand "eval-wifi-country" {} ''
+      test ${ru.config.janus.network.wifiCountry} = RU
+      test ${ir.config.janus.network.wifiCountry} = IR
+      test ${over.config.janus.network.wifiCountry} = DE
+      grep -q 'country_code=RU' ${scriptOf ru}
+      grep -q 'ieee80211d=1' ${scriptOf ru}
+      grep -q 'country_code=DE' ${scriptOf over}
+      echo ok > "$out"
+    '';
+  eval-wifi-country-bad = fail "eval-wifi-country-bad" [
+    base
+    {
+      janus.security.allowInlineSecrets = true;
+      janus.hardware.peripherals.stick = {
+        class = "wifi";
+        match.usbVendorProduct = "0bda:8176";
+      };
+      janus.network.lans.lan = {
+        members = ["home"];
+        address = "192.168.10.1";
+        prefixLength = 24;
+      };
+      janus.network.wifi.home = {
+        peripheral = "stick";
+        ssid = "janus";
+        passphrase = "secret-pass";
+        lan = "lan";
+      };
+      janus.network.wifiCountry = "cn";
+    }
+  ];
   eval-wifi-mt76 = let
     names = os:
       lib.concatMapStringsSep " " (p: p.name) (
@@ -1570,6 +1685,69 @@ in {
       fi
       echo ok > "$out"
     '';
+  eval-wifi-rockpi = let
+    os = mk [
+      {
+        janus.hardware.board = "rockpi-4c";
+        janus.access.ssh.authorizedKeys = [key];
+        janus.security.allowInlineSecrets = true;
+        janus.hardware.peripherals.radio = {
+          class = "wifi";
+          match.onboard = true;
+        };
+        janus.network.lans.lan = {
+          members = ["home"];
+          address = "10.255.252.32";
+          prefixLength = 22;
+        };
+        janus.network.wifi.home = {
+          peripheral = "radio";
+          ssid = "janus";
+          passphrase = "secret-pass";
+          lan = "lan";
+          band = "5g";
+          channel = 36;
+        };
+      }
+    ];
+    script = os.config.systemd.services.janus-hostapd-home.serviceConfig.ExecStart;
+    piPatch = lib.findFirst (p: p.name == "janus-rpi-onboard-wifi") null os.config.boot.kernelPatches;
+    firmwarePkgs = lib.filter (p: lib.isAttrs p && lib.isDerivation p) (
+      lib.flatten os.options.hardware.firmware.definitions
+    );
+    firmware = pkgs.buildEnv {
+      name = "eval-rockpi-firmware";
+      paths = firmwarePkgs;
+      pathsToLink = ["/lib/firmware"];
+      ignoreCollisions = true;
+    };
+    mods = lib.concatStringsSep " " os.config.boot.blacklistedKernelModules;
+  in
+    pkgs.runCommand "eval-wifi-rockpi" {} ''
+      printf '%s\n' ${lib.escapeShellArg mods} | grep -q hci_uart
+      if printf '%s\n' ${lib.escapeShellArg mods} | grep -q brcmfmac; then
+        echo "ROCK Pi 4C still blacklists brcmfmac while the access point is declared" >&2
+        exit 1
+      fi
+      test ${
+        if piPatch == null
+        then "yes"
+        else "no"
+      } = yes
+      echo ${lib.escapeShellArg (lib.concatStringsSep " " os.config.boot.kernelModules)} | grep -q brcmfmac
+      grep -q 'hw_mode=a' ${script}
+      grep -q 'channel=36' ${script}
+      grep -q 'country_code=CN' ${script}
+      grep -q 'ieee80211d=1' ${script}
+      grep -q 'ht_capab=\[HT20\]\[SHORT-GI-20\]' ${script}
+      fw=${firmware}
+      test -f "$fw/lib/firmware/brcm/brcmfmac43456-sdio.bin"
+      test -f "$fw/lib/firmware/brcm/brcmfmac43456-sdio.clm_blob"
+      test -f "$fw/lib/firmware/brcm/brcmfmac43456-sdio.radxa,rockpi4c.txt"
+      cmp "$fw/lib/firmware/brcm/brcmfmac43456-sdio.txt" \
+        "$fw/lib/firmware/brcm/brcmfmac43456-sdio.radxa,rockpi4c.txt"
+      echo ok > "$out"
+    '';
   eval-wifi-onboard-isolate = let
     os = mk [
       {
@@ -1623,6 +1801,29 @@ in {
         passphrase = "secret-pass";
         lan = "lan";
         band = "5g";
+      };
+    }
+  ];
+  eval-wifi-rockpi-wpa3 = fail "eval-wifi-rockpi-wpa3" [
+    {
+      janus.hardware.board = "rockpi-4c";
+      janus.access.ssh.authorizedKeys = [key];
+      janus.security.allowInlineSecrets = true;
+      janus.hardware.peripherals.radio = {
+        class = "wifi";
+        match.onboard = true;
+      };
+      janus.network.lans.lan = {
+        members = ["home"];
+        address = "192.168.10.1";
+        prefixLength = 24;
+      };
+      janus.network.wifi.home = {
+        peripheral = "radio";
+        ssid = "janus";
+        passphrase = "secret-pass";
+        lan = "lan";
+        security = "wpa3";
       };
     }
   ];

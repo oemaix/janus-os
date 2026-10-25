@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-23 |
+| Last updated | 2026-10-25 |
 
 This file is the implementation plan, the progress of the code, and the
 notes for work that is specified but not started. Choices are *18*.
@@ -74,7 +74,6 @@ power-cut. Tier 3 ships the profile. The Future list stays after 1.0.
 * WAN VLAN, the `iptv` role, and IGMP proxy (*06*, FR-NET-003, FR-NET-020).
 * Optional local configuration wizard, a front end for the build-host commands in *16*. No hosted build service.
 * A check that a destination refuses the exit because the address is in Iran, China, or Russia, for example Gemini. A country guessed from the node name, and a connect check (ping, TCP, or a handshake), do not show that refusal.
-* ROCK Pi 4C (`rockpi-4c`), after 1.0. The lab unit is v1.2. One profile covers that board. It stays out of *10* until the profile exists (D-0046). The shape is in Notes.
 * A per-board kernel profile, `matched` (D-0052). `standard` and `compact` are implemented (D-0051).
 * The maintenance page (*20*) is in the image. The retro console in *20* §7 is the design: no radius, no shadow, no gradient. Some functions and elements are still unusable or only partly worked out. Later work keeps that simple console and works out every function and every element so each behaves clearly and fluidly. The shape is in Notes.
 
@@ -92,7 +91,7 @@ tree does not mean that behavior exists. Stubs are not finished features.
   `templates.default`, and `devShells.default` (`nix develop`).
 * `lib.mkRouter` reads `janus.hardware.board` and returns a NixOS
   configuration, including `system.build.janusImage`. Implemented boards
-  are `x86_64-test`, `yanyu-stx-r19f`, `nanopi-r4s`, `le-potato`,
+  are `x86_64-test`, `yanyu-stx-r19f`, `nanopi-r4s`, `rockpi-4c`, `le-potato`,
   `rpi-zero-2w`, `rpi3`, `rpi4`, `rpi2`, and `visionfive2`. It
   does not return an empty configuration. `armv7l` and `riscv64` default
   to a cross build (`janus.build.strategy`).
@@ -142,7 +141,11 @@ tree does not mean that behavior exists. Stubs are not finished features.
   Raspberry Pi 2 v1.1 (`rpi2`, 32-bit, hybrid MBR, one `eth0`; a v1.2
   uses `rpi3`), and StarFive VisionFive 2 (U-Boot from QSPI, one GPT
   image for SD, eMMC, and NVMe, boot order eMMC then SD then NVMe,
-  `eth0`/`eth1`, no WAN chosen, D-0047).
+  `eth0`/`eth1`, no WAN chosen, D-0047), and ROCK Pi 4C (`rockpi-4c`,
+  v1.2, U-Boot at sector 64, one `eth0`, no WAN chosen, serial menu
+  for eMMC then SD, onboard AP6256 access point when `match.onboard`
+  is set, D-0053). The regulatory country follows the region unless
+  `janus.network.wifiCountry` is set (D-0054). The ROCK Pi 4C image has not been booted on the lab unit.
   Yanyu names `lan1`–`lan4` by PCI path and installs Limine
   (D-0029). The image has not been booted on the lab AMI board. Tier 3
   images are not boot-tested here.
@@ -242,29 +245,6 @@ tree does not mean that behavior exists. Stubs are not finished features.
 * The Yanyu profile names `lan1`–`lan4` by PCI address (*10* §3.1). It
   does not pick which jack is WAN. Limine on that image has not been
   booted on the lab AMI board.
-* ROCK Pi 4C (`rockpi-4c`) follows the NanoPi R4S image: GPT, mainline
-  U-Boot written at sector 64, console `ttyS2,1500000`, one `eth0` on
-  the SoC GMAC, and no WAN jack chosen. The kernel tree is
-  `rk3399-rock-pi-4c.dtb` (`radxa,rockpi4c`). The U-Boot defconfig is
-  `rock-pi-4c-rk3399_defconfig`. nixpkgs `ubootRockPi4` is the 4A/4B
-  defconfig and installs `idbloader.img` and `u-boot.itb` only. The
-  profile overrides the defconfig and `filesToInstall` the way the R4S
-  profile does for `ubootRockPro64`, so the image gets
-  `u-boot-rockchip.bin`. v1.2 is the tighter micro-HDMI connector. That
-  revision shares this tree. RAM size comes from the U-Boot TPL. The
-  v1.2 schematic fits an RTL8211E. A second port is a USB peripheral.
-  The M.2 slot is NVMe. The PHY needs no `linux-firmware` file.
-  SPI NOR is fitted, and the boot ROM tries it before eMMC and SD. The
-  image does not program SPI. The operator clears SPI, or holds the
-  maskrom button, so the U-Boot at sector 64 runs. An eMMC module is
-  tried before the SD card. The onboard radio stays off in this
-  profile. The SKU names an AP6256 and the June 2020 schematic names an
-  AP6255. The mainline Bluetooth node is `brcm,bcm4345c5`. An access
-  point waits until the pinned `linux-firmware` has the NVRAM the
-  driver requests for `radxa,rockpi4c`. Bluetooth stays unused. ROCK
-  4C+ is another board (`rk3399-rock-4c-plus.dtb`, RK3399-T, RK809,
-  `rock-4c-plus-rk3399_defconfig`, AW-CM256SM, SPI not fitted) and is
-  not this profile.
 * Battery shutdown arms on the mcuzone `0x40` profile, where a
   negative current means discharge. The Waveshare `0x43` profile stays
   unarmed.

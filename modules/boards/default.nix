@@ -6,6 +6,7 @@
     ./x86_64-test.nix
     ./yanyu-stx-r19f.nix
     ./nanopi-r4s.nix
+    ./rockpi-4c.nix
     ./le-potato.nix
     ./rpi-zero-2w.nix
     ./rpi3.nix

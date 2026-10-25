@@ -118,7 +118,7 @@
       {
         printf '%s\n' "interface=${dev}" "bridge=br-${ap.lan}" "driver=nl80211"
         printf 'ssid=%s\n' "$ssid"
-        printf '%s\n' "wpa=2" "wpa_key_mgmt=${keyMgmt ap}" "rsn_pairwise=CCMP" "hw_mode=${bandMode ap}" "channel=${channel ap}" "ieee80211n=1"
+        printf '%s\n' "wpa=2" "wpa_key_mgmt=${keyMgmt ap}" "rsn_pairwise=CCMP" "hw_mode=${bandMode ap}" "channel=${channel ap}" "ieee80211n=1" "country_code=${cfg.wifiCountry}" "ieee80211d=1"
         printf 'wpa_passphrase=%s\n' "$pass"
         ${lib.optionalString onboard ''printf '%s\n' "wmm_enabled=1" "ht_capab=[HT20][SHORT-GI-20]"''}
         ${lib.optionalString (ap.security != "wpa2") ''printf '%s\n' "ieee80211w=1"''}
@@ -173,6 +173,25 @@
 in {
   config = lib.mkMerge [
     {
+      # One regulatory domain. The region is the censorship environment;
+      # these letters are only the default country. docs/06 §11, D-0054.
+      janus.network.wifiCountry = lib.mkOptionDefault (
+        {
+          cn = "CN";
+          ru = "RU";
+          ir = "IR";
+        }
+        .${
+          config.janus.system.region
+        }
+      );
+      assertions = [
+        {
+          # Reading the value applies the type. An unused access-point list would not.
+          assertion = builtins.match "[A-Z]{2}" cfg.wifiCountry != null;
+          message = "janus.network.wifiCountry must be two uppercase letters. docs/06 §11.";
+        }
+      ];
       # docs/10 §4.4 and §4.8. The stick is declared on whichever board the config names.
       hardware.firmware = lib.mkMerge [
         (lib.mkIf (lib.elem "0e8d:7612" declaredUsbIds) [mt7612uFirmware])
@@ -187,7 +206,8 @@ in {
       ];
       # arm64 defconfig builds brcmfmac. The Zero 2 W radio sits on the
       # Arasan SDHCI, which that defconfig leaves out. docs/10 §4.7.
-      boot.kernelPatches = lib.mkIf (onboardNames != []) [
+      # The ROCK Pi 4C radio is on dw_mmc, which that defconfig builds in.
+      boot.kernelPatches = lib.mkIf (onboardNames != [] && config.janus.hardware.board == "rpi-zero-2w") [
         {
           name = "janus-rpi-onboard-wifi";
           patch = null;
@@ -198,7 +218,7 @@ in {
           };
         }
       ];
-      hardware.firmware = lib.mkIf (onboardNames != []) [pkgs.raspberrypiWirelessFirmware];
+      hardware.firmware = lib.mkIf (onboardNames != [] && config.janus.hardware.board == "rpi-zero-2w") [pkgs.raspberrypiWirelessFirmware];
       boot.blacklistedKernelModules = lib.mkIf (lib.any (n: usbId n == "0bda:8176") apNames) ["rtl8xxxu"];
 
       systemd.network.links = lib.listToAttrs (map (name: {
@@ -222,11 +242,11 @@ in {
           lib.optionals (onboardAp ap) [
             {
               assertion = row != null && lib.elem ap.band (row.bands or []);
-              message = "janus.network.wifi.${name}.band = ${ap.band} is not a band of the onboard radio. docs/10 §4.7.";
+              message = "janus.network.wifi.${name}.band = ${ap.band} is not a band of the onboard radio. docs/10 §4.7 and §4.10.";
             }
             {
               assertion = row != null && lib.elem ap.security (row.security or []);
-              message = "janus.network.wifi.${name}.security = ${ap.security} is not supported on the onboard radio. docs/10 §4.7.";
+              message = "janus.network.wifi.${name}.security = ${ap.security} is not supported on the onboard radio. docs/10 §4.7 and §4.10.";
             }
             {
               assertion =
@@ -237,7 +257,7 @@ in {
                   == "auto"
                   || (lib.isInt ap.channel && lib.elem ap.channel (row.channels or []))
                 );
-              message = "janus.network.wifi.${name}.channel is outside 1-13. docs/10 §4.7.";
+              message = "janus.network.wifi.${name}.channel is not a channel of the onboard radio. docs/10 §4.7 and §4.10.";
             }
           ])
         apNames

@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-17 |
+| Last updated | 2026-10-25 |
 
 This document is the preset that makes one Janus router practical in
 mainland China, Russia, or Iran. The module is `modules/janus/region.nix`.
@@ -27,7 +27,9 @@ The five proposed changes collapse to one option and a table of data.
 
 `janus.system.region` is the censorship environment the router is built for. It
 is not a language, not a time zone, and not an exit-node country. Exit
-groups such as JP, US, and HK stay FR-PRX-014.
+groups such as JP, US, and HK stay FR-PRX-014. The Wi-Fi regulatory
+country defaults from the same letters and is a different option,
+`janus.network.wifiCountry` (D-0054, *06* §11).
 
 ## 2. Option
 

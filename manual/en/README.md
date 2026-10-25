@@ -11,7 +11,7 @@ The project is public and licensed under the Apache License, Version 2.0.
 ## What you can do today
 
 The router image boots in a VM. Image profiles exist for the NanoPi R4S,
-the Le Potato, the Raspberry Pi Zero 2 W, the Raspberry Pi 3 / 3+, the
+the ROCK Pi 4C, the Le Potato, the Raspberry Pi Zero 2 W, the Raspberry Pi 3 / 3+, the
 Raspberry Pi 4 and Compute Module 4, the Raspberry Pi 2 v1.1, the
 StarFive VisionFive 2, and the Yanyu STX-R19F
 (Limine on legacy BIOS). `janus` and `janus-build`
@@ -348,6 +348,32 @@ At boot, a discharging cell already below 3.55 V powers off before the
 network starts. Charging, a current within 5 mA of zero, a missing
 sensor, and `power.shutdown.enable = false` leave the router running.
 The Waveshare address `0x43` stays unarmed and shows no readings.
+
+## ROCK Pi 4C
+
+The ROCK Pi 4C (`rockpi-4c`) profile is the v1.2 board. The image is
+GPT. Mainline U-Boot is written at sector 64. The console is `ttyS2`
+at 1500000. There is one Ethernet jack, `eth0`. The profile does not
+choose a WAN. A second port is a USB peripheral. The M.2 slot is NVMe.
+
+The boot ROM tries the SPI NOR before the eMMC and the SD card. This
+image does not program the SPI. A bootloader left in that flash is
+what the board starts, and the U-Boot at sector 64 never runs. Clear
+the SPI, or hold the maskrom button while power is applied. U-Boot
+then starts from the eMMC when a module is fitted, and from the SD
+card when the eMMC is absent.
+
+The serial console shows a menu for two seconds. With no key pressed
+it tries the eMMC and, when that medium has no Janus image, the SD
+card. The other line boots the SD card. An image on the eMMC is used
+even when a bootable SD card is inserted, unless that line is selected.
+
+The onboard radio is a WPA2 access point when `match.onboard = true`.
+It is the AP6256: 2.4 GHz or 5 GHz, 20 MHz. Add that access point to a
+LAN, the same way as the Zero 2 W radio. The regulatory country follows
+the region (`cn`, `ru`, or `ir`) unless `janus.network.wifiCountry` is
+set. Bluetooth on the board stays unused. A USB Bluetooth dongle still uses `btusb`. The ROCK 4C+ is a
+different board and does not use this profile.
 
 ## Tier 3 boards
 

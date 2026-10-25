@@ -605,6 +605,12 @@ in {
       description = "Wi-Fi access points. docs/06 §11.";
     };
 
+    wifiCountry = mkOption {
+      type = types.strMatching "[A-Z]{2}";
+      defaultText = "CN, RU, or IR from janus.system.region";
+      description = "ISO 3166-1 alpha-2 regulatory country for every access point. Unset, cn is CN, ru is RU, and ir is IR. One kernel domain, so this is not set per access point. docs/06 §11.";
+    };
+
     igmpProxy = mkOption {
       type = types.submodule {
         options = {
@@ -744,11 +750,14 @@ in {
       })
       cfg.wifi
       ++ lib.mapAttrsToList (n: ap: {
-        assertion = ap.passphraseSecret == null || (
-          (options ? sops)
-          && (config.sops.secrets ? ${ap.passphraseSecret})
-          && (builtins.tryEval config.sops.secrets.${ap.passphraseSecret}.sopsFile).success
-        );
+        assertion =
+          ap.passphraseSecret
+          == null
+          || (
+            (options ? sops)
+            && (config.sops.secrets ? ${ap.passphraseSecret})
+            && (builtins.tryEval config.sops.secrets.${ap.passphraseSecret}.sopsFile).success
+          );
         message = "janus.network.wifi.${n}.passphraseSecret needs sops.secrets.<name>.sopsFile.";
       })
       cfg.wifi

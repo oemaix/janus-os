@@ -24,6 +24,7 @@
     "x86_64-test"
     "yanyu-stx-r19f"
     "nanopi-r4s"
+    "rockpi-4c"
     "le-potato"
     "rpi-zero-2w"
     "rpi3"
@@ -96,7 +97,7 @@ in
   then
     throw ''
       The board profile '${boardName}' is not implemented.
-      Implemented boards are x86_64-test, yanyu-stx-r19f, nanopi-r4s, le-potato, rpi-zero-2w, rpi3, rpi4, rpi2, and visionfive2
+      Implemented boards are x86_64-test, yanyu-stx-r19f, nanopi-r4s, rockpi-4c, le-potato, rpi-zero-2w, rpi3, rpi4, rpi2, and visionfive2
       (docs/13-roadmap.md, docs/10-hardware-support.md).
     ''
   else nixos

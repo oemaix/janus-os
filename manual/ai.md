@@ -160,6 +160,17 @@ Read this file before answering a question about using Janus OS.
   `janus-build` on another machine uses that machine's system and refuses
   a mismatch. A Raspberry Pi 2 v1.2 uses the `rpi3` profile. `rpi4` is
   the Raspberry Pi 4 and the Compute Module 4. The Pi 400 is not a board.
+- ROCK Pi 4C (`rockpi-4c`) is the v1.2 board (D-0053, docs/10 §3.5,
+  §4.10). GPT, mainline U-Boot at sector 64, console `ttyS2` at
+  1500000, one `eth0`, no WAN chosen. The boot ROM tries SPI NOR before
+  eMMC and SD. The image does not program SPI. Clear SPI, or hold the
+  maskrom button, so that U-Boot runs. The serial menu waits two
+  seconds: eMMC then SD, or the SD card alone. `match.onboard = true`
+  is the AP6256 access point, WPA2, 2.4 GHz or 5 GHz, HT20.
+  `janus.network.wifiCountry` defaults from `janus.system.region`
+  (`cn` is `CN`, `ru` is `RU`, `ir` is `IR`, D-0054).
+  `brcmfmac` stays blacklisted until then. `hci_uart` stays
+  blacklisted. ROCK 4C+ is not this profile.
 - A mcuzone UPS at I²C `0x40` shows the cell in `janus status` and powers
   the router off while that cell is discharging, at the thresholds in
   docs/10 §4.5. Address `0x43` stays unarmed.

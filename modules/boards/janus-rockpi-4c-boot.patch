@@ -1,0 +1,35 @@
+--- a/include/configs/rockchip-common.h
++++ b/include/configs/rockchip-common.h
+@@ -14,7 +14,7 @@
+ #ifndef CONFIG_XPL_BUILD
+ 
+ #ifndef BOOT_TARGETS
+-#define BOOT_TARGETS	"mmc1 mmc0 nvme scsi usb pxe dhcp spi"
++#define BOOT_TARGETS	"mmc0 mmc1"
+ #endif
+ 
+ #ifdef CONFIG_ARM64
+--- a/include/configs/rk3399_common.h
++++ b/include/configs/rk3399_common.h
+@@ -36,7 +36,10 @@
+ 	"partitions=" PARTS_DEFAULT	\
+ 	ENV_MEM_LAYOUT_SETTINGS		\
+ 	ROCKCHIP_DEVICE_SETTINGS	\
+-	"boot_targets=" BOOT_TARGETS "\0"
++	"boot_targets=" BOOT_TARGETS "\0" \
++	"bootmenu_delay=2\0" \
++	"bootmenu_0=eMMC, then SD=setenv boot_targets mmc0 mmc1; bootflow scan -lb\0" \
++	"bootmenu_1=SD card=setenv boot_targets mmc1; bootflow scan -lb\0"
+ 
+ #endif /* CONFIG_XPL_BUILD */
+ 
+--- a/configs/rock-pi-4c-rk3399_defconfig
++++ b/configs/rock-pi-4c-rk3399_defconfig
+@@ -101,3 +101,7 @@ CONFIG_VIDEO=y
+ CONFIG_VIDEO_ROCKCHIP=y
+ CONFIG_DISPLAY_ROCKCHIP_HDMI=y
+ CONFIG_ERRNO_STR=y
++CONFIG_BOOTDELAY=0
++CONFIG_USE_BOOTCOMMAND=y
++CONFIG_BOOTCOMMAND="bootmenu"
++CONFIG_CMD_BOOTMENU=y

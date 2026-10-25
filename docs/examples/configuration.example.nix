@@ -23,7 +23,7 @@
   # Hardware
   ############################################################################
 
-  janus.hardware.board = "nanopi-r4s"; # CHANGE ME: rpi4 | nanopi-r4s | ...
+  janus.hardware.board = "nanopi-r4s"; # CHANGE ME: rpi4 | nanopi-r4s | rockpi-4c | ...
 
   janus.hardware.peripherals = {
     # A USB Ethernet adapter as an extra port.
@@ -44,7 +44,9 @@
     # ups = { class = "power"; match.i2cAddress = "0x40"; };
 
     # Zero 2 W onboard radio. The board must be rpi-zero-2w. 2.4 GHz, WPA2.
-    # Add "ap" to the LAN members. docs/10 §4.7.
+    # ROCK Pi 4C uses the same declaration. 2.4 or 5 GHz, WPA2, HT20.
+    # wifiCountry follows janus.system.region unless set. docs/06 §11.
+    # Add "ap" to the LAN members. docs/10 §4.7 and §4.10.
     # radio = { class = "wifi"; match.onboard = true; };
   };
 

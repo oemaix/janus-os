@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-22 |
+| Last updated | 2026-10-25 |
 
 ## 1. Principles
 
@@ -118,7 +118,7 @@ router go through hot overrides instead.
 
 | Board | System | Binary cache | Default build strategy |
 |-------|--------|--------------|------------------------|
-| RPi 3/4, RPi Zero 2 W, NanoPi R4S, Le Potato | `aarch64-linux` | cache.nixos.org | `boot.binfmt.emulatedSystems = ["aarch64-linux"]` on x86_64 host (transparent, slow for local builds but most packages come from cache) **or** native aarch64 builder **or** cross (`pkgsCross.aarch64-multiplatform`) |
+| RPi 3/4, RPi Zero 2 W, NanoPi R4S, ROCK Pi 4C, Le Potato | `aarch64-linux` | cache.nixos.org | `boot.binfmt.emulatedSystems = ["aarch64-linux"]` on x86_64 host (transparent, slow for local builds but most packages come from cache) **or** native aarch64 builder **or** cross (`pkgsCross.aarch64-multiplatform`) |
 | RPi 2 (BCM2836) | `armv7l-linux` | none (community only) | cross-compilation required; expect long builds; Tier 3 |
 | VisionFive 2 | `riscv64-linux` | none | cross-compilation; Tier 3 |
 | Yanyu STX-R19F and the test target | `x86_64-linux` | yes | native on the build host. The STX-R19F image boots with Limine on legacy BIOS, not UEFI. |

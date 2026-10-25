@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-23 |
+| Last updated | 2026-10-25 |
 
 A row here is a choice that binds implementation and is not an ADR. The
 cited requirement or design section is the text that binds. An accepted
@@ -36,7 +36,7 @@ Undecided rows are open. Implementation does not invent an answer for them.
 | D-0013 | The OS repository is public. User-facing text is English, then Russian, then Persian. There is no hosted builder. | *00* §9 |
 | D-0014 | Backup stores what git cannot recreate: the age key, and overrides that have not been pulled. | FR-OPS-011 |
 | D-0015 | `docs/` is the definition suite. `manual/` is the user guide. `llms.txt` points at `ai.md`. | *14*, *16* |
-| D-0016 | Tier 1 is Zero 2 W, Le Potato, NanoPi R4S, and Yanyu STX-R19F. Raspberry Pi 4 and Compute Module 4 are Tier 2. | *10* |
+| D-0016 | Tier 1 is Zero 2 W, Le Potato, NanoPi R4S, ROCK Pi 4C, and Yanyu STX-R19F. Raspberry Pi 4 and Compute Module 4 are Tier 2. | *10* |
 | D-0017 | The VLAN model is general. 1.0 implements LAN VLANs. WAN VLAN, the `iptv` role, and IGMP are after 1.0. | FR-NET-005, FR-NET-014, FR-NET-020 |
 | D-0018 | A connection audit log is off unless configured, metadata only, on the state partition. `janus audit stop` pauses it without a rebuild. | FR-MON-007 |
 | D-0019 | RTL8188CUS is a 2.4 GHz access point on in-tree `rtl8192cu`. | *10* §4.4 |
@@ -70,6 +70,8 @@ Undecided rows are open. Implementation does not invent an answer for them.
 | D-0049 | Every boot runs `fsck.f2fs -a --no-kernel-check` on `JANUS_STATE` and does not scan the volume. A timeout, a slow mount, or a missing block device is not corruption. Status 4 or 255 is checked again once the state block device is present. Reformat stays `state.onCorruption` only when that second result is still 4 or 255, or when a finished mount fails, and only while the state block device is present. `janus-state-recover` still runs when `janus-grow-state` fails. The event is written to the journal after boot. `janus-grow-state` grows the state partition up to `state.maximumSize` (default 4 GiB) or the end of the media, and does not shrink. Every boot moves the backup GPT, publishes the partition table again, and waits until the state partuuid exists, including when the partition does not grow. `janus.system.reboot.schedule` (default off) is the maintenance reboot: `monthly`, `yearly`, or a five-field cron whose day-of-week is `*`. The reboot service only reboots. `janus.system.reboot.fsck` is one action on that reboot: it requests `fsck.f2fs -f` on that boot only, and that check has no boot time cap. The on-disk request is removed before the check, so a check that does not finish is not repeated. Further actions are sibling options. | *05* §2, *05* §6, *08* §1, *12* §4 |
 | D-0050 | RTL8153 (`0bda:8153`) and RTL8156 (`0bda:8156`) run on in-tree `r8152` without the `rtl_nic` firmware that driver requests. The image does not ship those files. Add them from the pinned `linux-firmware` package if a link problem shows up. | *10* §4.9, D-0010 |
 | D-0051 | `janus.system.kernelProfile` is `standard` (default) or `compact`. `standard` is the NixOS kernel, so aarch64 and x86_64 keep the binary cache. `compact` is one kernel for every board. It drops sound, desktop and 3D GPUs, compute accelerators, cameras and TV, HDMI-CEC and infrared remotes, industrial I/O and Comedi, InfiniBand, and SAN (Fibre Channel, FCoE, iSCSI, SAS RAID HBAs, the SCSI target, and NVMe-oF). It keeps NIC drivers, Wi-Fi, USB, WWAN, Bluetooth, MMC, the NVMe host, AHCI, f2fs, vfat, virtio, simpledrm, and SoC scanout that does not depend on ALSA. Raspberry Pi HDMI (VC4) depends on ALSA and is not in this profile. The board consoles are serial. The symbols are `modules/janus/system/kernel-profile.nix`. | *13* §3, D-0035, G5 |
+| D-0053 | ROCK Pi 4C (`rockpi-4c`) is the v1.2 board. The image is GPT. Mainline U-Boot is `rock-pi-4c-rk3399_defconfig`, written at sector 64 as `u-boot-rockchip.bin`. nixpkgs `ubootRockPi4` is the 4A/4B defconfig and is not installed as shipped. The console is `ttyS2` at 1500000 8N1. One `eth0` is the RTL8211E. The profile does not choose a WAN. The image does not program SPI NOR. The boot ROM tries SPI before eMMC and SD, so the operator clears SPI, or holds the maskrom button, before this U-Boot runs. The serial console then shows a two-second menu. The first entry tries eMMC (`mmc0`) and, when that has no Janus image, the SD card (`mmc1`). The second entry boots the SD card. `brcmfmac` stays blacklisted until `match.onboard = true`. That access point is the AP6256 on in-tree `brcmfmac`: WPA2, 2.4 GHz or 5 GHz, HT20 (§4.10). `hci_uart` stays blacklisted. ROCK 4C+ is not this profile. | *10* §3.5, *10* §4.10, D-0016 |
+| D-0054 | The Wi-Fi regulatory country is one ISO 3166-1 alpha-2 code for every access point, `janus.network.wifiCountry`. Unset, it follows `janus.system.region`: `cn` is `CN`, `ru` is `RU`, and `ir` is `IR`. `hostapd` sets `country_code` and `ieee80211d`. The kernel has one regulatory domain. `janus.system.region` stays the censorship environment. Changing the country is a rebuild. | *06* §11, *21*, D-0034 |
 
 ## 2. Undecided
 
