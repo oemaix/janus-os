@@ -33,7 +33,7 @@ obligation for that release, not a reason to omit the profile.
 | **Raspberry Pi 4 / CM4** (`rpi4`) | BCM2711 · aarch64 | Pi 4: 1× 1 GbE. CM4: that port on the official IO board. USB 3 NICs are peripherals. | 2 | Tier 2 (D-0016). EEPROM firmware, FAT `config.txt`, hybrid MBR so the bootloader finds the GPT boot partition. One `eth0`; the profile does not choose a WAN. The Pi 400 is not a board: it has no Ethernet jack (D-0032). |
 | **Raspberry Pi 3 / 3+** | BCM2837 · aarch64 | 1× 100 MbE (USB 2 shared) | 2 | Low throughput; fine for tunnel-only use behind another router. FAT `config.txt`, hybrid MBR so the boot ROM finds the GPT boot partition. |
 | **Raspberry Pi Zero 2 W** | BCM2710A1 · aarch64 | Wi-Fi 4 + Bluetooth, no Ethernet | 1 | Owner's lab. 512 MiB RAM. Needs a USB Ethernet peripheral for a wired WAN or LAN. FAT `config.txt`, hybrid MBR. The onboard radio is a 2.4 GHz WPA2 access point (§4.7, D-0043). Bluetooth is present and unused. Not a 500-node target. INA219 UPS overlay is part of this board's lab setup (FR-HW-008). |
-| **Libre Computer Le Potato (AML-S905X-CC)** | S905X · aarch64 | 1× 100 MbE | 1 | Owner's lab. Mainline U-Boot with FIP at raw offset; eMMC or SD. Lab peripherals: Fibocom NL668 as USB Ethernet (§4.2), RTL8188CUS as AP (§4.4), CSR Bluetooth. |
+| **Libre Computer Le Potato (AML-S905X-CC)** | S905X · aarch64 | 1× 100 MbE | 1 | Owner's lab. Mainline U-Boot FIP at sector 1 (`u-boot.gxl.sd.bin`); DOS table plus a backup GPT (§3.6, D-0055). eMMC or SD. Lab peripherals: Fibocom NL668 as USB Ethernet (§4.2), RTL8188CUS as AP (§4.4), CSR Bluetooth. |
 | **StarFive VisionFive 2** | JH7110 · riscv64 | 2× 1 GbE | 3 | Needs recent kernel. U-Boot 2026.04 runs from QSPI (D-0047). One GPT image for SD, eMMC, and NVMe. Boot order is eMMC, then SD, then NVMe. No binary cache. v1.3B clocks both MACs from the Motorcomm PHY. The kernel keeps that receive clock running so the DMA reset can finish with no link. |
 | **Raspberry Pi 2 (v1.1)** | BCM2836 · armv7l | 1× 100 MbE | 3 | 32-bit; no cache; RPi 2 v1.2 is BCM2837 and uses the `rpi3` profile. |
 | **Yanyu STX-R19F** (`yanyu-stx-r19f`) | Intel Celeron J1900 (Bay Trail-D) · x86_64 | 4× Intel 82583V GbE on PCIe, SATA SSD. No Wi-Fi, Bluetooth, or WWAN. | 1 | Lab reference x86 board. Legacy AMI BIOS, 4 GiB RAM. The lab OpenWrt install uses GRUB. The Janus image uses Limine. Case labels in §3.1. |
@@ -157,6 +157,43 @@ Bluetooth on this board stays unused. ROCK 4C+ is another board
 (`rk3399-rock-4c-plus.dtb`, RK3399-T, RK809,
 `rock-4c-plus-rk3399_defconfig`, AW-CM256SM, SPI not fitted) and is
 not this profile.
+
+### 3.6 Le Potato
+
+The Libre Computer AML-S905X-CC boots the SD card and the eMMC user
+area from the same image (D-0055). The GXL mask ROM reads sector 1 and
+expects `@AML` at offset 16 of that sector. `u-boot.gxl.sd.bin` from
+nixpkgs `ubootLibreTechCC` carries that header in its sector 1. The
+image writes it with the two `dd` lines that package documents: the
+file from sector 1 onto disk sector 1, then the first 444 bytes onto
+the start of sector 0. Those 444 bytes leave the MBR partition slots
+and the `55 AA` signature. The same bytes are what the eMMC user area
+expects. The file ends before the hint sector, the last sector before
+`JANUS_BOOT`.
+
+Sector 1 is the firmware, so a primary GPT cannot occupy it. Restoring
+a primary header there after boot would erase the firmware, and the
+next power-on would fail the mask-ROM check. `janus-grow-state` on
+this board leaves sector 1 unchanged and does not call `sgdisk`.
+
+Sector 0 is a DOS table. Slot 1 is the FAT boot partition. Slot 2 is
+an extended partition. Each of `JANUS_ROOT`, `JANUS_NIX`, the slot
+copies, and `JANUS_STATE` is a logical partition with one EBR sector
+immediately before the filesystem. A computer that does not pass `gpt`
+reads this table and sees the filesystems on a card larger than the
+image, before the first boot. U-Boot reads the same DOS table: a type
+`0xEE` entry would make it treat the disk as GPT and then find no
+partitions. The boot flag is on the FAT primary only.
+
+The backup GPT keeps the PARTUUIDs in *05* §2. Its header stays at the
+last sector of the image until the first boot. The kernel command line
+includes `gpt`, so once that header is at the last sector of the card
+the kernel exposes those PARTUUIDs. A hint sector immediately before
+`JANUS_BOOT` records where the header is. The first boot copies the
+backup to the card's last sector and updates the hint. It leaves the
+old header in place. `janus-grow-state` then grows `JANUS_STATE` in
+that backup and in the DOS state entry, and publishes the table before
+it exits, including when the size does not change.
 
 ## 4. Peripherals
 

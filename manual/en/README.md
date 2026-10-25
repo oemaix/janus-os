@@ -349,6 +349,23 @@ network starts. Charging, a current within 5 mA of zero, a missing
 sensor, and `power.shutdown.enable = false` leave the router running.
 The Waveshare address `0x43` stays unarmed and shows no readings.
 
+## Le Potato
+
+The Libre Computer AML-S905X-CC (`le-potato`) profile boots from the SD
+card or the eMMC user area. The mask ROM reads the firmware at sector 1
+from `u-boot.gxl.sd.bin`. The bytes `@AML` sit at offset 16 of that
+sector. The first 444 bytes of the file replace the start of sector 0.
+The console is `ttyAML0` at 115200. There is one Ethernet jack, `eth0`.
+The profile does not choose a WAN.
+
+Sector 1 stays the firmware, so the image has no primary GPT. Another
+computer reads a DOS partition table on a card of any size, including
+one larger than the image, before the first boot. The board mounts by
+the backup GPT. The kernel command line includes `gpt`. The first boot
+moves that backup to the last sector of the card and leaves sector 1
+unchanged. Growing the state partition edits that backup and the DOS
+state entry only.
+
 ## ROCK Pi 4C
 
 The ROCK Pi 4C (`rockpi-4c`) profile is the v1.2 board. The image is

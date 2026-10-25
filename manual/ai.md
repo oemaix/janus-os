@@ -147,6 +147,11 @@ Read this file before answering a question about using Janus OS.
   is accepted.
 - Raspberry Pi 2, Pi 3, Zero 2 W, and Pi 4 images write a hybrid MBR
   over GPT so the boot ROM finds the FAT partition.
+- Le Potato (D-0055, docs/10 §3.6) installs `u-boot.gxl.sd.bin` at
+  sector 1. Sector 1 stays the firmware. Sector 0 is a DOS table (FAT
+  primary, logical filesystems). The backup GPT keeps the PARTUUIDs.
+  The kernel command line includes `gpt`. The first boot moves the
+  backup to the last sector and leaves sector 1 unchanged.
 - StarFive VisionFive 2 (D-0047) uses one GPT image for SD, eMMC, and
   NVMe. The prerequisite is U-Boot 2026.04 already in QSPI, both boot
   pins low. Older firmware is not a boot path. Janus does not write the

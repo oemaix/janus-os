@@ -43,6 +43,10 @@
   slots ? false,
   # Raspberry Pi 2 boot ROM reads an MBR FAT partition. docs/05 §2, docs/10 §3.
   hybridFatMbr ? false,
+  # Le Potato FIP occupies LBA 1. The image keeps a DOS table and a backup
+  # GPT. docs/10 §3.6, D-0055.
+  amlogicSd ? false,
+  gptFix ? null,
 }: let
   limineBoot = import ./limine-boot.nix {inherit limine;};
   slotsFlag =
@@ -89,7 +93,7 @@ in
     slots = slotsFlag;
     passthru =
       {
-        inherit slots hybridFatMbr;
+        inherit slots hybridFatMbr amlogicSd;
         rootBUuid = "4a414e55-5300-4000-8000-000000000006";
         nixBUuid = "4a414e55-5300-4000-8000-000000000007";
       }
@@ -103,6 +107,10 @@ in
 
     buildCommand = ''
       set -euo pipefail
+      ${lib.optionalString (amlogicSd && hybridFatMbr) ''
+        echo "janus: Le Potato SD layout and a hybrid MBR cannot share one image" >&2
+        exit 1
+      ''}
       export PATH="${lib.makeBinPath [
         nix
         f2fs-tools
@@ -235,68 +243,98 @@ in
 
       start_mib=$(( 1 + firmwareOffsetMiB ))
       boot_start=$start_mib
-      root_start=$(( boot_start + bootMiB ))
-      nix_start=$(( root_start + root_mib ))
-      if [ "$slots" = 1 ]; then
-        root_b_start=$(( nix_start + nix_mib ))
-        nix_b_start=$(( root_b_start + root_mib ))
-        state_start=$(( nix_b_start + nix_mib ))
-        nix_end=$root_b_start
+      amlogic_sd=${
+        if amlogicSd
+        then "1"
+        else "0"
+      }
+      if [ "$amlogic_sd" = 1 ]; then
+        # Partition table and filesystem copies. The FIP write and the DOS
+        # table run after this, once firmwareInstall has finished.
+        export boot_start bootMiB root_mib nix_mib stateMiB slots
+        export bootLabel rootLabel nixLabel stateLabel
+        bash ${./amlogic-disk.sh} layout
       else
-        state_start=$(( nix_start + nix_mib ))
-        nix_end=$state_start
-      fi
-      state_end=$(( state_start + stateMiB ))
-      # One MiB past the last partition holds the backup GPT header.
-      total_mib=$(( state_end + 1 ))
-      truncate -s "''${total_mib}M" disk.img
+        root_start=$(( boot_start + bootMiB ))
+        nix_start=$(( root_start + root_mib ))
+        if [ "$slots" = 1 ]; then
+          root_b_start=$(( nix_start + nix_mib ))
+          nix_b_start=$(( root_b_start + root_mib ))
+          state_start=$(( nix_b_start + nix_mib ))
+          nix_end=$root_b_start
+        else
+          state_start=$(( nix_start + nix_mib ))
+          nix_end=$state_start
+        fi
+        state_end=$(( state_start + stateMiB ))
+        # One MiB past the last partition holds the backup GPT header.
+        total_mib=$(( state_end + 1 ))
+        truncate -s "''${total_mib}M" disk.img
 
-      sec() { echo $(( $1 * 2048 )); }
-      slot_args=()
-      if [ "$slots" = 1 ]; then
-        slot_args=(
-          -n "6:$(sec "$root_b_start"):$(( $(sec "$nix_b_start") - 1 ))"
-          -c 6:JANUS_ROOT_B -t 6:8300
-          -u 6:4a414e55-5300-4000-8000-000000000006
-          -n "7:$(sec "$nix_b_start"):$(( $(sec "$state_start") - 1 ))"
-          -c 7:JANUS_NIX_B -t 7:8300
-          -u 7:4a414e55-5300-4000-8000-000000000007
-        )
-      fi
-      sgdisk -o \
-        -n "1:$(sec "$boot_start"):$(( $(sec "$root_start") - 1 ))" \
-        -c "1:$bootLabel" -t 1:EF00 \
-        -u 1:4a414e55-5300-4000-8000-000000000001 \
-        -n "2:$(sec "$root_start"):$(( $(sec "$nix_start") - 1 ))" \
-        -c "2:$rootLabel" -t 2:8300 \
-        -u 2:4a414e55-5300-4000-8000-000000000002 \
-        -n "3:$(sec "$nix_start"):$(( $(sec "$nix_end") - 1 ))" \
-        -c "3:$nixLabel" -t 3:8300 \
-        -u 3:4a414e55-5300-4000-8000-000000000003 \
-        "''${slot_args[@]}" \
-        -n "4:$(sec "$state_start"):$(( $(sec "$state_end") - 1 ))" \
-        -c "4:$stateLabel" -t 4:8300 \
-        -u 4:4a414e55-5300-4000-8000-000000000004 \
-        disk.img
+        sec() { echo $(( $1 * 2048 )); }
+        slot_args=()
+        if [ "$slots" = 1 ]; then
+          slot_args=(
+            -n "6:$(sec "$root_b_start"):$(( $(sec "$nix_b_start") - 1 ))"
+            -c 6:JANUS_ROOT_B -t 6:8300
+            -u 6:4a414e55-5300-4000-8000-000000000006
+            -n "7:$(sec "$nix_b_start"):$(( $(sec "$state_start") - 1 ))"
+            -c 7:JANUS_NIX_B -t 7:8300
+            -u 7:4a414e55-5300-4000-8000-000000000007
+          )
+        fi
+        sgdisk -o \
+          -n "1:$(sec "$boot_start"):$(( $(sec "$root_start") - 1 ))" \
+          -c "1:$bootLabel" -t 1:EF00 \
+          -u 1:4a414e55-5300-4000-8000-000000000001 \
+          -n "2:$(sec "$root_start"):$(( $(sec "$nix_start") - 1 ))" \
+          -c "2:$rootLabel" -t 2:8300 \
+          -u 2:4a414e55-5300-4000-8000-000000000002 \
+          -n "3:$(sec "$nix_start"):$(( $(sec "$nix_end") - 1 ))" \
+          -c "3:$nixLabel" -t 3:8300 \
+          -u 3:4a414e55-5300-4000-8000-000000000003 \
+          "''${slot_args[@]}" \
+          -n "4:$(sec "$state_start"):$(( $(sec "$state_end") - 1 ))" \
+          -c "4:$stateLabel" -t 4:8300 \
+          -u 4:4a414e55-5300-4000-8000-000000000004 \
+          disk.img
 
-      dd if=boot.img of=disk.img bs=1M seek="$boot_start" conv=notrunc status=none
-      dd if=root.img of=disk.img bs=1M seek="$root_start" conv=notrunc status=none
-      dd if=nix.img of=disk.img bs=1M seek="$nix_start" conv=notrunc status=none
-      if [ "$slots" = 1 ]; then
-        dd if=root-b.img of=disk.img bs=1M seek="$root_b_start" conv=notrunc status=none
-        dd if=nix-b.img of=disk.img bs=1M seek="$nix_b_start" conv=notrunc status=none
+        dd if=boot.img of=disk.img bs=1M seek="$boot_start" conv=notrunc status=none
+        dd if=root.img of=disk.img bs=1M seek="$root_start" conv=notrunc status=none
+        dd if=nix.img of=disk.img bs=1M seek="$nix_start" conv=notrunc status=none
+        if [ "$slots" = 1 ]; then
+          dd if=root-b.img of=disk.img bs=1M seek="$root_b_start" conv=notrunc status=none
+          dd if=nix-b.img of=disk.img bs=1M seek="$nix_b_start" conv=notrunc status=none
+        fi
+        dd if=state.img of=disk.img bs=1M seek="$state_start" conv=notrunc status=none
       fi
-      dd if=state.img of=disk.img bs=1M seek="$state_start" conv=notrunc status=none
 
       ${firmwareInstall}
+      ${
+        if amlogicSd
+        then ''
+          export JANUS_GPT_FIX=${gptFix}/bin/janus-gpt-fix
+          bash ${./amlogic-disk.sh} prepare
+          . ./amlogic-layout.env
+        ''
+        else ""
+      }
       ${lib.optionalString limineBios limineBoot.biosPartitionScript}
       ${lib.optionalString hybridFatMbr ''
         export boot_start
         bash ${./hybrid-mbr.sh}
       ''}
 
-      printf 'boot_start_mib=%s\nboot_mib=%s\nstate_start_mib=%s\nstate_mib=%s\n' \
-        "$boot_start" "$bootMiB" "$state_start" "$stateMiB" > layout.env
+      if [ "$amlogic_sd" = 1 ]; then
+        # state_lba is not a whole MiB: each logical filesystem has an EBR
+        # sector in front of it. A truncated state_start_mib would aim a
+        # later dd at the wrong place.
+        printf 'boot_start_mib=%s\nboot_mib=%s\nstate_start_lba=%s\nstate_sectors=%s\nstate_mib=%s\n' \
+          "$boot_start" "$bootMiB" "$state_lba" "$state_sectors" "$stateMiB" > layout.env
+      else
+        printf 'boot_start_mib=%s\nboot_mib=%s\nstate_start_mib=%s\nstate_mib=%s\n' \
+          "$boot_start" "$bootMiB" "$state_start" "$stateMiB" > layout.env
+      fi
 
       mkdir -p "$out"
       install -m 0644 disk.img "$out/janus-$hostName.img"

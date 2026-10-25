@@ -170,12 +170,17 @@ The image builder is a Nix derivation (no root, no loop mounts) that:
    * `state.img` — empty `mkfs.f2fs` of `state.minimumSize`; expanded on
      boot by `janus-grow-state.service` up to `state.maximumSize`
      (default 4 GiB) or the end of the media.
-3. Writes GPT/MBR with labels and PARTUUIDs, installs raw U-Boot/SPL at the
-   profile offsets, concatenates partitions. On the Yanyu image, `limine
-   bios-install` writes stage 1 into the image file and stage 2 into
-   `JANUS_BIOS`.
+3. Writes the partition table with labels and PARTUUIDs, installs raw
+   U-Boot/SPL at the profile offsets, concatenates partitions. Le Potato
+   keeps the FIP at sector 1 and a DOS table plus a backup GPT (D-0055,
+   *10* §3.6). On the Yanyu image, `limine bios-install` writes stage 1
+   into the image file and stage 2 into `JANUS_BIOS`.
 4. Emits `janus-<host>.img` plus `.img.zst`, `SHA256SUMS`,
-   `build.json` (provenance, including `configRevision`).
+   `build.json` (provenance, including `configRevision`), and
+   `layout.env`. `layout.env` records `boot_start_mib`. Other boards
+   also record `state_start_mib`. Le Potato records `state_start_lba`
+   and `state_sectors` instead: the EBR sector before each logical
+   filesystem puts `JANUS_STATE` off a 1 MiB boundary (D-0055).
 
 `systemd-repart` is not the builder (ADR-0010). Revisit it when it can
 create and populate f2fs.

@@ -517,7 +517,25 @@ in {
         else "no"
       } = no
       test ${toString (lib.length rock.config.boot.kernelPatches)} = 0
-      echo ${text potato.config.system.build.janusBoardImage.firmwareInstall} | grep -q u-boot.gxl
+      fw=${text potato.config.system.build.janusBoardImage.firmwareInstall}
+      printf '%s\n' "$fw" | grep -q u-boot.gxl.sd.bin
+      printf '%s\n' "$fw" | grep -q 'skip=1 seek=1'
+      printf '%s\n' "$fw" | grep -q 'count=444'
+      echo ${lib.escapeShellArg (lib.concatStringsSep " " potato.config.boot.kernelParams)} | grep -qw gpt
+      test ${
+        if potato.config.system.build.janusImage.amlogicSd or false
+        then "yes"
+        else "no"
+      } = yes
+      grow=${text potato.config.boot.initrd.systemd.services.janus-grow-state.script}
+      printf '%s\n' "$grow" | grep -q janus-gpt-fix
+      printf '%s\n' "$grow" | grep -q relocate
+      if printf '%s\n' "$grow" | grep -q sgdisk; then
+        echo "le potato grow script still calls sgdisk" >&2
+        exit 1
+      fi
+      printf '%s\n' "$grow" > grow-potato.sh
+      bash -n grow-potato.sh
       if echo ${lib.escapeShellArg (lib.concatStringsSep " " potato.config.boot.initrd.availableKernelModules)} | grep -q sdhci_meson; then
         echo "le potato still requests sdhci_meson" >&2
         exit 1
@@ -623,6 +641,255 @@ in {
       sig=$(od -An -t x1 -j 510 -N 2 disk.img | tr -d '[:space:]')
       test "$sig" = 55aa
       sgdisk -p disk.img | grep -q JANUS_BOOT
+      echo ok > "$out"
+    '';
+  # Le Potato: sector 1 is the FIP, sector 0 is DOS, the backup GPT moves.
+  # docs/10 §3.6, D-0055. This does not build a NixOS image.
+  eval-le-potato-sd = let
+    gptFix = pkgs.callPackage ../pkgs/janus-gpt-fix.nix {};
+  in
+    pkgs.runCommand "eval-le-potato-sd" {
+      nativeBuildInputs = [gptFix pkgs.gptfdisk pkgs.util-linux pkgs.coreutils];
+    } ''
+      set -eu
+      ${
+        if pkgs.stdenv.hostPlatform.isx86_64 || pkgs.stdenv.hostPlatform.isAarch64
+        then ''
+          mach=$(od -An -t x1 -j 18 -N 2 ${
+            if pkgs.stdenv.hostPlatform.isx86_64
+            then pkgs.pkgsCross.aarch64-multiplatform.callPackage ../pkgs/janus-gpt-fix.nix {}
+            else gptFix
+          }/bin/janus-gpt-fix | tr -d '[:space:]')
+          test "$mach" = b700
+        ''
+        else ""
+      }
+      state_guid=4a414e55-5300-4000-8000-000000000004
+
+      # Slots: boot, then one EBR sector before each of five filesystems.
+      boot_lba=64
+      boot_sectors=128
+      root_sectors=128
+      nix_sectors=128
+      state_sectors=256
+      root_lba=$((boot_lba + boot_sectors + 1))
+      nix_lba=$((root_lba + root_sectors + 1))
+      root_b_lba=$((nix_lba + nix_sectors + 1))
+      nix_b_lba=$((root_b_lba + root_sectors + 1))
+      state_lba=$((nix_b_lba + nix_sectors + 1))
+      state_last=$((state_lba + state_sectors - 1))
+      image_sectors=$((state_last + 1 + 2048))
+
+      truncate -s "$((image_sectors * 512))" disk.img
+      sgdisk -o -a 1 \
+        -n "1:$boot_lba:$((boot_lba + boot_sectors - 1))" \
+        -c 1:JANUS_BOOT -t 1:EF00 \
+        -u 1:4a414e55-5300-4000-8000-000000000001 \
+        -n "2:$root_lba:$((root_lba + root_sectors - 1))" \
+        -c 2:JANUS_ROOT -t 2:8300 \
+        -u 2:4a414e55-5300-4000-8000-000000000002 \
+        -n "3:$nix_lba:$((nix_lba + nix_sectors - 1))" \
+        -c 3:JANUS_NIX -t 3:8300 \
+        -u 3:4a414e55-5300-4000-8000-000000000003 \
+        -n "6:$root_b_lba:$((root_b_lba + root_sectors - 1))" \
+        -c 6:JANUS_ROOT_B -t 6:8300 \
+        -u 6:4a414e55-5300-4000-8000-000000000006 \
+        -n "7:$nix_b_lba:$((nix_b_lba + nix_sectors - 1))" \
+        -c 7:JANUS_NIX_B -t 7:8300 \
+        -u 7:4a414e55-5300-4000-8000-000000000007 \
+        -n "4:$state_lba:$state_last" \
+        -c 4:JANUS_STATE -t 4:8300 \
+        -u "4:$state_guid" \
+        disk.img >/dev/null
+
+      printf 'BOOTCODE' | dd of=disk.img bs=1 seek=0 conv=notrunc status=none
+      printf 'ZZ' | dd of=disk.img bs=1 seek=444 conv=notrunc status=none
+      printf 'FIPMARK' | dd of=disk.img bs=1 seek=512 conv=notrunc status=none
+      printf '@AML' | dd of=disk.img bs=1 seek=528 conv=notrunc status=none
+      dd if=disk.img of=sector1 bs=512 skip=1 count=1 status=none
+
+      janus-gpt-fix prepare disk.img \
+        --hint-lba $((boot_lba - 1)) \
+        --first-usable "$boot_lba" \
+        --boot-lba "$boot_lba" \
+        --boot-sectors "$boot_sectors" \
+        --logical "$root_lba:$root_sectors" \
+        --logical "$nix_lba:$nix_sectors" \
+        --logical "$root_b_lba:$root_sectors" \
+        --logical "$nix_b_lba:$nix_sectors" \
+        --logical "$state_lba:$state_sectors"
+
+      dd if=disk.img of=sector1b bs=512 skip=1 count=1 status=none
+      cmp sector1 sector1b
+      head -c 8 disk.img | cmp - <(printf 'BOOTCODE')
+      dd if=disk.img bs=1 skip=444 count=2 status=none | cmp - <(printf 'ZZ')
+      test "$(od -An -t u1 -j 450 -N 1 disk.img | tr -d '[:space:]')" = 12
+      test "$(od -An -t u1 -j 466 -N 1 disk.img | tr -d '[:space:]')" = 15
+      for off in 450 466 482 498; do
+        typebyte=$(od -An -t u1 -j "$off" -N 1 disk.img | tr -d '[:space:]')
+        if [ "$typebyte" = 238 ]; then
+          echo "sector 0 still has a protective GPT entry at $off" >&2
+          exit 1
+        fi
+      done
+      test "$(od -An -t x1 -j 510 -N 2 disk.img | tr -d '[:space:]')" = 55aa
+      last=$((image_sectors - 1))
+      test "$(od -An -t x1 -j $((last * 512)) -N 8 disk.img | tr -d '[:space:]')" = 4546492050415254
+      info=$(janus-gpt-fix show disk.img $((boot_lba - 1)) "$state_guid")
+      printf '%s\n' "$info" | grep -qx "start=$state_lba"
+      printf '%s\n' "$info" | grep -qx "end=$state_last"
+
+      extra=4096
+      truncate -s "$(((image_sectors + extra) * 512))" disk.img
+      sfdisk -d disk.img > dos.dump
+      grep -Eq "start=[[:space:]]*$boot_lba," dos.dump
+      grep -Eq "start=[[:space:]]*$root_lba," dos.dump
+      grep -Eq "start=[[:space:]]*$state_lba," dos.dump
+
+      janus-gpt-fix relocate disk.img $((boot_lba - 1))
+      info=$(janus-gpt-fix show disk.img $((boot_lba - 1)) "$state_guid")
+      printf '%s\n' "$info" | grep -qx "start=$state_lba"
+      new_last=$((image_sectors + extra - 1))
+      test "$(od -An -t x1 -j $((new_last * 512)) -N 8 disk.img | tr -d '[:space:]')" = 4546492050415254
+      dd if=disk.img of=sector1c bs=512 skip=1 count=1 status=none
+      cmp sector1 sector1c
+
+      grown=$((state_last + 1000))
+      janus-gpt-fix set-end disk.img $((boot_lba - 1)) "$state_guid" "$grown"
+      info=$(janus-gpt-fix show disk.img $((boot_lba - 1)) "$state_guid")
+      printf '%s\n' "$info" | grep -qx "end=$grown"
+      dd if=disk.img of=sector1d bs=512 skip=1 count=1 status=none
+      cmp sector1 sector1d
+
+      info=$(janus-gpt-fix show disk.img $((boot_lba - 1)) "$state_guid")
+      usable=''${info#*last=}
+      usable=''${usable%%$'\n'*}
+      test "$usable" -gt "$grown"
+      janus-gpt-fix set-end disk.img $((boot_lba - 1)) "$state_guid" "$usable"
+      info=$(janus-gpt-fix show disk.img $((boot_lba - 1)) "$state_guid")
+      printf '%s\n' "$info" | grep -qx "end=$usable"
+
+      printf 'XXXXXXXX' | dd of=disk.img bs=1 seek=$((new_last * 512)) conv=notrunc status=none
+      janus-gpt-fix relocate disk.img $((boot_lba - 1))
+      info=$(janus-gpt-fix show disk.img $((boot_lba - 1)) "$state_guid")
+      printf '%s\n' "$info" | grep -qx "start=$state_lba"
+      printf '%s\n' "$info" | grep -qx "end=$usable"
+      dd if=disk.img of=sector1e bs=512 skip=1 count=1 status=none
+      cmp sector1 sector1e
+
+      # No slots: four DOS partitions, so a torn header rebuilds SPEC3.
+      boot_lba=64
+      boot_sectors=128
+      root_sectors=128
+      nix_sectors=128
+      state_sectors=256
+      root_lba=$((boot_lba + boot_sectors + 1))
+      nix_lba=$((root_lba + root_sectors + 1))
+      state_lba=$((nix_lba + nix_sectors + 1))
+      state_last=$((state_lba + state_sectors - 1))
+      image_sectors=$((state_last + 1 + 2048))
+      truncate -s "$((image_sectors * 512))" plain.img
+      sgdisk -o -a 1 \
+        -n "1:$boot_lba:$((boot_lba + boot_sectors - 1))" \
+        -c 1:JANUS_BOOT -t 1:EF00 \
+        -u 1:4a414e55-5300-4000-8000-000000000001 \
+        -n "2:$root_lba:$((root_lba + root_sectors - 1))" \
+        -c 2:JANUS_ROOT -t 2:8300 \
+        -u 2:4a414e55-5300-4000-8000-000000000002 \
+        -n "3:$nix_lba:$((nix_lba + nix_sectors - 1))" \
+        -c 3:JANUS_NIX -t 3:8300 \
+        -u 3:4a414e55-5300-4000-8000-000000000003 \
+        -n "4:$state_lba:$state_last" \
+        -c 4:JANUS_STATE -t 4:8300 \
+        -u "4:$state_guid" \
+        plain.img >/dev/null
+      printf 'FIPMARK' | dd of=plain.img bs=1 seek=512 conv=notrunc status=none
+      dd if=plain.img of=plain-sector1 bs=512 skip=1 count=1 status=none
+      janus-gpt-fix prepare plain.img \
+        --hint-lba $((boot_lba - 1)) \
+        --first-usable "$boot_lba" \
+        --boot-lba "$boot_lba" \
+        --boot-sectors "$boot_sectors" \
+        --logical "$root_lba:$root_sectors" \
+        --logical "$nix_lba:$nix_sectors" \
+        --logical "$state_lba:$state_sectors"
+      extra=4096
+      truncate -s "$(((image_sectors + extra) * 512))" plain.img
+      janus-gpt-fix relocate plain.img $((boot_lba - 1))
+      info=$(janus-gpt-fix show plain.img $((boot_lba - 1)) "$state_guid")
+      usable=''${info#*last=}
+      usable=''${usable%%$'\n'*}
+      test "$usable" -gt "$state_last"
+      janus-gpt-fix set-end plain.img $((boot_lba - 1)) "$state_guid" "$usable"
+      new_last=$((image_sectors + extra - 1))
+      printf 'XXXXXXXX' | dd of=plain.img bs=1 seek=$((new_last * 512)) conv=notrunc status=none
+      janus-gpt-fix relocate plain.img $((boot_lba - 1))
+      info=$(janus-gpt-fix show plain.img $((boot_lba - 1)) "$state_guid")
+      printf '%s\n' "$info" | grep -qx "start=$state_lba"
+      printf '%s\n' "$info" | grep -qx "end=$usable"
+      dd if=plain.img of=plain-sector1b bs=512 skip=1 count=1 status=none
+      cmp plain-sector1 plain-sector1b
+
+      # The image builder and this check run the same layout script.
+      image_script=${../pkgs/amlogic-disk.sh}
+      run_image_layout() {
+        dir=$1
+        use_slots=$2
+        mkdir -p "$dir"
+        (
+          cd "$dir"
+          export boot_start=1 bootMiB=1 root_mib=1 nix_mib=1 stateMiB=1
+          export slots="$use_slots"
+          export bootLabel=JANUS_BOOT rootLabel=JANUS_ROOT nixLabel=JANUS_NIX stateLabel=JANUS_STATE
+          export JANUS_GPT_FIX=janus-gpt-fix
+          truncate -s 1M boot.img root.img nix.img state.img
+          printf 'BOOTFS' | dd of=boot.img conv=notrunc status=none
+          printf 'ROOTFS' | dd of=root.img conv=notrunc status=none
+          printf 'NIXFS!' | dd of=nix.img conv=notrunc status=none
+          printf 'STATE!' | dd of=state.img conv=notrunc status=none
+          if [ "$slots" = 1 ]; then
+            truncate -s 1M root-b.img nix-b.img
+            printf 'ROOTB!' | dd of=root-b.img conv=notrunc status=none
+            printf 'NIXB!!' | dd of=nix-b.img conv=notrunc status=none
+          fi
+          bash "$image_script" layout
+          printf 'BOOTCODE' | dd of=disk.img bs=1 seek=0 conv=notrunc status=none
+          printf 'ZZ' | dd of=disk.img bs=1 seek=444 conv=notrunc status=none
+          printf 'FIPMARK' | dd of=disk.img bs=1 seek=512 conv=notrunc status=none
+          printf '@AML' | dd of=disk.img bs=1 seek=528 conv=notrunc status=none
+          dd if=disk.img of=sector1 bs=512 skip=1 count=1 status=none
+          bash "$image_script" prepare
+          dd if=disk.img of=sector1b bs=512 skip=1 count=1 status=none
+          cmp sector1 sector1b
+          # shellcheck disable=SC1091
+          . ./amlogic-layout.env
+          test "$boot_lba" = $((boot_start * 2048))
+          test "$root_lba" = $((boot_lba + boot_sectors + 1))
+          test "$nix_lba" = $((root_lba + root_sectors + 1))
+          if [ "$slots" = 1 ]; then
+            test "$state_lba" = $((nix_b_lba + nix_sectors + 1))
+          else
+            test "$state_lba" = $((nix_lba + nix_sectors + 1))
+          fi
+          test $((state_lba % 2048)) -ne 0
+          dd if=disk.img bs=1 skip=$((boot_lba * 512)) count=6 status=none | cmp - <(printf 'BOOTFS')
+          dd if=disk.img bs=1 skip=$((root_lba * 512)) count=6 status=none | cmp - <(printf 'ROOTFS')
+          dd if=disk.img bs=1 skip=$((state_lba * 512)) count=6 status=none | cmp - <(printf 'STATE!')
+          test "$(od -An -t x1 -j 528 -N 4 disk.img | tr -d '[:space:]')" = 40414d4c
+          test "$(od -An -t u1 -j 450 -N 1 disk.img | tr -d '[:space:]')" = 12
+          test "$(od -An -t u1 -j 466 -N 1 disk.img | tr -d '[:space:]')" = 15
+          sfdisk -d disk.img > dos.dump
+          grep -Eq "start=[[:space:]]*$boot_lba," dos.dump
+          grep -Eq "start=[[:space:]]*$state_lba," dos.dump
+          if grep -q '^state_start_mib=' amlogic-layout.env; then
+            echo "amlogic layout recorded a MiB state start" >&2
+            exit 1
+          fi
+        )
+      }
+      run_image_layout from-image-slots 1
+      run_image_layout from-image-plain 0
+
       echo ok > "$out"
     '';
   eval-tier3-boot = let

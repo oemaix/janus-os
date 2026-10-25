@@ -179,6 +179,119 @@
     echo 1 > $out/seed.generation
     sha256sum $out/manifest.json | cut -d' ' -f1 > $out/seed.hash
   '';
+
+  # Le Potato: the FIP owns LBA 1, so grow must not let sgdisk rewrite it.
+  amlogicSd = config.system.build.janusBoardImage.amlogicSd or false;
+  gptFix = pkgs.callPackage ../../../pkgs/janus-gpt-fix.nix {};
+  hintLba = (1 + cfg.firmwareOffsetMiB) * 2048 - 1;
+  partUuidRule = ''
+    ACTION=="add|change", SUBSYSTEM=="block", ENV{PARTUUID}=="?*", SYMLINK+="disk/by-partuuid/$env{PARTUUID}"
+  '';
+  amlogicGrow = ''
+    set -eu
+    dev=/dev/disk/by-partuuid/${statePartUuid}
+    boot=/dev/disk/by-label/JANUS_BOOT
+    found=""
+    for _ in $(seq 1 50); do
+      if [ -b "$dev" ]; then
+        found=$dev
+        break
+      fi
+      if [ -b "$boot" ]; then
+        found=$boot
+        break
+      fi
+      sleep 0.1
+    done
+    if [ -z "$found" ]; then
+      echo "<3>janus: JANUS_STATE did not appear" > /dev/kmsg
+      exit 1
+    fi
+    part=$(readlink -f "$found")
+    parent=$part
+    while [ "''${parent%[0-9]}" != "$parent" ]; do
+      parent="''${parent%[0-9]}"
+    done
+    if [ "''${parent%[0-9]p}" != "$parent" ] && [ -b "''${parent%p}" ]; then
+      parent="''${parent%p}"
+    fi
+    # The image's backup GPT sits at the end of the file. A larger card
+    # needs it at the end of the card before the kernel can use it. The
+    # tool does not write LBA 1, which is the Amlogic FIP.
+    publish_state() {
+      updated=0
+      for _ in $(seq 1 10); do
+        if partx -u "$parent"; then
+          updated=1
+          break
+        fi
+        sleep 0.2
+      done
+      if [ "$updated" -ne 1 ]; then
+        echo "<4>janus: partx did not update the disk" > /dev/kmsg
+      fi
+      settled=0
+      for _ in 1 2; do
+        if "${config.boot.initrd.systemd.package}/bin/udevadm" settle --timeout=10; then
+          settled=1
+          break
+        fi
+      done
+      need=2
+      if [ "$settled" -ne 1 ]; then
+        echo "<4>janus: udev queue did not settle after the partition reread" > /dev/kmsg
+        need=5
+      fi
+      seen=0
+      stable=0
+      for _ in $(seq 1 50); do
+        if [ -b "$dev" ]; then
+          seen=$((seen + 1))
+          if [ "$seen" -ge "$need" ]; then
+            stable=1
+            break
+          fi
+          sleep 0.2
+        else
+          seen=0
+          sleep 0.1
+        fi
+      done
+      if [ "$stable" -ne 1 ]; then
+        echo "<3>janus: JANUS_STATE did not return after the partition reread" > /dev/kmsg
+        exit 1
+      fi
+    }
+    ${gptFix}/bin/janus-gpt-fix relocate "$parent" ${toString hintLba}
+    publish_state
+    info=$(${gptFix}/bin/janus-gpt-fix show "$parent" ${toString hintLba} ${statePartUuid})
+    start=''${info#*start=}
+    start=''${start%%$'\n'*}
+    end=''${info#*end=}
+    end=''${end%%$'\n'*}
+    last=''${info#*last=}
+    last=''${last%%$'\n'*}
+    if [ -z "$start" ] || [ -z "$end" ] || [ -z "$last" ]; then
+      echo "<3>janus: cannot read the state partition table" > /dev/kmsg
+      exit 1
+    fi
+    max_sectors=${toString stateMaxSectors}
+    if [ $((end - start + 1)) -ge "$max_sectors" ]; then
+      exit 0
+    fi
+    if [ $((last - end)) -le 2048 ]; then
+      exit 0
+    fi
+    want=$((start + max_sectors - 1))
+    if [ "$want" -gt "$last" ]; then
+      want=$last
+    fi
+    if [ "$want" -le "$end" ]; then
+      exit 0
+    fi
+    ${gptFix}/bin/janus-gpt-fix set-end "$parent" ${toString hintLba} ${statePartUuid} "$want"
+    publish_state
+  '';
 in {
   options.janus.storage = {
     layout.partitions = mkOption {
@@ -322,8 +435,14 @@ in {
     boot.initrd.supportedFilesystems = ["f2fs" "vfat"];
     boot.initrd.availableKernelModules = ["f2fs" "vfat" "nls_cp437" "nls_iso8859_1"];
 
-    boot.initrd.services.udev.rules = mkIf cfg.slots.enable slotLinkRules;
-    services.udev.extraRules = mkIf cfg.slots.enable slotLinkRules;
+    boot.initrd.services.udev.rules = mkIf (cfg.slots.enable || amlogicSd) (
+      lib.optionalString cfg.slots.enable slotLinkRules
+      + lib.optionalString amlogicSd partUuidRule
+    );
+    services.udev.extraRules = mkIf (cfg.slots.enable || amlogicSd) (
+      lib.optionalString cfg.slots.enable slotLinkRules
+      + lib.optionalString amlogicSd partUuidRule
+    );
 
     environment.etc."janus/slots.json" = mkIf cfg.slots.enable {
       text = builtins.toJSON {
@@ -358,135 +477,141 @@ in {
       before = ["janus-state-recover.service" "local-fs-pre.target"];
       after = ["systemd-udev-trigger.service"];
       unitConfig.DefaultDependencies = false;
-      path = [pkgs.gptfdisk pkgs.util-linux pkgs.coreutils];
+      path =
+        if amlogicSd
+        then [gptFix pkgs.util-linux pkgs.coreutils]
+        else [pkgs.gptfdisk pkgs.util-linux pkgs.coreutils];
       serviceConfig.Type = "oneshot";
-      script = ''
-        set -eu
-        dev=/dev/disk/by-partuuid/${statePartUuid}
-        for _ in $(seq 1 50); do
-          [ -b "$dev" ] && break
-          sleep 0.1
-        done
-        if [ ! -b "$dev" ]; then
-          echo "<3>janus: JANUS_STATE did not appear" > /dev/kmsg
-          exit 1
-        fi
-        part=$(readlink -f "$dev")
-        parent=$part
-        while [ "''${parent%[0-9]}" != "$parent" ]; do
-          parent="''${parent%[0-9]}"
-        done
-        partNum="''${part#"$parent"}"
-        if [ "''${parent%[0-9]p}" != "$parent" ] && [ -b "''${parent%p}" ]; then
-          parent="''${parent%p}"
-        fi
-        # The image places the backup GPT at the end of the file. A larger
-        # disk needs that header moved before the last partition can grow.
-        # sgdisk -e also makes the kernel drop partition devices while it
-        # rereads the table. partx publishes them again before any exit,
-        # including the boots that do not change the partition size.
-        # Recover must not run in that gap.
-        publish_state() {
-          updated=0
-          for _ in $(seq 1 10); do
-            if partx -u "$parent"; then
-              updated=1
-              break
-            fi
-            sleep 0.2
-          done
-          # A busy neighbor can make partx fail after the kernel already
-          # has the state node. That must not fail this unit: recover
-          # would then be the only fsck, and it still has to run.
-          if [ "$updated" -ne 1 ]; then
-            echo "<4>janus: partx did not update the disk" > /dev/kmsg
-          fi
-          settled=0
-          for _ in 1 2; do
-            if "${config.boot.initrd.systemd.package}/bin/udevadm" settle --timeout=10; then
-              settled=1
-              break
-            fi
-          done
-          # After a drained queue, two sightings are enough. When settle
-          # did not finish, require a longer run of sightings so the old
-          # node, which udev is about to remove, does not count.
-          need=2
-          if [ "$settled" -ne 1 ]; then
-            echo "<4>janus: udev queue did not settle after the partition reread" > /dev/kmsg
-            need=5
-          fi
-          seen=0
-          stable=0
+      script =
+        if amlogicSd
+        then amlogicGrow
+        else ''
+          set -eu
+          dev=/dev/disk/by-partuuid/${statePartUuid}
           for _ in $(seq 1 50); do
-            if [ -b "$dev" ]; then
-              seen=$((seen + 1))
-              if [ "$seen" -ge "$need" ]; then
-                stable=1
+            [ -b "$dev" ] && break
+            sleep 0.1
+          done
+          if [ ! -b "$dev" ]; then
+            echo "<3>janus: JANUS_STATE did not appear" > /dev/kmsg
+            exit 1
+          fi
+          part=$(readlink -f "$dev")
+          parent=$part
+          while [ "''${parent%[0-9]}" != "$parent" ]; do
+            parent="''${parent%[0-9]}"
+          done
+          partNum="''${part#"$parent"}"
+          if [ "''${parent%[0-9]p}" != "$parent" ] && [ -b "''${parent%p}" ]; then
+            parent="''${parent%p}"
+          fi
+          # The image places the backup GPT at the end of the file. A larger
+          # disk needs that header moved before the last partition can grow.
+          # sgdisk -e also makes the kernel drop partition devices while it
+          # rereads the table. partx publishes them again before any exit,
+          # including the boots that do not change the partition size.
+          # Recover must not run in that gap.
+          publish_state() {
+            updated=0
+            for _ in $(seq 1 10); do
+              if partx -u "$parent"; then
+                updated=1
                 break
               fi
               sleep 0.2
-            else
-              seen=0
-              sleep 0.1
+            done
+            # A busy neighbor can make partx fail after the kernel already
+            # has the state node. That must not fail this unit: recover
+            # would then be the only fsck, and it still has to run.
+            if [ "$updated" -ne 1 ]; then
+              echo "<4>janus: partx did not update the disk" > /dev/kmsg
             fi
-          done
-          if [ "$stable" -ne 1 ]; then
-            echo "<3>janus: JANUS_STATE did not return after the partition reread" > /dev/kmsg
+            settled=0
+            for _ in 1 2; do
+              if "${config.boot.initrd.systemd.package}/bin/udevadm" settle --timeout=10; then
+                settled=1
+                break
+              fi
+            done
+            # After a drained queue, two sightings are enough. When settle
+            # did not finish, require a longer run of sightings so the old
+            # node, which udev is about to remove, does not count.
+            need=2
+            if [ "$settled" -ne 1 ]; then
+              echo "<4>janus: udev queue did not settle after the partition reread" > /dev/kmsg
+              need=5
+            fi
+            seen=0
+            stable=0
+            for _ in $(seq 1 50); do
+              if [ -b "$dev" ]; then
+                seen=$((seen + 1))
+                if [ "$seen" -ge "$need" ]; then
+                  stable=1
+                  break
+                fi
+                sleep 0.2
+              else
+                seen=0
+                sleep 0.1
+              fi
+            done
+            if [ "$stable" -ne 1 ]; then
+              echo "<3>janus: JANUS_STATE did not return after the partition reread" > /dev/kmsg
+              exit 1
+            fi
+          }
+          sgdisk -e "$parent"
+          publish_state
+          start=""
+          end=""
+          while read -r line; do
+            case "$line" in
+              "First sector:"*)
+                set -- $line
+                start=$3
+                ;;
+              "Last sector:"*)
+                set -- $line
+                end=$3
+                ;;
+            esac
+          done < <(sgdisk -i "$partNum" "$parent")
+          last=""
+          while read -r line; do
+            case "$line" in
+              *"last usable sector is"*) last="''${line##* }" ;;
+            esac
+          done < <(sgdisk --print "$parent")
+          if [ -z "$start" ] || [ -z "$end" ] || [ -z "$last" ]; then
+            echo "<3>janus: cannot read the state partition table" > /dev/kmsg
             exit 1
           fi
-        }
-        sgdisk -e "$parent"
-        publish_state
-        start=""
-        end=""
-        while read -r line; do
-          case "$line" in
-            "First sector:"*)
-              set -- $line
-              start=$3
-              ;;
-            "Last sector:"*)
-              set -- $line
-              end=$3
-              ;;
-          esac
-        done < <(sgdisk -i "$partNum" "$parent")
-        last=""
-        while read -r line; do
-          case "$line" in
-            *"last usable sector is"*) last="''${line##* }" ;;
-          esac
-        done < <(sgdisk --print "$parent")
-        if [ -z "$start" ] || [ -z "$end" ] || [ -z "$last" ]; then
-          echo "<3>janus: cannot read the state partition table" > /dev/kmsg
-          exit 1
-        fi
-        # One megabyte is the backup header the image already reserved.
-        # max_sectors is state.maximumSize. A smaller cap does not shrink.
-        max_sectors=${toString stateMaxSectors}
-        if [ $((end - start + 1)) -ge "$max_sectors" ]; then
-          exit 0
-        fi
-        if [ $((last - end)) -le 2048 ]; then
-          exit 0
-        fi
-        want=$((start + max_sectors - 1))
-        if [ "$want" -gt "$last" ]; then
-          want=$last
-        fi
-        if [ "$want" -le "$end" ]; then
-          exit 0
-        fi
-        sgdisk \
-          -d "$partNum" \
-          -n "''${partNum}:''${start}:''${want}" \
-          -c "''${partNum}:JANUS_STATE" \
-          -t "''${partNum}:8300" \
-          -u "''${partNum}:4a414e55-5300-4000-8000-000000000004" \
-          "$parent"
-        publish_state
-      '';
+          # One megabyte is the backup header the image already reserved.
+          # max_sectors is state.maximumSize. A smaller cap does not shrink.
+          max_sectors=${toString stateMaxSectors}
+          if [ $((end - start + 1)) -ge "$max_sectors" ]; then
+            exit 0
+          fi
+          if [ $((last - end)) -le 2048 ]; then
+            exit 0
+          fi
+          want=$((start + max_sectors - 1))
+          if [ "$want" -gt "$last" ]; then
+            want=$last
+          fi
+          if [ "$want" -le "$end" ]; then
+            exit 0
+          fi
+          sgdisk \
+            -d "$partNum" \
+            -n "''${partNum}:''${start}:''${want}" \
+            -c "''${partNum}:JANUS_STATE" \
+            -t "''${partNum}:8300" \
+            -u "''${partNum}:4a414e55-5300-4000-8000-000000000004" \
+            "$parent"
+          publish_state
+        '';
     };
 
     # -a repairs a checkpoint the kernel marked bad. It does not scan the
@@ -864,6 +989,11 @@ in {
         dtbSource = boardImage.dtbSource or null;
         limineBios = boardImage.limineBios or false;
         hybridFatMbr = boardImage.hybridFatMbr or false;
+        amlogicSd = boardImage.amlogicSd or false;
+        gptFix =
+          if boardImage.amlogicSd or false
+          then pkgs.buildPackages.callPackage ../../../pkgs/janus-gpt-fix.nix {}
+          else null;
         slots = cfg.slots.enable;
       };
 

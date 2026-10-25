@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-22 |
+| Last updated | 2026-10-25 |
 
 ## 1. Objectives
 
@@ -40,6 +40,12 @@ Notes:
 * Partition table is GPT by default. The Raspberry Pi 2, Pi 3, Zero 2 W,
   and Pi 4 profiles write a hybrid MBR so the boot ROM or EEPROM finds
   the GPT boot partition.
+* The Le Potato image is not a plain GPT disk (D-0055, *10* §3.6).
+  Sector 1 is the U-Boot FIP. Sector 0 is a DOS table, so a larger card
+  is readable before the first boot. The backup GPT keeps the
+  PARTUUIDs. The kernel command line includes `gpt`. The first boot
+  moves the backup to the last sector of the card and leaves sector 1
+  unchanged.
 * Partitions are discovered by label/PARTUUID, never by device name.
 * `janus.storage.slots.enable` (default false) inserts `JANUS_ROOT_B` and
   `JANUS_NIX_B` before `JANUS_STATE`. The boot entry selects the slot.
@@ -64,7 +70,8 @@ Notes:
   the 512 MiB written into the image and is not the cap (D-0049).
   Every boot moves the backup GPT and then publishes the partition table
   again, and waits until the state partuuid exists, including when the
-  partition is already at the cap.
+  partition is already at the cap. On Le Potato that move leaves sector
+  1 unchanged (D-0055).
 
 ## 3. Why f2fs
 

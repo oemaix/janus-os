@@ -134,7 +134,8 @@ tree does not mean that behavior exists. Stubs are not finished features.
 * Board profiles: `x86_64-test` (virtio, no raw firmware), NanoPi R4S
   (U-Boot at sector 64, `eth0`/`eth1`, no WAN chosen, port LEDs follow
   the silkscreen jacks, the SYS LED heartbeats, *10* §3.2), Le Potato (U-Boot
-  FIP, one `eth0`), Raspberry Pi Zero 2 W (FAT `config.txt`, no Ethernet
+  FIP from `u-boot.gxl.sd.bin` at sector 1, DOS table and backup GPT,
+  D-0055, one `eth0`), Raspberry Pi Zero 2 W (FAT `config.txt`, no Ethernet
   port), Raspberry Pi 3 / 3+ (`rpi3`, FAT `config.txt`, hybrid MBR, one `eth0`),
   Raspberry Pi 4 and Compute Module 4 (`rpi4`, FAT `config.txt`, hybrid
   MBR, one `eth0`; the Pi 400 is not a board),

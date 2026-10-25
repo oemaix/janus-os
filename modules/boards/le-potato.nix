@@ -12,16 +12,17 @@
   # ubootLibreTechCC runs aml_encrypt_gxl, an x86_64 binary, while the
   # blob itself is aarch64. Cross from x86_64. An aarch64 build host needs
   # an x86_64 builder for this one derivation.
-  uboot = (import pkgs.path {
-    system = "x86_64-linux";
-    config.allowUnfreePredicate = pkg: let
-      licenses = lib.toList (pkg.meta.license or []);
-    in
-      builtins.any (
-        license: (license.redistributable or false) && !(license.free or true)
-      )
-      licenses;
-  })
+  uboot =
+    (import pkgs.path {
+      system = "x86_64-linux";
+      config.allowUnfreePredicate = pkg: let
+        licenses = lib.toList (pkg.meta.license or []);
+      in
+        builtins.any (
+          license: (license.redistributable or false) && !(license.free or true)
+        )
+        licenses;
+    })
   .pkgsCross
   .aarch64-multiplatform
   .ubootLibreTechCC;
@@ -33,9 +34,12 @@ in {
     janus.network.ports = lib.mkDefault {
       eth0 = {};
     };
+    # gpt: the primary header is the FIP, so the kernel must accept the
+    # backup GPT. docs/10 §3.6, D-0055.
     boot.kernelParams = [
       "console=ttyAML0,115200n8"
       "net.ifnames=0"
+      "gpt"
     ];
     # SD and eMMC share the builtin meson-gx-mmc host. There is no sdhci_meson.
     boot.initrd.availableKernelModules = [
@@ -49,18 +53,21 @@ in {
     system.build.janusBoardImage = {
       dtbName = "meson-gxl-s905x-libretech-cc.dtb";
       dtbSource = dtb;
-      # nixpkgs ubootLibreTechCC: skip the image's own MBR sector, then
-      # restore the first 444 bytes so the GPT protective partition table stays.
+      amlogicSd = true;
+      # nixpkgs ubootLibreTechCC documents these two writes for SD and for
+      # the eMMC user area. u-boot.gxl.sd.bin carries @AML at byte 16 of
+      # sector 1. count=444 leaves the MBR partition slots and 55 AA.
+      # The hint sector is the last one before the boot partition.
       firmwareInstall = ''
-        fw=${uboot}/u-boot.gxl
+        fw=${uboot}/u-boot.gxl.sd.bin
         size=$(stat -c %s "$fw")
-        limit=$(( boot_start * 1024 * 1024 ))
-        if [ "$size" -ge "$limit" ]; then
-          echo "janus: U-Boot FIP ($size bytes) overlaps the boot partition at ''${limit}" >&2
+        hint=$(( boot_start * 1024 * 1024 - 512 ))
+        if [ "$size" -ge "$hint" ]; then
+          echo "janus: U-Boot FIP ($size bytes) reaches the GPT hint at ''${hint}" >&2
           exit 1
         fi
-        dd if="$fw" of=disk.img bs=512 skip=1 seek=1 conv=notrunc status=none
-        dd if="$fw" of=disk.img bs=1 count=444 conv=notrunc status=none
+        dd if="$fw" of=disk.img bs=512 skip=1 seek=1 conv=fsync,notrunc status=none
+        dd if="$fw" of=disk.img bs=1 count=444 conv=fsync,notrunc status=none
       '';
     };
   };
