@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-25 |
+| Last updated | 2026-10-26 |
 
 ## 1. Terminology
 
@@ -193,7 +193,12 @@ the kernel exposes those PARTUUIDs. A hint sector immediately before
 backup to the card's last sector and updates the hint. It leaves the
 old header in place. `janus-grow-state` then grows `JANUS_STATE` in
 that backup and in the DOS state entry, and publishes the table before
-it exits, including when the size does not change.
+it exits, including when the size does not change. With slots enabled,
+`/` and `/nix` follow `/dev/disk/by-janus/root` and
+`/dev/disk/by-janus/nix`. Those links match the kernel `PARTUUID`.
+blkid's partition id on this disk stays the DOS id. A plain GPT disk
+also matches blkid's UUID, because `partx` can publish a partition
+without the kernel property. Grow waits for both links before it exits.
 
 ## 4. Peripherals
 

@@ -3017,7 +3017,49 @@ in {
       {janus.storage.slots.enable = true;}
     ];
     off = mk [base];
-    slotRule = slot: uuid: link: "ACTION==\"add|change\", SUBSYSTEM==\"block\", ENV{janus.slot}${slot}, ENV{ID_PART_ENTRY_UUID}==\"${uuid}\", SYMLINK+=\"disk/by-janus/${link}\"";
+    slotRule = slot: key: uuid: link: "ACTION==\"add|change\", SUBSYSTEM==\"block\", ENV{janus.slot}${slot}, ENV{${key}}==\"${uuid}\", SYMLINK+=\"disk/by-janus/${link}\"";
+    slotChecks = lib.concatMapStrings (key:
+      lib.concatMapStrings ({
+        slot,
+        uuid,
+        link,
+      }: ''
+        grep -qxF ${lib.escapeShellArg (slotRule slot key uuid link)} "$rules"
+      '') [
+        {
+          slot = ''!="b"'';
+          uuid = "4a414e55-5300-4000-8000-000000000002";
+          link = "root";
+        }
+        {
+          slot = ''!="b"'';
+          uuid = "4a414e55-5300-4000-8000-000000000003";
+          link = "nix";
+        }
+        {
+          slot = ''=="b"'';
+          uuid = "4a414e55-5300-4000-8000-000000000006";
+          link = "root";
+        }
+        {
+          slot = ''=="b"'';
+          uuid = "4a414e55-5300-4000-8000-000000000007";
+          link = "nix";
+        }
+      ]) ["PARTUUID" "ID_PART_ENTRY_UUID"];
+    potato = mk [
+      {
+        janus.hardware.board = "le-potato";
+        janus.access.ssh.authorizedKeys = [key];
+        janus.storage.slots.enable = true;
+      }
+    ];
+    potatoOff = mk [
+      {
+        janus.hardware.board = "le-potato";
+        janus.access.ssh.authorizedKeys = [key];
+      }
+    ];
   in
     pkgs.runCommand "eval-slots" {
       nativeBuildInputs = [pkgs.systemd];
@@ -3043,12 +3085,40 @@ in {
       grep -q by-janus off-system.rules && exit 1
       for rules in initrd.rules system.rules; do
         grep -qxF 'ACTION=="add|change", SUBSYSTEM=="block", IMPORT{cmdline}="janus.slot"' "$rules"
-        grep -qxF ${lib.escapeShellArg (slotRule ''!="b"'' "4a414e55-5300-4000-8000-000000000002" "root")} "$rules"
-        grep -qxF ${lib.escapeShellArg (slotRule ''!="b"'' "4a414e55-5300-4000-8000-000000000003" "nix")} "$rules"
-        grep -qxF ${lib.escapeShellArg (slotRule ''=="b"'' "4a414e55-5300-4000-8000-000000000006" "root")} "$rules"
-        grep -qxF ${lib.escapeShellArg (slotRule ''=="b"'' "4a414e55-5300-4000-8000-000000000007" "nix")} "$rules"
+        ${slotChecks}
       done
       udevadm verify --no-style --no-summary initrd.rules
+      printf '%s\n' ${lib.escapeShellArg potato.config.boot.initrd.services.udev.rules} > potato-initrd.rules
+      printf '%s\n' ${lib.escapeShellArg potato.config.services.udev.extraRules} > potato-system.rules
+      for rules in potato-initrd.rules potato-system.rules; do
+        udevadm verify --no-style --no-summary "$rules"
+        ${slotChecks}
+      done
+      printf '%s\n' ${lib.escapeShellArg (builtins.unsafeDiscardStringContext potato.config.boot.initrd.systemd.services.janus-grow-state.script)} > potato-grow.sh
+      printf '%s\n' ${lib.escapeShellArg (builtins.unsafeDiscardStringContext potatoOff.config.boot.initrd.systemd.services.janus-grow-state.script)} > potato-off-grow.sh
+      bash -n potato-grow.sh potato-off-grow.sh
+      grep -qxF 'wait_slot_links() { :; }' potato-off-grow.sh
+      if grep -q '/dev/disk/by-janus/' potato-off-grow.sh; then
+        echo "le potato without slots waits for slot links" >&2
+        exit 1
+      fi
+      # The set-end path is the first boot on a larger card. It ends with
+      # exit 0, like the three early returns, and each of those returns
+      # has called the real wait. A no-op function does not match.
+      awk '
+        /wait_slot_links\(\) \{ :; \}/ { noop = 1 }
+        /for name in root nix/ { names = 1 }
+        /link=\/dev\/disk\/by-janus\/\$name/ { link = 1 }
+        /janus-gpt-fix set-end/ { phase = 1 }
+        phase == 1 && /publish_state$/ { phase = 2 }
+        phase == 2 && /^[[:space:]]*wait_slot_links$/ { phase = 3 }
+        phase == 3 && /^[[:space:]]*exit 0$/ { setend = 1; phase = 0 }
+        /wait_slot_links\(\)/ { next }
+        /^[[:space:]]*wait_slot_links$/ { armed = 1; next }
+        /^[[:space:]]*exit 0$/ && !armed { bad = 1 }
+        /^[[:space:]]*exit 0$/ { armed = 0 }
+        END { if (noop || !names || !link || !setend || bad) exit 1 }
+      ' potato-grow.sh
       echo ${lib.escapeShellArg os.config.environment.etc."janus/slots.json".text} | grep -q 4a414e55-5300-4000-8000-000000000007
       test -n ${lib.escapeShellArg os.config.system.build.janusSlotImages.name}
       echo ok > "$out"

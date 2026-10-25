@@ -18,11 +18,21 @@
   # systemd follows a /dev mount with the device unit of that path, and
   # activates the unit only for a symlink udev created. /nix keeps that
   # dependency after switch-root, so both udev copies need the same links.
+  # PARTUUID is the kernel uevent. On Le Potato, blkid's
+  # ID_PART_ENTRY_UUID stays the DOS disk id, because sector 0 is the DOS
+  # table (D-0055). The GPT GUID is what the kernel exports after the
+  # backup header is at the last sector. partx can add a partition without
+  # copying that property. On a plain GPT disk blkid's UUID is the same
+  # GUID, so that key restores the link after the table is published again.
   slotLinkRules = ''
     ACTION=="add|change", SUBSYSTEM=="block", IMPORT{cmdline}="janus.slot"
+    ACTION=="add|change", SUBSYSTEM=="block", ENV{janus.slot}!="b", ENV{PARTUUID}=="${rootPartUuid}", SYMLINK+="disk/by-janus/root"
     ACTION=="add|change", SUBSYSTEM=="block", ENV{janus.slot}!="b", ENV{ID_PART_ENTRY_UUID}=="${rootPartUuid}", SYMLINK+="disk/by-janus/root"
+    ACTION=="add|change", SUBSYSTEM=="block", ENV{janus.slot}!="b", ENV{PARTUUID}=="${nixPartUuid}", SYMLINK+="disk/by-janus/nix"
     ACTION=="add|change", SUBSYSTEM=="block", ENV{janus.slot}!="b", ENV{ID_PART_ENTRY_UUID}=="${nixPartUuid}", SYMLINK+="disk/by-janus/nix"
+    ACTION=="add|change", SUBSYSTEM=="block", ENV{janus.slot}=="b", ENV{PARTUUID}=="${rootBPartUuid}", SYMLINK+="disk/by-janus/root"
     ACTION=="add|change", SUBSYSTEM=="block", ENV{janus.slot}=="b", ENV{ID_PART_ENTRY_UUID}=="${rootBPartUuid}", SYMLINK+="disk/by-janus/root"
+    ACTION=="add|change", SUBSYSTEM=="block", ENV{janus.slot}=="b", ENV{PARTUUID}=="${nixBPartUuid}", SYMLINK+="disk/by-janus/nix"
     ACTION=="add|change", SUBSYSTEM=="block", ENV{janus.slot}=="b", ENV{ID_PART_ENTRY_UUID}=="${nixBPartUuid}", SYMLINK+="disk/by-janus/nix"
   '';
 
@@ -187,8 +197,40 @@
   partUuidRule = ''
     ACTION=="add|change", SUBSYSTEM=="block", ENV{PARTUUID}=="?*", SYMLINK+="disk/by-partuuid/$env{PARTUUID}"
   '';
+  waitSlotLinks =
+    if cfg.slots.enable
+    then ''
+      wait_slot_links() {
+        for name in root nix; do
+          link=/dev/disk/by-janus/$name
+          seen=0
+          stable=0
+          for _ in $(seq 1 50); do
+            if [ -b "$link" ]; then
+              seen=$((seen + 1))
+              if [ "$seen" -ge 2 ]; then
+                stable=1
+                break
+              fi
+              sleep 0.2
+            else
+              seen=0
+              sleep 0.1
+            fi
+          done
+          if [ "$stable" -ne 1 ]; then
+            echo "<3>janus: /dev/disk/by-janus/$name did not appear" > /dev/kmsg
+            exit 1
+          fi
+        done
+      }
+    ''
+    else ''
+      wait_slot_links() { :; }
+    '';
   amlogicGrow = ''
     set -eu
+    ${waitSlotLinks}
     dev=/dev/disk/by-partuuid/${statePartUuid}
     boot=/dev/disk/by-label/JANUS_BOOT
     found=""
@@ -277,9 +319,11 @@
     fi
     max_sectors=${toString stateMaxSectors}
     if [ $((end - start + 1)) -ge "$max_sectors" ]; then
+      wait_slot_links
       exit 0
     fi
     if [ $((last - end)) -le 2048 ]; then
+      wait_slot_links
       exit 0
     fi
     want=$((start + max_sectors - 1))
@@ -287,10 +331,13 @@
       want=$last
     fi
     if [ "$want" -le "$end" ]; then
+      wait_slot_links
       exit 0
     fi
     ${gptFix}/bin/janus-gpt-fix set-end "$parent" ${toString hintLba} ${statePartUuid} "$want"
     publish_state
+    wait_slot_links
+    exit 0
   '';
 in {
   options.janus.storage = {
