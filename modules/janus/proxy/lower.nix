@@ -337,19 +337,19 @@
       else sources.geosite
     }/${tag}.srs";
 
-  # Pins are the rule-set files as of 2026-10-20; the Chocolate4U preset
-  # tag (geosite-ir) was measured on 2026-10-16 (docs/21). The
-  # sing-geosite and sing-geoip rule-set branches are regenerated
-  # upstream, so a pin goes stale whenever they are; geodata.hashes
-  # overrides these.
+  # Pins are the rule-set files as of 2026-10-25 (fourth re-measure:
+  # the sing-geosite rule-set branch regenerated again); geosite-private
+  # still measures as of 2026-10-20. The sing-geosite and sing-geoip
+  # rule-set branches are regenerated upstream, so a pin goes stale
+  # whenever they are; geodata.hashes overrides these.
   # sing-geoip's rule-set branch has no geoip-private.srs, so that tag is compiled below.
   defaultPins = {
     geosite-private = "sha256-K/+ztWHSJjMDMbzcJdckrRF69E/PiHXUGbvN4Am2osc=";
-    geosite-cn = "sha256-zEsAfzffL/1zOD1Obi4XKEABMturlywaf3CMPiZaIYY=";
-    geosite-geolocation-cn = "sha256-Zz65O2pYYm8i5Nhp/hrGdtbxFoZ7UVGp0hFC39nors8=";
-    geosite-category-ads-all = "sha256-hOLteWF6SSyxra8ovwxZoaQq+FSrk1YFuoTg3ro4bIg=";
-    geosite-category-ru = "sha256-IOcqybTKM3b1/IFmrgnPhQvrc502Pa3JQr6FFeFOb0Q=";
-    geosite-ir = "sha256-SuD3qQ/D8Vau+PKihJU3LOuuv4vrNch2+xcF+nhHb4I=";
+    geosite-cn = "sha256-xH7309BOaGy0AY15yw6VFqqtxmQD2WnZCyPfJ5OR2YU=";
+    geosite-geolocation-cn = "sha256-anlENI4CVrIjQ5uFN5IDRbAVez+xuOt7eGRrUrFMwrE=";
+    geosite-category-ads-all = "sha256-VO86VVZmd50Ag6OSH0tlNImAiLLWOEbz7FfEOlQSqGw=";
+    geosite-category-ru = "sha256-9bW9IkzfQrQFhbtc+6CMRpWhPuhdZ454zyqzlI8ogt0=";
+    geosite-ir = "sha256-Wa1PFdeLJwFzFdod5567MlCtG6eocLJCQxkoX3hky+A=";
     geoip-cn = "sha256-ga2lyv2dgxrcSHdvKc3+VclxPZKHyu753pJe8w9mzOQ=";
     geoip-ru = "sha256-vcpc20TNzwlAAB5ZUjhoIqb0/6iyyO6gA0Cqb1hcf50=";
     geoip-ir = "sha256-Q6AiIGYZPBTzQ8hV29j2djNRFsBAfEtGTeXz7SIemxc=";
