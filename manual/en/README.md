@@ -27,6 +27,12 @@ A mcuzone UPS on that
 board can power it off while the cell is discharging. The Zero 2 W
 onboard Wi-Fi is a 2.4 GHz WPA2 access point: set `match.onboard = true`
 and add that access point to a LAN. It does not do 5 GHz or WPA3.
+The Raspberry Pi 3 profile is a 2.4 GHz WPA2 access point when
+`match.onboard = true`. A Pi 2 v1.2 uses that profile and leaves
+`match.onboard` unset, because that board has no radio. The Raspberry
+Pi 4, and a Compute Module 4 that has the wireless chip, are a WPA2
+access point at 2.4 GHz or 5 GHz, 20 MHz. A Compute Module 4 without
+the chip leaves `match.onboard` unset.
 
 A development shell exists for people working on the source: from a
 clone of this repository, run `nix develop`. Operating a router does

@@ -30,8 +30,8 @@ obligation for that release, not a reason to omit the profile.
 |-------|------------|-------|------|-------|
 | **NanoPi R4S** | RK3399 · aarch64 | 2× 1 GbE (RTL8211E + RTL8111H/PCIe) | 1 | Reference router board. Mainline U-Boot at raw offset (sector 64); GPT. No Wi-Fi. The SD slot stays at 3.3 V high-speed (§3.4). |
 | **ROCK Pi 4C** (`rockpi-4c`) | RK3399 · aarch64 | 1× 1 GbE (RTL8211E). A second port is a USB peripheral. M.2 is NVMe. Wi-Fi 5 onboard. | 1 | Lab unit is v1.2 (D-0016, D-0053). Mainline U-Boot at sector 64; GPT. SPI NOR is tried first and this image does not program it (§3.5). One `eth0`; the profile does not choose a WAN. The onboard radio is a WPA2 access point when `match.onboard` is set (§4.10). ROCK 4C+ is not this profile. |
-| **Raspberry Pi 4 / CM4** (`rpi4`) | BCM2711 · aarch64 | Pi 4: 1× 1 GbE. CM4: that port on the official IO board. USB 3 NICs are peripherals. | 2 | Tier 2 (D-0016). EEPROM firmware, FAT `config.txt`, hybrid MBR so the bootloader finds the GPT boot partition. One `eth0`; the profile does not choose a WAN. The Pi 400 is not a board: it has no Ethernet jack (D-0032). |
-| **Raspberry Pi 3 / 3+** | BCM2837 · aarch64 | 1× 100 MbE (USB 2 shared) | 2 | Low throughput; fine for tunnel-only use behind another router. FAT `config.txt`, hybrid MBR so the boot ROM finds the GPT boot partition. |
+| **Raspberry Pi 4 / CM4** (`rpi4`) | BCM2711 · aarch64 | Pi 4: 1× 1 GbE. CM4: that port on the official IO board. USB 3 NICs are peripherals. Wi-Fi 5 onboard when the chip is fitted. | 2 | Tier 2 (D-0016). EEPROM firmware, FAT `config.txt`, hybrid MBR so the bootloader finds the GPT boot partition. One `eth0`; the profile does not choose a WAN. The onboard radio is a WPA2 access point, 2.4 GHz or 5 GHz, when `match.onboard` is set (§4.12, D-0056). A Compute Module 4 without the wireless chip leaves that unset. The Pi 400 is not a board: it has no Ethernet jack (D-0032). |
+| **Raspberry Pi 3 / 3+** (`rpi3`) | BCM2837 · aarch64 | 1× 100 MbE (USB 2 shared). Onboard Wi-Fi on the Pi 3 and Pi 3+. | 2 | Low throughput; fine for tunnel-only use behind another router. FAT `config.txt`, hybrid MBR so the boot ROM finds the GPT boot partition. The onboard radio is a 2.4 GHz WPA2 access point when `match.onboard` is set (§4.12, D-0056). A Pi 2 v1.2 uses this profile and leaves that unset. |
 | **Raspberry Pi Zero 2 W** | BCM2710A1 · aarch64 | Wi-Fi 4 + Bluetooth, no Ethernet | 1 | Owner's lab. 512 MiB RAM. Needs a USB Ethernet peripheral for a wired WAN or LAN. FAT `config.txt`, hybrid MBR. The onboard radio is a 2.4 GHz WPA2 access point (§4.7, D-0043). Bluetooth is present and unused. Not a 500-node target. INA219 UPS overlay is part of this board's lab setup (FR-HW-008). |
 | **Libre Computer Le Potato (AML-S905X-CC)** | S905X · aarch64 | 1× 100 MbE | 1 | Owner's lab. Mainline U-Boot with FIP at raw offset; eMMC or SD. Lab peripherals: Fibocom NL668 as USB Ethernet (§4.2), RTL8188CUS as AP (§4.4), CSR Bluetooth. The portable pair is §4.11: RTL8188EUS as the station WAN, RTL8188CUS as the access point. |
 | **StarFive VisionFive 2** | JH7110 · riscv64 | 2× 1 GbE | 3 | Needs recent kernel. U-Boot 2026.04 runs from QSPI (D-0047). One GPT image for SD, eMMC, and NVMe. Boot order is eMMC, then SD, then NVMe. No binary cache. v1.3B clocks both MACs from the Motorcomm PHY. The kernel keeps that receive clock running so the DMA reset can finish with no link. |
@@ -230,6 +230,8 @@ are not part of the profile. QMI and MBIM are not how this unit attaches.
 | Realtek RTL8188EUS | `0bda:8179` | wifi (STA, 2.4 GHz HT20) | supported via in-tree `rtl8xxxu` (§4.11) |
 | Raspberry Pi Zero 2 W onboard CYW43430 | board radio, `match.onboard` | wifi (AP, 2.4 GHz HT20, WPA2) | supported via in-tree `brcmfmac` (§4.7) |
 | ROCK Pi 4C onboard AP6256 | board radio, `match.onboard` | wifi (AP, 2.4/5 GHz HT20, WPA2) | supported via in-tree `brcmfmac` (§4.10) |
+| Raspberry Pi 3 / 3+ onboard CYW43430 / CYW43455 | board radio, `match.onboard` | wifi (AP, 2.4 GHz HT20, WPA2) | supported via in-tree `brcmfmac` (§4.12) |
+| Raspberry Pi 4 / CM4 onboard CYW43455 / CYW43456 | board radio, `match.onboard` | wifi (AP, 2.4/5 GHz HT20, WPA2) | supported via in-tree `brcmfmac` (§4.12) |
 | Fibocom NL668 (LTE Cat.4) | `05c6:90b6` (product string `Android`) | wwan, Ethernet mode | supported on Le Potato. Same USB ID as other Qualcomm gadgets; the user declares the peripheral. |
 | EigenComm, exposed as a NIC | `19d1:0001` | wwan (ethernet mode, LTE Cat.1) | supported on Zero 2 W |
 | mcuzone Pi Zero UPS (INA219) | I²C `0x40` | power | supported on Zero 2 W (FR-HW-008) |
@@ -368,6 +370,12 @@ board-specific files `brcmfmac43430b0-sdio.raspberrypi,model-zero-2-w.*`,
 `hardware.enableRedistributableFirmware` and adds that package when an
 access point uses this radio.
 
+The 43436s chip asks for `brcmfmac43436s-sdio.clm_blob` and
+`brcmfmac43436s-sdio.raspberrypi,model-zero-2-w.clm_blob`. The package
+ships the regulatory blob as `brcmfmac43436-sdio.clm_blob`, and nixpkgs
+already points the 43430b0 CLM name at that file. An access point on
+this radio copies that blob to the two 43436s names.
+
 The SDIO host is the Arasan controller (`brcm,bcm2835-sdhci`). The
 generic arm64 defconfig does not build `MMC_SDHCI_IPROC`. An image that
 declares this access point enables that option as a module, and loads
@@ -465,6 +473,61 @@ is one sops file, the same shape as an access-point passphrase
 (FR-SEC-002). Open networks, WPA-Enterprise, a network added on the
 router without a rebuild, and captive-portal completion are after 1.0
 (*06* §11).
+
+### 4.12 Raspberry Pi 3 and Pi 4 onboard radios
+
+The Pi 3, the Pi 3+, and the Pi 4 have a soldered radio. Declare it
+the same way as §4.7: `match.onboard = true`, one access point, and a
+LAN member of that name. `hostapd` uses the same `nl80211` shape.
+Firmware is `raspberrypiWirelessFirmware`. Bluetooth stays unused.
+
+The `rpi3` profile is also the Pi 2 v1.2 (BCM2837, no radio). The
+`rpi4` profile is also a Compute Module 4, and that module's wireless
+chip is optional (D-0032). `match.onboard` states that this unit has
+the soldered radio. A Pi 2 v1.2 and a Compute Module 4 without the
+chip leave it unset. Evaluation cannot see the unit. Setting it on a
+unit that has no chip fails when the access point starts, because the
+interface never appears (D-0056, Q-0049).
+
+The Pi 3 is a CYW43430, 2.4 GHz only. The Pi 3+ is a CYW43455, 2.4 GHz
+and 5 GHz. One profile cannot tell them apart, so the band list is
+2.4 GHz, which both chips do. 5 GHz on the Pi 3+ is not this profile.
+Channels are 1–13. `security` other than `wpa2` fails evaluation.
+`channel = "auto"` is 6.
+
+The boot trees are mainline `bcm2837-rpi-3-b.dtb` and
+`bcm2837-rpi-3-b-plus.dtb`. The downstream names
+`bcm2710-rpi-3-b.dtb` and `bcm2710-rpi-3-b-plus.dtb` are not what this
+kernel installs. The compatible strings are `raspberrypi,3-model-b`
+and `raspberrypi,3-model-b-plus`. The driver asks for
+`brcmfmac43430-sdio.raspberrypi,3-model-b.*` and
+`brcmfmac43455-sdio.raspberrypi,3-model-b-plus.*`.
+
+The radio's SDIO host is the Arasan controller (`brcm,bcm2835-sdhci`),
+the same host as §4.7. The SD card stays on `sdhost`. An image that
+declares this access point enables `MMC_SDHCI_IPROC` as a module and
+loads `brcmfmac`. Until then the host is not built, so a Pi 2 v1.2
+does not request wireless firmware.
+
+The Pi 4 is a CYW43455. A Compute Module 4 that has wireless is a
+CYW43455 or a CYW43456. Both do 2.4 GHz and 5 GHz, HT20, WPA2.
+Channels are 1–13 and 36, 40, 44, 48, 149, 153, 157, 161, 165.
+`channel = "auto"` is 6 on `2g` and 36 on `5g`. The boot trees are
+`bcm2711-rpi-4-b.dtb` (`raspberrypi,4-model-b`) and
+`bcm2711-rpi-cm4-io.dtb` (`raspberrypi,4-compute-module`). The driver
+asks for `brcmfmac43455-sdio.raspberrypi,4-model-b.*`,
+`brcmfmac43455-sdio.raspberrypi,4-compute-module.*`, and
+`brcmfmac43456-sdio.raspberrypi,4-compute-module.*`.
+
+On the Pi 4 the SD card is `emmc2` (`brcm,bcm2711-emmc2`). That
+controller and the radio's Arasan host are both `sdhci-iproc`. The
+arm64 defconfig enables `ARCH_BCM_IPROC`, and the Kconfig default of
+`MMC_SDHCI_IPROC` follows that symbol, so the host is built in. The
+image pins `MMC_SDHCI_IPROC=y` on every Pi 4 image. The card does not
+wait for a module, and the initrd does not list `sdhci_iproc`. The
+device tree still enables the radio node, including on a Compute
+Module 4 with no chip. `brcmfmac` stays blacklisted until
+`match.onboard = true`.
 
 ## 5. Performance notes (guidance for NFR-004/005)
 

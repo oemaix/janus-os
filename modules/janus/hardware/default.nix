@@ -48,7 +48,7 @@
             onboard = mkOption {
               type = types.bool;
               default = false;
-              description = "The radio soldered to this board. docs/10 §4.7.";
+              description = "The radio soldered to this board. docs/10 §4.7, §4.10, and §4.12.";
             };
             i2cAddress = mkOption {
               type = types.nullOr types.str;
@@ -287,7 +287,7 @@ in {
               assertion = allow.onboard ? ${cfg.board};
               message = ''
                 janus.hardware.peripherals.${name}: board ${cfg.board} has no onboard Wi-Fi access point.
-                See docs/10 §4.7.
+                See docs/10 §4.7, §4.10, and §4.12.
               '';
             }
             {
@@ -303,7 +303,7 @@ in {
                 );
               message = ''
                 janus.hardware.peripherals.${name}: Wi-Fi capabilities ${toString wifi.capabilities} are not advertised for the onboard radio.
-                See docs/10 §4.7.
+                See docs/10 §4.7, §4.10, and §4.12.
               '';
             }
           ]
@@ -317,7 +317,7 @@ in {
             lib.length names <= 1;
           message = ''
             This board has one onboard Wi-Fi radio. Declare match.onboard once.
-            See docs/10 §4.7.
+            See docs/10 §4.7, §4.10, and §4.12.
           '';
         }
       ];

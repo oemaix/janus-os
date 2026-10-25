@@ -136,9 +136,13 @@ tree does not mean that behavior exists. Stubs are not finished features.
   (U-Boot at sector 64, `eth0`/`eth1`, no WAN chosen, port LEDs follow
   the silkscreen jacks, the SYS LED heartbeats, *10* §3.2), Le Potato (U-Boot
   FIP, one `eth0`), Raspberry Pi Zero 2 W (FAT `config.txt`, no Ethernet
-  port), Raspberry Pi 3 / 3+ (`rpi3`, FAT `config.txt`, hybrid MBR, one `eth0`),
+  port),   Raspberry Pi 3 / 3+ (`rpi3`, FAT `config.txt`, hybrid MBR, one `eth0`,
+  onboard access point when `match.onboard` is set, 2.4 GHz WPA2,
+  D-0056),
   Raspberry Pi 4 and Compute Module 4 (`rpi4`, FAT `config.txt`, hybrid
-  MBR, one `eth0`; the Pi 400 is not a board),
+  MBR, one `eth0`, onboard access point when `match.onboard` is set,
+  2.4 GHz or 5 GHz WPA2, D-0056; a CM4 without the chip leaves it unset;
+  the Pi 400 is not a board),
   Raspberry Pi 2 v1.1 (`rpi2`, 32-bit, hybrid MBR, one `eth0`; a v1.2
   uses `rpi3`), and StarFive VisionFive 2 (U-Boot from QSPI, one GPT
   image for SD, eMMC, and NVMe, boot order eMMC then SD then NVMe,
@@ -154,7 +158,12 @@ tree does not mean that behavior exists. Stubs are not finished features.
   point (D-0043). `match.onboard = true`. `hostapd` uses in-tree
   `brcmfmac` and `raspberrypiWirelessFirmware`. The image enables
   `MMC_SDHCI_IPROC`, which the generic arm64 defconfig leaves out.
-  The boot tree is mainline `bcm2837-rpi-zero-2-w.dtb`.
+  The boot tree is mainline `bcm2837-rpi-zero-2-w.dtb`. The 43436s
+  CLM names are copies of the 43436 blob that package already ships.
+  The Pi 3 and Pi 4 radios are the same access point (D-0056, *10*
+  §4.12). Pi 3 is 2.4 GHz. Pi 4 is 2.4 GHz or 5 GHz. A Pi 2 v1.2 leaves
+  `match.onboard` unset. The Pi 3 boot trees are mainline
+  `bcm2837-rpi-3-b.dtb` and `bcm2837-rpi-3-b-plus.dtb`.
 * Image builder: GPT, FAT boot, f2fs root, f2fs store, f2fs state.
   `nix build .#checks.x86_64-linux.vm-x86_64-test` boots that image.
 * Options reference: `nix build .#docs-options`.

@@ -177,6 +177,13 @@ Read this file before answering a question about using Janus OS.
 - The Raspberry Pi Zero 2 W onboard radio is a 2.4 GHz WPA2 access point
   (D-0043, docs/10 §4.7). Declare `match.onboard = true` and name that
   access point in the LAN members. 5 GHz and WPA3 fail evaluation.
+  The 43436s CLM names are copies of the 43436 blob.
+- The Raspberry Pi 3 and Pi 4 onboard radios are the same access point
+  (D-0056, docs/10 §4.12, Q-0049). Pi 3 is 2.4 GHz WPA2. Pi 4 and a
+  Compute Module 4 with the chip are 2.4 GHz or 5 GHz, WPA2, HT20.
+  `match.onboard` is this unit. A Pi 2 v1.2 uses the `rpi3` profile and
+  leaves it unset. A Compute Module 4 without the chip does the same
+  on `rpi4`. 5 GHz is not the `rpi3` profile.
 - The router never evaluates Nix and never runs `nixos-rebuild`.
 - The build machine needs Nix with flakes
   (`experimental-features = nix-command flakes`). It does not have to

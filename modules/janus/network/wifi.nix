@@ -168,6 +168,27 @@
     ];
   };
 
+  # The 43436s chip asks for its own CLM name. The Raspberry Pi package
+  # ships that blob only as brcmfmac43436-sdio.clm_blob. docs/10 §4.7.
+  zero2wClm = janusBuildPkgs.runCommand "brcmfmac43436s-clm" {
+    preferLocalBuild = true;
+    meta = {
+      description = "43436 CLM blob under the 43436s names the Zero 2 W requests";
+      license = lib.licenses.unfreeRedistributableFirmware;
+      sourceProvenance = with lib.sourceTypes; [binaryFirmware];
+    };
+  } ''
+    mkdir -p "$out/lib/firmware/brcm"
+    src=${pkgs.raspberrypiWirelessFirmware}/lib/firmware/brcm/brcmfmac43436-sdio.clm_blob
+    cp -L "$src" "$out/lib/firmware/brcm/brcmfmac43436s-sdio.clm_blob"
+    cp -L "$src" "$out/lib/firmware/brcm/brcmfmac43436s-sdio.raspberrypi,model-zero-2-w.clm_blob"
+  '';
+
+  piBoards = ["rpi-zero-2w" "rpi3" "rpi4"];
+  piRadio = lib.elem config.janus.hardware.board piBoards;
+  # Pi 4 enables this host for the SD card in the board profile. docs/10 §4.12.
+  piSdioAp = lib.elem config.janus.hardware.board ["rpi-zero-2w" "rpi3"];
+
   vendor = id: builtins.substring 0 4 id;
   product = id: builtins.substring 5 4 id;
 in {
@@ -204,10 +225,11 @@ in {
         (lib.mkIf (lib.any (n: usbId n == "0bda:8176") apNames) ["rtl8192cu"])
         (lib.mkIf (onboardNames != []) ["brcmfmac"])
       ];
-      # arm64 defconfig builds brcmfmac. The Zero 2 W radio sits on the
-      # Arasan SDHCI, which that defconfig leaves out. docs/10 §4.7.
-      # The ROCK Pi 4C radio is on dw_mmc, which that defconfig builds in.
-      boot.kernelPatches = lib.mkIf (onboardNames != [] && config.janus.hardware.board == "rpi-zero-2w") [
+      # arm64 defconfig builds brcmfmac. These radios sit on the Arasan
+      # SDHCI, which that defconfig leaves out. docs/10 §4.7 and §4.12.
+      # The Pi 4 SD card needs this host built in on every image, so the
+      # board profile pins it. The ROCK Pi 4C radio is on dw_mmc.
+      boot.kernelPatches = lib.mkIf (onboardNames != [] && piSdioAp) [
         {
           name = "janus-rpi-onboard-wifi";
           patch = null;
@@ -218,7 +240,10 @@ in {
           };
         }
       ];
-      hardware.firmware = lib.mkIf (onboardNames != [] && config.janus.hardware.board == "rpi-zero-2w") [pkgs.raspberrypiWirelessFirmware];
+      hardware.firmware = lib.mkIf (onboardNames != [] && piRadio) (
+        [pkgs.raspberrypiWirelessFirmware]
+        ++ lib.optional (config.janus.hardware.board == "rpi-zero-2w") zero2wClm
+      );
       boot.blacklistedKernelModules = lib.mkIf (lib.any (n: usbId n == "0bda:8176") apNames) ["rtl8xxxu"];
 
       systemd.network.links = lib.listToAttrs (map (name: {
@@ -242,11 +267,11 @@ in {
           lib.optionals (onboardAp ap) [
             {
               assertion = row != null && lib.elem ap.band (row.bands or []);
-              message = "janus.network.wifi.${name}.band = ${ap.band} is not a band of the onboard radio. docs/10 §4.7 and §4.10.";
+              message = "janus.network.wifi.${name}.band = ${ap.band} is not a band of the onboard radio. docs/10 §4.7, §4.10, and §4.12.";
             }
             {
               assertion = row != null && lib.elem ap.security (row.security or []);
-              message = "janus.network.wifi.${name}.security = ${ap.security} is not supported on the onboard radio. docs/10 §4.7 and §4.10.";
+              message = "janus.network.wifi.${name}.security = ${ap.security} is not supported on the onboard radio. docs/10 §4.7, §4.10, and §4.12.";
             }
             {
               assertion =
@@ -257,14 +282,14 @@ in {
                   == "auto"
                   || (lib.isInt ap.channel && lib.elem ap.channel (row.channels or []))
                 );
-              message = "janus.network.wifi.${name}.channel is not a channel of the onboard radio. docs/10 §4.7 and §4.10.";
+              message = "janus.network.wifi.${name}.channel is not a channel of the onboard radio. docs/10 §4.7, §4.10, and §4.12.";
             }
           ])
         apNames
         ++ [
           {
             assertion = lib.length onboardNames <= 1;
-            message = "Only one access point can use the onboard radio. docs/10 §4.7.";
+            message = "Only one access point can use the onboard radio. docs/10 §4.7, §4.10, and §4.12.";
           }
         ];
 

@@ -247,7 +247,11 @@ janus.network.wifi.<name> = { peripheral = "wifi0"; ssid; passphraseFile|passphr
 The Zero 2 W onboard radio is the same kind of access point, declared
 with `match.onboard = true`. It is 2.4 GHz WPA2 (D-0043, *10* §4.7).
 The ROCK Pi 4C radio is the same declaration. It is the AP6256, WPA2,
-2.4 GHz or 5 GHz, HT20 (*10* §4.10, D-0053).
+2.4 GHz or 5 GHz, HT20 (*10* §4.10, D-0053). The Pi 3 profile is the
+same declaration, 2.4 GHz WPA2 (*10* §4.12, D-0056). A Pi 2 v1.2 uses
+that profile and leaves `match.onboard` unset. The Pi 4 profile is
+2.4 GHz or 5 GHz, WPA2, HT20. A Compute Module 4 without the wireless
+chip leaves `match.onboard` unset.
 
 `janus.network.wifiCountry` is one ISO 3166-1 alpha-2 code for every
 access point. Unset, it follows `janus.system.region`: `cn` is `CN`,
