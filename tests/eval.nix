@@ -2917,12 +2917,21 @@ in {
           ;;
       esac
     '';
+    # The script reads the link's resolvers through networkctl. A stub keeps
+    # the check independent of the runner's D-Bus and network state.
+    networkctlStub = pkgs.writeShellScript "wan-policy-networkctl-stub" ''
+      printf '%s\n' "$*" >> "$JANUS_IP_LOG"
+      exit 0
+    '';
   in
     pkgs.runCommand "eval-wan-policy" {} ''
       set -eu
       grep -q '/bin/ip ' ${script}
       grep -q '/bin/awk ' ${script}
-      grep -q 'set -euo pipefail' ${script}
+      # writeShellScript prefixes "set -euo pipefail"; writeShellApplication
+      # writes the same three options one per line. Both are strict.
+      grep -qE 'set -euo pipefail|set -o errexit' ${script}
+      grep -qE 'set -euo pipefail|set -o pipefail' ${script}
       grep -q 'while read -r cidr' ${script}
       if grep -E '(^|[^/[:alnum:]])ip -4' ${script}; then
         echo "janus-wan-policy calls ip from PATH" >&2
@@ -2938,7 +2947,12 @@ in {
       test -x "$awk"
       root=$TMPDIR/wan-policy
       mkdir -p "$root/sys/class/net/eth0"
-      sed -e "s|$ip|${ipStub}|g" -e "s|/run/janus|$root/run|g" -e "s|/sys/class/net|$root/sys/class/net|g" ${script} > "$root/policy"
+      # The script reads the link's resolvers through networkctl. The stub
+      # keeps the check independent of the runner's D-Bus and network
+      # state; the command word is the only "networkctl " in the script.
+      sed -e "s|$ip|${ipStub}|g" \
+        -e "s|networkctl |${networkctlStub} |g" \
+        -e "s|/run/janus|$root/run|g" -e "s|/sys/class/net|$root/sys/class/net|g" ${script} > "$root/policy"
       chmod +x "$root/policy"
       export JANUS_IP_LOG=$root/ip.log
       if JANUS_IP_FAIL=1 "$root/policy"; then
