@@ -4,6 +4,7 @@
 {
   config,
   lib,
+  options,
   pkgs,
   ...
 }: let
@@ -376,6 +377,12 @@
     })
     geodataFiles);
 
+  pathIsSops = path:
+    path
+    != null
+    && (options ? sops)
+    && lib.any (secret: secret.path == path) (lib.attrValues config.sops.secrets);
+
   passwordFiles = lib.filterAttrs (_: path: path != null) (
     lib.mapAttrs (
       _: n:
@@ -391,6 +398,8 @@
   enabledSubscriptions = lib.filterAttrs (_: sub: sub.enable) cfg.subscriptions;
 
   secretSubscriptions = lib.filterAttrs (_: sub: sub.urlSecret != null) enabledSubscriptions;
+
+  passwordFromSops = lib.any pathIsSops (lib.attrValues passwordFiles);
 
   inlineUrls = lib.filterAttrs (_: sub: sub.url != null && config.janus.security.allowInlineSecrets) enabledSubscriptions;
 
@@ -663,7 +672,10 @@ in {
       description = "Render the proxy engine configuration";
       wantedBy = ["multi-user.target"];
       before = ["janus-engine.service"];
-      after = ["network-pre.target" "janus-subscription-urls.service"];
+      after =
+        ["network-pre.target" "janus-subscription-urls.service"]
+        ++ lib.optional passwordFromSops "sops-install-secrets.service";
+      requires = lib.optional passwordFromSops "sops-install-secrets.service";
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;
@@ -717,6 +729,8 @@ in {
       after =
         ["janus-subscription-urls.service"]
         ++ lib.optional (secretSubscriptions != {}) "sops-install-secrets.service";
+      # wants, not requires. A failed sops unit must not skip the refresh:
+      # the hot override and the saved URL are read only when ExecStart runs.
       wants = lib.optional (secretSubscriptions != {}) "sops-install-secrets.service";
       serviceConfig = {
         Type = "oneshot";

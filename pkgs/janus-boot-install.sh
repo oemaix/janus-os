@@ -3,7 +3,9 @@
 # line carries init=<closure>/init. The profile symlink alone does not boot.
 # A Raspberry Pi config.txt names both files. Slot B uses vmlinuz-b and initrd-b.
 # install-slot updates the inactive A/B entry and then the boot-side toggle.
-# docs/09 §8.4.
+# docs/09 §8.4. The closure's kernel and initrd are absolute /nix/store
+# symlinks. Their targets are read from the inactive Nix mount, not from
+# the store that is running. The command line keeps init=<closure>/init.
 set -eu
 boot=${JANUS_BOOT_DIR:-/boot}
 state=${JANUS_STATE_DIR:-/var/lib/janus}
@@ -183,6 +185,37 @@ limine_prefer() {
   rm -f "$header" "$block_a" "$block_b"
 }
 
+# Rewrite one absolute /nix/store symlink onto the inactive Nix mount.
+# Repeat for a short chain. A regular file is itself. Anything else,
+# including a link that leaves the mount, is missing.
+slot_store_file() {
+  file=$1
+  hops=0
+  while [ -h "$file" ]; do
+    hops=$((hops + 1))
+    if [ "$hops" -gt 8 ]; then
+      return 1
+    fi
+    target=$(readlink "$file")
+    case "$target" in
+      /nix/store/*/*) ;;
+      *) return 1 ;;
+    esac
+    rest=${target#/nix/store/}
+    case "$rest" in
+      "" | .. | ../* | */.. | */../* | .* | *//*)
+        return 1
+        ;;
+    esac
+    file="${store}/store/${rest}"
+  done
+  if [ -f "$file" ] && [ ! -h "$file" ]; then
+    printf '%s\n' "$file"
+    return 0
+  fi
+  return 1
+}
+
 require_slot_entries() {
   if [ -f "${boot}/extlinux.conf" ] && ! grep -q '^LABEL slot-b$' "${boot}/extlinux.conf"; then
     echo "janus-boot-install: extlinux has no slot-b entry. Flash an image built with janus.storage.slots.enable." >&2
@@ -211,7 +244,10 @@ install_slot() {
   fi
   rel=${closure#/nix}
   src="${store}${rel}"
-  if [ ! -e "${src}/kernel" ] || [ ! -e "${src}/initrd" ] || [ ! -f "${src}/kernel-params" ]; then
+  missing=0
+  kern_file=$(slot_store_file "${src}/kernel") || missing=1
+  initrd_file=$(slot_store_file "${src}/initrd") || missing=1
+  if [ "$missing" = 1 ] || [ ! -f "${src}/kernel-params" ] || [ -h "${src}/kernel-params" ]; then
     echo "janus-boot-install: ${closure} is not in the slot store" >&2
     exit 1
   fi
@@ -227,13 +263,13 @@ install_slot() {
   params=${params%" "}
   params="${params} init=${closure}/init janus.slot=${slot}"
   if [ "$slot" = b ]; then
-    cp -L "${src}/kernel" "${boot}/vmlinuz-b"
-    cp -L "${src}/initrd" "${boot}/initrd-b"
+    cp "$kern_file" "${boot}/vmlinuz-b"
+    cp "$initrd_file" "${boot}/initrd-b"
     kern=vmlinuz-b
     initrd_name=initrd-b
   else
-    cp -L "${src}/kernel" "${boot}/vmlinuz"
-    cp -L "${src}/initrd" "${boot}/initrd"
+    cp "$kern_file" "${boot}/vmlinuz"
+    cp "$initrd_file" "${boot}/initrd"
     kern=vmlinuz
     initrd_name=initrd
   fi

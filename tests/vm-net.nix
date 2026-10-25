@@ -15,6 +15,7 @@
     modules = [
       ({pkgs, ...}: {
         janus.hardware.board = "x86_64-test";
+        janus.storage.nix.minimumSize = "64M";
         janus.access.ssh.authorizedKeys = [key];
         boot.kernelModules = ["tun"];
         janus.network.wans.main = {

@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-20 |
+| Last updated | 2026-10-25 |
 
 ## 1. Principles
 
@@ -118,7 +118,7 @@ router go through hot overrides instead.
 
 | Board | System | Binary cache | Default build strategy |
 |-------|--------|--------------|------------------------|
-| RPi 3/4, RPi Zero 2 W, NanoPi R4S, Le Potato | `aarch64-linux` | cache.nixos.org | `boot.binfmt.emulatedSystems = ["aarch64-linux"]` on x86_64 host (transparent, slow for local builds but most packages come from cache) **or** native aarch64 builder **or** cross (`pkgsCross.aarch64-multiplatform`) |
+| RPi 3/4, RPi Zero 2 W, NanoPi R4S, ROCK Pi 4C, Le Potato | `aarch64-linux` | cache.nixos.org | `boot.binfmt.emulatedSystems = ["aarch64-linux"]` on x86_64 host (transparent, slow for local builds but most packages come from cache) **or** native aarch64 builder **or** cross (`pkgsCross.aarch64-multiplatform`) |
 | RPi 2 (BCM2836) | `armv7l-linux` | none (community only) | cross-compilation required; expect long builds; Tier 3 |
 | VisionFive 2 | `riscv64-linux` | none | cross-compilation; Tier 3 |
 | Yanyu STX-R19F and the test target | `x86_64-linux` | yes | native on the build host. The STX-R19F image boots with Limine on legacy BIOS, not UEFI. |
@@ -157,15 +157,19 @@ The image builder is a Nix derivation (no root, no loop mounts) that:
 
 1. Computes the closure of `config.system.build.toplevel`.
 2. Creates file system images:
-   * `nix.img` — `mkfs.f2fs` sized to closure + slack, populated with
+   * `nix.img` — `mkfs.f2fs` sized to the closure plus 15 %, one 4 KiB
+     node block per file, and 128 MiB, and at least `nix.minimumSize`
+     (default 2.5 GiB). `JANUS_NIX.size` may be smaller than that floor
+     and is then used as given. Populated with
      `sload.f2fs` from the closure and `/nix/var` (db, profiles);
    * `root.img` — `mkfs.f2fs`, populated with the skeleton (`/bin/sh`,
      `/usr/bin/env`, mount points, `/etc` lower dir is in the store);
    * `boot.img` — `mkfs.vfat` + `mcopy` of kernel, initrd, DTBs,
      board firmware and boot script (`extlinux.conf`, `config.txt`,
      `cmdline.txt`, `limine.conf`, U-Boot binaries as the profile dictates);
-   * `state.img` — empty `mkfs.f2fs` of `state.minimumSize`; expanded to
-     the full media on first boot by `janus-grow-state.service`.
+   * `state.img` — empty `mkfs.f2fs` of `state.minimumSize`; expanded on
+     boot by `janus-grow-state.service` up to `state.maximumSize`
+     (default 4 GiB) or the end of the media.
 3. Writes GPT/MBR with labels and PARTUUIDs, installs raw U-Boot/SPL at the
    profile offsets, concatenates partitions. On the Yanyu image, `limine
    bios-install` writes stage 1 into the image file and stage 2 into
@@ -257,7 +261,10 @@ Partition 5 stays the Limine BIOS gap. Slot B is GPT partitions 6 and 7.
 
 `janus-build deploy` on a host with the option set writes the new root
 and store images onto the inactive slot, updates that slot's kernel and
-command line, and then changes the boot entry. On a Raspberry Pi image
+command line, and then changes the boot entry. `kernel` and `initrd` in
+that closure are absolute symlinks into `/nix/store`. The installer reads
+those targets from the inactive Nix partition. The command line still
+carries `init=<closure>/init`. On a Raspberry Pi image
 the same step rewrites `kernel=` and `initramfs` in `config.txt`, so
 slot B loads `initrd-b`. A power loss before that
 change leaves the active slot bootable. The state partition is shared.
@@ -266,7 +273,13 @@ boot changes the boot entry back. The other slot's files stay where they
 are.
 
 The slot partitions are the size fixed by the flashed image. If the new
-images do not fit, deploy stops and the operator flashes a larger image.
+Nix image does not fit the Nix partition, deploy names that partition
+and stops. The operator flashes a larger image. Without A/B slots,
+4 GiB holds the image while each Nix partition stays at the 2.5 GiB
+floor (3394 MiB with no firmware gap). 8 GiB or more is recommended.
+With A/B slots that floor makes a 6018 MiB image, so 8 GiB is the
+minimum and 16 GiB or more is recommended. A larger closure needs a
+larger card by the same amount.
 A disk that was flashed without the option has no inactive slot; deploy
 says so and does not resize the table.
 
@@ -276,7 +289,7 @@ says so and does not resize the table.
 |-------|------|-------|
 | Evaluation | assertions fire for known-bad configs; option docs render; the rendered Shadowsocks outbound completes a hop to `127.0.0.1` | `checks.eval-*` |
 | Rendering | golden files for engine configs, nftables rulesets, networkd units from fixture configurations | `checks.render-golden-*` |
-| VM | `x86_64-test` boots with two virtual NICs. `vm-x86_64-test` checks the mount model. `vm-x86_64-net` checks DHCP, NAT, a static DNS answer, and the WAN/LAN firewall | `checks.vm-*` |
+| VM | `x86_64-test` boots with two virtual NICs. `vm-x86_64-test` checks the mount model. `vm-x86_64-slots` checks that `janus.slot` mounts slot A or slot B. `vm-x86_64-net` checks DHCP, NAT, a static DNS answer, and the WAN/LAN firewall | `checks.vm-*` |
 | Board build | each board's image builds in CI (aarch64 daily, others weekly) | `checks.build-<board>` |
 | Hardware | Tier-1 boards boot-and-route on a lab bench (manual/semi-automated) | release checklist |
 | Chaos | power-cut loop on Tier-1 hardware (NFR-008) | release checklist |

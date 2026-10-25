@@ -11,9 +11,23 @@
 }: let
   cfg = config.janus;
   # secret set stores one credential under the key `value`.
-  # "" asks sops-nix for the whole document. PPPoE is username and password.
-  # Node files are whole documents too, and WireGuard is `value`, but neither
-  # has a secret-name option, so the fleet sets that key.
+  # "" asks sops-nix for the whole document. PPPoE passwordSecret is username
+  # and password. A node password file is that YAML document too.
+  # A file option may name /run/secrets/<name> without the secret-name option.
+  # mkDefault loses to a key the fleet set. The name is the last path
+  # component, which is the sops-nix default path.
+  secretName = path:
+    if path != null && lib.hasPrefix "/run/secrets/" path
+    then lib.removePrefix "/run/secrets/" path
+    else null;
+  namesOf = paths:
+    lib.unique (lib.filter (name: name != null && !lib.hasInfix "/" name) (map secretName paths));
+  fileNames = namesOf (
+    [cfg.access.web.passphraseFile]
+    ++ lib.mapAttrsToList (_: wg: wg.privateKeyFile) cfg.remoteAccess.wireguard
+    ++ lib.mapAttrsToList (_: wan: wan.pppoe.passwordFile) cfg.network.wans
+    ++ nodeFiles
+  );
   oneLine =
     lib.optional (cfg.access.web.passphraseSecret != null) cfg.access.web.passphraseSecret
     ++ lib.optional (cfg.remoteAccess.tailscale.authKeySecret != null) cfg.remoteAccess.tailscale.authKeySecret
@@ -22,10 +36,21 @@
     )
     ++ lib.mapAttrsToList (_: sub: sub.urlSecret) (
       lib.filterAttrs (_: sub: sub.urlSecret != null) cfg.proxy.subscriptions
+    )
+    ++ namesOf (
+      [cfg.access.web.passphraseFile]
+      ++ lib.mapAttrsToList (_: wg: wg.privateKeyFile) cfg.remoteAccess.wireguard
+      ++ lib.mapAttrsToList (_: wan: wan.pppoe.passwordFile) cfg.network.wans
     );
   pppoe = lib.mapAttrsToList (_: wan: wan.pppoe.passwordSecret) (
     lib.filterAttrs (_: wan: wan.pppoe.passwordSecret != null) cfg.network.wans
   );
+  nodeFiles = lib.concatLists (lib.mapAttrsToList (
+      _: node:
+        lib.optional (node.protocol == "trojan") node.trojan.passwordFile
+        ++ lib.optional (node.protocol == "shadowsocks") node.shadowsocks.passwordFile
+    )
+    cfg.proxy.nodes);
 in {
   config = lib.mkIf (options ? sops) {
     sops.age.keyFile = lib.mkDefault "/var/lib/janus/secrets/age.key";
@@ -34,18 +59,28 @@ in {
     sops.gnupg.sshKeyPaths = lib.mkDefault [];
     # `janus-build fleet apply` copies a sops file to
     # /var/lib/janus/secrets/inbox and the router decrypts it there: the
-    # build host keeps no private key (ADR-0022, D-0048).
+    # build host keeps no private key (ADR-0022, D-0055).
     # sops-install-secrets is a boot service, not an interactive
     # decryptor, so the image ships the CLI whenever there is anything
-    # to decrypt. D-0048.
+    # to decrypt. D-0055.
     environment.systemPackages = lib.optional (config.sops.secrets != {}) pkgs.sops;
     sops.secrets = lib.mkMerge [
       (lib.genAttrs oneLine (_: {key = lib.mkDefault "value";}))
       (lib.genAttrs pppoe (_: {key = lib.mkDefault "";}))
+      (lib.genAttrs (namesOf nodeFiles) (_: {key = lib.mkDefault "";}))
     ];
     systemd.services.sops-install-secrets = lib.mkIf (config.sops.secrets != {}) {
       after = ["var.mount"];
       wants = ["var.mount"];
     };
+    # A file path under /run/secrets/<name> selects that secret. It does not
+    # create one. The assertion is separate from sops.secrets so this module
+    # can set the key without reading the option it defines.
+    assertions =
+      map (name: {
+        assertion = (builtins.tryEval config.sops.secrets.${name}.sopsFile).success;
+        message = "A file at /run/secrets/${name} needs sops.secrets.${name}.sopsFile.";
+      })
+      fileNames;
   };
 }

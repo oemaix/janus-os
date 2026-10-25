@@ -1,0 +1,45 @@
+name: Question
+description: How to build, flash, or operate a router.
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The manual is [English](https://github.com/oemaix/janus-os/blob/main/manual/en/README.md), [Russian](https://github.com/oemaix/janus-os/blob/main/manual/ru/README.md), and [Persian](https://github.com/oemaix/janus-os/blob/main/manual/fa/README.md). Option names are `docs/08-configuration-reference.md`. Router commands are `docs/14-cli.md`. Build-host commands are `docs/16-build-host-cli.md`.
+
+        A result that disagrees with those pages is a bug.
+
+        Leave out credentials, subscription URLs, age keys, and node lists that name a relay.
+  - type: textarea
+    id: goal
+    attributes:
+      label: What you are trying to do
+    validations:
+      required: true
+  - type: input
+    id: read
+    attributes:
+      label: What you already read
+      description: Manual section, option name, or command.
+      placeholder: manual/en, Flash the image
+    validations:
+      required: true
+  - type: textarea
+    id: unclear
+    attributes:
+      label: What is still unclear
+    validations:
+      required: true
+  - type: input
+    id: board
+    attributes:
+      label: Board
+      description: Profile id when the question is about a device. Leave this empty for a build-host question.
+      placeholder: nanopi-r4s
+  - type: checkboxes
+    id: hygiene
+    attributes:
+      label: Before opening
+      options:
+        - label: This report has no credential, subscription URL, age key, or relay list.
+          required: true

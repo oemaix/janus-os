@@ -16,6 +16,13 @@
       && config.sops.secrets ? ${cfg.passphraseSecret}
     then config.sops.secrets.${cfg.passphraseSecret}.path
     else cfg.passphraseFile;
+  pathIsSops = path:
+    path
+    != null
+    && (options ? sops)
+    && lib.any (secret: secret.path == path) (lib.attrValues config.sops.secrets);
+  # passphraseFile may name the same /run/secrets path without the secret option.
+  needsSops = cfg.passphraseSecret != null || pathIsSops cfg.passphraseFile;
   janusCmd = pkgs.writeShellApplication {
     name = "janus";
     runtimeInputs = with pkgs; [jq iproute2 nftables vnstat coreutils systemd util-linux gnutar];
@@ -57,11 +64,14 @@ in {
           message = "janus.access.web has both passphraseFile and passphraseSecret.";
         }
         {
-          assertion = cfg.passphraseSecret == null || (
-            (options ? sops)
-            && (config.sops.secrets ? ${cfg.passphraseSecret})
-            && (builtins.tryEval config.sops.secrets.${cfg.passphraseSecret}.sopsFile).success
-          );
+          assertion =
+            cfg.passphraseSecret
+            == null
+            || (
+              (options ? sops)
+              && (config.sops.secrets ? ${cfg.passphraseSecret})
+              && (builtins.tryEval config.sops.secrets.${cfg.passphraseSecret}.sopsFile).success
+            );
           message = "janus.access.web.passphraseSecret needs sops.secrets.<name>.sopsFile.";
         }
         {
@@ -124,17 +134,19 @@ in {
       audit = config.janus.monitoring.audit.enable;
     };
 
+    # stunnel parses accept as [host:]port. Brackets mark an optional host,
+    # so "[::]:8443" looks up the name "[::]". ":::port" is the IPv6 wildcard.
+    # IPV6_V6ONLY=0 accepts IPv4 on that socket.
     environment.etc."janus/stunnel.conf".text = ''
       foreground = yes
       syslog = no
       socket = a:IPV6_V6ONLY=0
 
       [janus]
-      # "*" resolves to the wildcard address(es) on glibc; "[::]" is
-      # rejected by getaddrinfo (EAI_NONAME), which stunnel passes the
-      # host through to. Measured: stunnel binds 0.0.0.0 only, which
-      # covers the v4 LAN clients the panel serves.
-      accept = *:${toString cfg.port}
+      # stunnel parses accept as [host:]port. Brackets mark an optional host,
+      # so "[::]:8443" looks up the name "[::]". ":::port" is the IPv6 wildcard.
+      # IPV6_V6ONLY=0 accepts IPv4 on that socket.
+      accept = :::${toString cfg.port}
       connect = /run/janus-web/http.sock
       cert = /var/lib/janus/web/cert.pem
       key = /var/lib/janus/web/key.pem
@@ -169,30 +181,47 @@ in {
       };
     };
 
+    systemd.services.janus-web-secret = lib.mkIf needsSops {
+      description = "Maintenance page passphrase";
+      before = ["janus-web.service"];
+      after = ["sops-install-secrets.service"];
+      requires = ["sops-install-secrets.service"];
+      # No Restart. An empty file fails once and stays failed, so
+      # install-age-key can restart it. The page still restarts on a crash.
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        ExecStart = "${pkgs.coreutils}/bin/test -s ${lib.escapeShellArg passPath}";
+      };
+    };
+
     systemd.services.janus-web = {
       description = "Maintenance page";
       wantedBy = ["multi-user.target"];
       after =
         ["janus-web-cert.service" "network-online.target"]
-        ++ lib.optional (cfg.passphraseSecret != null) "sops-install-secrets.service";
+        ++ lib.optional needsSops "sops-install-secrets.service"
+        ++ lib.optional needsSops "janus-web-secret.service";
       requires =
         ["janus-web-cert.service"]
-        ++ lib.optional (cfg.passphraseSecret != null) "sops-install-secrets.service";
+        ++ lib.optional needsSops "sops-install-secrets.service"
+        ++ lib.optional needsSops "janus-web-secret.service";
       unitConfig.ConditionPathExists = "!/var/lib/janus/web/paused";
       environment = {
         JANUS_WEB_JSON = "/etc/janus/web.json";
         JANUS_WEB_HTML = "${../../../janet/web.html}";
         JANUS_WEB_EXEC = "${runCmd}/bin/janus-web-run";
         JANUS_WEB_USE_SUDO = "1";
-        # The store path is mounted nosuid; the setuid wrapper is the only
-        # sudo the unprivileged janus-web user can actually use.
-        JANUS_WEB_SUDO_BIN = "/run/wrappers/bin/sudo";
+        # The store binary is mode 0555. Only the wrapper has the setuid bit,
+        # and the store path is mounted nosuid: the wrapper is the only sudo
+        # the unprivileged janus-web user can actually use.
+        JANUS_WEB_SUDO_BIN = "${config.security.wrapperDir}/sudo";
         JANUS_WEB_OPENSSL = "${pkgs.openssl}/bin/openssl";
       };
       serviceConfig = {
         Type = "notify";
-        # The wrapper's forked systemd-notify must count; "main" drops it silently.
-        NotifyAccess = "all";
+        # Janet is this PID (the shell execs it) and writes READY=1 itself.
+        NotifyAccess = "main";
         User = "janus-web";
         Group = "janus-web";
         RuntimeDirectory = "janus-web";
@@ -206,7 +235,13 @@ in {
         ProtectSystem = "strict";
         ProtectHome = true;
         PrivateTmp = true;
-        ReadWritePaths = "/var/lib/janus/web";
+        # true would mount this namespace nosuid, and the sudo wrapper could not become root.
+        NoNewPrivileges = false;
+        # The sudo child is root in this namespace. Without this capability it cannot remount /.
+        CapabilityBoundingSet = "~CAP_SYS_ADMIN";
+        # The mount namespace is shared with that root child, so state
+        # writes need the whole tree, not only the certificate directory.
+        ReadWritePaths = "/var/lib/janus";
       };
     };
 

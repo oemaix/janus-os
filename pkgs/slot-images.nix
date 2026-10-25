@@ -16,6 +16,7 @@
   closureInfo,
   rootMinMiB,
   nixSlackPercent,
+  nixMinMiB,
   nixSizeMode,
   nixExactMiB,
 }:
@@ -23,7 +24,7 @@ stdenvNoCC.mkDerivation {
   name = "janus-slot-images";
   __structuredAttrs = false;
   nativeBuildInputs = [nix f2fs-tools fakeroot bash coreutils gawk findutils];
-  inherit toplevel closureInfo rootMinMiB nixSlackPercent nixSizeMode nixExactMiB;
+  inherit toplevel closureInfo rootMinMiB nixSlackPercent nixMinMiB nixSizeMode nixExactMiB;
 
   passthru = {
     inherit toplevel;
@@ -50,18 +51,11 @@ stdenvNoCC.mkDerivation {
     ln -s ${coreutils}/bin/env rootfs/usr/bin/env
     ln -s /var/lib/janus/root rootfs/root
 
+    . ${./f2fs-mib.sh}
     make_f2fs() {
       local label="$1" src="$2" out="$3" min_mib="$4" slack="$5" exact="$6"
-      local bytes mib inodes
-      if [ -n "$exact" ]; then
-        mib=$exact
-      else
-        bytes=$(du -s -B1 "$src" | awk '{ print $1 }')
-        inodes=$(find "$src" | wc -l)
-        bytes=$(( bytes * (100 + slack) / 100 + inodes * 4096 + 128 * 1024 * 1024 ))
-        mib=$(( (bytes + 1048575) / 1048576 ))
-        if (( mib < min_mib )); then mib=$min_mib; fi
-      fi
+      local mib
+      mib=$(f2fs_partition_mib "$src" "$min_mib" "$slack" "$exact")
       truncate -s "''${mib}M" "$out"
       # mkfs creates the root inode. sload.f2fs -P never updates it, and
       # the default owner is the build user's getuid()/getgid().
@@ -76,7 +70,7 @@ stdenvNoCC.mkDerivation {
       make_f2fs JANUS_NIX nixfs nix-a.img 0 0 "$nixExactMiB" >/dev/null
       make_f2fs JANUS_NIX_B nixfs nix-b.img 0 0 "$nixExactMiB" >/dev/null
     else
-      nix_mib=$(make_f2fs JANUS_NIX nixfs nix-a.img 64 "$nixSlackPercent" "")
+      nix_mib=$(make_f2fs JANUS_NIX nixfs nix-a.img "$nixMinMiB" "$nixSlackPercent" "")
       make_f2fs JANUS_NIX_B nixfs nix-b.img 0 0 "$nix_mib" >/dev/null
     fi
 

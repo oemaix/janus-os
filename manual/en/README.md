@@ -11,12 +11,14 @@ The project is public and licensed under the Apache License, Version 2.0.
 ## What you can do today
 
 The router image boots in a VM. Image profiles exist for the NanoPi R4S,
-the Le Potato, the Raspberry Pi Zero 2 W, the Raspberry Pi 3 / 3+, the
+the ROCK Pi 4C, the Le Potato, the Raspberry Pi Zero 2 W, the Raspberry Pi 3 / 3+, the
 Raspberry Pi 4 and Compute Module 4, the Raspberry Pi 2 v1.1, the
 StarFive VisionFive 2, and the Yanyu STX-R19F
 (Limine on legacy BIOS). `janus` and `janus-build`
 implement the phase 1 commands, plus proxy, DNS, fleet, status, backup,
-deploy, and the connection audit. With `janus.access.web.enable` and a
+deploy, and the connection audit. `janus --help` and `janus-build --help`
+print that command list. `--usage` prints the same text.
+With `janus.access.web.enable` and a
 passphrase file, the image serves a maintenance page on port 8443. On the board, `janus deploy` exits 2
 and names `janus-build`. A Waveshare 1.3" OLED HAT on a Raspberry Pi
 Zero 2 W, a Raspberry Pi 3, or a Raspberry Pi 4 shows status. From the
@@ -110,6 +112,17 @@ In that shell:
 8. Install the private key from the password manager, once, with
    `janus-build deploy --age-key <host>` on the build machine.
    (`janus secrets install-age-key` on the router does the same thing.)
+   On a terminal, after the router answers SSH, the command prints:
+   paste the age private key, then press Enter and Ctrl-D. If that line
+   does not appear, the address is wrong. Leave the key unpasted.
+   A pipe stays quiet. Input with no `AGE-SECRET-KEY-1` line is refused.
+   SSH uses `janus.access.deploy.address` from this repo. `mkRouter`
+   sets it to the host's attribute name. Set the LAN address, such as
+   `192.168.10.1`, when that name does not resolve. After Tailscale is
+   up, set a MagicDNS name, the Tailscale IPv4, or an IPv6 literal.
+   `deploy`, `status`, `backup`, and `fleet pull` read that edit
+   immediately. `fleet apply` needs a clean git tree. None of these
+   build or install an image.
    PPPoE, Wi-Fi, a subscription URL that is a secret, Tailscale, and the
    maintenance-page passphrase stay unavailable until this step.
 9. `janus proxy refresh` fills a subscription that came from `urlSecret`.
@@ -121,7 +134,13 @@ the install. LAN and SSH do not need the age key.
 Option names are in
 [docs/08-configuration-reference.md](../../docs/08-configuration-reference.md).
 `janus-build check <host>` evaluates the configuration without building
-the image.
+the image. `janus.system.kernelProfile` defaults to `standard`, the
+NixOS kernel, so aarch64 and x86_64 can use the binary cache. `compact`
+is that kernel on every board with sound, desktop and 3D graphics,
+cameras, industrial sensors, InfiniBand, and storage-network adapters
+left out. Network cards, Wi-Fi, USB, cellular modems, SD, NVMe, and
+virtio stay, and the serial console stays. Use `compact` when a kernel
+patch forces a rebuild.
 
 `janus.system.region` is `cn` (the default), `ru`, or `ir`. It chooses the
 domestic resolver. For `ru`, `janus.proxy.blockQuic` defaults to true
@@ -227,9 +246,36 @@ A/B slots are off unless the image was built with
 `janus.storage.slots.enable = true`. Flash that image once. Later
 deploys write the other root and store slot, then change the boot entry.
 The state partition is shared, so overrides and the age key stay. Confirm
-the same way. If the new images do not fit the slots from the flash,
-deploy stops and asks for a new flash. A disk flashed without the option
+the same way. If the new Nix image does not fit the Nix partition from
+the flash, deploy names that partition and asks for a new flash. Each
+Nix partition is the closure plus 15%, one 4 KiB block per file, and
+128 MiB, and at least 2.5 GiB. `JANUS_NIX.size` may name a smaller size.
+Without A/B slots, 4 GiB of storage is enough while each Nix partition
+stays at 2.5 GiB; that image is about 3.3 GiB. 8 GiB or more is
+recommended. With A/B slots the image is about 5.9 GiB, so 8 GiB is the
+minimum and 16 GiB or more is recommended. A larger closure needs a
+larger card. A disk flashed without the option
 has no second slot; deploy says so.
+
+## State partition
+
+The flashed state partition is 512 MiB. The first boot grows it until it
+reaches 4 GiB or the end of the card, whichever comes first.
+`janus.storage.state.maximumSize` sets a larger or smaller cap. The cap
+does not shrink a partition that is already bigger.
+
+Each boot runs `fsck.f2fs -a` on that partition and does not read the
+whole volume. A check that is only slow does not erase it. If the
+filesystem still cannot be mounted, the default is to format it and
+continue. The journal records that format.
+
+A maintenance reboot is off. Set `janus.system.reboot.schedule` to
+`monthly`, `yearly`, or a five-field cron whose last field is `*`.
+`monthly` is 04:00 on day 1. `yearly` is 04:00 on 1 January.
+`janus.system.reboot.fsck = true` runs a full check of the state
+partition on that reboot and lets the check finish. The request is
+removed before the check starts, so a check that does not finish is not
+repeated.
 
 ## Connection audit
 
@@ -260,6 +306,7 @@ and `janus.access.web.passphraseSecret`. That secret is one line in
 zones. `janus web stop` pauses it without a rebuild. `janus web start`
 turns it back on. If the image was built without the switch, `janus web
 start` exits 2. An empty passphrase file makes `janus web start` exit 1.
+When the passphrase is a sops secret, that command installs secrets first. If that install fails, the command says so and exits 1. An empty file still exits 1.
 
 Open `https://<lan-address>:8443/`. The certificate is self-signed.
 Compare the fingerprint on the page with `janus web fingerprint` before
@@ -301,6 +348,32 @@ At boot, a discharging cell already below 3.55 V powers off before the
 network starts. Charging, a current within 5 mA of zero, a missing
 sensor, and `power.shutdown.enable = false` leave the router running.
 The Waveshare address `0x43` stays unarmed and shows no readings.
+
+## ROCK Pi 4C
+
+The ROCK Pi 4C (`rockpi-4c`) profile is the v1.2 board. The image is
+GPT. Mainline U-Boot is written at sector 64. The console is `ttyS2`
+at 1500000. There is one Ethernet jack, `eth0`. The profile does not
+choose a WAN. A second port is a USB peripheral. The M.2 slot is NVMe.
+
+The boot ROM tries the SPI NOR before the eMMC and the SD card. This
+image does not program the SPI. A bootloader left in that flash is
+what the board starts, and the U-Boot at sector 64 never runs. Clear
+the SPI, or hold the maskrom button while power is applied. U-Boot
+then starts from the eMMC when a module is fitted, and from the SD
+card when the eMMC is absent.
+
+The serial console shows a menu for two seconds. With no key pressed
+it tries the eMMC and, when that medium has no Janus image, the SD
+card. The other line boots the SD card. An image on the eMMC is used
+even when a bootable SD card is inserted, unless that line is selected.
+
+The onboard radio is a WPA2 access point when `match.onboard = true`.
+It is the AP6256: 2.4 GHz or 5 GHz, 20 MHz. Add that access point to a
+LAN, the same way as the Zero 2 W radio. The regulatory country follows
+the region (`cn`, `ru`, or `ir`) unless `janus.network.wifiCountry` is
+set. Bluetooth on the board stays unused. A USB Bluetooth dongle still uses `btusb`. The ROCK 4C+ is a
+different board and does not use this profile.
 
 ## Tier 3 boards
 

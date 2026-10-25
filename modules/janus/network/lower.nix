@@ -3,10 +3,16 @@
 {
   config,
   lib,
+  options,
   pkgs,
   ...
 }: let
   cfg = config.janus.network;
+  pathIsSops = path:
+    path
+    != null
+    && (options ? sops)
+    && lib.any (secret: secret.path == path) (lib.attrValues config.sops.secrets);
   wanNames = lib.attrNames cfg.wans;
   lanNames = lib.attrNames cfg.lans;
 
@@ -363,15 +369,16 @@
   pppService = name: let
     wan = cfg.wans.${name};
     fromSecret = pppFromSecret name;
+    needsSops = wan.pppoe.passwordSecret != null || pathIsSops wan.pppoe.passwordFile;
   in
     lib.optionalAttrs (wan.mode == "pppoe") {
       "janus-pppoe-${name}" = {
         description = "PPPoE WAN ${name}";
         after =
           ["systemd-networkd.service" "network-pre.target"]
-          ++ lib.optional (wan.pppoe.passwordSecret != null) "sops-install-secrets.service";
+          ++ lib.optional needsSops "sops-install-secrets.service";
         wants = ["network-online.target"];
-        requires = lib.optional (wan.pppoe.passwordSecret != null) "sops-install-secrets.service";
+        requires = lib.optional needsSops "sops-install-secrets.service";
         wantedBy = ["multi-user.target"];
         # Empty credentials exit in ExecStartPre. A short RestartSec would
         # otherwise slide under the default start limit and retry forever.
@@ -445,15 +452,18 @@
           ''
         }
         if [ -e "/sys/class/net/$iface" ]; then
-          addr=$(ip -4 -o addr show dev "$iface" | awk '{print $4}')
-          addr=''${addr%%/*}
-          gw=$(ip -4 route show default dev "$iface" | awk '{print $3; exit}')
-          if [ -n "$addr" ]; then
-            ip rule del from "$addr" lookup "$table" priority "$pri" 2>/dev/null || true
-            ip rule add from "$addr" lookup "$table" priority "$pri"
-          fi
+          # One rule per address. pipefail keeps a failed ip from looking like success.
+          addrs=$(${pkgs.iproute2}/bin/ip -4 -o addr show dev "$iface" | ${pkgs.gawk}/bin/awk '{print $4}')
+          printf '%s\n' "$addrs" | while read -r cidr; do
+            [ -n "$cidr" ] || continue
+            addr=''${cidr%%/*}
+            [ -n "$addr" ] || continue
+            ${pkgs.iproute2}/bin/ip rule del from "$addr" lookup "$table" priority "$pri" 2>/dev/null || true
+            ${pkgs.iproute2}/bin/ip rule add from "$addr" lookup "$table" priority "$pri"
+          done
+          gw=$(${pkgs.iproute2}/bin/ip -4 route show default dev "$iface" | ${pkgs.gawk}/bin/awk '{print $3; exit}')
           if [ -n "$gw" ]; then
-            ip route replace default via "$gw" dev "$iface" table "$table"
+            ${pkgs.iproute2}/bin/ip route replace default via "$gw" dev "$iface" table "$table"
           fi
         fi
       '')

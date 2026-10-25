@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-17 |
+| Last updated | 2026-10-25 |
 
 ## 1. Assets
 
@@ -67,6 +67,12 @@
   `CapabilityBoundingSet` limited to `CAP_NET_ADMIN`/`CAP_NET_RAW`/
   `CAP_NET_BIND_SERVICE` where needed, `RestrictAddressFamilies`,
   `SystemCallFilter=@system-service`).
+  `janus-web` is the exception to `NoNewPrivileges`: it runs `janus`
+  through the setuid sudo wrapper (*20* §6). `NoNewPrivileges` would
+  mount that namespace `nosuid`, and the wrapper could not become root.
+  The bounding set omits `CAP_SYS_ADMIN`, so that root child cannot
+  remount the namespace. Janet is the main process and sends readiness
+  itself (`NotifyAccess=main`).
 * The proxy engine runs as `janus-engine` with `CAP_NET_ADMIN` (TUN),
   `CAP_NET_BIND_SERVICE`, and `CAP_NET_RAW`. It may write only
   `/var/lib/janus/engine`. A root oneshot renders the configuration,
@@ -104,7 +110,7 @@ value only to the hosts whose configuration references the file. A file
 under `wifi/`, `pppoe/`, `tailscale/`, `wireguard/`, or `web/` is
 encrypted to that host only. The image ships the sops CLI whenever the
 configuration has sops secrets: `janus-build fleet apply` sends
-ciphertext and the router decrypts it itself (D-0048). The CLI adds
+ciphertext and the router decrypts it itself (D-0055). The CLI adds
 roughly 50 MiB to the image. `sops-install-secrets` alone cannot do
 that; it is a boot service, not an interactive decryptor.
 
@@ -112,6 +118,7 @@ that; it is a boot service, not an interactive decryptor.
 |--------|---------|-------|
 | PPPoE username and password | yes | Username is low sensitivity but paired with the password; keep both together. |
 | Wi-Fi passphrase | yes | SSID is not a secret; it is broadcast. |
+| Tailscale auth key | yes | One line in `secrets/tailscale/<host>.yaml`, encrypted to that host. `authKeyFile` remains for a file created on the board. |
 | Subscription URL | yes | The node list is volatile data; the URL usually embeds a token and is not. A hot override may replace the URL on the board (mode `0600`) until the user updates sops. |
 | Manual node credentials (UUID, password, REALITY keys) | yes | |
 | WireGuard private key, mesh auth key | yes | |
@@ -198,4 +205,5 @@ not document two first-class paths.
 Janus has no on-device updates by design. Security fixes ship as new
 releases; users rebuild. The changelog flags CVE-driven releases, and the
 `janus` CLI can print the image's component versions for comparison
-(`janus version --components`).
+(`janus version --components`). How to report a vulnerability is
+[SECURITY.md](../SECURITY.md).

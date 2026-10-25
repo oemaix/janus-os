@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-17 |
+| Last updated | 2026-10-22 |
 
 ## 1. What maintenance is
 
@@ -130,14 +130,20 @@ listener without a rebuild.
    ciphertext. It does not contain the age private key.
 4. Boot; connect to LAN; `ssh root@192.168.10.1` (or the configured address).
 5. Install that host's private key once, from the password manager:
-   `janus secrets install-age-key` (paste). Do not leave the key on the
-   build host. Services that need secrets start when the key appears. A
-   secret that will never live in git can instead be loaded with
-   `janus secrets put`.
+   `janus secrets install-age-key`. On a terminal the command prints
+   `Paste the age private key, then press Enter and Ctrl-D.` A pipe stays
+   quiet. Input with no `AGE-SECRET-KEY-1` line is refused, and the
+   previous key stays. Do not leave the key on the build host. Services
+   that need secrets start when the key appears. A secret that will never
+   live in git can instead be loaded with `janus secrets put`.
 6. `janus status` — verify WAN, DNS, proxy health.
 
-Alternative for step 5: `janus-build deploy --age-key <host>` reads the
-private key on stdin and installs it over SSH. It does not store the key.
+Alternative for step 5: `janus-build deploy --age-key <host>` checks SSH
+with stdin closed. On a terminal it prints the same line only after that
+session answers. A failed session does not read stdin. It does not store
+the key. The SSH destination is `janus.access.deploy.address`, read from
+the fleet repo when the command runs (*16*, Q-0043). A bare IPv6 literal
+is sent as `root@[address]`.
 
 ## 3. Day-2 tasks
 
@@ -175,14 +181,16 @@ All subcommands are also usable non-interactively (JSON output with
 |-------|---------|---------|
 | `janus-proxy-refresh-<name>` | per subscription (`6h`) | Fetch, validate, reload. The template unit is `janus-proxy-refresh@.service`. A subscription with `enable = false` has no timer (D-0044). |
 | `janus-geodata-refresh` | weekly | Geo rule sets. The schedule may be a five-field cron whose day-of-week is a list, such as `0 4 * * 2,4,6` (D-0044). |
+| `janus-reboot` | off | Maintenance reboot (`janus.system.reboot.schedule`). `monthly` is 04:00 on the 1st, `yearly` is 04:00 on 1 January, or a five-field cron whose day-of-week is `*`. The service only reboots. `janus.system.reboot.fsck` runs `janus-reboot-fsck` first, which requests a full state check on that boot only (D-0049). |
 | `janus-wan-health` | 30 s after boot, then the WAN interval (`10s`) | WAN health and backup failover. Engine restart is the unit's own `Restart=`. |
 | `janus-metrics` | 60 s | Engine metrics text, when Prometheus is on |
 | vnstat | `SaveInterval` 15 min | Persist interface counters. There is no `janus-monitoring-save` unit. |
 | `fstrim` | weekly | Discard on f2fs partitions |
 
-Subscription and Geo refresh timers set `Persistent=true` and
+Subscription, Geo refresh, and `janus-reboot` set `Persistent=true` and
 `RandomizedDelaySec=10min`, so a missed run executes after boot and
-providers are not hit at the same moment.
+providers are not hit at the same moment. A missed reboot then runs once
+after that boot.
 
 ## 5. Failure handling
 
@@ -192,7 +200,7 @@ providers are not hit at the same moment.
 | Refresh yields < `minimumNodes` or invalid data | rejected; previous kept |
 | Engine crash | systemd restart with backoff; proxied traffic stays dropped until the engine is back (ADR-0016). `failMode = "open"` is the override that lets it leave via the WAN |
 | WAN down | health check marks it; backup WAN promoted if configured; DNS keeps answering from cache |
-| State partition corrupted | fsck; if unrecoverable, reformat and reseed (logged, HMI notice) |
+| State partition corrupted | `fsck.f2fs -a` every boot; a full check only when the maintenance reboot sets `janus.system.reboot.fsck`. If unrecoverable, reformat and reseed (logged, HMI notice). A slow check or a missing block device is not corruption. Status 4 or 255 is checked again before that. A failed grow does not skip the check (D-0049). |
 | Time far off at boot (no RTC) | engine waits for NTP up to 90 s, then starts anyway; REALITY/TLS may fail until time syncs |
 | Full state partition | bounded writers make this unlikely; `janus status` warns at 80 %; journal/vnstat rotate |
 

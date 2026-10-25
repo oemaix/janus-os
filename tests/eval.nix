@@ -90,11 +90,43 @@ in {
       base
       {janus.storage.layout.partitions.JANUS_NIX.size = "2048M";}
     ];
+    auto = mk [base];
+    sized = spec:
+      (mk [
+        base
+        {janus.storage.layout.partitions.JANUS_NIX.size = spec;}
+      ]).config.system.build.janusNixPartition.exactMiB;
     part = os.config.system.build.janusNixPartition;
   in
-    pkgs.runCommand "eval-nix-size" {} ''
+    pkgs.runCommand "eval-nix-size" {
+      nativeBuildInputs = [pkgs.bash pkgs.coreutils pkgs.gawk pkgs.findutils];
+    } ''
       test ${part.mode} = exact
       test ${toString part.exactMiB} = 2048
+      test ${toString part.minimumMiB} = 2560
+      test ${toString (sized "1.5M")} = 2
+      test ${toString (sized "512.9M")} = 513
+      test ${toString (sized "2.1G")} = 2151
+      test ${toString (sized "2.5G")} = 2560
+      test ${lib.escapeShellArg auto.config.janus.storage.nix.minimumSize} = 2.5G
+      test ${toString auto.config.system.build.janusNixPartition.minimumMiB} = 2560
+      grep -F -q -- 'f2fs-mib.sh' ${../pkgs/image.nix}
+      grep -F -q -- 'f2fs_partition_mib' ${../pkgs/image.nix}
+      grep -F -q -- 'nix.img "$nixMinMiB" "$nixSlackPercent" ""' ${../pkgs/image.nix}
+      grep -F -q -- 'nix.img 0 0 "$nixExactMiB"' ${../pkgs/image.nix}
+      grep -F -q -- 'f2fs-mib.sh' ${../pkgs/slot-images.nix}
+      grep -F -q -- 'f2fs_partition_mib' ${../pkgs/slot-images.nix}
+      grep -F -q -- 'nix-a.img "$nixMinMiB" "$nixSlackPercent" ""' ${../pkgs/slot-images.nix}
+      grep -F -q -- 'nix-a.img 0 0 "$nixExactMiB"' ${../pkgs/slot-images.nix}
+      . ${../pkgs/f2fs-mib.sh}
+      dir=$(mktemp -d)
+      echo x > "$dir/a"
+      floor=$(f2fs_partition_mib "$dir" 2560 15 "")
+      test "$floor" = 2560
+      auto_mib=$(f2fs_partition_mib "$dir" 64 15 "")
+      test "$auto_mib" -gt 64
+      test "$auto_mib" -lt 2560
+      test "$(f2fs_partition_mib "$dir" 2560 15 32)" = 32
       echo ok > "$out"
     '';
   eval-router = let
@@ -182,13 +214,52 @@ in {
   in
     pkgs.runCommand "cli-usage" {} ''
       set +e
-      ${self.packages.${system}.janus-cli}/bin/janus >/dev/null
+      janus=${self.packages.${system}.janus-cli}/bin/janus
+      build=${self.packages.${system}.janus-build}/bin/janus-build
+      "$janus" >/dev/null 2>"$TMPDIR/none.err"
       s1=$?
-      ${self.packages.${system}.janus-build}/bin/janus-build >/dev/null
+      "$build" >/dev/null 2>"$TMPDIR/none-build.err"
       s2=$?
+      jhelp=$("$janus" --help 2>"$TMPDIR/jhelp.err")
+      s3=$?
+      juse=$("$janus" --usage 2>"$TMPDIR/juse.err")
+      s4=$?
+      jjson=$("$janus" --json --help 2>"$TMPDIR/jjson.err")
+      s5=$?
+      bhelp=$("$build" --help 2>"$TMPDIR/bhelp.err")
+      s6=$?
+      buse=$("$build" --usage 2>"$TMPDIR/buse.err")
+      s7=$?
+      "$janus" nosuch >/dev/null 2>"$TMPDIR/bad.err"
+      s8=$?
+      "$build" nosuch >/dev/null 2>"$TMPDIR/bad-build.err"
+      s9=$?
       set -e
       test "$s1" = 2
       test "$s2" = 2
+      test "$s3" = 0
+      test "$s4" = 0
+      test "$s5" = 0
+      test "$s6" = 0
+      test "$s7" = 0
+      test "$s8" = 2
+      test "$s9" = 2
+      test ! -s "$TMPDIR/jhelp.err"
+      test ! -s "$TMPDIR/juse.err"
+      test ! -s "$TMPDIR/jjson.err"
+      test ! -s "$TMPDIR/bhelp.err"
+      test ! -s "$TMPDIR/buse.err"
+      test "$jhelp" = "$juse"
+      test "$jhelp" = "$jjson"
+      test "$bhelp" = "$buse"
+      printf '%s\n' "$jhelp" | grep -q 'proxy refresh'
+      printf '%s\n' "$jhelp" | grep -q 'secrets install-age-key'
+      printf '%s\n' "$bhelp" | grep -q 'secret keygen'
+      printf '%s\n' "$bhelp" | grep -q 'deploy --age-key'
+      grep -q -- '--help' "$TMPDIR/none.err"
+      grep -q -- '--help' "$TMPDIR/none-build.err"
+      grep -q -- '--help' "$TMPDIR/bad.err"
+      grep -q -- '--help' "$TMPDIR/bad-build.err"
       echo ok > "$out"
     '';
   # The CLI runs with the PATH baked into its wrapper, so a command that
@@ -319,7 +390,7 @@ in {
       grep -q 'jq -Rs' "$(command -v janus-build)"
       # fleet apply must decrypt the inbox with sops on the router, not
       # with age: the board ships no age binary and age cannot read a
-      # sops document (D-0048).
+      # sops document (D-0055).
       if grep -q 'age -d -i' "$(command -v janus-build)"; then
         echo "fleet apply still decrypts the inbox with age" >&2
         exit 1
@@ -749,6 +820,7 @@ in {
       ];
     yanyu = one "yanyu-stx-r19f";
     r4s = one "nanopi-r4s";
+    rock = one "rockpi-4c";
     potato = one "le-potato";
     zero = one "rpi-zero-2w";
     rpi = one "rpi3";
@@ -759,6 +831,23 @@ in {
     # The boot scripts name store paths. Drop that context so the check
     # evaluates the profiles without building U-Boot or the kernel.
     text = value: lib.escapeShellArg (builtins.unsafeDiscardStringContext value);
+    ledExec = unit: r4s.config.systemd.services.${unit}.serviceConfig.ExecStart;
+    ledScriptOf = unit: lib.head (lib.splitString " " (ledExec unit));
+    ledArg = unit: lib.removePrefix "${ledScriptOf unit} " (ledExec unit);
+    # The script file is built on the host. This is the shell that runs it.
+    ledShebang = lib.escapeShellArg "#!${r4s.pkgs.runtimeShell}";
+    r4sFirmwarePkgs = lib.filter (p: lib.isAttrs p && lib.isDerivation p) (
+      lib.flatten r4s.options.hardware.firmware.definitions
+    );
+    r4sFirmwareNames = lib.concatMapStringsSep " " (p: p.name) r4sFirmwarePkgs;
+    # config.hardware.firmware is a buildEnv of the board system. The
+    # check runs on the build host, so link that same package list here.
+    r4sFirmware = pkgs.buildEnv {
+      name = "eval-r4s-firmware";
+      paths = r4sFirmwarePkgs;
+      pathsToLink = ["/lib/firmware"];
+      ignoreCollisions = true;
+    };
   in
     pkgs.runCommand "eval-boards" {} ''
       test ${lib.escapeShellArg yanyu.config.systemd.network.links."10-port-lan1".matchConfig.Path} = pci-0000:01:00.0
@@ -774,6 +863,113 @@ in {
       test ${toString r4s.config.janus.storage.firmwareOffsetMiB} = 15
       echo ${text r4s.config.system.build.janusBoardImage.firmwareInstall} | grep -q 'seek=64'
       echo ${lib.escapeShellArg (lib.concatStringsSep " " r4s.config.boot.initrd.availableKernelModules)} | grep -q dw_mmc-rockchip
+      test ${
+        (lib.findFirst (p: p.name == "janus-r4s-netdev-led") (throw "missing R4S netdev LED patch") r4s.config.boot.kernelPatches)
+        .structuredExtraConfig
+        .LEDS_TRIGGER_NETDEV
+        .tristate
+      } = y
+      test ${
+        (lib.findFirst (p: p.name == "janus-r4s-netdev-led") (throw "missing R4S netdev LED patch") r4s.config.boot.kernelPatches)
+        .structuredExtraConfig
+        .LEDS_TRIGGER_HEARTBEAT
+        .tristate
+      } = y
+      test ${
+        if (lib.findFirst (p: p.name == "janus-r4s-sd-uhs") null r4s.config.boot.kernelPatches) == null
+        then "no"
+        else "yes"
+      } = yes
+      test ${
+        if (lib.findFirst (p: p.name == "janus-r4s-sys-led") null r4s.config.boot.kernelPatches) == null
+        then "no"
+        else "yes"
+      } = yes
+      test ${lib.escapeShellArg (ledArg "janus-r4s-wan-led@")} = %i
+      test ${lib.escapeShellArg (ledArg "janus-r4s-lan-led@")} = %i
+      test ${lib.escapeShellArg r4s.config.systemd.services."janus-r4s-wan-led@".serviceConfig.Restart} = on-failure
+      test ${lib.escapeShellArg r4s.config.systemd.services."janus-r4s-lan-led@".serviceConfig.Restart} = on-failure
+      test ${toString r4s.config.systemd.services."janus-r4s-wan-led@".startLimitBurst} = 6
+      test ${toString r4s.config.systemd.services."janus-r4s-lan-led@".startLimitBurst} = 6
+      check_led() {
+        script=$1
+        led=$2
+        other=$3
+        shebang=$4
+        if [ "$(head -n 1 "$script")" != "$shebang" ]; then
+          echo "LED script for $led starts with $(head -n 1 "$script")" >&2
+          exit 1
+        fi
+        grep -q "/sys/class/leds/$led" "$script"
+        grep -q '$led/trigger' "$script"
+        grep -q '$led/device_name' "$script"
+        grep -q '$led/link' "$script"
+        grep -q '$led/tx' "$script"
+        grep -q '$led/rx' "$script"
+        grep -q netdev "$script"
+        if grep -q "$other" "$script"; then
+          echo "LED script for $led also names $other" >&2
+          exit 1
+        fi
+      }
+      check_led ${ledScriptOf "janus-r4s-wan-led@"} green:wan green:lan ${ledShebang}
+      check_led ${ledScriptOf "janus-r4s-lan-led@"} green:lan green:wan ${ledShebang}
+      rules=${lib.escapeShellArg r4s.config.services.udev.extraRules}
+      printf '%s\n' "$rules" | grep 'DRIVERS=="r8169"' | grep -q 'janus-r4s-wan-led@%k.service'
+      printf '%s\n' "$rules" | grep 'DRIVERS=="rk_gmac-dwmac"' | grep -q 'janus-r4s-lan-led@%k.service'
+      if printf '%s\n' "$rules" | grep 'DRIVERS=="r8169"' | grep -q 'lan-led'; then
+        echo "r8169 is bound to the lan LED" >&2
+        exit 1
+      fi
+      if printf '%s\n' "$rules" | grep 'DRIVERS=="rk_gmac-dwmac"' | grep -q 'wan-led'; then
+        echo "rk_gmac-dwmac is bound to the wan LED" >&2
+        exit 1
+      fi
+      echo ${lib.escapeShellArg r4sFirmwareNames} | grep -q rtl8168h-firmware
+      fw=${r4sFirmware}
+      # buildEnv links the directory. find does not follow that link.
+      n=$(find -L "$fw/lib/firmware" -type f -name 'rtl8168h-2.fw*' | wc -l)
+      test "$((n + 0))" = 1
+      if find -L "$fw/lib/firmware" -type f ! -name 'rtl8168h-2.fw*' | grep -q .; then
+        echo "R4S firmware tree has more than rtl8168h-2.fw" >&2
+        exit 1
+      fi
+      test ${toString rock.config.janus.storage.firmwareOffsetMiB} = 15
+      test ${lib.escapeShellArg (lib.head (lib.attrNames rock.config.janus.network.ports))} = eth0
+      test ${toString (lib.length (lib.attrNames rock.config.janus.network.ports))} = 1
+      echo ${text rock.config.system.build.janusBoardImage.firmwareInstall} | grep -q 'seek=64'
+      echo ${text rock.config.system.build.janusBoardImage.firmwareInstall} | grep -q u-boot-rockchip.bin
+      echo ${text rock.config.system.build.janusBoardImage.firmwareInstall} | grep -q rock-pi-4c-rk3399_defconfig
+      grep -q 'mmc0 mmc1' ${../modules/boards/janus-rockpi-4c-boot.patch}
+      grep -q 'bootmenu_0=eMMC, then SD=setenv boot_targets mmc0 mmc1; bootflow scan -lb' ${../modules/boards/janus-rockpi-4c-boot.patch}
+      grep -q 'bootmenu_1=SD card=setenv boot_targets mmc1; bootflow scan -lb' ${../modules/boards/janus-rockpi-4c-boot.patch}
+      grep -q 'CONFIG_BOOTCOMMAND="bootmenu"' ${../modules/boards/janus-rockpi-4c-boot.patch}
+      if grep -F -q '; boot\0' ${../modules/boards/janus-rockpi-4c-boot.patch}; then
+        echo "ROCK Pi 4C menu command boot reruns bootcmd" >&2
+        exit 1
+      fi
+      if echo ${text rock.config.system.build.janusBoardImage.firmwareInstall} | grep -q u-boot-rockchip-spi.bin; then
+        echo "ROCK Pi 4C image programs SPI" >&2
+        exit 1
+      fi
+      echo ${text rock.config.system.build.janusBoardImage.dtbName} | grep -q rk3399-rock-pi-4c.dtb
+      echo ${lib.escapeShellArg (lib.concatStringsSep " " rock.config.boot.kernelParams)} | grep -q 'console=ttyS2,1500000n8'
+      echo ${lib.escapeShellArg (lib.concatStringsSep " " rock.config.boot.initrd.availableKernelModules)} | grep -q dw_mmc-rockchip
+      echo ${lib.escapeShellArg (lib.concatStringsSep " " rock.config.boot.initrd.availableKernelModules)} | grep -q sdhci-of-arasan
+      echo ${lib.escapeShellArg (lib.concatStringsSep " " rock.config.boot.initrd.availableKernelModules)} | grep -q phy-rockchip-emmc
+      mods=${lib.escapeShellArg (lib.concatStringsSep " " rock.config.boot.blacklistedKernelModules)}
+      printf '%s\n' "$mods" | grep -q brcmfmac
+      printf '%s\n' "$mods" | grep -q hci_uart
+      if printf '%s\n' "$mods" | grep -q btusb; then
+        echo "ROCK Pi 4C blacklists btusb" >&2
+        exit 1
+      fi
+      test ${
+        if rock.config.hardware.enableRedistributableFirmware
+        then "yes"
+        else "no"
+      } = no
+      test ${toString (lib.length rock.config.boot.kernelPatches)} = 0
       echo ${text potato.config.system.build.janusBoardImage.firmwareInstall} | grep -q u-boot.gxl
       if echo ${lib.escapeShellArg (lib.concatStringsSep " " potato.config.boot.initrd.availableKernelModules)} | grep -q sdhci_meson; then
         echo "le potato still requests sdhci_meson" >&2
@@ -893,9 +1089,14 @@ in {
     rpi2 = board "rpi2";
     rpi4 = board "rpi4";
     vf2 = board "visionfive2";
+    r4s = board "nanopi-r4s";
+    rock = board "rockpi-4c";
+    vf2Rxc = lib.findFirst (p: p.name == "janus-vf2-yt8531-rxc") null vf2.config.boot.kernelPatches;
+    r4sUhs = lib.findFirst (p: p.name == "janus-r4s-sd-uhs") null r4s.config.boot.kernelPatches;
+    r4sSys = lib.findFirst (p: p.name == "janus-r4s-sys-led") null r4s.config.boot.kernelPatches;
   in
     pkgs.runCommand "eval-tier3-boot" {
-      nativeBuildInputs = [pkgs.gnutar pkgs.xz];
+      nativeBuildInputs = [pkgs.gnutar pkgs.xz pkgs.bzip2 pkgs.patch pkgs.dtc pkgs.gcc];
       passAsFile = ["bootExtra"];
       bootExtra = builtins.unsafeDiscardStringContext vf2.config.system.build.janusBoardImage.bootExtra;
     } ''
@@ -929,6 +1130,89 @@ in {
       list_dts ${vf2.config.boot.kernelPackages.kernel.src} \
         arch/riscv/boot/dts/starfive/jh7110-starfive-visionfive-2-v1.2a.dts \
         arch/riscv/boot/dts/starfive/jh7110-starfive-visionfive-2-v1.3b.dts
+      list_dts ${r4s.config.boot.kernelPackages.kernel.src} \
+        arch/arm64/boot/dts/rockchip/rk3399-nanopi-r4s.dts \
+        arch/arm64/boot/dts/rockchip/rk3399-nanopi-r4s.dtsi
+      list_dts ${rock.config.boot.kernelPackages.kernel.src} \
+        arch/arm64/boot/dts/rockchip/rk3399-rock-pi-4c.dts \
+        arch/arm64/boot/dts/rockchip/rk3399-rock-pi-4.dtsi
+      awk '/^  ubootRockPi4 = buildUBoot \{/,/^  \};/' ${self.inputs.nixpkgs}/pkgs/misc/uboot/default.nix > rock4.slice
+      grep -q rock-pi-4-rk3399_defconfig rock4.slice
+      if grep -q u-boot-rockchip.bin rock4.slice; then
+        echo "ubootRockPi4 installs u-boot-rockchip.bin; the 4C override needs another look" >&2
+        exit 1
+      fi
+      if [ -d ${pkgs.ubootRockPi4.src} ]; then
+        test -f ${pkgs.ubootRockPi4.src}/configs/rock-pi-4c-rk3399_defconfig
+      else
+        tar -tf ${pkgs.ubootRockPi4.src} > uboot.listing
+        grep -q 'configs/rock-pi-4c-rk3399_defconfig$' uboot.listing
+      fi
+      src=${vf2.config.boot.kernelPackages.kernel.src}
+      phy=drivers/net/phy/motorcomm.c
+      dts=arch/riscv/boot/dts/starfive/jh7110-starfive-visionfive-2-v1.3b.dts
+      rm -rf apply
+      mkdir -p "apply/$(dirname "$phy")" "apply/$(dirname "$dts")"
+      if [ -d "$src" ]; then
+        cp "$src/$phy" "apply/$phy"
+        cp "$src/$dts" "apply/$dts"
+      else
+        tar -tf "$src" > vf2-files
+        phy_in=$(grep -m1 "$phy\$" vf2-files)
+        dts_in=$(grep -m1 "$dts\$" vf2-files)
+        test -n "$phy_in"
+        test -n "$dts_in"
+        tar -xJf "$src" -O "$phy_in" > "apply/$phy"
+        tar -xJf "$src" -O "$dts_in" > "apply/$dts"
+      fi
+      patch -p1 -d apply < ${vf2Rxc.patch}
+      grep -A1 'phydev->dev_flags & PHY_F_RXC_ALWAYS_ON ||' "apply/$phy" > flag-ifs
+      flag_n=$(grep -c 'phydev->dev_flags & PHY_F_RXC_ALWAYS_ON ||' flag-ifs || true)
+      sleep_n=$(grep -c 'motorcomm,auto-sleep-disabled' flag-ifs || true)
+      pll_n=$(grep -c 'motorcomm,keep-pll-enabled' flag-ifs || true)
+      test "$flag_n" = 4
+      test "$sleep_n" = 2
+      test "$pll_n" = 2
+      grep -q motorcomm,keep-pll-enabled "apply/$dts"
+      grep -q motorcomm,auto-sleep-disabled "apply/$dts"
+      r4s_src=${r4s.config.boot.kernelPackages.kernel.src}
+      rm -rf r4s-tree
+      mkdir -p r4s-tree
+      if [ -d "$r4s_src" ]; then
+        mkdir -p r4s-tree/arch/arm64/boot r4s-tree/include r4s-tree/scripts/dtc
+        cp -a "$r4s_src/arch/arm64/boot/dts" r4s-tree/arch/arm64/boot/dts
+        cp -a "$r4s_src/include/dt-bindings" r4s-tree/include/dt-bindings
+        cp -a "$r4s_src/include/uapi" r4s-tree/include/uapi
+        cp -a "$r4s_src/scripts/dtc/include-prefixes" r4s-tree/scripts/dtc/include-prefixes
+      else
+        tar -xJf "$r4s_src" -C r4s-tree --strip-components=1 --wildcards \
+          '*/arch/arm64/boot/dts/*' \
+          '*/include/dt-bindings/*' \
+          '*/include/uapi/*' \
+          '*/scripts/dtc/include-prefixes/*'
+      fi
+      patch -p1 --fuzz=0 -d r4s-tree < ${r4sUhs.patch}
+      patch -p1 --fuzz=0 -d r4s-tree < ${r4sSys.patch}
+      cpp -nostdinc -undef -D__DTS__ -x assembler-with-cpp \
+        -I r4s-tree/scripts/dtc/include-prefixes \
+        -I r4s-tree/include \
+        -o r4s.pp r4s-tree/arch/arm64/boot/dts/rockchip/rk3399-nanopi-r4s.dts
+      dtc -q -I dts -O dts -o r4s.dts r4s.pp
+      awk '/mmc@fe320000 \{/,/^[[:space:]]*\};/' r4s.dts > sdmmc.node
+      test -s sdmmc.node
+      grep -q 'cap-sd-highspeed' sdmmc.node
+      grep -q 'no-1-8-v' sdmmc.node
+      if grep -q 'sd-uhs-' sdmmc.node; then
+        echo "sdmmc still advertises a UHS mode" >&2
+        exit 1
+      fi
+      awk '/led-sys \{/,/^[[:space:]]*\};/' r4s.dts > sysled.node
+      test -s sysled.node
+      grep -q 'linux,default-trigger = "heartbeat"' sysled.node
+      if grep -q 'default-state' sysled.node; then
+        echo "SYS LED still has a default state" >&2
+        exit 1
+      fi
       echo ok > "$out"
     '';
   eval-pppoe-secret = fail "eval-pppoe-secret" [
@@ -1917,12 +2201,131 @@ in {
       test ${lib.escapeShellArg os.config.systemd.network.networks."30-member-lan-home".networkConfig.Bridge} = br-lan
       test ${lib.escapeShellArg os.config.systemd.network.networks."30-member-lan-home".matchConfig.Name} = wifi-home
       grep -q 'wpa_passphrase=%s' ${script}
+      grep -q 'country_code=CN' ${script}
+      grep -q 'ieee80211d=1' ${script}
       grep -q ${lib.escapeShellArg "ssid='ja\$nus'"} ${script}
       if grep -q '<<' ${script}; then
         echo "hostapd config is still a shell heredoc" >&2
         exit 1
       fi
       echo ${lib.escapeShellArg (lib.concatStrings os.config.boot.blacklistedKernelModules)} | grep -q rtl8xxxu
+      echo ok > "$out"
+    '';
+  eval-wifi-country = let
+    wifi = extra:
+      mk [
+        base
+        {
+          janus.security.allowInlineSecrets = true;
+          janus.hardware.peripherals.stick = {
+            class = "wifi";
+            match.usbVendorProduct = "0bda:8176";
+          };
+          janus.network.lans.lan = {
+            members = ["home"];
+            address = "192.168.10.1";
+            prefixLength = 24;
+          };
+          janus.network.wifi.home = {
+            peripheral = "stick";
+            ssid = "janus";
+            passphrase = "secret-pass";
+            lan = "lan";
+          };
+        }
+        extra
+      ];
+    ru = wifi {janus.system.region = "ru";};
+    ir = wifi {janus.system.region = "ir";};
+    over = wifi {janus.network.wifiCountry = "DE";};
+    scriptOf = os: os.config.systemd.services.janus-hostapd-home.serviceConfig.ExecStart;
+  in
+    pkgs.runCommand "eval-wifi-country" {} ''
+      test ${ru.config.janus.network.wifiCountry} = RU
+      test ${ir.config.janus.network.wifiCountry} = IR
+      test ${over.config.janus.network.wifiCountry} = DE
+      grep -q 'country_code=RU' ${scriptOf ru}
+      grep -q 'ieee80211d=1' ${scriptOf ru}
+      grep -q 'country_code=DE' ${scriptOf over}
+      echo ok > "$out"
+    '';
+  eval-wifi-country-bad = fail "eval-wifi-country-bad" [
+    base
+    {
+      janus.security.allowInlineSecrets = true;
+      janus.hardware.peripherals.stick = {
+        class = "wifi";
+        match.usbVendorProduct = "0bda:8176";
+      };
+      janus.network.lans.lan = {
+        members = ["home"];
+        address = "192.168.10.1";
+        prefixLength = 24;
+      };
+      janus.network.wifi.home = {
+        peripheral = "stick";
+        ssid = "janus";
+        passphrase = "secret-pass";
+        lan = "lan";
+      };
+      janus.network.wifiCountry = "cn";
+    }
+  ];
+  eval-wifi-mt76 = let
+    names = os:
+      lib.concatMapStringsSep " " (p: p.name) (
+        lib.filter (p: lib.isAttrs p && lib.isDerivation p) (
+          lib.flatten os.options.hardware.firmware.definitions
+        )
+      );
+    declared = id:
+      mk [
+        base
+        {
+          janus.hardware.peripherals.stick = {
+            class = "wifi";
+            match.usbVendorProduct = id;
+          };
+        }
+      ];
+    mt7612 = declared "0e8d:7612";
+    mt7921 = declared "0e8d:7961";
+    rtl = declared "0bda:8176";
+  in
+    pkgs.runCommand "eval-wifi-mt76" {} ''
+      set -eu
+      echo ${lib.escapeShellArg (names mt7612)} | grep -q mt7662-firmware
+      if echo ${lib.escapeShellArg (names mt7612)} | grep -q mt7921-firmware; then
+        echo "MT7612U config also installed MT7921 firmware" >&2
+        exit 1
+      fi
+      fw=${mt7612.config.hardware.firmware}
+      n=$(find -L "$fw/lib/firmware" -type f -name 'mt7662.bin*' | wc -l)
+      test "$n" = 1
+      n=$(find -L "$fw/lib/firmware" -type f -name 'mt7662_rom_patch.bin*' | wc -l)
+      test "$n" = 1
+      n=$(find -L "$fw/lib/firmware" -type f | wc -l)
+      test "$n" = 2
+      echo ${lib.escapeShellArg (names mt7921)} | grep -q mt7921-firmware
+      fw=${mt7921.config.hardware.firmware}
+      n=$(find -L "$fw/lib/firmware" -type f -name 'WIFI_RAM_CODE_MT7961_1.bin*' | wc -l)
+      test "$n" = 1
+      n=$(find -L "$fw/lib/firmware" -type f -name 'WIFI_MT7961_patch_mcu_1_2_hdr.bin*' | wc -l)
+      test "$n" = 1
+      n=$(find -L "$fw/lib/firmware" -type f | wc -l)
+      test "$n" = 2
+      echo ${lib.escapeShellArg (names rtl)} | grep -q rtl8192cu-firmware
+      if echo ${lib.escapeShellArg (names rtl)} | grep -q mt7662-firmware; then
+        echo "RTL8188CUS config installed MT7612 firmware" >&2
+        exit 1
+      fi
+      fw=${rtl.config.hardware.firmware}
+      for f in rtl8192cufw.bin rtl8192cufw_A.bin rtl8192cufw_B.bin rtl8192cufw_TMSC.bin; do
+        n=$(find -L "$fw/lib/firmware" -type f -name "$f*" | wc -l)
+        test "$n" = 1
+      done
+      n=$(find -L "$fw/lib/firmware" -type f | wc -l)
+      test "$n" = 4
       echo ok > "$out"
     '';
   eval-wifi-sops = let
@@ -1949,15 +2352,64 @@ in {
     ];
     requires = os.config.systemd.services.janus-hostapd-home.requires or [];
     secretRequires = os.config.systemd.services.janus-wifi-secret-home.requires or [];
-    secretStart = lib.concatStringsSep " " (lib.toList os.config.systemd.services.janus-wifi-secret-home.serviceConfig.ExecStart);
+    secretWants = os.config.systemd.services.janus-wifi-secret-home.wants or [];
+    secretStart = os.config.systemd.services.janus-wifi-secret-home.serviceConfig.ExecStart;
     script = os.config.systemd.services.janus-hostapd-home.serviceConfig.ExecStart;
   in
     pkgs.runCommand "eval-wifi-sops" {} ''
+      set -eu
       printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " requires)} | grep -q janus-wifi-secret-home.service
-      printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " secretRequires)} | grep -q sops-install-secrets.service
+      printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " secretWants)} | grep -q sops-install-secrets.service
+      if printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " secretRequires)} | grep -q sops-install-secrets.service; then
+        echo "a failed sops unit must not hide a Wi-Fi override" >&2
+        exit 1
+      fi
       grep -q ${lib.escapeShellArg os.config.sops.secrets.wifi-eval-home.path} ${script}
-      printf '%s\n' ${lib.escapeShellArg secretStart} | grep -q ${lib.escapeShellArg os.config.sops.secrets.wifi-eval-home.path}
+      grep -q '/var/lib/janus/secrets/wifi-home' ${script}
+      awk '
+        /JANUS_WIFI_PASS:-\/var\/lib\/janus\/secrets\/wifi-home/ { over = NR }
+        /JANUS_WIFI_SOPS:-/ { sops = NR }
+        END { if (!(over && sops && over < sops)) exit 1 }
+      ' ${script}
       test ${lib.escapeShellArg os.config.sops.secrets.wifi-eval-home.key} = value
+      dir=$TMPDIR/wifi
+      mkdir -p "$dir"
+      if JANUS_WIFI_PASS=$dir/over JANUS_WIFI_SOPS=$dir/sops ${secretStart}; then
+        echo "empty wifi passphrase was accepted" >&2
+        exit 1
+      fi
+      printf '%s\n' 'from-sops' > "$dir/sops"
+      JANUS_WIFI_PASS=$dir/missing JANUS_WIFI_SOPS=$dir/sops ${secretStart}
+      printf '%s\n' 'from-override' > "$dir/over"
+      rm -f "$dir/sops"
+      JANUS_WIFI_PASS=$dir/over JANUS_WIFI_SOPS=$dir/sops ${secretStart}
+      echo ok > "$out"
+    '';
+  eval-secret-apply =
+    pkgs.runCommand "eval-secret-apply" {
+      nativeBuildInputs = [pkgs.jq];
+    } ''
+      set -eu
+      sed -n '/^subscription_url()/,/^}/p' ${../pkgs/janus-engine.sh} > fn.sh
+      . ./fn.sh
+      root=$TMPDIR/apply
+      mkdir -p "$root/secrets/subscription" "$root/saved"
+      meta=$root/meta.json
+      export meta
+      printf '%s\n' '{"vendor":{"urlSecret":"subscription/vendor"}}' > "$meta"
+      printf '%s\n' 'https://sops.example/sub' > "$root/secrets/subscription/vendor"
+      printf '%s\n' 'https://saved.example/sub' > "$root/saved/vendor"
+      got=$(JANUS_OVERRIDES=$root/no-overrides JANUS_SECRETS_RUN=$root/secrets JANUS_SUBSCRIPTION_URLS=$root/saved subscription_url vendor)
+      test "$got" = 'https://sops.example/sub'
+      printf '%s\n' '{"proxy.subscriptions.vendor.url":"https://override.example/sub"}' > "$root/overrides.json"
+      got=$(JANUS_OVERRIDES=$root/overrides.json JANUS_SECRETS_RUN=$root/secrets JANUS_SUBSCRIPTION_URLS=$root/saved subscription_url vendor)
+      test "$got" = 'https://override.example/sub'
+      rm -f "$root/secrets/subscription/vendor"
+      got=$(JANUS_OVERRIDES=$root/no-overrides JANUS_SECRETS_RUN=$root/secrets JANUS_SUBSCRIPTION_URLS=$root/saved subscription_url vendor)
+      test "$got" = 'https://saved.example/sub'
+      rm -f "$root/saved/vendor"
+      got=$(JANUS_OVERRIDES=$root/no-overrides JANUS_SECRETS_RUN=$root/secrets JANUS_SUBSCRIPTION_URLS=$root/saved subscription_url vendor)
+      test -z "$got"
       echo ok > "$out"
     '';
   eval-secret-cli = let
@@ -1974,7 +2426,7 @@ in {
     empty = lib.concatStringsSep " " bare.config.environment.systemPackages;
   in
     pkgs.runCommand "eval-secret-cli" {} ''
-      # D-0048: fleet apply decrypts the inbox file on the router, so the
+      # D-0055: fleet apply decrypts the inbox file on the router, so the
       # image ships the sops CLI whenever there is a secret to decrypt.
       printf '%s\n' ${lib.escapeShellArg packed} | grep -qF ${lib.escapeShellArg "${pkgs.sops}"}
       case ${lib.escapeShellArg empty} in
@@ -2053,6 +2505,69 @@ in {
       fi
       echo ok > "$out"
     '';
+  eval-wifi-rockpi = let
+    os = mk [
+      {
+        janus.hardware.board = "rockpi-4c";
+        janus.access.ssh.authorizedKeys = [key];
+        janus.security.allowInlineSecrets = true;
+        janus.hardware.peripherals.radio = {
+          class = "wifi";
+          match.onboard = true;
+        };
+        janus.network.lans.lan = {
+          members = ["home"];
+          address = "10.255.252.32";
+          prefixLength = 22;
+        };
+        janus.network.wifi.home = {
+          peripheral = "radio";
+          ssid = "janus";
+          passphrase = "secret-pass";
+          lan = "lan";
+          band = "5g";
+          channel = 36;
+        };
+      }
+    ];
+    script = os.config.systemd.services.janus-hostapd-home.serviceConfig.ExecStart;
+    piPatch = lib.findFirst (p: p.name == "janus-rpi-onboard-wifi") null os.config.boot.kernelPatches;
+    firmwarePkgs = lib.filter (p: lib.isAttrs p && lib.isDerivation p) (
+      lib.flatten os.options.hardware.firmware.definitions
+    );
+    firmware = pkgs.buildEnv {
+      name = "eval-rockpi-firmware";
+      paths = firmwarePkgs;
+      pathsToLink = ["/lib/firmware"];
+      ignoreCollisions = true;
+    };
+    mods = lib.concatStringsSep " " os.config.boot.blacklistedKernelModules;
+  in
+    pkgs.runCommand "eval-wifi-rockpi" {} ''
+      printf '%s\n' ${lib.escapeShellArg mods} | grep -q hci_uart
+      if printf '%s\n' ${lib.escapeShellArg mods} | grep -q brcmfmac; then
+        echo "ROCK Pi 4C still blacklists brcmfmac while the access point is declared" >&2
+        exit 1
+      fi
+      test ${
+        if piPatch == null
+        then "yes"
+        else "no"
+      } = yes
+      echo ${lib.escapeShellArg (lib.concatStringsSep " " os.config.boot.kernelModules)} | grep -q brcmfmac
+      grep -q 'hw_mode=a' ${script}
+      grep -q 'channel=36' ${script}
+      grep -q 'country_code=CN' ${script}
+      grep -q 'ieee80211d=1' ${script}
+      grep -q 'ht_capab=\[HT20\]\[SHORT-GI-20\]' ${script}
+      fw=${firmware}
+      test -f "$fw/lib/firmware/brcm/brcmfmac43456-sdio.bin"
+      test -f "$fw/lib/firmware/brcm/brcmfmac43456-sdio.clm_blob"
+      test -f "$fw/lib/firmware/brcm/brcmfmac43456-sdio.radxa,rockpi4c.txt"
+      cmp "$fw/lib/firmware/brcm/brcmfmac43456-sdio.txt" \
+        "$fw/lib/firmware/brcm/brcmfmac43456-sdio.radxa,rockpi4c.txt"
+      echo ok > "$out"
+    '';
   eval-wifi-onboard-isolate = let
     os = mk [
       {
@@ -2110,6 +2625,29 @@ in {
         passphrase = "secret-pass";
         lan = "lan";
         band = "5g";
+      };
+    }
+  ];
+  eval-wifi-rockpi-wpa3 = fail "eval-wifi-rockpi-wpa3" [
+    {
+      janus.hardware.board = "rockpi-4c";
+      janus.access.ssh.authorizedKeys = [key];
+      janus.security.allowInlineSecrets = true;
+      janus.hardware.peripherals.radio = {
+        class = "wifi";
+        match.onboard = true;
+      };
+      janus.network.lans.lan = {
+        members = ["home"];
+        address = "192.168.10.1";
+        prefixLength = 24;
+      };
+      janus.network.wifi.home = {
+        peripheral = "radio";
+        ssid = "janus";
+        passphrase = "secret-pass";
+        lan = "lan";
+        security = "wpa3";
       };
     }
   ];
@@ -2298,7 +2836,7 @@ in {
         janus.remoteAccess.tailscale.enable = true;
         janus.remoteAccess.tailscale.authKeyFile = "/var/lib/janus/secrets/tailscale-authkey";
         janus.remoteAccess.wireguard.uplink = {
-          privateKeyFile = "/run/secrets/wg";
+          privateKeyFile = "/var/lib/janus/secrets/wg";
           address = "10.9.0.2/32";
           peer.publicKey = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa=";
           peer.endpoint = "203.0.113.8:51820";
@@ -2343,6 +2881,78 @@ in {
       test ${lib.escapeShellArg os.config.sops.secrets.tailscale-eval.key} = value
       printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " requires)} | grep -q sops-install-secrets.service
       printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " (os.config.systemd.services.janus-tailscale-auth.requiredBy or []))} | grep -q tailscaled.service
+      echo ok > "$out"
+    '';
+  eval-wan-policy = let
+    os = mk [
+      base
+      {
+        janus.network.wans.main = {
+          uplink = "wan";
+          mode = "dhcp";
+        };
+      }
+    ];
+    script = os.config.systemd.services.janus-wan-policy.serviceConfig.ExecStart;
+    ipStub = pkgs.writeShellScript "wan-policy-ip-stub" ''
+      printf '%s\n' "$*" >> "$JANUS_IP_LOG"
+      if [ -n "''${JANUS_IP_FAIL:-}" ]; then
+        exit 1
+      fi
+      case "$1 $2 $3" in
+        "-4 -o addr")
+          printf '%s\n' "2: eth0 inet 10.0.0.2/24 scope global" "2: eth0 inet 10.0.0.3/24 scope global"
+          ;;
+        "-4 route show")
+          printf '%s\n' "default via 10.0.0.1 dev eth0"
+          ;;
+        "rule del from")
+          exit 1
+          ;;
+        "rule add from" | "route replace default")
+          ;;
+        *)
+          echo "unexpected ip: $*" >&2
+          exit 1
+          ;;
+      esac
+    '';
+  in
+    pkgs.runCommand "eval-wan-policy" {} ''
+      set -eu
+      grep -q '/bin/ip ' ${script}
+      grep -q '/bin/awk ' ${script}
+      grep -q 'set -euo pipefail' ${script}
+      grep -q 'while read -r cidr' ${script}
+      if grep -E '(^|[^/[:alnum:]])ip -4' ${script}; then
+        echo "janus-wan-policy calls ip from PATH" >&2
+        exit 1
+      fi
+      if grep -E '(^|[^/[:alnum:]])awk ' ${script}; then
+        echo "janus-wan-policy calls awk from PATH" >&2
+        exit 1
+      fi
+      ip=$(grep -o '/nix/store/[^ ]*/bin/ip' ${script} | head -1)
+      awk=$(grep -o '/nix/store/[^ ]*/bin/awk' ${script} | head -1)
+      test -x "$ip"
+      test -x "$awk"
+      root=$TMPDIR/wan-policy
+      mkdir -p "$root/sys/class/net/eth0"
+      sed -e "s|$ip|${ipStub}|g" -e "s|/run/janus|$root/run|g" -e "s|/sys/class/net|$root/sys/class/net|g" ${script} > "$root/policy"
+      chmod +x "$root/policy"
+      export JANUS_IP_LOG=$root/ip.log
+      if JANUS_IP_FAIL=1 "$root/policy"; then
+        echo "a failed ip was treated as success" >&2
+        exit 1
+      fi
+      : > "$JANUS_IP_LOG"
+      unset JANUS_IP_FAIL
+      "$root/policy"
+      adds=$(grep -c 'rule add from ' "$JANUS_IP_LOG")
+      test "$adds" = 2
+      grep -q 'rule add from 10.0.0.2 ' "$JANUS_IP_LOG"
+      grep -q 'rule add from 10.0.0.3 ' "$JANUS_IP_LOG"
+      grep -q 'route replace default via 10.0.0.1 ' "$JANUS_IP_LOG"
       echo ok > "$out"
     '';
   eval-backup-health = let
@@ -2427,12 +3037,18 @@ in {
       test ${lib.escapeShellArg os.config.systemd.timers.janus-proxy-refresh-d.timerConfig.OnCalendar} = 'Sun *-*-* 00:00:00'
       test ${lib.escapeShellArg os.config.systemd.timers.janus-geodata-refresh.timerConfig.OnCalendar} = 'Tue,Thu,Sat *-*-* 04:00:00'
       echo ${lib.escapeShellArg (lib.concatStringsSep " " os.config.systemd.services."janus-proxy-refresh@".after)} | grep -q sops-install-secrets.service
+      echo ${lib.escapeShellArg (lib.concatStringsSep " " (os.config.systemd.services."janus-proxy-refresh@".wants or []))} | grep -q sops-install-secrets.service
+      if echo ${lib.escapeShellArg (lib.concatStringsSep " " (os.config.systemd.services."janus-proxy-refresh@".requires or []))} | grep -q sops-install-secrets.service; then
+        echo "refresh must keep running when sops fails" >&2
+        exit 1
+      fi
       test ${
         if os.config.systemd.timers ? "janus-proxy-refresh-b"
         then "yes"
         else "no"
       } = no
       test ${lib.escapeShellArg os.config.janus.proxy.subscriptions.b.urlSecret} = subscription/b
+      test ${lib.escapeShellArg os.config.sops.secrets."subscription/a".key} = value
       test ${
         if os.config.janus.proxy.subscriptions.b.enable
         then "yes"
@@ -2961,8 +3577,13 @@ in {
       base
       {janus.storage.slots.enable = true;}
     ];
+    off = mk [base];
+    slotRule = slot: uuid: link: "ACTION==\"add|change\", SUBSYSTEM==\"block\", ENV{janus.slot}${slot}, ENV{ID_PART_ENTRY_UUID}==\"${uuid}\", SYMLINK+=\"disk/by-janus/${link}\"";
   in
-    pkgs.runCommand "eval-slots" {} ''
+    pkgs.runCommand "eval-slots" {
+      nativeBuildInputs = [pkgs.systemd];
+    } ''
+      set -eu
       test ${lib.escapeShellArg os.config.fileSystems."/".device} = /dev/disk/by-janus/root
       test ${lib.escapeShellArg os.config.fileSystems."/nix".device} = /dev/disk/by-janus/nix
       test ${
@@ -2970,7 +3591,25 @@ in {
         then "yes"
         else "no"
       } = yes
-      echo ${lib.escapeShellArg os.config.boot.initrd.systemd.services.janus-slot-select.script} | grep -q 4a414e55-5300-4000-8000-000000000006
+      test ${
+        if lib.hasAttr "janus-slot-select" os.config.boot.initrd.systemd.services
+        then "yes"
+        else "no"
+      } = no
+      printf '%s\n' ${lib.escapeShellArg os.config.boot.initrd.services.udev.rules} > initrd.rules
+      printf '%s\n' ${lib.escapeShellArg os.config.services.udev.extraRules} > system.rules
+      printf '%s\n' ${lib.escapeShellArg off.config.boot.initrd.services.udev.rules} > off-initrd.rules
+      printf '%s\n' ${lib.escapeShellArg off.config.services.udev.extraRules} > off-system.rules
+      grep -q by-janus off-initrd.rules && exit 1
+      grep -q by-janus off-system.rules && exit 1
+      for rules in initrd.rules system.rules; do
+        grep -qxF 'ACTION=="add|change", SUBSYSTEM=="block", IMPORT{cmdline}="janus.slot"' "$rules"
+        grep -qxF ${lib.escapeShellArg (slotRule ''!="b"'' "4a414e55-5300-4000-8000-000000000002" "root")} "$rules"
+        grep -qxF ${lib.escapeShellArg (slotRule ''!="b"'' "4a414e55-5300-4000-8000-000000000003" "nix")} "$rules"
+        grep -qxF ${lib.escapeShellArg (slotRule ''=="b"'' "4a414e55-5300-4000-8000-000000000006" "root")} "$rules"
+        grep -qxF ${lib.escapeShellArg (slotRule ''=="b"'' "4a414e55-5300-4000-8000-000000000007" "nix")} "$rules"
+      done
+      udevadm verify --no-style --no-summary initrd.rules
       echo ${lib.escapeShellArg os.config.environment.etc."janus/slots.json".text} | grep -q 4a414e55-5300-4000-8000-000000000007
       test -n ${lib.escapeShellArg os.config.system.build.janusSlotImages.name}
       echo ok > "$out"
@@ -2982,10 +3621,15 @@ in {
       set -eu
       store=$TMPDIR/nix
       closure=/nix/store/closure
+      kern=/nix/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-slotkern/Image
+      kern_real=/nix/store/cccccccccccccccccccccccccccccccc-slotkern-real/Image
+      initrd=/nix/store/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-slotinit/initrd
       mkdir -p "$store''${closure#/nix}" "$TMPDIR/boot/extlinux" "$TMPDIR/state"
       printf 'console=ttyS0\n' > "$store''${closure#/nix}/kernel-params"
-      printf 'new-kernel\n' > "$store''${closure#/nix}/kernel"
-      printf 'new-initrd\n' > "$store''${closure#/nix}/initrd"
+      # The kernel link hops through another /nix/store symlink. The files
+      # exist only under the slot store, so following either link fails.
+      ln -s "$kern" "$store''${closure#/nix}/kernel"
+      ln -s "$initrd" "$store''${closure#/nix}/initrd"
       printf 'old-kernel\n' > "$TMPDIR/boot/vmlinuz"
       printf 'old-initrd\n' > "$TMPDIR/boot/initrd"
       printf 'a\n' > "$TMPDIR/boot/slot"
@@ -2993,9 +3637,49 @@ in {
       printf '%s\n' 'timeout: 0' '/slot-a' '    cmdline: old-a' '/slot-b' '    cmdline: old-b' > "$TMPDIR/boot/limine.conf"
       printf '%s\n' 'kernel=vmlinuz' 'initramfs initrd followkernel' > "$TMPDIR/boot/config.txt"
       printf '%s\n' 'old-a' > "$TMPDIR/boot/cmdline-a.txt"
-      JANUS_BOOT_DIR=$TMPDIR/boot JANUS_STATE_DIR=$TMPDIR/state JANUS_SLOT_STORE=$store bash ${self.packages.${pkgs.stdenv.hostPlatform.system}.bootInstall} install-slot "$closure" b
+      boot_install=${self.packages.${pkgs.stdenv.hostPlatform.system}.bootInstall}
+      src="$store''${closure#/nix}"
+      run_install() {
+        JANUS_BOOT_DIR=$TMPDIR/boot JANUS_STATE_DIR=$TMPDIR/state JANUS_SLOT_STORE=$store bash "$boot_install" install-slot "$closure" "$1"
+      }
+      refuse() {
+        if run_install b >"$TMPDIR/slot-miss.out" 2>"$TMPDIR/slot-miss.err"; then
+          echo "slot install accepted $1" >&2
+          exit 1
+        fi
+        grep -q 'is not in the slot store' "$TMPDIR/slot-miss.err"
+        if [ -e "$TMPDIR/boot/vmlinuz-b" ] || [ -e "$TMPDIR/boot/initrd-b" ] || [ -e "$TMPDIR/boot/cmdline.txt" ]; then
+          echo "a refused slot install changed the boot entry" >&2
+          exit 1
+        fi
+        grep -q old-kernel "$TMPDIR/boot/vmlinuz"
+        test "$(tr -d '[:space:]' < "$TMPDIR/boot/slot")" = a
+      }
+      refuse "a kernel symlink whose target is not in the slot store"
+      mkdir -p "$store/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-slotkern" "$store/store/cccccccccccccccccccccccccccccccc-slotkern-real" "$store/store/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-slotinit" "$store/escaped"
+      ln -s "$kern_real" "$store/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-slotkern/Image"
+      printf 'new-kernel\n' > "$store/store/cccccccccccccccccccccccccccccccc-slotkern-real/Image"
+      printf 'new-initrd\n' > "$store/store/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-slotinit/initrd"
+      printf 'outside-kernel\n' > "$TMPDIR/outside-kernel"
+      ln -sf "$TMPDIR/outside-kernel" "$src/kernel"
+      refuse "a kernel symlink that leaves /nix/store"
+      printf 'escaped-kernel\n' > "$store/escaped/Image"
+      ln -sf /nix/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-slotkern/../../escaped/Image "$src/kernel"
+      refuse "a kernel symlink that climbs out of the slot store"
+      ln -sf "$kern" "$src/kernel"
+      printf 'leaked-params\n' > "$TMPDIR/leaked-params"
+      ln -sf "$TMPDIR/leaked-params" "$src/kernel-params"
+      refuse "a kernel-params symlink"
+      rm -f "$src/kernel-params"
+      printf 'console=ttyS0\n' > "$src/kernel-params"
+      run_install b
+      test ! -h "$TMPDIR/boot/vmlinuz-b"
+      test ! -h "$TMPDIR/boot/initrd-b"
       grep -q new-kernel "$TMPDIR/boot/vmlinuz-b"
+      grep -q new-initrd "$TMPDIR/boot/initrd-b"
+      grep -q "init=$closure/init" "$TMPDIR/boot/cmdline.txt"
       grep -q old-kernel "$TMPDIR/boot/vmlinuz"
+      grep -q old-initrd "$TMPDIR/boot/initrd"
       grep -q '^DEFAULT slot-b$' "$TMPDIR/boot/extlinux.conf"
       grep -q 'janus.slot=b' "$TMPDIR/boot/cmdline.txt"
       test "$(grep -m1 '^/slot-' "$TMPDIR/boot/limine.conf")" = /slot-b
@@ -3008,6 +3692,114 @@ in {
       test "$(grep -m1 '^/slot-' "$TMPDIR/boot/limine.conf")" = /slot-a
       grep -q '^kernel=vmlinuz$' "$TMPDIR/boot/config.txt"
       grep -q '^initramfs initrd followkernel$' "$TMPDIR/boot/config.txt"
+      run_install a
+      test ! -h "$TMPDIR/boot/vmlinuz"
+      test ! -h "$TMPDIR/boot/initrd"
+      grep -q new-kernel "$TMPDIR/boot/vmlinuz"
+      grep -q new-initrd "$TMPDIR/boot/initrd"
+      grep -q new-kernel "$TMPDIR/boot/vmlinuz-b"
+      grep -q new-initrd "$TMPDIR/boot/initrd-b"
+      grep -q "init=$closure/init" "$TMPDIR/boot/cmdline.txt"
+      grep -q 'janus.slot=a' "$TMPDIR/boot/cmdline.txt"
+      grep -q '^DEFAULT slot-a$' "$TMPDIR/boot/extlinux.conf"
+      test "$(grep -m1 '^/slot-' "$TMPDIR/boot/limine.conf")" = /slot-a
+      grep -q '^kernel=vmlinuz$' "$TMPDIR/boot/config.txt"
+      test "$(tr -d '[:space:]' < "$TMPDIR/boot/slot")" = a
+      echo ok > "$out"
+    '';
+  eval-deploy-slots =
+    pkgs.runCommand "eval-deploy-slots" {
+      nativeBuildInputs = [pkgs.jq pkgs.bash];
+    } ''
+      set -eu
+      dir=$TMPDIR/slot-deploy
+      mkdir -p "$dir/imgs"
+      printf '%s\n' /nix/store/closure > "$dir/imgs/toplevel"
+      printf root-a > "$dir/imgs/root-a.img"
+      printf nix-a > "$dir/imgs/nix-a.img"
+      printf root-b > "$dir/imgs/root-b.img"
+      printf nix-b > "$dir/imgs/nix-b.img"
+      printf 'a\n' > "$dir/active"
+      printf '1\n' > "$dir/install-rc"
+      : > "$dir/ssh-log"
+      printf '\n' > "$dir/boot-install"
+      export JANUS_BOOT_INSTALL=$dir/boot-install
+      JANUS_BUILD_LIB=1
+      # shellcheck disable=SC1091
+      . ${../pkgs/janus-build.sh}
+      nix_fleet() {
+        case "$*" in
+          *slots.json*)
+            printf '%s\n' '{"enable":true,"rootA":"4a414e55-5300-4000-8000-000000000002","nixA":"4a414e55-5300-4000-8000-000000000003","rootB":"4a414e55-5300-4000-8000-000000000006","nixB":"4a414e55-5300-4000-8000-000000000007"}'
+            ;;
+          *janusSlotImages*)
+            printf '%s\n' "$dir/imgs"
+            ;;
+          *)
+            echo "unexpected nix_fleet: $*" >&2
+            return 1
+            ;;
+        esac
+      }
+      ssh_to() {
+        printf '%s\n' "$2" >> "$dir/ssh-log"
+        case "$2" in
+          *'/boot/slot'*)
+            cat "$dir/active"
+            ;;
+          'blockdev --getsize64 '*)
+            printf '%s\n' 1000000
+            ;;
+          'dd of='*)
+            cat >/dev/null
+            ;;
+          *install-slot*)
+            return "$(tr -d '[:space:]' < "$dir/install-rc")"
+            ;;
+          *) ;;
+        esac
+      }
+      if ( deploy_slots via 192.168.10.1 ); then
+        echo "slot deploy continued after install-slot failed" >&2
+        exit 1
+      fi
+      grep -q 'JANUS_SLOT_STORE=/run/janus-slot-nix' "$dir/ssh-log"
+      grep -q 'mkdir -p /run/janus-slot-nix' "$dir/ssh-log"
+      grep -q 'install-slot /nix/store/closure b' "$dir/ssh-log"
+      grep -q 'dd of=/dev/disk/by-partuuid/4a414e55-5300-4000-8000-000000000006' "$dir/ssh-log"
+      grep -q 'dd of=/dev/disk/by-partuuid/4a414e55-5300-4000-8000-000000000007' "$dir/ssh-log"
+      if grep -q '/mnt/' "$dir/ssh-log"; then
+        echo "slot deploy used a mount point on /" >&2
+        exit 1
+      fi
+      if grep -q 'systemctl reboot' "$dir/ssh-log"; then
+        echo "a failed slot deploy rebooted" >&2
+        exit 1
+      fi
+      if grep -q deploy-pending "$dir/ssh-log"; then
+        echo "a failed slot deploy marked the boot pending" >&2
+        exit 1
+      fi
+      tail -n 1 "$dir/ssh-log" | grep -q 'umount /run/janus-slot-nix'
+      tail -n 1 "$dir/ssh-log" | grep -q 'mount -o remount,ro /boot'
+      : > "$dir/ssh-log"
+      printf 'b\n' > "$dir/active"
+      printf '0\n' > "$dir/install-rc"
+      if ! ( deploy_slots via 192.168.10.1 ); then
+        echo "slot deploy stopped after install-slot" >&2
+        exit 1
+      fi
+      grep -q 'install-slot /nix/store/closure a' "$dir/ssh-log"
+      grep -q 'dd of=/dev/disk/by-partuuid/4a414e55-5300-4000-8000-000000000002' "$dir/ssh-log"
+      grep -q 'dd of=/dev/disk/by-partuuid/4a414e55-5300-4000-8000-000000000003' "$dir/ssh-log"
+      if grep -q '/mnt/' "$dir/ssh-log"; then
+        echo "slot deploy used a mount point on /" >&2
+        exit 1
+      fi
+      tail -n 1 "$dir/ssh-log" | grep -q 'umount /run/janus-slot-nix'
+      tail -n 1 "$dir/ssh-log" | grep -q deploy-pending
+      tail -n 1 "$dir/ssh-log" | grep -q 'mount -o remount,ro /boot'
+      tail -n 1 "$dir/ssh-log" | grep -q 'systemctl reboot'
       echo ok > "$out"
     '';
 
@@ -3415,7 +4207,7 @@ in {
     nets = os.config.environment.etc."janus/lan-nets.json".text;
   in
     pkgs.runCommand "eval-web" {
-      nativeBuildInputs = [pkgs.janet pkgs.openssl pkgs.jq];
+      nativeBuildInputs = [pkgs.janet pkgs.openssl pkgs.jq pkgs.stunnel];
     } ''
       set -eu
       export JANUS_WEB_HTML=${../janet/web.html}
@@ -3429,9 +4221,9 @@ in {
       jq -e '.enable == true and .port == 8443 and .passphraseFile == "/var/lib/janus/secrets/web-passphrase" and (.san | index("DNS:router")) and (.san | index("IP:192.168.10.1")) and .hostname == "router"' web.json >/dev/null
       printf '%s\n' ${lib.escapeShellArg stunnel} > stunnel.conf
       grep -q 'IPV6_V6ONLY=0' stunnel.conf
-      # "*" resolves through getaddrinfo; a literal "[::]" is rejected
-      # (EAI_NONAME) and stunnel would bind v4 only.
-      grep -q 'accept = \*:8443' stunnel.conf
+      # stunnel parses "[::]:8443" as a hostname; ":::8443" is the IPv6
+      # wildcard and IPV6_V6ONLY=0 accepts IPv4 on that socket.
+      grep -q 'accept = :::8443' stunnel.conf
       grep -q 'connect = /run/janus-web/http.sock' stunnel.conf
       printf '%s\n' ${lib.escapeShellArg rules} > rules.nft
       grep 'tcp dport 8443 accept' rules.nft | grep -q br-home
@@ -3443,6 +4235,37 @@ in {
       } = yes
       test ${lib.escapeShellArg os.config.systemd.services.janus-web.unitConfig.ConditionPathExists} = '!/var/lib/janus/web/paused'
       test ${lib.escapeShellArg os.config.systemd.services.janus-web.serviceConfig.User} = janus-web
+      test ${lib.escapeShellArg os.config.systemd.services.janus-web.serviceConfig.Group} = janus-web
+      test ${lib.escapeShellArg os.config.systemd.services.janus-web.serviceConfig.Type} = notify
+      test ${lib.escapeShellArg os.config.systemd.services.janus-web.serviceConfig.NotifyAccess} = main
+      test ${
+        if os.config.systemd.services.janus-web.serviceConfig.NoNewPrivileges or false
+        then "yes"
+        else "no"
+      } = no
+      test ${lib.escapeShellArg os.config.systemd.services.janus-web.serviceConfig.CapabilityBoundingSet} = '~CAP_SYS_ADMIN'
+      test ${lib.escapeShellArg os.config.systemd.services.janus-web.serviceConfig.RuntimeDirectoryMode} = 0750
+      test ${lib.escapeShellArg os.config.systemd.services.janus-web.serviceConfig.ReadWritePaths} = /var/lib/janus
+      test ${lib.escapeShellArg os.config.systemd.services.janus-web.environment.JANUS_WEB_SUDO_BIN} = ${lib.escapeShellArg "${os.config.security.wrapperDir}/sudo"}
+      test ${lib.escapeShellArg os.config.systemd.services.janus-web-tls.serviceConfig.User} = janus-web-tls
+      test ${lib.escapeShellArg os.config.systemd.services.janus-web-tls.serviceConfig.Group} = janus-web-tls
+      # janus-web-tls reaches the runtime directory through group janus-web.
+      # The directory is mode 0750 and the socket is mode 0660. The key is
+      # mode 0640 and group janus-web-tls.
+      test ${
+        if lib.elem "janus-web" os.config.users.users.janus-web-tls.extraGroups
+        then "yes"
+        else "no"
+      } = yes
+      grep -q 'exec janet "$JANUS_WEB_JANET" serve' ${../pkgs/janus-web.sh}
+      grep -q '(notify-ready)' ${../janet/web.janet}
+      if grep -q systemd-notify ${../pkgs/janus-web.sh}; then
+        echo "readiness must be sent by the main process" >&2
+        exit 1
+      fi
+      grep -q 'os/chmod sock 8r660' ${../janet/web.janet}
+      grep -q 'chmod 0640 "$key"' ${../pkgs/janus-web.sh}
+      grep -q 'chown root:janus-web-tls "$key" "$cert"' ${../pkgs/janus-web.sh}
       printf '%s\n' ${lib.escapeShellArg os.config.systemd.services.janus-web.environment.JANUS_WEB_EXEC} | grep -q janus-web-run
       printf '%s\n' ${lib.escapeShellArg tmpfiles} | grep -q 'd /var/lib/janus 0755 root root -'
       printf '%s\n' ${lib.escapeShellArg tmpfiles} | grep -q 'd /var/lib/janus/web 0751 root janus-web-tls -'
@@ -3463,6 +4286,66 @@ in {
       JANUS_WEB_JSON=$dir/web.json ${web} ready
       fp=$(JANUS_WEB_JSON=$dir/web.json ${web} fingerprint)
       openssl x509 -in "$dir/cert.pem" -noout -fingerprint -sha256 | grep -q "$fp"
+      sed \
+        -e "s|/var/lib/janus/web/cert.pem|$dir/cert.pem|" \
+        -e "s|/var/lib/janus/web/key.pem|$dir/key.pem|" \
+        -e "s|/run/janus-web/http.sock|$dir/http.sock|" \
+        stunnel.conf > "$dir/stunnel.conf"
+      cat > "$dir/http.janet" << 'EOF'
+      (def path (os/getenv "SOCK"))
+      (def server (net/listen :unix path))
+      (defn serve [conn]
+        (net/read conn 4096)
+        (net/write conn "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok")
+        (:close conn))
+      (net/accept-loop server serve)
+      EOF
+      SOCK=$dir/http.sock janet "$dir/http.janet" > "$dir/http.log" 2>&1 &
+      http_pid=$!
+      for _ in 1 2 3 4 5 6 7 8 9 10; do
+        if test -S "$dir/http.sock"; then
+          break
+        fi
+        sleep 0.1
+      done
+      test -S "$dir/http.sock"
+      stunnel "$dir/stunnel.conf" > "$dir/stunnel.log" 2>&1 &
+      tls_pid=$!
+      answered=no
+      for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+        if ! kill -0 "$tls_pid" 2>/dev/null; then
+          echo "stunnel exited during configuration" >&2
+          cat "$dir/stunnel.log" >&2
+          kill "$http_pid" 2>/dev/null || true
+          exit 1
+        fi
+        if printf 'GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' | openssl s_client -connect 127.0.0.1:8443 -quiet -ign_eof > "$dir/v4.out" 2>"$dir/v4.err"; then
+          :
+        fi
+        if grep -q 'HTTP/1.1 200' "$dir/v4.out"; then
+          answered=yes
+          break
+        fi
+        sleep 0.1
+      done
+      if test "$answered" != yes; then
+        echo "stunnel did not answer https://127.0.0.1:8443" >&2
+        cat "$dir/stunnel.log" "$dir/v4.err" >&2
+        kill "$tls_pid" "$http_pid" 2>/dev/null || true
+        exit 1
+      fi
+      if printf 'GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' | openssl s_client -connect '[::1]:8443' -quiet -ign_eof > "$dir/v6.out" 2>"$dir/v6.err"; then
+        :
+      fi
+      if ! grep -q 'HTTP/1.1 200' "$dir/v6.out"; then
+        echo "stunnel did not answer https://[::1]:8443" >&2
+        cat "$dir/stunnel.log" "$dir/v6.err" >&2
+        kill "$tls_pid" "$http_pid" 2>/dev/null || true
+        exit 1
+      fi
+      kill "$tls_pid" "$http_pid" 2>/dev/null || true
+      wait "$tls_pid" 2>/dev/null || true
+      wait "$http_pid" 2>/dev/null || true
       jq -n '{enable:false}' > "$dir/off.json"
       if JANUS_WEB_JSON=$dir/off.json ${web} start; then
         echo "disabled image should exit 2" >&2
@@ -3559,6 +4442,78 @@ in {
       JANUS_BIN=$dir/janus JANUS_OUT=$dir/out ${run} override-set network.lans.home.dhcp.staticLeases.nas aa:bb:cc:dd:ee:ff 10.0.0.5
       grep -q -- '--mac' "$dir/out/args"
       grep -q 10.0.0.5 "$dir/out/args"
+
+      # A sops path must install secrets before the listener. The file is still
+      # absent here, so start exits 1 and does not reach janus-web.
+      mkdir -p "$dir/sops"
+      cat > "$dir/sops/systemctl" << 'EOF'
+      #!/bin/sh
+      printf '%s\n' "$*" >> "$JANUS_LOG"
+      if [ "$1" = cat ] && [ "$2" = janus-web-secret.service ]; then
+        exit 1
+      fi
+      exit 0
+      EOF
+      chmod +x "$dir/sops/systemctl"
+      : > "$dir/sops/log"
+      jq -n --arg pass /run/secrets/web-router '{enable:true, passphraseFile:$pass, paused:"/no/such", cert:"/no/such", key:"/no/such", port:8443, zones:["lan"]}' > "$dir/sops/web.json"
+      if JANUS_WEB_JSON=$dir/sops/web.json JANUS_SYSTEMCTL=$dir/sops/systemctl JANUS_LOG=$dir/sops/log ${web} start 2>"$dir/sops/err"; then
+        echo "missing sops passphrase should exit 1" >&2
+        exit 1
+      fi
+      grep -q 'start sops-install-secrets.service' "$dir/sops/log"
+      if grep -q 'start janus-web.service' "$dir/sops/log"; then
+        echo "listener started before the sops passphrase existed" >&2
+        exit 1
+      fi
+      grep -q 'janus web passphrase file is missing or empty.' "$dir/sops/err"
+      if grep -q 'could not install the passphrase secret' "$dir/sops/err"; then
+        echo "a finished install is not an install failure" >&2
+        exit 1
+      fi
+      cat > "$dir/sops/systemctl-secret" << 'EOF'
+      #!/bin/sh
+      printf '%s\n' "$*" >> "$JANUS_LOG"
+      if [ "$1" = start ] && [ "$2" = janus-web-secret.service ]; then
+        exit 1
+      fi
+      exit 0
+      EOF
+      chmod +x "$dir/sops/systemctl-secret"
+      : > "$dir/sops/log"
+      if JANUS_WEB_JSON=$dir/sops/web.json JANUS_SYSTEMCTL=$dir/sops/systemctl-secret JANUS_LOG=$dir/sops/log ${web} start 2>"$dir/sops/err"; then
+        echo "failed passphrase unit should exit 1" >&2
+        exit 1
+      fi
+      grep -q 'start janus-web-secret.service' "$dir/sops/log"
+      grep -q 'janus web could not install the passphrase secret.' "$dir/sops/err"
+      if grep -q 'passphrase file is missing or empty' "$dir/sops/err"; then
+        echo "a failed install was reported as an empty file" >&2
+        exit 1
+      fi
+      if grep -q 'start sops-install-secrets.service' "$dir/sops/log"; then
+        echo "passphrase unit should be what pulls sops in" >&2
+        exit 1
+      fi
+      if grep -q 'start janus-web.service' "$dir/sops/log"; then
+        echo "listener started after the passphrase unit failed" >&2
+        exit 1
+      fi
+      cat > "$dir/sops/systemctl-ok" << EOF
+      #!/bin/sh
+      printf '%s\n' "\$*" >> "\$JANUS_LOG"
+      if [ "\$1" = start ] && [ "\$2" = janus-web-secret.service ]; then
+        printf '%s\n' secret > "$dir/sops/pass"
+      fi
+      exit 0
+      EOF
+      chmod +x "$dir/sops/systemctl-ok"
+      jq -n --arg pass "$dir/sops/pass" '{enable:true, passphraseFile:$pass, paused:"/no/such", cert:"/no/such", key:"/no/such", port:8443, zones:["lan"]}' > "$dir/sops/web-ok.json"
+      : > "$dir/sops/log"
+      JANUS_WEB_JSON=$dir/sops/web-ok.json JANUS_SYSTEMCTL=$dir/sops/systemctl-ok JANUS_LOG=$dir/sops/log ${web} start 2>"$dir/sops/err"
+      grep -q 'start janus-web-secret.service' "$dir/sops/log"
+      grep -q 'start janus-web.service' "$dir/sops/log"
+      test -s "$dir/sops/pass"
       echo ok > "$out"
     '';
   eval-web-wan = fail "eval-web-wan" [
@@ -3574,7 +4529,9 @@ in {
     {janus.access.web.enable = true;}
   ];
   cli-age-key =
-    pkgs.runCommand "cli-age-key" {} ''
+    pkgs.runCommand "cli-age-key" {
+      nativeBuildInputs = [pkgs.python3];
+    } ''
       set -eu
       dir=$TMPDIR/root
       mkdir -p "$dir/bin" "$dir/secrets"
@@ -3583,6 +4540,7 @@ in {
       printf '%s\n' "$*" >> "$JANUS_LOG"
       if [ "$1" = list-units ]; then
         printf '%s\n' 'janus-web-tls.service loaded failed'
+        printf '%s\n' 'janus-wireguard-secret-uplink.service loaded failed'
         printf '%s\n' 'janus-pppoe-main.service loaded failed'
         printf '%s\n' 'janus-web.service loaded failed'
         printf '%s\n' 'janus-hostapd-home.service loaded failed'
@@ -3592,20 +4550,217 @@ in {
       exit 0
       EOF
       chmod +x "$dir/bin/systemctl"
-      printf '%s\n' 'AGE-SECRET-KEY-1test' | JANUS_SECRETS_DIR="$dir/secrets" JANUS_LOG="$dir/log" PATH="$dir/bin:$PATH" bash ${../pkgs/janus.sh} secrets install-age-key
+      cat > "$dir/bin/networkctl" << 'EOF'
+      #!/bin/sh
+      printf '%s\n' "$*" >> "$JANUS_LOG"
+      exit 0
+      EOF
+      chmod +x "$dir/bin/networkctl"
+      printf '%s\n' 'AGE-SECRET-KEY-1test' | JANUS_SECRETS_DIR="$dir/secrets" JANUS_LOG="$dir/log" PATH="$dir/bin:$PATH" bash ${../pkgs/janus.sh} secrets install-age-key 2>"$dir/err"
+      test ! -s "$dir/err"
       printf '%s\n' 'AGE-SECRET-KEY-1test' | cmp - "$dir/secrets/age.key"
+      test "$(stat -c %a "$dir/secrets/age.key")" = 600
       awk '
         $1 == "restart" && $2 == "sops-install-secrets.service" { sops = NR }
         $1 == "restart" && $2 == "janus-pppoe-main.service" { pppoe = NR }
         $1 == "restart" && $2 == "janus-hostapd-home.service" { ap = NR }
         $1 == "restart" && $2 == "janus-tailscale-auth.service" { auth = NR }
         $1 == "restart" && $2 == "tailscaled.service" { tail = NR }
+        $1 == "restart" && $2 == "janus-web-secret.service" { page = NR }
         $1 == "restart" && $2 == "janus-web.service" { web = NR }
         $1 == "restart" && $2 == "janus-web-tls.service" { tls = NR }
+        $1 == "restart" && $2 == "janus-wireguard-secret-uplink.service" { wg = NR }
+        $1 == "reconfigure" && $2 == "wg-uplink" { re = NR }
+        $1 == "reload" { reload = NR }
         END {
-          if (!(sops && pppoe && ap && auth && tail && web && tls && sops < pppoe && sops < ap && sops < auth && auth < tail && web < tls)) exit 1
+          if (!(sops && pppoe && ap && auth && tail && page && web && tls && wg && re && !reload && sops < pppoe && sops < ap && sops < auth && auth < tail && page < web && web < tls && wg < re)) exit 1
         }
       ' "$dir/log"
+      mkdir -p "$dir/wgfail"
+      cat > "$dir/wgfail/systemctl" << 'EOF'
+      #!/bin/sh
+      printf '%s\n' "$*" >> "$JANUS_LOG"
+      if [ "$1" = list-units ]; then
+        printf '%s\n' 'janus-wireguard-secret-uplink.service loaded failed'
+      fi
+      if [ "$1" = restart ] && [ "$2" = janus-wireguard-secret-uplink.service ]; then
+        exit 1
+      fi
+      exit 0
+      EOF
+      cat > "$dir/wgfail/networkctl" << 'EOF'
+      #!/bin/sh
+      printf '%s\n' "$*" >> "$JANUS_LOG"
+      exit 0
+      EOF
+      chmod +x "$dir/wgfail/systemctl" "$dir/wgfail/networkctl"
+      : > "$dir/wgfail-log"
+      printf '%s\n' 'AGE-SECRET-KEY-1test' | JANUS_SECRETS_DIR="$dir/secrets" JANUS_LOG="$dir/wgfail-log" PATH="$dir/wgfail:$PATH" bash ${../pkgs/janus.sh} secrets install-age-key 2>"$dir/wgfail-err"
+      if grep -q reconfigure "$dir/wgfail-log" || grep -q '^reload$' "$dir/wgfail-log"; then
+        echo "networkctl ran after a failed wireguard secret" >&2
+        exit 1
+      fi
+      mkdir -p "$dir/wgreload"
+      cat > "$dir/wgreload/systemctl" << 'EOF'
+      #!/bin/sh
+      printf '%s\n' "$*" >> "$JANUS_LOG"
+      if [ "$1" = list-units ]; then
+        printf '%s\n' 'janus-wireguard-secret-uplink.service loaded failed'
+      fi
+      exit 0
+      EOF
+      cat > "$dir/wgreload/networkctl" << 'EOF'
+      #!/bin/sh
+      printf '%s\n' "$*" >> "$JANUS_LOG"
+      if [ "$1" = reconfigure ]; then
+        exit 1
+      fi
+      exit 0
+      EOF
+      chmod +x "$dir/wgreload/systemctl" "$dir/wgreload/networkctl"
+      : > "$dir/wgreload-log"
+      printf '%s\n' 'AGE-SECRET-KEY-1test' | JANUS_SECRETS_DIR="$dir/secrets" JANUS_LOG="$dir/wgreload-log" PATH="$dir/wgreload:$PATH" bash ${../pkgs/janus.sh} secrets install-age-key 2>"$dir/wgreload-err"
+      grep -q '^reconfigure wg-uplink$' "$dir/wgreload-log"
+      grep -q '^reload$' "$dir/wgreload-log"
+      printf '%s\n' 'AGE-SECRET-KEY-1old' > "$dir/secrets/age.key"
+      if printf '%s' "" | JANUS_SECRETS_DIR="$dir/secrets" JANUS_LOG="$dir/empty-log" PATH="$dir/bin:$PATH" bash ${../pkgs/janus.sh} secrets install-age-key 2>"$dir/empty-err"; then
+        echo "an empty age key was installed" >&2
+        exit 1
+      fi
+      if printf '\n' | JANUS_SECRETS_DIR="$dir/secrets" JANUS_LOG="$dir/empty-log" PATH="$dir/bin:$PATH" bash ${../pkgs/janus.sh} secrets install-age-key 2>"$dir/nl-err"; then
+        echo "a blank age key was installed" >&2
+        exit 1
+      fi
+      grep -q 'Refusing an age key that has no AGE-SECRET-KEY-1 line.' "$dir/empty-err"
+      grep -q 'Refusing an age key that has no AGE-SECRET-KEY-1 line.' "$dir/nl-err"
+      printf '%s\n' 'AGE-SECRET-KEY-1old' | cmp - "$dir/secrets/age.key"
+      test ! -e "$dir/empty-log"
+      python3 - ${../pkgs/janus.sh} "$dir" << 'PY'
+      import os, pty, select, subprocess, sys
+      script, root = sys.argv[1], sys.argv[2]
+      env = os.environ.copy()
+      env["JANUS_SECRETS_DIR"] = os.path.join(root, "tty-secrets")
+      env["JANUS_LOG"] = os.path.join(root, "tty-log")
+      env["PATH"] = os.path.join(root, "bin") + os.pathsep + env["PATH"]
+      os.makedirs(env["JANUS_SECRETS_DIR"])
+      master, slave = pty.openpty()
+      proc = subprocess.Popen(["bash", script, "secrets", "install-age-key"], stdin=slave, stdout=slave, stderr=slave, env=env)
+      os.close(slave)
+      buf = b""
+      def pump(timeout):
+          global buf
+          while True:
+              ready, _, _ = select.select([master], [], [], timeout)
+              if not ready:
+                  return
+              try:
+                  chunk = os.read(master, 4096)
+              except OSError:
+                  return
+              if not chunk:
+                  return
+              buf += chunk
+      pump(2)
+      if b"Paste the age private key, then press Enter and Ctrl-D." not in buf:
+          sys.stderr.write(buf.decode("utf-8", "replace"))
+          sys.exit(1)
+      os.write(master, b"AGE-SECRET-KEY-1tty\n\x04")
+      pump(2)
+      rc = proc.wait(timeout=5)
+      if rc != 0:
+          sys.exit(rc)
+      PY
+      printf '%s\n' 'AGE-SECRET-KEY-1tty' | cmp - "$dir/tty-secrets/age.key"
+      test "$(stat -c %a "$dir/tty-secrets/age.key")" = 600
+      cat > "$dir/bin/ssh" << 'EOF'
+      #!/bin/sh
+      printf '%s\n' "$*" >> "$JANUS_SSH_LOG"
+      probe=0
+      for arg in "$@"; do
+        if [ "$arg" = -n ]; then
+          probe=1
+        fi
+      done
+      if [ "$probe" = 1 ]; then
+        if [ "''${JANUS_SSH_FAIL:-}" = 1 ]; then
+          exit 1
+        fi
+        exit 0
+      fi
+      cat > "$JANUS_KEY_OUT"
+      EOF
+      chmod +x "$dir/bin/ssh"
+      JANUS_BUILD_LIB=1
+      # shellcheck disable=SC1091
+      . ${../pkgs/janus-build.sh}
+      test "$(ssh_dest potato)" = root@potato
+      test "$(ssh_dest 192.168.10.1)" = root@192.168.10.1
+      test "$(ssh_dest 'fd7a:115c:a1e0::1')" = 'root@[fd7a:115c:a1e0::1]'
+      test "$(ssh_dest '[fd7a:115c:a1e0::1]')" = 'root@[fd7a:115c:a1e0::1]'
+      test "$(ssh_dest 'root@[fd7a:115c:a1e0::1]')" = 'root@[fd7a:115c:a1e0::1]'
+      export JANUS_SSH_LOG=$dir/ssh-log JANUS_KEY_OUT=$dir/key-out
+      export PATH="$dir/bin:$PATH"
+      printf '%s\n' 'AGE-SECRET-KEY-1ssh' | install_age_key_over_ssh 'fd7a:115c:a1e0::1' 2>"$dir/ssh-err"
+      test ! -s "$dir/ssh-err"
+      printf '%s\n' 'AGE-SECRET-KEY-1ssh' | cmp - "$dir/key-out"
+      head -n 1 "$dir/ssh-log" | grep -q -- '-n'
+      grep -q 'root@\[fd7a:115c:a1e0::1\] janus secrets install-age-key' "$dir/ssh-log"
+      : > "$dir/ssh-log"
+      rm -f "$dir/key-out"
+      if printf '\n' | install_age_key_over_ssh 192.168.10.1 2>"$dir/ssh-empty"; then
+        echo "an empty key was sent over ssh" >&2
+        exit 1
+      fi
+      grep -q 'Refusing an age key that has no AGE-SECRET-KEY-1 line.' "$dir/ssh-empty"
+      test ! -e "$dir/key-out"
+      test "$(wc -l < "$dir/ssh-log")" -eq 1
+      : > "$dir/ssh-log"
+      rest=$(printf '%s\n' 'AGE-SECRET-KEY-1keep' | (JANUS_SSH_FAIL=1 install_age_key_over_ssh 192.168.10.1 >/dev/null 2>"$dir/ssh-fail" || true; cat))
+      test "$rest" = "AGE-SECRET-KEY-1keep"
+      if grep -q 'Paste the age private key' "$dir/ssh-fail"; then
+        echo "a failed probe printed the paste prompt" >&2
+        exit 1
+      fi
+      python3 - ${../pkgs/janus-build.sh} "$dir" << 'PY'
+      import os, pty, select, subprocess, sys
+      script, root = sys.argv[1], sys.argv[2]
+      env = os.environ.copy()
+      env["JANUS_BUILD_LIB"] = "1"
+      env["JANUS_SSH_LOG"] = os.path.join(root, "tty-ssh-log")
+      env["JANUS_KEY_OUT"] = os.path.join(root, "tty-remote-key")
+      env["PATH"] = os.path.join(root, "bin") + os.pathsep + env["PATH"]
+      env.pop("JANUS_SSH_FAIL", None)
+      master, slave = pty.openpty()
+      proc = subprocess.Popen(
+          ["bash", "-c", '. "$1"; install_age_key_over_ssh "$2"', "bash", script, "192.168.10.1"],
+          stdin=slave, stdout=slave, stderr=slave, env=env,
+      )
+      os.close(slave)
+      buf = b""
+      def pump(timeout):
+          global buf
+          while True:
+              ready, _, _ = select.select([master], [], [], timeout)
+              if not ready:
+                  return
+              try:
+                  chunk = os.read(master, 4096)
+              except OSError:
+                  return
+              if not chunk:
+                  return
+              buf += chunk
+      pump(2)
+      if b"Paste the age private key, then press Enter and Ctrl-D." not in buf:
+          sys.stderr.write(buf.decode("utf-8", "replace"))
+          sys.exit(1)
+      os.write(master, b"AGE-SECRET-KEY-1tty\n\x04")
+      pump(2)
+      rc = proc.wait(timeout=5)
+      if rc != 0:
+          sys.exit(rc)
+      PY
+      printf '%s\n' 'AGE-SECRET-KEY-1tty' | cmp - "$dir/tty-remote-key"
       echo ok > "$out"
     '';
   eval-web-sops = let
@@ -3622,6 +4777,8 @@ in {
     spec = os.config.environment.etc."janus/web.json".text;
     requires = os.config.systemd.services.janus-web.requires or [];
     after = os.config.systemd.services.janus-web.after or [];
+    secretRequires = os.config.systemd.services.janus-web-secret.requires or [];
+    secretStart = os.config.systemd.services.janus-web-secret.serviceConfig.ExecStart;
   in
     pkgs.runCommand "eval-web-sops" {
       nativeBuildInputs = [pkgs.jq];
@@ -3630,9 +4787,106 @@ in {
       printf '%s\n' ${lib.escapeShellArg spec} > web.json
       jq -e '.passphraseFile == "/run/secrets/web-router"' web.json >/dev/null
       printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " requires)} | grep -q sops-install-secrets.service
+      printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " requires)} | grep -q janus-web-secret.service
       printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " after)} | grep -q sops-install-secrets.service
+      printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " secretRequires)} | grep -q sops-install-secrets.service
+      printf '%s\n' ${lib.escapeShellArg secretStart} | grep -q ${lib.escapeShellArg os.config.sops.secrets.web-router.path}
       echo ok > "$out"
     '';
+  eval-sops-file-paths = let
+    os = mk [
+      base
+      {
+        sops.secrets.pppoe-eval.sopsFile = ./fixtures/sops-placeholder;
+        sops.secrets.wg-eval.sopsFile = ./fixtures/sops-placeholder;
+        sops.secrets.wg-kept = {
+          sopsFile = ./fixtures/sops-placeholder;
+          key = "kept";
+        };
+        sops.secrets.node-eval.sopsFile = ./fixtures/sops-placeholder;
+        sops.secrets.web-file.sopsFile = ./fixtures/sops-placeholder;
+        janus.network.wans.main = {
+          uplink = "wan";
+          mode = "pppoe";
+          pppoe = {
+            username = "alice";
+            passwordFile = "/run/secrets/pppoe-eval";
+          };
+        };
+        janus.network.lans.lan = {
+          members = ["lan"];
+          address = "192.168.10.1";
+          prefixLength = 24;
+        };
+        janus.remoteAccess.wireguard.uplink = {
+          privateKeyFile = "/run/secrets/wg-eval";
+          address = "10.9.0.2/32";
+          peer.publicKey = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa=";
+          peer.allowedIPs = ["0.0.0.0/0"];
+        };
+        janus.remoteAccess.wireguard.kept = {
+          privateKeyFile = "/run/secrets/wg-kept";
+          address = "10.9.0.3/32";
+          peer.publicKey = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa=";
+          peer.allowedIPs = ["0.0.0.0/0"];
+        };
+        janus.proxy = {
+          enable = true;
+          nodes.secret = {
+            protocol = "trojan";
+            server = "203.0.113.10";
+            port = 443;
+            trojan.passwordFile = "/run/secrets/node-eval";
+          };
+        };
+        janus.access.web = {
+          enable = true;
+          passphraseFile = "/run/secrets/web-file";
+        };
+      }
+    ];
+  in
+    pkgs.runCommand "eval-sops-file-paths" {} ''
+      set -eu
+      printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " (os.config.systemd.services.janus-pppoe-main.requires or []))} | grep -q sops-install-secrets.service
+      printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " (os.config.systemd.services.janus-engine-prepare.requires or []))} | grep -q sops-install-secrets.service
+      printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " (os.config.systemd.services.systemd-networkd.after or []))} | grep -q sops-install-secrets.service
+      printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " (os.config.systemd.services.systemd-networkd.wants or []))} | grep -q janus-wireguard-secret-uplink.service
+      printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " (os.config.systemd.services.janus-wireguard-secret-uplink.requires or []))} | grep -q sops-install-secrets.service
+      printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " (os.config.systemd.services.janus-web.requires or []))} | grep -q janus-web-secret.service
+      if printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " (os.config.systemd.services.systemd-networkd.requires or []))} | grep -q janus-wireguard-secret-uplink.service; then
+        echo "a wireguard key must not be required by all of networkd" >&2
+        exit 1
+      fi
+      test ${lib.escapeShellArg os.config.sops.secrets.wg-eval.key} = value
+      test ${lib.escapeShellArg os.config.sops.secrets.wg-kept.key} = kept
+      test ${lib.escapeShellArg os.config.sops.secrets.web-file.key} = value
+      test ${lib.escapeShellArg os.config.sops.secrets.pppoe-eval.key} = value
+      test ${lib.escapeShellArg os.config.sops.secrets.node-eval.key} = ""
+      if printf '%s\n' ${lib.escapeShellArg (lib.concatMapStringsSep "\n" (a: a.message) (lib.filter (a: !a.assertion && lib.hasPrefix "A file at /run/secrets/" a.message) os.config.assertions))} | grep -q .; then
+        echo "a declared sops path was missing its sopsFile" >&2
+        exit 1
+      fi
+      sed -n '/^password_from_file()/,/^}/p' ${../pkgs/janus-engine.sh} > password.fn
+      # The function is sourced for this check. The engine script is not executed.
+      . ./password.fn
+      printf '%s\n' 'uuid: abc' 'password: "node-secret"' > node.yaml
+      test "$(password_from_file node.yaml)" = node-secret
+      printf '%s' 'raw-secret' > raw.pw
+      test "$(password_from_file raw.pw)" = raw-secret
+      echo ok > "$out"
+    '';
+  eval-sops-path-missing = fail "eval-sops-path-missing" [
+    base
+    {
+      janus.remoteAccess.wireguard.uplink = {
+        privateKeyFile = "/run/secrets/wg-missing";
+        address = "10.9.0.2/32";
+        peer.publicKey = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa=";
+        peer.allowedIPs = ["0.0.0.0/0"];
+      };
+    }
+  ];
   eval-web-secret = fail "eval-web-secret" [
     base
     {
@@ -3745,6 +4999,327 @@ in {
         | ($r | to_entries | map(select(.value.network == "udp" and .value.action == "reject")) | .[0].key) as $quic
         | ($direct != null) and ($quic != null) and ($direct < $quic)
       ' ${engine} >/dev/null
+      echo ok > "$out"
+    '';
+  eval-state-boot = let
+    os = mk [base];
+    capped = mk [
+      base
+      {janus.storage.state.maximumSize = "1G";}
+    ];
+    monthly = mk [
+      base
+      {
+        janus.system.reboot.schedule = "monthly";
+        janus.system.reboot.fsck = true;
+      }
+    ];
+    yearly = mk [
+      base
+      {janus.system.reboot.schedule = "0 4 1 1 *";}
+    ];
+    padded = mk [
+      base
+      {janus.system.reboot.schedule = "00 04 08 * *";}
+    ];
+    recover = os.config.boot.initrd.systemd.services.janus-state-recover;
+    full = os.config.boot.initrd.systemd.services.janus-state-fsck-full;
+    growSvc = os.config.boot.initrd.systemd.services.janus-grow-state;
+    grow = growSvc.script;
+    grow1 = capped.config.boot.initrd.systemd.services.janus-grow-state.script;
+  in
+    pkgs.runCommand "eval-state-boot" {} ''
+      test ${lib.escapeShellArg os.config.janus.storage.state.maximumSize} = 4G
+      test ${lib.escapeShellArg (toString os.config.janus.system.reboot.schedule)} = ""
+      test ${
+        if os.config.systemd.timers ? janus-reboot
+        then "yes"
+        else "no"
+      } = no
+      test ${lib.escapeShellArg recover.serviceConfig.TimeoutStartSec} = 15min
+      test ${lib.escapeShellArg full.serviceConfig.TimeoutStartSec} = infinity
+      test ${lib.escapeShellArg full.unitConfig.ConditionPathExists} = /run/janus/full-fsck
+      grep -F -q -- '--no-kernel-check' <<'EOF'
+      ${recover.script}
+      EOF
+      if grep -F -q -- 'timeout 30' <<'EOF'
+      ${recover.script}
+      EOF
+      then
+        echo "boot fsck still has a 30s timeout" >&2
+        exit 1
+      fi
+      grep -F -q -- 'fsck.f2fs -f' <<'EOF'
+      ${full.script}
+      EOF
+      drop=$(grep -n 'rm -f "$probe/lib/janus/full-fsck"' <<'EOF' | sed -n '1s/:.*//p'
+      ${full.script}
+      EOF
+      )
+      fsckat=$(grep -n 'fsck.f2fs -f' <<'EOF' | sed -n '1s/:.*//p'
+      ${full.script}
+      EOF
+      )
+      if [ -z "$drop" ] || [ -z "$fsckat" ] || [ "$drop" -ge "$fsckat" ]; then
+        echo "the full-fsck request is not dropped before the check" >&2
+        exit 1
+      fi
+      grep -F -q -- 'max_sectors=8388608' <<'EOF'
+      ${grow}
+      EOF
+      grep -F -q -- 'max_sectors=2097152' <<'EOF'
+      ${grow1}
+      EOF
+      bash -n <<'EOF'
+      ${grow}
+      EOF
+      bash -n <<'EOF'
+      ${recover.script}
+      EOF
+      bash -n <<'EOF'
+      ${full.script}
+      EOF
+      awk '
+        /sgdisk -e/ { seen = 1 }
+        seen && /publish_state/ { published = 1 }
+        /exit 0/ && !published { bad = 1 }
+        END { if (bad) exit 1 }
+      ' <<'EOF'
+      ${grow}
+      EOF
+      wanted=${lib.escapeShellArg (lib.concatStringsSep " " growSvc.wantedBy)}
+      required=${lib.escapeShellArg (lib.concatStringsSep " " growSvc.requiredBy)}
+      case " $wanted " in
+        *" janus-state-recover.service "*) ;;
+        *)
+          echo "recover does not want grow" >&2
+          exit 1
+          ;;
+      esac
+      case " $required " in
+        *" janus-state-recover.service "*)
+          echo "recover requires grow, so a partx failure skips fsck" >&2
+          exit 1
+          ;;
+      esac
+      if grep -F -q -- 'settle --timeout=10 || true' <<'EOF'
+      ${grow}
+      EOF
+      then
+        echo "udev settle failure is ignored" >&2
+        exit 1
+      fi
+      awk '
+        /partx did not update/ { partx_msg = NR }
+        /did not return after the partition reread/ { missing = NR }
+        /exit 1/ { exits[++nexit] = NR }
+        END {
+          if (!partx_msg || !missing || missing < partx_msg) {
+            print "partx failure is not followed by the missing-node path" > "/dev/stderr"
+            exit 1
+          }
+          for (i = 1; i <= nexit; i++) {
+            if (exits[i] > partx_msg && exits[i] < missing) {
+              print "partx failure exits before the node is known to be gone" > "/dev/stderr"
+              exit 1
+            }
+          }
+        }
+      ' <<'EOF'
+      ${grow}
+      EOF
+      # Every mkfs must sit in the same small window as a missing-node exit.
+      check_reformat() {
+        awk '
+          {
+            line[NR] = $0
+          }
+          END {
+            mkfs_n = 0
+            for (i = 1; i <= NR; i++) {
+              if (line[i] !~ /mkfs\.f2fs/) continue
+              mkfs_n++
+              guard = 0
+              exited = 0
+              from = i - 25
+              if (from < 1) from = 1
+              for (j = i - 1; j >= from; j--) {
+                if (line[j] ~ /! -b "\$dev"/) {
+                  guard = j
+                  break
+                }
+              }
+              if (!guard) {
+                print "mkfs has no missing-node test in the preceding window" > "/dev/stderr"
+                exit 1
+              }
+              for (j = guard; j < i; j++) {
+                if (line[j] ~ /exit 1/) exited = 1
+              }
+              if (!exited) {
+                print "mkfs is reached when the missing-node branch does not exit" > "/dev/stderr"
+                exit 1
+              }
+            }
+            if (mkfs_n < 1) {
+              print "reformat command is missing" > "/dev/stderr"
+              exit 1
+            }
+          }
+        '
+      }
+      awk '
+        {
+          line[NR] = $0
+        }
+        END {
+          calls = 0
+          broken = 0
+          calls_before = 0
+          for (i = 1; i <= NR; i++) {
+            if (line[i] ~ /^[[:space:]]*run_fsck[[:space:]]*$/) {
+              calls++
+              if (!broken) calls_before = calls
+            }
+            if (line[i] ~ /^[[:space:]]*probe_once[[:space:]]*$/) probes++
+            if (!broken && line[i] ~ /action=broken/) broken = i
+          }
+          if (calls_before < 2 || !broken) {
+            print "status 4 or 255 selects reformat without a second fsck" > "/dev/stderr"
+            exit 1
+          }
+          if (probes < 2) {
+            print "the probe mount is not repeated" > "/dev/stderr"
+            exit 1
+          }
+        }
+      ' <<'EOF'
+      ${recover.script}
+      EOF
+      check_reformat <<'EOF'
+      ${recover.script}
+      EOF
+      awk '
+        /fsck\.f2fs -f/ { fsck++ }
+        /4\|255\)/ && !case_at { case_at = 1; fsck_before = fsck }
+        /^[[:space:]]*probe_rw[[:space:]]*$/ { probes++ }
+        END {
+          if (fsck_before < 2) {
+            print "full fsck status 4 or 255 is not repeated" > "/dev/stderr"
+            exit 1
+          }
+          if (probes < 4) {
+            print "full fsck does not retry the mount when the node returns" > "/dev/stderr"
+            exit 1
+          }
+        }
+      ' <<'EOF'
+      ${full.script}
+      EOF
+      check_reformat <<'EOF'
+      ${full.script}
+      EOF
+      test ${lib.escapeShellArg monthly.config.systemd.timers.janus-reboot.timerConfig.OnCalendar} = '*-*-01 04:00:00'
+      test ${lib.escapeShellArg yearly.config.systemd.timers.janus-reboot.timerConfig.OnCalendar} = '*-01-01 04:00:00'
+      test ${lib.escapeShellArg padded.config.systemd.timers.janus-reboot.timerConfig.OnCalendar} = '*-*-08 04:00:00'
+      grep -F -q -- 'systemctl reboot' <<'EOF'
+      ${monthly.config.systemd.services.janus-reboot.script}
+      EOF
+      if grep -F -q -- 'full-fsck' <<'EOF'
+      ${monthly.config.systemd.services.janus-reboot.script}
+      EOF
+      then
+        echo "the reboot service itself requests a full check" >&2
+        exit 1
+      fi
+      grep -F -q -- '/var/lib/janus/full-fsck' <<'EOF'
+      ${monthly.config.systemd.services.janus-reboot-fsck.script}
+      EOF
+      test ${
+        if yearly.config.systemd.services ? janus-reboot-fsck
+        then "yes"
+        else "no"
+      } = no
+      echo ok > "$out"
+    '';
+  eval-state-reboot-fsck = fail "eval-state-reboot-fsck" [
+    base
+    {janus.system.reboot.fsck = true;}
+  ];
+  eval-state-reboot-cron = fail "eval-state-reboot-cron" [
+    base
+    {janus.system.reboot.schedule = "0 4 * * 1";}
+  ];
+  eval-state-reboot-fields = fail "eval-state-reboot-fields" [
+    base
+    {janus.system.reboot.schedule = "0 4 1 *";}
+  ];
+  eval-kernel-profile-matched = fail "eval-kernel-profile-matched" [
+    base
+    {janus.system.kernelProfile = "matched";}
+  ];
+  eval-kernel-profile = let
+    standard = mk [base];
+    compact = mk [
+      base
+      {janus.system.kernelProfile = "compact";}
+    ];
+    r4s = mk [
+      {
+        janus.hardware.board = "nanopi-r4s";
+        janus.access.ssh.authorizedKeys = [key];
+        janus.system.kernelProfile = "compact";
+      }
+    ];
+    patchOf = os:
+      lib.findFirst (p: p.name == "janus-kernel-compact") null os.config.boot.kernelPatches;
+    compactPatch = patchOf compact;
+    r4sPatch = patchOf r4s;
+    tri = v:
+      if v ? content
+      then v.content.tristate or ""
+      else v.tristate or "";
+    sym = name: tri compactPatch.structuredExtraConfig.${name};
+    gone = name:
+      if compactPatch.structuredExtraConfig ? ${name}
+      then "yes"
+      else "no";
+    led = lib.findFirst (p: p.name == "janus-r4s-netdev-led") (throw "missing R4S netdev LED patch") r4s.config.boot.kernelPatches;
+  in
+    pkgs.runCommand "eval-kernel-profile" {} ''
+      test ${lib.escapeShellArg standard.config.janus.system.kernelProfile} = standard
+      test ${
+        if patchOf standard == null
+        then "yes"
+        else "no"
+      } = yes
+      test ${sym "SOUND"} = n
+      test ${sym "DRM_AMDGPU"} = n
+      test ${sym "DRM_I915"} = n
+      test ${sym "MEDIA_SUPPORT"} = n
+      test ${sym "IIO"} = n
+      test ${sym "COMEDI"} = n
+      test ${sym "INFINIBAND"} = n
+      test ${sym "NVME_TARGET"} = n
+      test ${sym "SCSI_QLA_FC"} = n
+      # Not named in the off-list. The built .config is eval-kernel-config.
+      # DRM_VC4 is also unnamed and is still absent: it depends on SND.
+      test ${gone "DRM"} = no
+      test ${gone "DRM_SIMPLEDRM"} = no
+      test ${gone "DRM_ROCKCHIP"} = no
+      test ${gone "DRM_MESON"} = no
+      test ${gone "SCSI_VIRTIO"} = no
+      test ${gone "BLK_DEV_NVME"} = no
+      test ${gone "F2FS_FS"} = no
+      test ${gone "E1000E"} = no
+      test ${
+        if r4sPatch.structuredExtraConfig ? DRM_I915
+        then "yes"
+        else "no"
+      } = no
+      test ${tri r4sPatch.structuredExtraConfig.SOUND} = n
+      test ${tri led.structuredExtraConfig.LEDS_TRIGGER_NETDEV} = y
+      test ${tri led.structuredExtraConfig.LEDS_TRIGGER_HEARTBEAT} = y
       echo ok > "$out"
     '';
 }

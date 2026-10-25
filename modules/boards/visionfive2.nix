@@ -24,6 +24,19 @@ in {
       "earlycon"
       "net.ifnames=0"
     ];
+    # v1.3B parents both MAC transmit clocks at the YT8531 receive clock.
+    # stmmac's DMA soft reset finishes only while that clock runs. The PHY
+    # gates it with no link, and U-Boot's DTB does not request otherwise.
+    # stmmac sets PHY_F_RXC_ALWAYS_ON before config_init. The patch makes
+    # the Motorcomm driver honor that flag. Drop it when upstream does.
+    # A rejected apply means these lines moved. The fix may sit in stmmac
+    # or the DTB, and this patch can still apply in that case.
+    boot.kernelPatches = [
+      {
+        name = "janus-vf2-yt8531-rxc";
+        patch = ./janus-vf2-yt8531-rxc.patch;
+      }
+    ];
     # dw_mmc-starfive is built in. NVMe root also needs the PCIe host and its PHY.
     boot.initrd.availableKernelModules = [
       "mmc_block"

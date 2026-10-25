@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-17 |
+| Last updated | 2026-10-25 |
 
 ## 1. Substrate
 
@@ -235,6 +235,14 @@ janus.network.wifi.<name> = { peripheral = "wifi0"; ssid; passphraseFile|passphr
 
 The Zero 2 W onboard radio is the same kind of access point, declared
 with `match.onboard = true`. It is 2.4 GHz WPA2 (D-0043, *10* §4.7).
+The ROCK Pi 4C radio is the same declaration. It is the AP6256, WPA2,
+2.4 GHz or 5 GHz, HT20 (*10* §4.10, D-0053).
+
+`janus.network.wifiCountry` is one ISO 3166-1 alpha-2 code for every
+access point. Unset, it follows `janus.system.region`: `cn` is `CN`,
+`ru` is `RU`, and `ir` is `IR`. The region stays the censorship
+environment. `hostapd` sets `country_code` and `ieee80211d`. A channel
+the country disallows fails when the access point starts (D-0054).
 
 Client (STA) mode as a WAN uplink is out of scope for 1.0.
 

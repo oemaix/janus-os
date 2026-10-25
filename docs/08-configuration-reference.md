@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-18 |
+| Last updated | 2026-10-25 |
 
 This document defines the **shape and semantics** of the `janus.*` option
 tree. The final, exhaustive reference (every option with type, default,
@@ -47,15 +47,18 @@ learning path: copy, edit values, build.
 | `journal.persistent` | bool | `false` | Persist journal to state partition (capped). |
 | `journal.maxUse` | str | `"64M"` | |
 | `embedSource` | bool | `true` | Embed the whole flake source tree (`flake.nix`, `flake.lock`, all `.nix` modules) read-only at `/etc/janus/source` (FR-CFG-008). Disable only if the tree contains inline secrets you do not want readable on the device. |
+| `reboot.schedule` | null or str | off | Maintenance reboot. `monthly` is 04:00 on the 1st, `yearly` is 04:00 on 1 January, or a five-field cron whose day-of-week is `*`. Further actions on this reboot are sibling options (D-0049). |
+| `reboot.fsck` | bool | `false` | On that reboot, run a full state check and let it finish. The request is removed before the check, so a check that does not finish is not repeated. A normal boot does not. Requires `reboot.schedule`. |
 | `region` | `cn\|ru\|ir` | `cn` | Reference region. Selects domestic DNS and the `blockQuic` default in *21*. Routing rules stay empty until written. Not a hot override. |
+| `kernelProfile` | `standard\|compact` | `standard` | `standard` is the NixOS kernel. `compact` is one config for every board and drops sound, desktop and 3D GPUs, compute accelerators, cameras and TV, HDMI-CEC and infrared remotes, industrial I/O and Comedi, InfiniBand, and SAN. NIC drivers, Wi-Fi, USB, WWAN, Bluetooth, MMC, the NVMe host, AHCI, simpledrm, SoC scanout that does not depend on ALSA, f2fs, vfat, and virtio stay. Raspberry Pi HDMI depends on ALSA and is not in `compact`. The board consoles are serial (D-0051). A per-board driver cut is not a value (D-0052). |
 
 ## 2. `janus.hardware`
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `board` | enum | — (required) | `rpi-zero-2w` `rpi2` `rpi3` `rpi4` `nanopi-r4s` `le-potato` `visionfive2` `yanyu-stx-r19f` `x86_64-test` |
+| `board` | enum | — (required) | `rpi-zero-2w` `rpi2` `rpi3` `rpi4` `nanopi-r4s` `rockpi-4c` `le-potato` `visionfive2` `yanyu-stx-r19f` `x86_64-test` |
 | `peripherals.<name>.class` | enum | — | `wifi` `nic` `wwan` `bluetooth` `hmi` `power` |
-| `peripherals.<name>.match` | attrs | — | `usbVendorProduct = "0bda:8153"`, or `usbPath`, `pciSlot`, `mac`. `onboard = true` is the radio soldered to the board (*10* §4.7). |
+| `peripherals.<name>.match` | attrs | — | `usbVendorProduct = "0bda:8153"`, or `usbPath`, `pciSlot`, `mac`. `onboard = true` is the radio soldered to the board (*10* §4.7, §4.10). |
 | `peripherals.<name>.wwan.mode` | enum | `auto` | `auto` uses the mode the allowlist records for that USB ID (*10* §4.2). Explicit values: `ecm` `ncm` `rndis` `qmi` `mbim`. |
 | `peripherals.<name>.wwan.modeSwitch` | attrs | `{}` | usb_modeswitch parameters. Empty does not run usb_modeswitch. |
 | `peripherals.<name>.wwan.atPort` | str/null | auto | Serial device for AT commands (status only) |
@@ -71,9 +74,14 @@ learning path: copy, edit values, build.
 ## 3. `janus.storage`
 
 See *05 — Storage* §8. Key options: `layout.partitions.<label>.{size,
-fsType, mountPoint, readOnly, options}`, `readOnlyFs`, `state.minimumSize`,
-`state.onCorruption`, `firmwareOffsetMiB` (board default),
+fsType, mountPoint, readOnly, options}`, `readOnlyFs`, `nix.minimumSize`, `state.minimumSize`,
+`state.maximumSize` (default `4G`; growth stops there or at the end of the
+media, and a smaller cap does not shrink), `state.onCorruption`,
+`firmwareOffsetMiB` (board default),
 `slots.enable` (default false; duplicate `ROOT` and `NIX`, *09* §8.4).
+A normal boot runs `fsck.f2fs -a --no-kernel-check` and does not scan the
+volume. A missing block device is not corruption. Status 4 or 255 is
+checked again before reformat (D-0049).
 
 ## 4. `janus.network`
 
@@ -106,9 +114,10 @@ See *06* §5. Mandatory: `members`, `address`, `prefixLength`. Defaults:
 inherit `janus.proxy` when unset (*07* §5, D-0042). `dns` inherits
 `janus.dns`. `dns.recursive` defaults to `true`.
 
-### 4.5 `wifi.<name>`, `igmpProxy`
+### 4.5 `wifi.<name>`, `wifiCountry`, `igmpProxy`
 
-See *06* §10–11.
+See *06* §10–11. `wifiCountry` is one ISO alpha-2 code for every access
+point. Unset, `cn` is `CN`, `ru` is `RU`, and `ir` is `IR` (D-0054).
 
 ## 5. `janus.firewall`
 
@@ -232,7 +241,7 @@ the remote resolvers from the WAN, encrypted (*07* §7.2).
 | `web.zones` | list | `["lan" "mgmt"]` | `wan` fails evaluation. |
 | `web.passphraseSecret` | str | — | sops secret name. One line in `secrets/web/<host>.yaml`, encrypted to that host (ADR-0023). Not the SSH root password. |
 | `web.passphraseFile` | path | — | File from `janus secrets put`. When `web.enable` is true, exactly one of this and `passphraseSecret` is set. |
-| `deploy.address` | str | the `nixosConfigurations` attribute name | SSH destination for `janus-build deploy` and `janus-build fleet apply`. |
+| `deploy.address` | str | the `nixosConfigurations` attribute name | SSH destination for `janus-build deploy`, `fleet apply`, `fleet pull`, `status`, and `backup`. `janus-build` reads it from the fleet repo when the command runs. `fleet apply` still requires a clean git tree. A new image is not required (Q-0043). |
 
 ## 11. Secrets and hot overrides
 
@@ -264,12 +273,13 @@ one-line credential is the `value` key. A PPPoE file and a manual node
 file are the YAML document. The module sets the key for an option that
 names the secret: `value` for a Wi-Fi passphrase, a page passphrase, a
 Tailscale auth key, and a subscription URL, and the whole document for
-PPPoE. A WireGuard private key is still `privateKeyFile`. `secret set`
-stores it under `value`, and the fleet sets
-`sops.secrets.<name>.key = "value"`. A node file has no secret-name
-option. `secret set` stores the YAML document, and the fleet sets
-`key = ""`. The fleet sets `sops.secrets.<name>.sopsFile` and the janus
-option. It does not decrypt the file in its own unit.
+PPPoE. A page `passphraseFile`, a PPPoE `passwordFile`, or a WireGuard
+`privateKeyFile` that is `/run/secrets/<name>` is one line, so the module
+sets that secret's `key` to `value`. A node `passwordFile` on that path
+is the YAML document, so the module sets `key` to `""`. Each of those is
+`mkDefault`. A key the fleet sets stays. The fleet sets
+`sops.secrets.<name>.sopsFile` and the janus option. It does not decrypt
+the file in its own unit.
 
 ```nix
 sops.age.keyFile = "/var/lib/janus/secrets/age.key";

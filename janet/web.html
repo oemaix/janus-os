@@ -6,148 +6,441 @@
 <title>janus</title>
 <script>
 (function () {
-  var stored = null;
-  try { stored = localStorage.getItem("janus-theme"); } catch (e) { stored = null; }
-  var theme = stored === "light" || stored === "dark"
-    ? stored
+  var storedTheme = null;
+  var storedLang = null;
+  try {
+    storedTheme = localStorage.getItem("janus-theme");
+    storedLang = localStorage.getItem("janus-lang");
+  } catch (e) {
+    storedTheme = null;
+    storedLang = null;
+  }
+  var theme = storedTheme === "light" || storedTheme === "dark"
+    ? storedTheme
     : (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-  document.documentElement.setAttribute("data-theme", theme);
+  function chosen(tag) {
+    var bits = String(tag || "").toLowerCase().split("-");
+    var primary = bits[0];
+    if (primary === "en" || primary === "ru" || primary === "fa") return primary;
+    if (primary !== "zh") return "";
+    for (var n = 1; n < bits.length; n++) {
+      if (bits[n] === "hant" || bits[n] === "tw" || bits[n] === "hk" || bits[n] === "mo") return "";
+    }
+    return "zh";
+  }
+  var lang = chosen(storedLang);
+  if (!lang) {
+    var list = (navigator.languages && navigator.languages.length) ? navigator.languages : [navigator.language || "en"];
+    lang = "en";
+    for (var i = 0; i < list.length; i++) {
+      var hit = chosen(list[i]);
+      if (hit) {
+        lang = hit;
+        break;
+      }
+    }
+  }
+  var root = document.documentElement;
+  root.setAttribute("data-theme", theme);
+  root.lang = lang;
+  root.dir = lang === "fa" ? "rtl" : "ltr";
 })();
 </script>
 <style>
 :root {
-  --paper: #ffffff;
-  --ink: #111111;
+  --bg: #fdf6e3;
+  --raised: #eee8d5;
+  --fg: #586e75;
+  --line: #93a1a1;
+  --frame: #586e75;
+  --inverse-bg: #586e75;
+  --inverse-fg: #fdf6e3;
+  --blue: #0674c2;
+  --cyan: #217d76;
+  --green: #687800;
+  --yellow: #8f6c00;
+  --red: #d5302d;
+  --orange: #c44915;
+  --magenta: #cb347d;
+  --violet: #4f55c4;
+  --mono: ui-monospace, "Cascadia Mono", "DejaVu Sans Mono", "Liberation Mono", "Noto Sans Mono", monospace;
+  --ar: "Noto Naskh Arabic", "Noto Sans Arabic", "DejaVu Sans", sans-serif;
+  --cjk: "Noto Sans CJK SC", "Noto Sans SC", "Source Han Sans SC", sans-serif;
   color-scheme: light;
 }
 :root[data-theme="dark"] {
-  --paper: #111111;
-  --ink: #eeeeee;
+  --bg: #002b36;
+  --raised: #073642;
+  --fg: #93a1a1;
+  --line: #586e75;
+  --frame: #93a1a1;
+  --inverse-bg: #eee8d5;
+  --inverse-fg: #002b36;
+  --blue: #3b94d2;
+  --cyan: #2aa198;
+  --green: #859900;
+  --yellow: #b58900;
+  --red: #f9514e;
+  --orange: #e76630;
+  --magenta: #ec549d;
+  --violet: #7e84e6;
   color-scheme: dark;
 }
 * { border-radius: 0; box-shadow: none; }
-html, body { margin: 0; background: var(--paper); color: var(--ink); }
+html[lang="en"], html[lang="ru"] { font-family: var(--mono); font-variant-ligatures: none; }
+html[lang="fa"] { font-family: var(--ar); letter-spacing: 0; }
+html[lang="zh"] { font-family: var(--cjk); letter-spacing: 0; }
+html, body { margin: 0; background: var(--bg); color: var(--fg); }
 body {
-  font-family: ui-sans-serif, system-ui, sans-serif;
-  font-size: 16px;
+  font-size: 15px;
+  font-weight: 450;
+  line-height: 1.45;
+  hyphens: none;
+  text-align: start;
+  font-variant-numeric: lining-nums;
 }
-.col { max-width: 40rem; padding: 16px; }
-.bar, .tabs { display: flex; flex-wrap: wrap; align-items: stretch; }
-.bar { border-bottom: 1px solid var(--ink); justify-content: space-between; }
-.brand, .alarm { padding: 8px 12px; }
+.col { max-width: 72ch; padding: 16px; }
+.mono, .value, input, select, pre, .brand, .ltr {
+  font-family: var(--mono);
+  font-variant-ligatures: none;
+}
+.brand {
+  padding: 0;
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 1.2;
+  letter-spacing: 0.06em;
+}
+.alarm { padding: 0; font-size: 14px; font-weight: 550; line-height: 1.2; }
+.hd {
+  font-family: var(--mono);
+  font-variant-ligatures: none;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.2;
+  letter-spacing: 0.04em;
+}
+html[lang="fa"] .hd { font-family: var(--ar); font-variant-ligatures: normal; letter-spacing: 0; }
+html[lang="zh"] .hd { font-family: var(--cjk); font-variant-ligatures: normal; letter-spacing: 0; }
+.bar, .bar-start, .bar-end, .seg, .tabs, .actions, .choice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+}
+.bar { justify-content: space-between; column-gap: 40px; row-gap: 8px; align-items: baseline; margin-bottom: 16px; }
+.bar-start { flex: 0 0 auto; flex-wrap: nowrap; align-items: baseline; gap: 12px; }
+.bar-end { flex: 1 1 auto; flex-wrap: nowrap; align-items: baseline; justify-content: flex-end; column-gap: 40px; margin-inline-start: auto; }
+.tabs, .choice, .actions { width: fit-content; max-width: 100%; }
+[hidden] { display: none !important; }
 button, .tab, input, select, .box {
-  border: 1px solid var(--ink);
-  background: var(--paper);
-  color: var(--ink);
+  border: 0;
+  background: transparent;
+  color: var(--fg);
   font: inherit;
   appearance: none;
 }
-button, .tab { padding: 8px 12px; margin: 0; }
-.tab { margin-left: -1px; }
-button.on, .tab.on { background: var(--ink); color: var(--paper); }
-.box { padding: 12px; margin-top: 12px; }
-.box.alarm { border-width: 2px; }
-.row { display: flex; gap: 16px; align-items: center; border-top: 1px solid var(--ink); padding: 8px 0; }
-.row span:first-child, .row label { min-width: 10rem; }
-.value, input, select, pre { font-family: ui-monospace, monospace; }
-input, select { padding: 8px; min-width: 12rem; }
-pre { white-space: pre-wrap; margin: 8px 0 0; }
-button:focus, input:focus, select:focus, .tab:focus { outline: 2px solid var(--ink); outline-offset: 0; }
-.actions { display: flex; flex-wrap: wrap; gap: 0; margin-top: 12px; }
-.actions button { margin-left: -1px; }
+button, .tab {
+  padding: 8px 12px;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 550;
+  line-height: 1.2;
+  white-space: nowrap;
+  text-align: start;
+}
+button.on, .tab.on { background: var(--inverse-bg); color: var(--inverse-fg); }
+.quiet { flex-wrap: nowrap; align-items: baseline; gap: 0; }
+.quiet > button { padding: 2px 0; }
+.quiet > button.on { background: transparent; color: var(--fg); border-bottom: 1px solid var(--fg); }
+.sep { padding-inline: 0.15em; color: var(--line); font-family: var(--mono); font-variant-ligatures: none; }
+#lang-en, #lang-ru { font-family: var(--mono); font-variant-ligatures: none; }
+#lang-fa { font-family: var(--ar); font-variant-ligatures: normal; letter-spacing: 0; }
+#lang-zh { font-family: var(--cjk); letter-spacing: 0; }
+button.danger { color: var(--red); }
+button.run { color: var(--yellow); }
+.box {
+  display: grid;
+  grid-template-columns: 12rem minmax(0, 1fr) auto;
+  column-gap: 16px;
+  align-items: center;
+  padding: 0;
+  margin-top: 12px;
+}
+#login { margin-top: 0; }
+.hd, pre, #login-form, #lease-form, #url-forms, #wifi-forms, #override-rows, #groups, #status-body {
+  display: grid;
+  grid-template-columns: subgrid;
+  grid-column: 1 / -1;
+}
+.hd { display: block; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+pre { display: block; }
+pre:empty { display: none; }
+.row {
+  display: grid;
+  grid-template-columns: subgrid;
+  grid-column: 1 / -1;
+  align-items: center;
+  padding-block: 6px;
+}
+.cluster { display: contents; }
+.lab { min-width: 0; overflow-wrap: anywhere; }
+.value { unicode-bidi: isolate; min-width: 0; }
+.fp { overflow-wrap: normal; }
+.fp-chunk { display: inline-block; white-space: nowrap; }
+.token { overflow-wrap: normal; }
+.row > .value.text:last-child, .hint { grid-column: 2 / -1; overflow-wrap: anywhere; }
+.row button, .row > .seg { justify-self: stretch; }
+.row > .seg > button { flex: 1 1 auto; }
+.ltr { direction: ltr; unicode-bidi: isolate; }
+input, select {
+  direction: ltr;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: 6px 8px;
+  background: var(--raised);
+  border-bottom: 1px solid var(--line);
+  font-family: var(--mono);
+  font-variant-ligatures: none;
+  font-size: 15px;
+  font-weight: 450;
+  line-height: 1.45;
+}
+pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 8px 0 0;
+  font-size: 13px;
+  font-weight: 450;
+  line-height: 1.4;
+  text-align: start;
+}
+.fp { color: var(--cyan); font-size: 13px; font-weight: 450; line-height: 1.4; }
+.host { color: var(--blue); }
+.ok { color: var(--green); }
+.bad { color: var(--red); }
+.run { color: var(--yellow); }
+.hint { font-size: 13px; line-height: 1.4; white-space: normal; padding-bottom: 8px; }
+button:focus, input:focus, select:focus, .tab:focus { outline: 2px solid var(--blue); outline-offset: 0; }
+.actions, .choice { grid-column: 2 / -1; justify-self: start; margin: 0; }
+.actions { padding-block: 6px; }
+.choice { padding-block: 0 6px; }
+.choice > button { white-space: normal; overflow-wrap: anywhere; max-width: 100%; }
 #result { min-height: 1.2em; margin-top: 12px; }
+#login-msg { grid-column: 2 / -1; min-height: 1.2em; }
+#login-msg:empty { display: none; }
+@media (max-width: 36rem) {
+  .box { grid-template-columns: minmax(0, 1fr); }
+  .row > .value.text:last-child, .hint, .actions, .choice, #login-msg { grid-column: 1 / -1; }
+}
 </style>
 </head>
 <body>
 <div class="col">
   <div class="bar">
-    <div class="brand">janus</div>
-    <div class="alarm" id="alarm">ok</div>
-    <div>
-      <button type="button" id="theme-light">light</button>
-      <button type="button" id="theme-dark">dark</button>
+    <div class="bar-start">
+      <div class="brand">janus</div>
+      <div class="alarm ok" id="alarm" data-state="ok" hidden>ok</div>
+    </div>
+    <div class="bar-end">
+      <div class="seg quiet">
+        <button type="button" id="theme-light" data-i18n="light">light</button>
+        <span class="sep" aria-hidden="true">/</span>
+        <button type="button" id="theme-dark" data-i18n="dark">dark</button>
+      </div>
+      <div class="seg quiet">
+        <button type="button" id="lang-en">en</button>
+        <span class="sep" aria-hidden="true">/</span>
+        <button type="button" id="lang-ru">ру</button>
+        <span class="sep" aria-hidden="true">/</span>
+        <button type="button" id="lang-fa">فا</button>
+        <span class="sep" aria-hidden="true">/</span>
+        <button type="button" id="lang-zh">简中</button>
+      </div>
     </div>
   </div>
   <noscript>this page needs the browser script</noscript>
   <div id="login" class="box">
-    <div class="row"><span>host</span><span class="value" id="host"></span></div>
-    <div class="row"><span>fingerprint</span><span class="value" id="fp"></span></div>
+    <div class="row"><span class="lab" data-i18n="host">host</span><span class="value text ltr host" id="host"></span></div>
+    <div class="row"><span class="lab" data-i18n="fingerprint">fingerprint</span><span class="value text ltr fp" id="fp"></span></div>
     <form id="login-form" action="/login" method="post">
-      <div class="row"><label for="passphrase">passphrase</label><input id="passphrase" name="passphrase" type="password" autocomplete="off"></div>
-      <div class="actions"><button type="submit">enter</button></div>
+      <div class="row"><label class="lab" for="passphrase" data-i18n="passphrase">passphrase</label><input id="passphrase" name="passphrase" type="password" autocomplete="off" dir="ltr"><button type="submit" data-i18n="enter">enter</button></div>
+      <div id="login-msg"></div>
     </form>
-    <div id="login-msg"></div>
   </div>
   <div id="app" hidden>
     <div class="tabs" id="tabs">
-      <button type="button" class="tab on" data-section="status">status</button>
-      <button type="button" class="tab" data-section="tunnel">tunnel</button>
-      <button type="button" class="tab" data-section="network">network</button>
-      <button type="button" class="tab" data-section="overrides">overrides</button>
-      <button type="button" class="tab" data-section="monitoring">monitoring</button>
-      <button type="button" class="tab" data-section="system">system</button>
+      <button type="button" class="tab on" data-section="status" data-i18n="status">status</button>
+      <button type="button" class="tab" data-section="tunnel" data-i18n="tunnel">tunnel</button>
+      <button type="button" class="tab" data-section="network" data-i18n="network">network</button>
+      <button type="button" class="tab" data-section="overrides" data-i18n="overrides">overrides</button>
+      <button type="button" class="tab" data-section="monitoring" data-i18n="monitoring">monitoring</button>
+      <button type="button" class="tab" data-section="system" data-i18n="system">system</button>
     </div>
     <div id="result"></div>
     <section class="box" id="status-box" data-panel="status">
-      <div>status</div>
+      <div class="hd" data-i18n="status">status</div>
       <div id="status-body"></div>
     </section>
     <section class="box" id="tunnel-box" data-panel="tunnel" hidden>
-      <div>tunnel</div>
-      <div id="groups"></div>
+      <div class="hd" data-i18n="tunnel">tunnel</div>
       <div class="actions">
-        <button type="button" id="refresh-all">refresh</button>
-        <button type="button" id="refresh-geo">geo</button>
+        <button type="button" id="refresh-all" data-i18n="refresh">refresh</button>
+        <button type="button" id="refresh-geo" data-i18n="geo">geo</button>
       </div>
-      <div class="row"><span>subscription</span><select id="sub-name"></select><button type="button" id="refresh-one">refresh</button></div>
-      <div class="row"><span>group</span><input id="sel-group" autocomplete="off"><span>node</span><input id="sel-node" autocomplete="off"><button type="button" id="do-select">select</button></div>
-      <div class="row"><span>group</span><input id="test-group" autocomplete="off"><button type="button" id="do-test">test</button></div>
-      <pre class="value" id="tunnel-out"></pre>
+      <div id="groups"></div>
+      <div class="row" id="sub-row"><span class="lab" data-i18n="subscription">subscription</span><select id="sub-name" dir="ltr"></select><button type="button" id="refresh-one" data-i18n="refresh">refresh</button></div>
+      <pre class="value text ltr" id="tunnel-out"></pre>
     </section>
     <section class="box" id="network-box" data-panel="network" hidden>
-      <div>network</div>
-      <div class="row"><span>wan</span><input id="wan-name" autocomplete="off"><button type="button" id="wan-show">show</button><button type="button" id="wan-restart">restart</button></div>
-      <div class="row"><span>lan</span><select id="lan-name"></select><button type="button" id="lan-leases">leases</button></div>
-      <pre class="value" id="network-out"></pre>
+      <div class="hd" data-i18n="network">network</div>
+      <div class="row"><span class="lab ltr">wan</span><input id="wan-name" autocomplete="off" dir="ltr"><span class="seg"><button type="button" id="wan-show" data-i18n="show">show</button><button type="button" id="wan-restart" data-i18n="restart">restart</button></span></div>
+      <div class="row" id="lan-row"><span class="lab ltr">lan</span><select id="lan-name" dir="ltr"></select><button type="button" id="lan-leases" data-i18n="leases">leases</button></div>
+      <pre class="value text ltr" id="network-out"></pre>
     </section>
     <section class="box" id="overrides-box" data-panel="overrides" hidden>
-      <div>overrides</div>
-      <div id="override-rows"></div>
+      <div class="hd" data-i18n="overrides">overrides</div>
       <div id="url-forms"></div>
-      <div id="lease-form" class="row"><span>lease</span><select id="lease-lan"></select><input id="lease-host" placeholder="host" autocomplete="off"><input id="lease-mac" placeholder="mac" autocomplete="off"><input id="lease-ip" placeholder="ip" autocomplete="off"><button type="button" id="lease-set">set</button></div>
       <div id="wifi-forms"></div>
-      <div class="row"><span>unset</span><input id="unset-key" autocomplete="off"><button type="button" id="do-unset">unset</button></div>
-      <pre class="value" id="override-out"></pre>
+      <div id="override-rows"></div>
+      <div id="lease-form">
+        <div class="row"><span class="lab" data-i18n="lease">lease</span><select id="lease-lan" dir="ltr"></select></div>
+        <div class="row"><span class="lab" data-i18n="host">host</span><input id="lease-host" data-i18n-placeholder="host" placeholder="host" autocomplete="off" dir="ltr"></div>
+        <div class="row"><span class="lab ltr">mac</span><input id="lease-mac" placeholder="mac" autocomplete="off" dir="ltr"></div>
+        <div class="row"><span class="lab ltr">ip</span><input id="lease-ip" placeholder="ip" autocomplete="off" dir="ltr"><button type="button" id="lease-set" data-i18n="set">set</button></div>
+      </div>
+      <div class="row"><span class="lab" data-i18n="unset">unset</span><span class="value cluster"><input id="unset-key" autocomplete="off" dir="ltr"><button type="button" id="do-unset" data-i18n="unset">unset</button></span></div>
+      <pre class="value text ltr" id="override-out"></pre>
     </section>
     <section class="box" id="monitoring-box" data-panel="monitoring" hidden>
-      <div>monitoring</div>
-      <div class="row"><span>scope</span><span class="value" id="scope-line"></span></div>
-      <div class="row"><span>iface</span><input id="traffic-iface" autocomplete="off">
-        <button type="button" id="traffic-now">traffic</button>
-        <button type="button" id="traffic-daily">daily</button>
-        <button type="button" id="traffic-monthly">monthly</button>
-        <button type="button" id="traffic-top">top</button>
+      <div class="hd" data-i18n="monitoring">monitoring</div>
+      <div class="row"><span class="lab" data-i18n="scope">scope</span><span class="value text ltr" id="scope-line"></span></div>
+      <div class="row"><span class="lab" data-i18n="iface">iface</span><input id="traffic-iface" autocomplete="off" dir="ltr"></div>
+      <div class="actions">
+        <button type="button" id="traffic-now" data-i18n="traffic">traffic</button>
+        <button type="button" id="traffic-daily" data-i18n="daily">daily</button>
+        <button type="button" id="traffic-monthly" data-i18n="monthly">monthly</button>
+        <button type="button" id="traffic-top" data-i18n="top">top</button>
       </div>
       <div class="actions">
-        <button type="button" id="dns-stats">stats</button>
-        <button type="button" id="dns-check">check</button>
-        <button type="button" id="dns-flush">flush</button>
+        <button type="button" id="dns-stats" data-i18n="stats">stats</button>
+        <button type="button" id="dns-check" data-i18n="check">check</button>
+        <button type="button" id="dns-flush" data-i18n="flush">flush</button>
       </div>
-      <div class="row"><span>name</span><input id="dns-name" autocomplete="off"><button type="button" id="dns-query">query</button></div>
-      <div class="row" id="audit-row"><span>audit</span><span class="value" id="audit-line"></span></div>
-      <pre class="value" id="mon-out"></pre>
+      <div class="row"><span class="lab" data-i18n="name">name</span><span class="value cluster"><input id="dns-name" autocomplete="off" dir="ltr"><button type="button" id="dns-query" data-i18n="query">query</button></span></div>
+      <div class="row" id="audit-row"><span class="lab" data-i18n="audit">audit</span><span class="value text ltr" id="audit-line"></span></div>
+      <pre class="value text ltr" id="mon-out"></pre>
     </section>
     <section class="box" id="system-box" data-panel="system" hidden>
-      <div>system</div>
-      <pre class="value" id="version-out"></pre>
-      <div class="row"><span>reboot</span><input id="reboot-word" autocomplete="off"><button type="button" id="do-reboot">reboot</button></div>
+      <div class="hd" data-i18n="system">system</div>
+      <pre class="value text ltr" id="version-out"></pre>
+      <div class="row"><span class="lab" data-i18n="reboot">reboot</span><span class="value cluster"><input id="reboot-word" autocomplete="off" dir="ltr"><button type="button" id="do-reboot" class="danger" data-i18n="reboot">reboot</button></span></div>
+      <div class="hint" data-i18n="reboot-hint">type reboot</div>
     </section>
   </div>
 </div>
 <script>
+var STR = {
+  en: {
+    light: "light", dark: "dark", host: "host", fingerprint: "fingerprint", passphrase: "passphrase",
+    enter: "enter", rejected: "rejected", closed: "closed", status: "status", tunnel: "tunnel",
+    network: "network", overrides: "overrides", monitoring: "monitoring", system: "system",
+    refresh: "refresh", geo: "geo", subscription: "subscription", group: "group", node: "node",
+    select: "select", test: "test", show: "show", restart: "restart", leases: "leases", lease: "lease",
+    set: "set", unset: "unset", scope: "scope", iface: "iface", traffic: "traffic", daily: "daily",
+    monthly: "monthly", top: "top", stats: "stats", check: "check", flush: "flush", name: "name",
+    query: "query", audit: "audit", reboot: "reboot", "reboot-hint": "type reboot", ok: "ok",
+    alarm: "alarm", up: "up", down: "down", running: "running", failed: "failed", image: "image",
+    override: "override", engine: "engine", drift: "drift", state: "state", power: "power",
+    active: "active", inactive: "inactive", yes: "yes", no: "no", selector: "selector",
+    "url-test": "url-test", fallback: "fallback", "load-balance": "load-balance",
+    counters: "counters", "per-host": "per-host", flows: "flows",
+    script: "this page needs the browser script"
+  },
+  ru: {
+    light: "светлая", dark: "тёмная", host: "хост", fingerprint: "отпечаток", passphrase: "пароль",
+    enter: "войти", rejected: "отказано", closed: "закрыто", status: "состояние", tunnel: "туннель",
+    network: "сеть", overrides: "переопределения", monitoring: "мониторинг", system: "система",
+    refresh: "обновить", geo: "гео", subscription: "подписка", group: "группа", node: "узел",
+    select: "выбрать", test: "тест", show: "показать", restart: "перезапустить", leases: "аренды",
+    lease: "аренда", set: "задать", unset: "снять", scope: "охват", iface: "интерфейс",
+    traffic: "трафик", daily: "сутки", monthly: "месяц", top: "топ", stats: "статистика",
+    check: "проверить", flush: "сбросить", name: "имя", query: "запрос", audit: "аудит",
+    reboot: "перезагрузка", "reboot-hint": "введите reboot", ok: "ок", alarm: "сбой", up: "вкл",
+    down: "выкл", running: "идёт", failed: "ошибка", image: "образ", override: "замена",
+    engine: "движок", drift: "расхождение", state: "раздел", power: "питание",
+    active: "активен", inactive: "неактивен", yes: "да", no: "нет", selector: "выбор",
+    "url-test": "проверка", fallback: "запасной", "load-balance": "баланс",
+    counters: "счётчики", "per-host": "по узлам", flows: "потоки",
+    script: "этой странице нужен сценарий браузера"
+  },
+  fa: {
+    light: "روشن", dark: "تیره", host: "میزبان", fingerprint: "اثرانگشت", passphrase: "گذرواژه",
+    enter: "ورود", rejected: "رد شد", closed: "بسته", status: "وضعیت", tunnel: "تونل",
+    network: "شبکه", overrides: "بازنویسی", monitoring: "پایش", system: "سیستم",
+    refresh: "تازه‌سازی", geo: "ژئو", subscription: "اشتراک", group: "گروه", node: "گره",
+    select: "انتخاب", test: "آزمون", show: "نمایش", restart: "شروع دوباره", leases: "اجاره‌ها",
+    lease: "اجاره", set: "ثبت", unset: "برداشتن", scope: "دامنه", iface: "رابط",
+    traffic: "ترافیک", daily: "روزانه", monthly: "ماهانه", top: "برترین", stats: "آمار",
+    check: "بررسی", flush: "تخلیه", name: "نام", query: "پرس‌وجو", audit: "بازبینی",
+    reboot: "راه‌اندازی دوباره", "reboot-hint": "کلمه reboot را بنویسید", ok: "سالم", alarm: "هشدار",
+    up: "وصل", down: "قطع", running: "در حال اجرا", failed: "ناموفق", image: "تصویر",
+    override: "بازنویسی", engine: "موتور", drift: "ناسازگاری", state: "بخش", power: "توان",
+    active: "فعال", inactive: "غیرفعال", yes: "بله", no: "خیر", selector: "گزینش",
+    "url-test": "آزمون نشانی", fallback: "پشتیبان", "load-balance": "توازن",
+    counters: "شمارنده‌ها", "per-host": "به‌ازای میزبان", flows: "جریان‌ها",
+    script: "این صفحه به اسکریپت مرورگر نیاز دارد"
+  },
+  zh: {
+    light: "浅色", dark: "深色", host: "主机", fingerprint: "指纹", passphrase: "口令",
+    enter: "进入", rejected: "拒绝", closed: "锁定", status: "状态", tunnel: "隧道",
+    network: "网络", overrides: "覆盖", monitoring: "监测", system: "系统",
+    refresh: "刷新", geo: "地理", subscription: "订阅", group: "分组", node: "节点",
+    select: "选择", test: "测试", show: "显示", restart: "重启", leases: "租约",
+    lease: "租约", set: "设置", unset: "取消", scope: "范围", iface: "接口",
+    traffic: "流量", daily: "每日", monthly: "每月", top: "排行", stats: "统计",
+    check: "检查", flush: "清空", name: "名称", query: "查询", audit: "审计",
+    reboot: "重新启动", "reboot-hint": "输入 reboot", ok: "正常", alarm: "告警",
+    up: "在线", down: "离线", running: "进行中", failed: "失败", image: "镜像",
+    override: "已覆盖", engine: "引擎", drift: "偏离", state: "分区", power: "电源",
+    active: "运行", inactive: "停止", yes: "是", no: "否", selector: "选择",
+    "url-test": "测速", fallback: "回退", "load-balance": "均衡",
+    counters: "计数", "per-host": "按主机", flows: "流",
+    script: "此页面需要浏览器脚本"
+  }
+};
+var EXACT = {ok: 1, failed: 1, rejected: 1, closed: 1, alarm: 1, running: 1};
 var META = __JANUS_META__;
 var current = "status";
 var poll = null;
+
+function t(key) {
+  var lang = document.documentElement.lang || "en";
+  var table = STR[lang] || STR.en;
+  if (table[key] !== undefined) return table[key];
+  if (STR.en[key] !== undefined) return STR.en[key];
+  return key;
+}
+
+function applyLang(lang) {
+  if (lang !== "en" && lang !== "ru" && lang !== "fa" && lang !== "zh") lang = "en";
+  document.documentElement.lang = lang;
+  document.documentElement.dir = lang === "fa" ? "rtl" : "ltr";
+  try { localStorage.setItem("janus-lang", lang); } catch (e) {}
+  document.querySelectorAll("[data-i18n]").forEach(function (el) {
+    if (el.classList.contains("run")) return;
+    el.textContent = t(el.getAttribute("data-i18n"));
+  });
+  document.querySelectorAll("[data-i18n-placeholder]").forEach(function (el) {
+    el.setAttribute("placeholder", t(el.getAttribute("data-i18n-placeholder")));
+  });
+  document.querySelectorAll("[data-state]").forEach(function (el) {
+    el.textContent = t(el.getAttribute("data-state"));
+  });
+  ["en", "ru", "fa", "zh"].forEach(function (tag) {
+    document.getElementById("lang-" + tag).classList.toggle("on", tag === lang);
+  });
+}
 
 function theme(name) {
   document.documentElement.setAttribute("data-theme", name);
@@ -165,6 +458,18 @@ function messageOf(text, status) {
   if (data && typeof data === "object" && data.message) return data.message;
   if (status === 200) return "ok";
   return text || "failed";
+}
+
+function showNote(el, raw) {
+  if (EXACT[raw]) {
+    el.setAttribute("data-state", raw);
+    el.textContent = t(raw);
+    el.className = raw === "ok" ? "ok" : (raw === "running" ? "run" : "bad");
+  } else {
+    el.removeAttribute("data-state");
+    el.textContent = raw;
+    el.className = "ltr";
+  }
 }
 
 function api(method, path, body, mutate) {
@@ -185,12 +490,14 @@ function api(method, path, body, mutate) {
 function showLogin() {
   document.getElementById("login").hidden = false;
   document.getElementById("app").hidden = true;
+  document.getElementById("alarm").hidden = true;
   stopPoll();
 }
 
 function showApp() {
   document.getElementById("login").hidden = true;
   document.getElementById("app").hidden = false;
+  document.getElementById("alarm").hidden = false;
 }
 
 function fault(data) {
@@ -202,22 +509,132 @@ function fault(data) {
   return false;
 }
 
-function addRow(parent, name, value) {
+function setAlarm(bad) {
+  var el = document.getElementById("alarm");
+  var key = bad ? "alarm" : "ok";
+  el.setAttribute("data-state", key);
+  el.textContent = t(key);
+  el.classList.toggle("ok", !bad);
+  el.classList.toggle("bad", bad);
+}
+
+function lit(text) {
+  var el = document.createElement("span");
+  el.className = "ltr";
+  el.textContent = text;
+  return el;
+}
+
+function known(text) {
+  if (text === "true" || text === "yes") return "yes";
+  if (text === "false" || text === "no") return "no";
+  if (text === "active" || text === "inactive" || text === "up" || text === "down") return text;
+  if (EXACT[text]) return text;
+  return null;
+}
+
+function shown(text) {
+  var key = known(text);
+  return key ? [word(key)] : [lit(text)];
+}
+
+function paintCatalog(el, raw) {
+  if (raw && STR.en[raw] !== undefined) {
+    el.className = "value text";
+    el.setAttribute("data-state", raw);
+    el.textContent = t(raw);
+  } else {
+    el.className = "value text ltr";
+    el.removeAttribute("data-state");
+    el.textContent = raw || "";
+  }
+}
+
+function word(key) {
+  var el = document.createElement("span");
+  var tone = "";
+  if (key === "up" || key === "ok") tone = "ok";
+  else if (key === "down" || key === "alarm" || key === "failed" || key === "rejected" || key === "closed") tone = "bad";
+  else if (key === "running") tone = "run";
+  if (tone) el.className = tone;
+  el.setAttribute("data-state", key);
+  el.textContent = t(key);
+  return el;
+}
+
+function spaced(nodes) {
+  var out = [];
+  nodes.forEach(function (node, i) {
+    if (i) out.push(document.createTextNode(" "));
+    out.push(node);
+  });
+  return out;
+}
+
+function addRow(parent, labelNodes, valueNodes) {
   var row = document.createElement("div");
   row.className = "row";
   var label = document.createElement("span");
-  label.textContent = name;
+  label.className = "lab";
+  labelNodes.forEach(function (node) { label.appendChild(node); });
   var val = document.createElement("span");
-  val.className = "value";
-  val.textContent = value;
+  val.className = "value text";
+  valueNodes.forEach(function (node, i) {
+    if (i) val.appendChild(document.createTextNode("  "));
+    val.appendChild(node);
+  });
   row.appendChild(label);
   row.appendChild(val);
   parent.appendChild(row);
 }
 
+function colonToken(text) {
+  var s = String(text || "");
+  var span = document.createElement("span");
+  span.className = "ltr token";
+  if (s.indexOf(":") < 0) {
+    span.textContent = s;
+    return span;
+  }
+  var parts = s.split(":");
+  parts.forEach(function (part, i) {
+    if (i) {
+      span.appendChild(document.createTextNode(":"));
+      span.appendChild(document.createElement("wbr"));
+    }
+    span.appendChild(document.createTextNode(part));
+  });
+  return span;
+}
+
+function setFingerprint(hex) {
+  var el = document.getElementById("fp");
+  el.textContent = "";
+  var raw = String(hex || "").trim();
+  var pairs = raw.indexOf(":") >= 0 ? raw.split(":") : (raw.match(/.{1,2}/g) || []);
+  pairs = pairs.filter(function (part) { return part.length > 0; });
+  if (!pairs.length) {
+    if (raw) el.textContent = raw;
+    return;
+  }
+  var i = 0;
+  while (i < pairs.length) {
+    if (i) el.appendChild(document.createElement("wbr"));
+    var chunk = document.createElement("span");
+    chunk.className = "fp-chunk";
+    var slice = pairs.slice(i, i + 8);
+    var more = i + 8 < pairs.length;
+    chunk.textContent = slice.join(":") + (more ? ":" : "");
+    el.appendChild(chunk);
+    i += 8;
+  }
+}
+
 function renderStatus(el, data) {
+  el.className = "";
   el.textContent = "";
   if (!data || typeof data !== "object" || Array.isArray(data)) {
+    el.className = "ltr";
     el.textContent = data === undefined || data === null ? "" : String(data);
     return;
   }
@@ -227,56 +644,116 @@ function renderStatus(el, data) {
     data.wans.forEach(function (wan) {
       if (!wan || typeof wan !== "object") return;
       var state = wan.up === false ? "down" : "up";
-      addRow(el, "wan " + (wan.name || ""), wan.address ? state + "  " + wan.address : state);
+      var value = [word(state)];
+      if (wan.address) value.push(colonToken(wan.address));
+      addRow(el, spaced([lit("wan"), lit(wan.name || "")]), value);
     });
   }
   if (Array.isArray(data.lans)) {
     used.lans = true;
     data.lans.forEach(function (lan) {
       if (!lan || typeof lan !== "object") return;
-      addRow(el, "lan " + (lan.name || ""), "leases  " + (lan.leases === undefined ? "" : lan.leases));
+      addRow(el, spaced([lit("lan"), lit(lan.name || "")]), [word("leases"), lit(lan.leases === undefined ? "" : String(lan.leases))]);
     });
+  }
+  if (data.engine !== undefined) {
+    used.engine = true;
+    var engine = data.engine;
+    var engineText;
+    if (engine && typeof engine === "object") {
+      if (engine.active === true) engineText = "active";
+      else if (engine.active === false) engineText = "inactive";
+      else engineText = JSON.stringify(engine);
+    } else {
+      engineText = String(engine);
+    }
+    addRow(el, [word("engine")], shown(engineText));
   }
   if (Array.isArray(data.groups)) {
     used.groups = true;
     data.groups.forEach(function (group) {
       if (!group || typeof group !== "object") return;
-      addRow(el, "group " + (group.name || ""), group.node ? "node  " + group.node : "");
+      var value = group.node ? [word("node"), lit(group.node)] : [];
+      addRow(el, spaced([word("group"), lit(group.name || "")]), value);
     });
   }
-  ["engine", "refresh", "geo", "drift", "state", "power"].forEach(function (key) {
+  ["refresh", "geo", "drift", "state", "power"].forEach(function (key) {
     if (data[key] === undefined) return;
     used[key] = true;
     var item = data[key];
-    addRow(el, key, item && typeof item === "object" ? JSON.stringify(item) : String(item));
+    var text = item && typeof item === "object" ? JSON.stringify(item) : String(item);
+    var label = STR.en[key] !== undefined ? [word(key)] : [lit(key)];
+    addRow(el, label, shown(text));
   });
   Object.keys(data).forEach(function (key) {
     if (used[key]) return;
     var item = data[key];
-    addRow(el, key, item && typeof item === "object" ? JSON.stringify(item) : String(item));
+    addRow(el, [lit(key)], [lit(item && typeof item === "object" ? JSON.stringify(item) : String(item))]);
   });
 }
 
-function setOut(id, res) {
+function clearNote() {
+  var el = document.getElementById("result");
+  el.textContent = "";
+  el.className = "";
+  el.removeAttribute("data-state");
+}
+
+function isAck(data) {
+  if (data === null || data === undefined) return true;
+  if (typeof data === "string") {
+    var trimmed = data.trim();
+    return trimmed === "" || trimmed === "ok";
+  }
+  if (typeof data === "object" && !Array.isArray(data)) {
+    var keys = Object.keys(data);
+    return keys.length === 0 || (keys.length === 1 && keys[0] === "ok" && data.ok === true);
+  }
+  return false;
+}
+
+function reportText(res) {
+  if (typeof res.data === "string") return res.data;
+  if (isAck(res.data)) return "";
+  return JSON.stringify(res.data, null, 2);
+}
+
+function writeOut(id, res) {
   var el = document.getElementById(id);
   if (res.status === 200) {
-    el.textContent = typeof res.data === "string" ? res.data : JSON.stringify(res.data, null, 2);
-    document.getElementById("result").textContent = "ok";
-  } else {
-    el.textContent = "";
-    document.getElementById("result").textContent = messageOf(res.text, res.status);
+    el.textContent = reportText(res);
+    return true;
   }
+  el.textContent = "";
+  return false;
+}
+
+function fillOut(id, res) {
+  if (!writeOut(id, res)) showNote(document.getElementById("result"), messageOf(res.text, res.status));
+}
+
+function setOut(id, res) {
+  if (writeOut(id, res)) showNote(document.getElementById("result"), "ok");
+  else showNote(document.getElementById("result"), messageOf(res.text, res.status));
 }
 
 function running(btn, work) {
+  var key = btn.getAttribute("data-i18n");
   var label = btn.textContent;
-  btn.textContent = "running";
+  btn.classList.add("run");
+  btn.setAttribute("data-state", "running");
+  btn.textContent = t("running");
+  function restore() {
+    btn.classList.remove("run");
+    btn.removeAttribute("data-state");
+    btn.textContent = key ? t(key) : label;
+  }
   return work().then(function (res) {
-    btn.textContent = label;
+    restore();
     return res;
   }, function (err) {
-    btn.textContent = label;
-    document.getElementById("result").textContent = "failed";
+    restore();
+    showNote(document.getElementById("result"), "failed");
     throw err;
   });
 }
@@ -284,14 +761,12 @@ function running(btn, work) {
 function loadStatus() {
   return api("GET", "/api/status").then(function (res) {
     if (res.status !== 200) {
-      document.getElementById("result").textContent = messageOf(res.text, res.status);
+      showNote(document.getElementById("result"), messageOf(res.text, res.status));
       return;
     }
     renderStatus(document.getElementById("status-body"), res.data);
-    var bad = fault(res.data);
-    document.getElementById("status-box").classList.toggle("alarm", bad);
-    document.getElementById("alarm").textContent = bad ? "alarm" : "ok";
-    document.getElementById("result").textContent = "ok";
+    setAlarm(fault(res.data));
+    clearNote();
   });
 }
 
@@ -310,6 +785,7 @@ function startPoll() {
 
 function showSection(name) {
   current = name;
+  clearNote();
   document.querySelectorAll(".tab").forEach(function (tab) {
     tab.classList.toggle("on", tab.getAttribute("data-section") === name);
   });
@@ -322,29 +798,19 @@ function showSection(name) {
   } else {
     stopPoll();
   }
-  if (name === "tunnel") {
-    api("GET", "/api/proxy/groups").then(function (res) {
-      if (res.status === 200 && renderGroups(res.data)) {
-        document.getElementById("tunnel-out").textContent = "";
-        document.getElementById("result").textContent = "ok";
+  if (name === "tunnel") loadGroups(false);
+  if (name === "overrides") {
+    api("GET", "/api/override").then(function (res) {
+      if (res.status === 200) {
+        renderOverrideRows(res.data);
+        document.getElementById("override-out").textContent = "";
       } else {
-        setOut("tunnel-out", res);
+        fillOut("override-out", res);
       }
     });
   }
-  if (name === "network") {
-    var lan = document.getElementById("lan-name").value;
-    var leasePath = lan ? "/api/lan/leases?lan=" + encodeURIComponent(lan) : "/api/lan/leases";
-    api("GET", leasePath).then(function (res) { setOut("network-out", res); });
-  }
-  if (name === "overrides") {
-    api("GET", "/api/override").then(function (res) {
-      renderOverrideRows(res.status === 200 ? res.data : null);
-      setOut("override-out", res);
-    });
-  }
   if (name === "monitoring") {
-    api("GET", "/api/traffic").then(function (res) { setOut("mon-out", res); });
+    api("GET", "/api/traffic").then(function (res) { fillOut("mon-out", res); });
     if (META.audit) {
       api("GET", "/api/audit").then(function (res) {
         document.getElementById("audit-line").textContent = res.status === 200 ? res.text : messageOf(res.text, res.status);
@@ -352,8 +818,19 @@ function showSection(name) {
     }
   }
   if (name === "system") {
-    api("GET", "/api/version").then(function (res) { setOut("version-out", res); });
+    api("GET", "/api/version").then(function (res) { fillOut("version-out", res); });
   }
+}
+
+function loadGroups(keepOut) {
+  return api("GET", "/api/proxy/groups").then(function (res) {
+    if (res.status === 200) {
+      renderGroups(res.data);
+      if (!keepOut) document.getElementById("tunnel-out").textContent = "";
+    } else if (!keepOut) {
+      setOut("tunnel-out", res);
+    }
+  });
 }
 
 function fillSelect(id, values, placeholder) {
@@ -377,121 +854,124 @@ function renderGroups(data) {
   var el = document.getElementById("groups");
   el.textContent = "";
   var proxies = data && data.proxies;
-  if (!proxies || typeof proxies !== "object" || Array.isArray(proxies)) return false;
+  if (!proxies || typeof proxies !== "object" || Array.isArray(proxies)) return;
   var kinds = {Selector: true, URLTest: true, Fallback: true, LoadBalance: true};
-  var found = false;
   Object.keys(proxies).forEach(function (name) {
     var item = proxies[name];
     if (!item || !kinds[item.type]) return;
-    found = true;
-    var head = document.createElement("div");
-    head.className = "row";
+    var row = document.createElement("div");
+    row.className = "row";
     var label = document.createElement("span");
+    label.className = "lab ltr";
     label.textContent = name;
-    var strategy = document.createElement("span");
-    strategy.className = "value";
-    strategy.textContent = item.type || "";
-    head.appendChild(label);
-    head.appendChild(strategy);
-    el.appendChild(head);
+    var value = document.createElement("span");
+    var typeKey = {Selector: "selector", URLTest: "url-test", Fallback: "fallback", LoadBalance: "load-balance"}[item.type];
+    if (typeKey) {
+      value.className = "value text";
+      value.setAttribute("data-state", typeKey);
+      value.textContent = t(typeKey);
+    } else {
+      value.className = "value text ltr";
+      value.textContent = item.type || "";
+    }
+    var test = document.createElement("button");
+    test.type = "button";
+    test.setAttribute("data-i18n", "test");
+    test.textContent = t("test");
+    test.addEventListener("click", function () {
+      running(test, function () {
+        return api("POST", "/api/proxy/test", {group: name}, true);
+      }).then(function (res) { setOut("tunnel-out", res); });
+    });
+    row.appendChild(label);
+    row.appendChild(value);
+    row.appendChild(test);
+    el.appendChild(row);
+    var nodes = item.all || [];
+    if (!nodes.length) return;
     var members = document.createElement("div");
-    members.className = "actions";
-    (item.all || []).forEach(function (node) {
+    members.className = "choice";
+    nodes.forEach(function (node) {
       var button = document.createElement("button");
       button.type = "button";
+      button.className = node === item.now ? "on mono ltr" : "mono ltr";
       button.textContent = node;
-      if (node === item.now) button.className = "on";
       button.addEventListener("click", function () {
-        document.getElementById("sel-group").value = name;
-        document.getElementById("sel-node").value = node;
         running(button, function () {
           return api("POST", "/api/proxy/select", {group: name, node: node}, true);
         }).then(function (res) {
           setOut("tunnel-out", res);
-          if (res.status === 200) showSection("tunnel");
+          if (res.status === 200) loadGroups(true);
         });
       });
       members.appendChild(button);
     });
     el.appendChild(members);
   });
-  return found;
+}
+
+function secretRows(parent, name, state, key, inputType) {
+  addRow(parent, [lit(name)], [word(state)]);
+  var row = document.createElement("div");
+  row.className = "row";
+  var label = document.createElement("span");
+  label.className = "lab ltr";
+  label.textContent = name;
+  var input = document.createElement("input");
+  input.type = inputType;
+  input.autocomplete = "off";
+  input.dir = "ltr";
+  var button = document.createElement("button");
+  button.type = "button";
+  button.setAttribute("data-i18n", "set");
+  button.textContent = t("set");
+  button.addEventListener("click", function () {
+    running(button, function () {
+      return api("POST", "/api/override", {key: key, value: input.value}, true);
+    }).then(function (res) {
+      if (res.status === 200) input.value = "";
+      setOut("override-out", res);
+      if (res.status === 200) {
+        api("GET", "/api/override").then(function (again) {
+          if (again.status === 200) renderOverrideRows(again.data);
+        });
+      }
+    });
+  });
+  row.appendChild(label);
+  row.appendChild(input);
+  row.appendChild(button);
+  parent.appendChild(row);
 }
 
 function renderOverrideRows(data) {
-  var el = document.getElementById("override-rows");
-  el.textContent = "";
+  var leases = document.getElementById("override-rows");
+  var urls = document.getElementById("url-forms");
+  var wifiBox = document.getElementById("wifi-forms");
+  leases.textContent = "";
+  urls.textContent = "";
+  wifiBox.textContent = "";
   (META.subscriptions || []).forEach(function (name) {
     var key = "proxy.subscriptions." + name + ".url";
     var state = data && Object.prototype.hasOwnProperty.call(data, key) ? "override" : "image";
-    addRow(el, name, state);
+    secretRows(urls, name, state, key, "text");
   });
   (META.wifi || []).forEach(function (name) {
     var key = "network.wifi." + name + ".passphrase";
     var state = data && Object.prototype.hasOwnProperty.call(data, key) ? "override" : "image";
-    addRow(el, name, state);
+    secretRows(wifiBox, name, state, key, "password");
   });
   if (!data || typeof data !== "object") return;
   Object.keys(data).forEach(function (key) {
     var item = data[key];
     if (!item || typeof item !== "object" || Array.isArray(item) || item.mac === undefined) return;
-    addRow(el, key, item.mac + "  " + (item.ip || ""));
+    var mark = ".staticLeases.";
+    var at = key.lastIndexOf(mark);
+    var host = at < 0 ? "" : key.slice(at + mark.length);
+    var bits = [colonToken(item.mac), colonToken(item.ip || "")];
+    if (host) addRow(leases, [lit(host)], bits);
+    else addRow(leases, [word("lease")], [colonToken(key)].concat(bits));
   });
-}
-
-function addUrlForm(name) {
-  var row = document.createElement("div");
-  row.className = "row";
-  var label = document.createElement("span");
-  label.textContent = name;
-  var input = document.createElement("input");
-  input.autocomplete = "off";
-  var button = document.createElement("button");
-  button.type = "button";
-  button.textContent = "set";
-  button.addEventListener("click", function () {
-    running(button, function () {
-      return api("POST", "/api/override", {
-        key: "proxy.subscriptions." + name + ".url",
-        value: input.value
-      }, true);
-    }).then(function (res) {
-      input.value = "";
-      setOut("override-out", res);
-    });
-  });
-  row.appendChild(label);
-  row.appendChild(input);
-  row.appendChild(button);
-  document.getElementById("url-forms").appendChild(row);
-}
-
-function addWifiForm(name) {
-  var row = document.createElement("div");
-  row.className = "row";
-  var label = document.createElement("span");
-  label.textContent = name;
-  var input = document.createElement("input");
-  input.type = "password";
-  input.autocomplete = "off";
-  var button = document.createElement("button");
-  button.type = "button";
-  button.textContent = "set";
-  button.addEventListener("click", function () {
-    running(button, function () {
-      return api("POST", "/api/override", {
-        key: "network.wifi." + name + ".passphrase",
-        value: input.value
-      }, true);
-    }).then(function (res) {
-      input.value = "";
-      setOut("override-out", res);
-    });
-  });
-  row.appendChild(label);
-  row.appendChild(input);
-  row.appendChild(button);
-  document.getElementById("wifi-forms").appendChild(row);
 }
 
 function applyMeta(meta) {
@@ -508,14 +988,13 @@ function applyMeta(meta) {
   document.querySelector('[data-section="overrides"]').hidden = !META.proxy && subs.length === 0 && lans.length === 0 && wifi.length === 0;
   document.getElementById("audit-row").hidden = !META.audit;
   document.getElementById("traffic-top").hidden = META.monitoringScope !== "per-host";
-  document.getElementById("scope-line").textContent = META.monitoringScope;
-  document.getElementById("url-forms").textContent = "";
-  document.getElementById("wifi-forms").textContent = "";
+  document.getElementById("sub-row").hidden = subs.length === 0;
+  document.getElementById("lan-row").hidden = lans.length === 0;
+  paintCatalog(document.getElementById("scope-line"), META.monitoringScope);
   fillSelect("sub-name", subs, "");
   fillSelect("lan-name", lans, "");
   fillSelect("lease-lan", lans, "");
-  subs.forEach(addUrlForm);
-  wifi.forEach(addWifiForm);
+  renderOverrideRows(null);
   document.getElementById("lease-form").hidden = lans.length === 0;
 }
 
@@ -532,11 +1011,15 @@ function enterApp() {
 }
 
 function boot() {
+  applyLang(document.documentElement.lang || "en");
   theme(document.documentElement.getAttribute("data-theme") || "light");
   document.getElementById("host").textContent = META.hostname || "";
-  document.getElementById("fp").textContent = META.fingerprint || "";
+  setFingerprint(META.fingerprint || "");
   document.getElementById("theme-light").addEventListener("click", function () { theme("light"); });
   document.getElementById("theme-dark").addEventListener("click", function () { theme("dark"); });
+  ["en", "ru", "fa", "zh"].forEach(function (tag) {
+    document.getElementById("lang-" + tag).addEventListener("click", function () { applyLang(tag); });
+  });
   document.getElementById("login-form").addEventListener("submit", function (event) {
     event.preventDefault();
     var button = event.target.querySelector("button");
@@ -554,10 +1037,13 @@ function boot() {
     }).then(function (res) {
       input.value = "";
       if (res.status === 200 || res.status === 303) {
-        document.getElementById("login-msg").textContent = "";
+        var msg = document.getElementById("login-msg");
+        msg.textContent = "";
+        msg.className = "";
+        msg.removeAttribute("data-state");
         enterApp();
       } else {
-        document.getElementById("login-msg").textContent = messageOf(res.text, res.status);
+        showNote(document.getElementById("login-msg"), messageOf(res.text, res.status));
       }
     });
   });
@@ -570,25 +1056,13 @@ function boot() {
   });
   document.getElementById("refresh-one").addEventListener("click", function () {
     var name = document.getElementById("sub-name").value;
+    if (!name) return;
     running(this, function () { return api("POST", "/api/proxy/refresh", {name: name}, true); })
       .then(function (res) { setOut("tunnel-out", res); });
   });
   document.getElementById("refresh-geo").addEventListener("click", function () {
     running(this, function () { return api("POST", "/api/proxy/geodata/refresh", {}, true); })
       .then(function (res) { setOut("tunnel-out", res); });
-  });
-  document.getElementById("do-select").addEventListener("click", function () {
-    running(this, function () {
-      return api("POST", "/api/proxy/select", {
-        group: document.getElementById("sel-group").value,
-        node: document.getElementById("sel-node").value
-      }, true);
-    }).then(function (res) { setOut("tunnel-out", res); });
-  });
-  document.getElementById("do-test").addEventListener("click", function () {
-    running(this, function () {
-      return api("POST", "/api/proxy/test", {group: document.getElementById("test-group").value}, true);
-    }).then(function (res) { setOut("tunnel-out", res); });
   });
   document.getElementById("wan-show").addEventListener("click", function () {
     var name = document.getElementById("wan-name").value;
@@ -609,22 +1083,41 @@ function boot() {
   document.getElementById("lease-set").addEventListener("click", function () {
     var lan = document.getElementById("lease-lan").value;
     var host = document.getElementById("lease-host").value;
+    var mac = document.getElementById("lease-mac").value;
+    var ip = document.getElementById("lease-ip").value;
+    if (!lan || !host || !mac || !ip) return;
     running(this, function () {
       return api("POST", "/api/override", {
         key: "network.lans." + lan + ".dhcp.staticLeases." + host,
-        mac: document.getElementById("lease-mac").value,
-        ip: document.getElementById("lease-ip").value
+        mac: mac,
+        ip: ip
       }, true);
     }).then(function (res) {
-      document.getElementById("lease-mac").value = "";
-      document.getElementById("lease-ip").value = "";
+      if (res.status === 200) {
+        document.getElementById("lease-host").value = "";
+        document.getElementById("lease-mac").value = "";
+        document.getElementById("lease-ip").value = "";
+      }
       setOut("override-out", res);
+      if (res.status === 200) {
+        api("GET", "/api/override").then(function (again) {
+          if (again.status === 200) renderOverrideRows(again.data);
+        });
+      }
     });
   });
   document.getElementById("do-unset").addEventListener("click", function () {
     running(this, function () {
       return api("POST", "/api/override/unset", {key: document.getElementById("unset-key").value}, true);
-    }).then(function (res) { setOut("override-out", res); });
+    }).then(function (res) {
+      if (res.status === 200) document.getElementById("unset-key").value = "";
+      setOut("override-out", res);
+      if (res.status === 200) {
+        api("GET", "/api/override").then(function (again) {
+          if (again.status === 200) renderOverrideRows(again.data);
+        });
+      }
+    });
   });
   document.getElementById("traffic-now").addEventListener("click", function () {
     var iface = document.getElementById("traffic-iface").value;
@@ -659,8 +1152,9 @@ function boot() {
     }).then(function (res) { setOut("mon-out", res); });
   });
   document.getElementById("do-reboot").addEventListener("click", function () {
+    if (document.getElementById("reboot-word").value !== "reboot") return;
     running(this, function () {
-      return api("POST", "/api/reboot", {confirm: document.getElementById("reboot-word").value}, true);
+      return api("POST", "/api/reboot", {confirm: "reboot"}, true);
     }).then(function (res) { setOut("version-out", res); });
   });
   document.addEventListener("visibilitychange", function () {

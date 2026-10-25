@@ -25,6 +25,7 @@
   rootMinMiB,
   stateMiB,
   nixSlackPercent,
+  nixMinMiB,
   nixSizeMode,
   nixExactMiB,
   bootLabel,
@@ -75,6 +76,7 @@ in
       rootMinMiB
       stateMiB
       nixSlackPercent
+      nixMinMiB
       nixSizeMode
       nixExactMiB
       bootLabel
@@ -139,19 +141,11 @@ in
 
       # Populate an f2fs image from a directory. Prints the size in MiB.
       # The sixth argument, when non-empty, is the exact size in MiB.
+      . ${./f2fs-mib.sh}
       make_f2fs() {
         local label="$1" src="$2" out="$3" min_mib="$4" slack="$5" exact="$6"
-        local bytes mib inodes
-        if [ -n "$exact" ]; then
-          mib=$exact
-        else
-          bytes=$(du -s -B1 "$src" | awk '{ print $1 }')
-          inodes=$(find "$src" | wc -l)
-          # f2fs spends a node block on every inode. A Nix store is mostly small files.
-          bytes=$(( bytes * (100 + slack) / 100 + inodes * 4096 + 128 * 1024 * 1024 ))
-          mib=$(( (bytes + 1048575) / 1048576 ))
-          if (( mib < min_mib )); then mib=$min_mib; fi
-        fi
+        local mib
+        mib=$(f2fs_partition_mib "$src" "$min_mib" "$slack" "$exact")
         truncate -s "''${mib}M" "$out"
         # mkfs.f2fs stamps the root inode with the caller's uid:gid, and
         # sload.f2fs -P never updates it. Without an explicit owner the image
@@ -166,7 +160,7 @@ in
       if [ "$nixSizeMode" = exact ]; then
         nix_mib=$(make_f2fs "$nixLabel" nixfs nix.img 0 0 "$nixExactMiB")
       else
-        nix_mib=$(make_f2fs "$nixLabel" nixfs nix.img 64 "$nixSlackPercent" "")
+        nix_mib=$(make_f2fs "$nixLabel" nixfs nix.img "$nixMinMiB" "$nixSlackPercent" "")
       fi
       if [ "$slots" = 1 ]; then
         make_f2fs "''${rootLabel}_B" rootfs root-b.img 0 0 "$root_mib" >/dev/null

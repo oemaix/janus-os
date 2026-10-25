@@ -5,7 +5,7 @@
 (def fail-limit 5)
 (def fail-seconds 60)
 (def max-sessions 8)
-(def csp "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'")
+(def csp "default-src 'none'; connect-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'")
 
 (def ident
   (peg/compile ~(* (some (+ (range "az") (range "AZ") (range "09") "_" "-" (range ".."))) -1)))
@@ -542,6 +542,9 @@
     {:status 404 :ctype "text/plain; charset=utf-8" :body ""}))
 
 (defn page-html [st]
+  # Janet takes the pattern, then the replacement, then the text.
+  # The other order searches the HTML for itself inside the JSON and
+  # returns the public document with the store page untouched.
   (string/replace "__JANUS_META__" (json-encode (public-doc st)) (slurp (st :html))))
 
 (defn access-line [method path status]
@@ -690,6 +693,14 @@
   (ensure-dirs st)
   st)
 
+(defn notify-ready []
+  (def path (os/getenv "NOTIFY_SOCKET"))
+  (when (and (string? path) (> (length path) 0))
+    # Datagram from this process. systemd accepts it when this PID is the main PID.
+    (def conn (net/connect :unix path :datagram))
+    (net/write conn "READY=1\n")
+    (net/close conn)))
+
 (defn serve []
   (def pass (load-passphrase))
   (when (= pass "")
@@ -703,6 +714,7 @@
   (try (os/rm sock) ([_] nil))
   (def server (net/listen :unix sock))
   (os/chmod sock 8r660)
+  (notify-ready)
   (accept-loop server st))
 
 (defn expect [cond msg]
@@ -736,19 +748,37 @@
   (def page (slurp html))
   (expect (string/find "border-radius: 0" page) "radius")
   (expect (string/find "box-shadow: none" page) "shadow")
-  (expect (string/find "#ffffff" page) "paper")
-  (expect (string/find "#111111" page) "ink")
-  (expect (string/find "#eeeeee" page) "dark ink")
   (expect (string/find "janus-theme" page) "theme key")
+  (expect (string/find "janus-lang" page) "lang key")
   (expect (string/find "prefers-color-scheme" page) "scheme")
+  (expect (string/find "navigator.languages" page) "languages")
+  (expect (string/find "ui-monospace" page) "mono")
+  (expect (string/find "Noto Naskh Arabic" page) "arabic")
+  (expect (string/find "72ch" page) "measure")
+  (expect (string/find "createElement(\"wbr\")" page) "fingerprint wrap")
+  (expect (string/find "хост" page) "russian host")
+  (expect (string/find "میزبان" page) "persian host")
+  (expect (string/find "简中" page) "chinese label")
+  (expect (string/find "主机" page) "chinese host")
+  (expect (string/find "Noto Sans CJK SC" page) "cjk")
+  (expect (not (string/find "toUpperCase" page)) "host case")
+  (def palette
+    ["002b36" "073642" "93a1a1" "586e75" "eee8d5" "fdf6e3"
+     "3b94d2" "0674c2" "2aa198" "217d76" "859900" "687800"
+     "b58900" "8f6c00" "f9514e" "d5302d" "e76630" "c44915"
+     "ec549d" "cb347d" "7e84e6" "4f55c4"])
+  (def allowed @{})
+  (each h palette
+    (put allowed h true)
+    (expect (string/find h page) (string "palette " h)))
   (var i 0)
   (while (def at (string/find "#" page i))
     (def hex (string/slice page (+ at 1) (+ at 7)))
     (when (peg/match ~(* (repeat 6 :h) -1) hex)
-      (unless (or (= hex "ffffff") (= hex "111111") (= hex "eeeeee"))
+      (unless (get allowed hex)
         (eprint (string "color " hex))
         (os/exit 1)))
-    (set i (+ at 7)))
+    (set i (+ at 1)))
 
   (def calls @[])
   (defn spy [op args stdin]
@@ -799,9 +829,16 @@
   (expect (= (length calls) 3) "off allowlist did not run")
   (def hidden (make-state (string runtime "-meta") "secret" spy @{"hostname" "router" "subscriptions" ["secret-sub"] "proxy" true} (fn [] clock) html nil "AA:BB"))
   (def rendered (page-html hidden))
+  (expect (string/find "<!DOCTYPE html>" rendered) "login is html")
+  (expect (string/find "id=\"passphrase\"" rendered) "login has passphrase")
+  (expect (not (string/find "__JANUS_META__" rendered)) "placeholder replaced")
   (expect (string/find "router" rendered) "login shows host")
   (expect (string/find "AA:BB" rendered) "login shows fingerprint")
   (expect (not (string/find "secret-sub" rendered)) "login hides subscriptions")
+  (def login-page
+    (handle hidden {:method "GET" :path "/" :query @{} :headers @{} :body ""}))
+  (expect (= (login-page :status) 200) "login page")
+  (expect (string/find "<!DOCTYPE html>" (login-page :body)) "login page html")
   (def meta-login
     (handle hidden {:method "POST" :path "/login" :query @{} :headers @{} :body "passphrase=secret"}))
   (def meta-token (string/slice (get (meta-login :headers) "Set-Cookie") 14 78))
@@ -856,7 +893,18 @@
     (http-round sock "GET" "/api/status" {"Cookie" (string "janus_session=" live-token)} ""))
   (expect (string/find "200" raw-status) "socket status")
   (expect (string/find "Content-Security-Policy" raw-status) "csp")
+  (expect (string/find "connect-src 'self'" raw-status) "csp connect")
   (expect (string/find "Cache-Control: no-store" raw-status) "nostore")
+
+  (def note-path (string runtime "-note"))
+  (def note (net/listen :unix note-path :datagram))
+  (os/setenv "NOTIFY_SOCKET" note-path)
+  (notify-ready)
+  (def note-buf @"")
+  (net/read note 64 note-buf 1)
+  (expect (= (string note-buf) "READY=1\n") "ready datagram")
+  (os/setenv "NOTIFY_SOCKET" nil)
+  (net/close note)
   (os/exit 0))
 
 (defn main [&]

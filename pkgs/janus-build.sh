@@ -1,8 +1,36 @@
 # docs/16.
 usage() {
-  echo "janus-build <init|host|secret|check|build|update|fleet|status|backup|deploy> [<args>]" >&2
-  echo "See docs/16-build-host-cli.md." >&2
+  echo "janus-build <command> [<args>]" >&2
+  echo "Run 'janus-build --help' for the command list." >&2
   exit 2
+}
+
+help() {
+  cat <<'EOF'
+janus-build <command> [<args>]
+janus-build --help
+janus-build --usage
+
+--help and --usage print this text on stdout and exit 0.
+Exit 0 is success. Exit 2 is a usage or refused request. Exit 1 is a runtime failure.
+
+  init <dir> [--host <name>]
+  host add <name>
+  secret keygen <host>
+  secret set <path>
+  secret rewrap <path> --from <host>
+  check [<host>]
+  build [<host>]
+  update [--train <train>]
+  fleet apply [<host>] [--only-overrides]
+  fleet pull [<host>] [--with-secrets]
+  status [<host>]
+  backup <host>
+  deploy <host>
+  deploy --preserve-state <host>
+  deploy --confirm <host>
+  deploy --age-key <host>
+EOF
 }
 
 later() {
@@ -205,26 +233,57 @@ host_address() {
   nix_fleet eval --raw ".#nixosConfigurations.${1}.config.janus.access.deploy.address"
 }
 
+# A value that already contains @ is an SSH destination, so an IPv6 form
+# there is root@[address]. A bare IPv6 literal is wrapped in brackets.
+# ssh://root@[address] is the form nix copy accepts.
+ssh_dest() {
+  case "$1" in
+    *@*) printf '%s\n' "$1" ;;
+    \[*\]) printf 'root@%s\n' "$1" ;;
+    *:*) printf 'root@[%s]\n' "$1" ;;
+    *) printf 'root@%s\n' "$1" ;;
+  esac
+}
+
 ssh_to() {
   addr=$1
   shift
-  case "$addr" in
-    *@*) dest=$addr ;;
-    *) dest="root@${addr}" ;;
-  esac
+  dest=$(ssh_dest "$addr")
   ssh -o BatchMode=yes -o ConnectTimeout=8 "$dest" "$@"
+}
+
+# The probe uses ssh -n so a piped key stays unread until the router
+# answers. The prompt follows that answer. The key is not an argument
+# and the temp file is removed on return.
+install_age_key_over_ssh() {
+  dest=$(ssh_dest "$1")
+  if ! ssh -n -o BatchMode=yes -o ConnectTimeout=8 "$dest" true; then
+    return 1
+  fi
+  if [ -t 0 ]; then
+    echo "Paste the age private key, then press Enter and Ctrl-D." >&2
+  fi
+  work=$(mktemp)
+  trap 'rm -f "$work"' RETURN
+  cat > "$work"
+  if ! grep -q '^AGE-SECRET-KEY-1' "$work"; then
+    echo "Refusing an age key that has no AGE-SECRET-KEY-1 line." >&2
+    return 1
+  fi
+  ssh -o BatchMode=yes -o ConnectTimeout=8 "$dest" janus secrets install-age-key < "$work"
 }
 
 slot_fits() {
   addr=$1
   uuid=$2
   img=$3
+  what=$4
   part=$(ssh_to "$addr" "blockdev --getsize64 /dev/disk/by-partuuid/${uuid}")
   part=$(printf '%s' "$part" | tr -d '[:space:]')
   bytes=$(wc -c < "$img")
   bytes=$(printf '%s' "$bytes" | tr -d '[:space:]')
   if [ "$bytes" -gt "$part" ]; then
-    echo "janus-build: the new slot image does not fit the partition. Flash a larger image." >&2
+    echo "janus-build: the new ${what} slot image does not fit the ${what} partition. Flash a larger image." >&2
     exit 1
   fi
 }
@@ -254,18 +313,19 @@ deploy_slots() {
     echo "janus-build: this disk has no inactive slot. Flash an image built with janus.storage.slots.enable." >&2
     exit 1
   fi
-  slot_fits "$addr" "$root_uuid" "$root_img"
-  slot_fits "$addr" "$nix_uuid" "$nix_img"
+  slot_fits "$addr" "$root_uuid" "$root_img" "root"
+  slot_fits "$addr" "$nix_uuid" "$nix_img" "Nix"
   ssh_to "$addr" "mount -o remount,rw /boot || true"
   ssh_to "$addr" "dd of=/dev/disk/by-partuuid/${root_uuid} bs=1M conv=fsync status=none" < "$root_img"
   ssh_to "$addr" "dd of=/dev/disk/by-partuuid/${nix_uuid} bs=1M conv=fsync status=none" < "$nix_img"
-  if ! ssh_to "$addr" "mkdir -p /mnt/janus-slot-nix && mount -o ro /dev/disk/by-partuuid/${nix_uuid} /mnt/janus-slot-nix && JANUS_SLOT_STORE=/mnt/janus-slot-nix bash -s -- install-slot ${closure} ${next}" < "$JANUS_BOOT_INSTALL"; then
-    ssh_to "$addr" "umount /mnt/janus-slot-nix" || true
+  # / is read-only and the slot root has no /mnt. /run is tmpfs.
+  if ! ssh_to "$addr" "mkdir -p /run/janus-slot-nix && mount -o ro /dev/disk/by-partuuid/${nix_uuid} /run/janus-slot-nix && JANUS_SLOT_STORE=/run/janus-slot-nix bash -s -- install-slot ${closure} ${next}" < "$JANUS_BOOT_INSTALL"; then
+    ssh_to "$addr" "umount /run/janus-slot-nix || true; mount -o remount,ro /boot || true"
     exit 1
   fi
   # Detach the reboot: sshd closes this session before the network
   # drops, otherwise the client hangs on a dead connection.
-  ssh_to "$addr" "umount /mnt/janus-slot-nix || true; install -d -m 0755 /var/lib/janus && : > /var/lib/janus/deploy-pending && rm -f /var/lib/janus/deploy-confirmed /var/lib/janus/deploy-booted && mount -o remount,ro /boot || true; nohup sh -c 'sleep 1; systemctl reboot' >/dev/null 2>&1 & exit 0"
+  ssh_to "$addr" "umount /run/janus-slot-nix || true; install -d -m 0755 /var/lib/janus && : > /var/lib/janus/deploy-pending && rm -f /var/lib/janus/deploy-confirmed /var/lib/janus/deploy-booted && mount -o remount,ro /boot || true; nohup sh -c 'sleep 1; systemctl reboot' >/dev/null 2>&1 & exit 0"
 }
 
 require_clean() {
@@ -290,7 +350,7 @@ wifi_secrets() {
 # (docs/08 §11); the name itself is not the path. Pure evaluation copies
 # the flake source into a store path ending in -source, impure
 # evaluation keeps the real path; the tail after either prefix is the
-# repo-relative file. D-0048.
+# repo-relative file. D-0055.
 secret_files() {
   nix_fleet eval --json --apply \
     'c: builtins.mapAttrs (n: v: toString (v.sopsFile or null)) (c.sops.secrets or {})' \
@@ -332,13 +392,6 @@ apply_leases() {
       ip=${rest#* }
       ssh_to "$addr" janus override set "network.lans.${lan}.dhcp.staticLeases.${name}" --mac "$mac" --ip "$ip"
     done
-}
-
-ssh_dest() {
-  case "$1" in
-    *@*) printf '%s\n' "$1" ;;
-    *) printf 'root@%s\n' "$1" ;;
-  esac
 }
 
 # Single-quote one word for a remote command assembled here as a
@@ -507,7 +560,7 @@ fleet_apply() {
         case "$kind" in
           subscription)
             # The inbox file is a sops document; the router decrypts it
-            # with its own age key (D-0048). `age -d` cannot read sops.
+            # with its own age key (D-0055). `age -d` cannot read sops.
             # shq quotes the untrusted fields for the remote shell. The
             # remote shell has no errexit; $? is the status of the
             # pipeline's last command (janus override set). If sops
@@ -962,6 +1015,12 @@ if [ "${JANUS_BUILD_LIB:-}" = 1 ]; then
   return 0 2>/dev/null || exit 0
 fi
 
+case "${1:-}" in
+  --help|--usage)
+    help
+    exit 0
+    ;;
+esac
 cmd=${1:-}
 if [ -z "$cmd" ]; then
   usage
@@ -1208,8 +1267,8 @@ case "$cmd" in
     host_ok "$host"
     addr=$(host_address "$host")
     if [ "$age_key" = 1 ]; then
-      ssh_to "$addr" janus secrets install-age-key
-      exit 0
+      install_age_key_over_ssh "$addr"
+      exit $?
     fi
     if [ "$confirm" = 1 ]; then
       ssh_to "$addr" "install -d -m 0755 /var/lib/janus && : > /var/lib/janus/deploy-confirmed"

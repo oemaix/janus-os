@@ -55,7 +55,7 @@ key only. It can encrypt. It cannot decrypt.
    encrypted to that host's public key. `secret set` encrypts a path under
    `subscription/` or `nodes/` to every public key under `secrets/keys/`.
    `fleet pull` re-encrypts a rotated value to only the hosts whose
-   configuration references that file (D-0049). Replacing one file does
+   configuration references that file (D-0056). Replacing one file does
    not require any other plaintext.
 5. `janus-build fleet pull` with no host reads every reachable router.
    By default it writes non-secret overrides only

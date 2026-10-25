@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-18 |
+| Last updated | 2026-10-25 |
 
 ## 1. Terminology
 
@@ -28,12 +28,13 @@ obligation for that release, not a reason to omit the profile.
 
 | Board | SoC / Arch | Ports | Tier | Notes |
 |-------|------------|-------|------|-------|
-| **NanoPi R4S** | RK3399 · aarch64 | 2× 1 GbE (RTL8211E + RTL8111H/PCIe) | 1 | Reference router board. Mainline U-Boot at raw offset (sector 64); GPT. No Wi-Fi. |
+| **NanoPi R4S** | RK3399 · aarch64 | 2× 1 GbE (RTL8211E + RTL8111H/PCIe) | 1 | Reference router board. Mainline U-Boot at raw offset (sector 64); GPT. No Wi-Fi. The SD slot stays at 3.3 V high-speed (§3.4). |
+| **ROCK Pi 4C** (`rockpi-4c`) | RK3399 · aarch64 | 1× 1 GbE (RTL8211E). A second port is a USB peripheral. M.2 is NVMe. Wi-Fi 5 onboard. | 1 | Lab unit is v1.2 (D-0016, D-0053). Mainline U-Boot at sector 64; GPT. SPI NOR is tried first and this image does not program it (§3.5). One `eth0`; the profile does not choose a WAN. The onboard radio is a WPA2 access point when `match.onboard` is set (§4.10). ROCK 4C+ is not this profile. |
 | **Raspberry Pi 4 / CM4** (`rpi4`) | BCM2711 · aarch64 | Pi 4: 1× 1 GbE. CM4: that port on the official IO board. USB 3 NICs are peripherals. | 2 | Tier 2 (D-0016). EEPROM firmware, FAT `config.txt`, hybrid MBR so the bootloader finds the GPT boot partition. One `eth0`; the profile does not choose a WAN. The Pi 400 is not a board: it has no Ethernet jack (D-0032). |
 | **Raspberry Pi 3 / 3+** | BCM2837 · aarch64 | 1× 100 MbE (USB 2 shared) | 2 | Low throughput; fine for tunnel-only use behind another router. FAT `config.txt`, hybrid MBR so the boot ROM finds the GPT boot partition. |
 | **Raspberry Pi Zero 2 W** | BCM2710A1 · aarch64 | Wi-Fi 4 + Bluetooth, no Ethernet | 1 | Owner's lab. 512 MiB RAM. Needs a USB Ethernet peripheral for a wired WAN or LAN. FAT `config.txt`, hybrid MBR. The onboard radio is a 2.4 GHz WPA2 access point (§4.7, D-0043). Bluetooth is present and unused. Not a 500-node target. INA219 UPS overlay is part of this board's lab setup (FR-HW-008). |
 | **Libre Computer Le Potato (AML-S905X-CC)** | S905X · aarch64 | 1× 100 MbE | 1 | Owner's lab. Mainline U-Boot with FIP at raw offset; eMMC or SD. Lab peripherals: Fibocom NL668 as USB Ethernet (§4.2), RTL8188CUS as AP (§4.4), CSR Bluetooth. |
-| **StarFive VisionFive 2** | JH7110 · riscv64 | 2× 1 GbE | 3 | Needs recent kernel. U-Boot 2026.04 runs from QSPI (D-0047). One GPT image for SD, eMMC, and NVMe. Boot order is eMMC, then SD, then NVMe. No binary cache. |
+| **StarFive VisionFive 2** | JH7110 · riscv64 | 2× 1 GbE | 3 | Needs recent kernel. U-Boot 2026.04 runs from QSPI (D-0047). One GPT image for SD, eMMC, and NVMe. Boot order is eMMC, then SD, then NVMe. No binary cache. v1.3B clocks both MACs from the Motorcomm PHY. The kernel keeps that receive clock running so the DMA reset can finish with no link. |
 | **Raspberry Pi 2 (v1.1)** | BCM2836 · armv7l | 1× 100 MbE | 3 | 32-bit; no cache; RPi 2 v1.2 is BCM2837 and uses the `rpi3` profile. |
 | **Yanyu STX-R19F** (`yanyu-stx-r19f`) | Intel Celeron J1900 (Bay Trail-D) · x86_64 | 4× Intel 82583V GbE on PCIe, SATA SSD. No Wi-Fi, Bluetooth, or WWAN. | 1 | Lab reference x86 board. Legacy AMI BIOS, 4 GiB RAM. The lab OpenWrt install uses GRUB. The Janus image uses Limine. Case labels in §3.1. |
 | **`x86_64-test`** | QEMU | virtio NICs | — | CI/VM test target only, not for deployment. |
@@ -47,7 +48,8 @@ Each board profile (`modules/boards/<board>.nix`) provides:
 * default `janus.network.ports` mapping with human names (`wan`, `lan`);
 * known quirks (e.g. R4S PCIe NIC MAC randomization → stable MAC derived
   from SoC serial; RPi USB NIC enumeration order → match by path);
-* thermal/fan hooks if any; LEDs mapped to states (WAN up, tunnel healthy).
+* thermal/fan hooks if any; onboard status LEDs when the board has them
+  (§3.2 for the NanoPi R4S).
 
 ### 3.1 Yanyu STX-R19F
 
@@ -73,6 +75,88 @@ The case labels on the lab unit, on that same boot:
 | LAN4 | `eth3` | `04:00.0` | `lan4` |
 
 LAN1 was unplugged during the link check, and `01:00.0` had no link. The profile binds `lan1`–`lan4` to those PCI addresses. It does not declare which jack is WAN. The user assigns the role.
+
+### 3.2 NanoPi R4S port LEDs
+
+The WAN and LAN lights are GPIO LEDs in `rk3399-nanopi-r4s.dtb`
+(`green:wan` on GPIO1_A0, `green:lan` on GPIO1_A1). The device tree
+leaves both off. The profile binds `green:wan` to the RTL8111H jack
+(PCI driver `r8169`) and `green:lan` to the RTL8211E jack (driver
+`rk_gmac-dwmac`). The `netdev` trigger lights the LED while that jack
+has link and blinks it on traffic. Those two lights follow the
+silkscreen. The green SYS light is `red:power` on GPIO0_B5. The profile
+sets its trigger to `heartbeat`, so it blinks while the kernel is
+scheduling. The red PWR light is wired to the supply. The profile still
+does not choose which jack is the WAN role.
+
+### 3.3 NanoPi R4S WAN firmware
+
+The PCIe jack is an RTL8111H. The kernel names that chip RTL8168h/8111h.
+On open, `r8169` applies `rtl_nic/rtl8168h-2.fw` before its built-in PHY
+setup. The profile copies that redistributable file from the pinned
+`linux-firmware` package. The rest of that collection stays out of the
+image. This board has no radio.
+
+### 3.4 NanoPi R4S SD signalling
+
+The SD slot's I/O rail is RK808 LDO4 (`vcc_sdio`), 1.8 V or 3.3 V. Card
+power stays at 3.0 V. The mainline DTB sets `sd-uhs-sdr104` on `sdmmc`.
+Linux then runs a UHS card at 1.8 V and leaves the rail there. The boot
+ROM and U-Boot need 3.3 V to read the card, so the next start finds no
+card. The profile removes `sd-uhs-sdr104`, keeps `cap-sd-highspeed`, and sets
+`no-1-8-v`. The card stays in high-speed mode at 3.3 V. A later UHS mode
+on the same node cannot switch the rail. A U-Boot that can raise the
+rail still starts only after the boot ROM has loaded SPL off the card.
+
+### 3.5 ROCK Pi 4C
+
+The lab unit is v1.2. One profile covers that board (D-0053). v1.2 is
+the tighter micro-HDMI connector and shares `rk3399-rock-pi-4c.dtb`
+(`radxa,rockpi4c`, also `radxa,rockpi4`). RAM size comes from the U-Boot
+TPL. The v1.2 schematic fits an RTL8211E on the SoC GMAC. That jack is
+`eth0`. The profile does not choose a WAN. A second port is a USB
+peripheral. The M.2 slot is NVMe. The PHY needs no `linux-firmware`
+file. The blue status LED is already `heartbeat` in the device tree.
+
+The image follows the NanoPi R4S: GPT, and mainline U-Boot written at
+sector 64. The console is `ttyS2` at 1500000 8N1. The boot partition
+starts at 16 MiB. nixpkgs `ubootRockPi4` is the 4A/4B defconfig
+(`rock-pi-4-rk3399_defconfig`) and installs `idbloader.img` and
+`u-boot.itb` only. The profile sets `rock-pi-4c-rk3399_defconfig` and
+installs `u-boot-rockchip.bin`, the same way the R4S profile does for
+`ubootRockPro64`. The kernel is the NixOS kernel. This profile adds no
+kernel patch, so aarch64 keeps the binary cache.
+
+SPI NOR is fitted. The boot ROM tries it before eMMC and SD. The image
+does not program SPI, and it does not install `u-boot-rockchip-spi.bin`.
+A bootloader left in SPI is what the ROM starts, so it never reads the
+U-Boot at sector 64. The operator clears SPI, or holds the maskrom
+button while power is applied, and that ROM read of SPI fails. U-Boot
+then runs from the eMMC if a module is present, and from the SD card
+otherwise.
+
+That U-Boot shows a menu on `ttyS2` for two seconds. The first entry
+tries the eMMC (`mmc0`) and, when that medium has no Janus image, the
+SD card (`mmc1`). The second entry boots the SD card. `mmc0` is the
+eMMC host and `mmc1` is the SD slot, which is the alias order in
+`rk3399-rock-pi-4.dtsi`. An image on the eMMC is used even when a
+bootable SD card is inserted, unless the menu selects the SD card.
+
+The SD I/O rail (`vcc_sdio`, RK808 LDO4) is fixed at 3.0 V, and `sdmmc`
+does not advertise a UHS mode. The R4S 1.8 V switch (§3.4) does not
+apply. The initrd names the SD host, the eMMC host, and the eMMC PHY
+so the root can mount from either medium.
+
+The onboard radio is an access point when the configuration sets
+`match.onboard = true` (§4.10). Until then the profile blacklists
+`brcmfmac`, so the driver does not request firmware. The SKU names an
+AP6256. The June 2020 schematic names an AP6255. The mainline Wi-Fi
+node is `brcm,bcm4329-fmac` and the Bluetooth node is `brcm,bcm4345c5`.
+`hci_uart` stays blacklisted. `btusb` stays available for a USB dongle.
+Bluetooth on this board stays unused. ROCK 4C+ is another board
+(`rk3399-rock-4c-plus.dtb`, RK3399-T, RK809,
+`rock-4c-plus-rk3399_defconfig`, AW-CM256SM, SPI not fitted) and is
+not this profile.
 
 ## 4. Peripherals
 
@@ -136,14 +220,15 @@ are not part of the profile. QMI and MBIM are not how this unit attaches.
 
 | Peripheral | IDs | Class | Status |
 |------------|-----|-------|--------|
-| Realtek RTL8153 USB 3 GbE | `0bda:8153` | nic | supported |
-| Realtek RTL8156 USB 2.5 GbE | `0bda:8156` | nic | supported |
+| Realtek RTL8153 USB 3 GbE | `0bda:8153` | nic | supported via in-tree `r8152` (§4.9) |
+| Realtek RTL8156 USB 2.5 GbE | `0bda:8156` | nic | supported via in-tree `r8152` (§4.9) |
 | ASIX AX88179 | `0b95:1790` | nic | supported |
 | MediaTek MT7612U (e.g. Alfa AWUS036ACM) | `0e8d:7612` | wifi (AP 2.4/5) | supported |
 | MediaTek MT7921AU | `0e8d:7961` | wifi (AP) | supported (recent kernel) |
 | Realtek RTL8812AU | `0bda:8812` | wifi | unsupported (out-of-tree driver) |
 | Realtek RTL8188CUS | `0bda:8176` | wifi (AP, 2.4 GHz HT20) | supported via in-tree `rtl8192cu` (§4.4) |
 | Raspberry Pi Zero 2 W onboard CYW43430 | board radio, `match.onboard` | wifi (AP, 2.4 GHz HT20, WPA2) | supported via in-tree `brcmfmac` (§4.7) |
+| ROCK Pi 4C onboard AP6256 | board radio, `match.onboard` | wifi (AP, 2.4/5 GHz HT20, WPA2) | supported via in-tree `brcmfmac` (§4.10) |
 | Fibocom NL668 (LTE Cat.4) | `05c6:90b6` (product string `Android`) | wwan, Ethernet mode | supported on Le Potato. Same USB ID as other Qualcomm gadgets; the user declares the peripheral. |
 | EigenComm, exposed as a NIC | `19d1:0001` | wwan (ethernet mode, LTE Cat.1) | supported on Zero 2 W |
 | mcuzone Pi Zero UPS (INA219) | I²C `0x40` | power | supported on Zero 2 W (FR-HW-008) |
@@ -175,8 +260,12 @@ both true, and they are not the same driver.
 | Realtek vendor driver plus `hostapd` `rtl871xdrv` | Out of tree. | How people forced AP mode before `rtl8192cu`. Forbidden here (FR-HW-006). |
 
 Janus binds `0bda:8176` to `rtl8192cu` and does not let `rtl8xxxu` claim
-that ID, so the two drivers do not both attach. Firmware comes from
-`linux-firmware` (`rtlwifi/rtl8192cufw*.bin`), which is redistributable.
+that ID, so the two drivers do not both attach. Any board may declare
+this USB id. The Le Potato row in §3 records the lab unit that confirmed
+the stick. Declaring the peripheral copies `rtlwifi/rtl8192cufw.bin`,
+`rtl8192cufw_A.bin`, `rtl8192cufw_B.bin`, and `rtl8192cufw_TMSC.bin` from
+the pinned `linux-firmware` package. The driver picks one of those names
+when the stick starts. The rest of that collection stays out of the image.
 `hostapd` uses `nl80211`. A build is acceptable only when `iw list` on
 that kernel shows `AP` for this phy. Expected use is a small 2.4 GHz
 network, not a fast AP. `rtl8xxxu` on Linux 6.15 or newer is the fallback
@@ -287,11 +376,62 @@ compatible string is `raspberrypi,model-zero-2-w`, which is how the
 kernel picks those firmware files. The downstream name
 `bcm2710-rpi-zero-2-w.dtb` is not what this kernel installs.
 
+### 4.8 MediaTek USB firmware
+
+MT7612U (`0e8d:7612`) and MT7921AU (`0e8d:7961`) are USB peripherals.
+The board is not part of the match. Declaring the peripheral copies
+the redistributable files the driver requests out of the pinned
+`linux-firmware` package. The rest of that collection stays out of the
+image.
+
+| USB id | Driver requests |
+|--------|-----------------|
+| `0e8d:7612` | `mt7662.bin`, `mt7662_rom_patch.bin` |
+| `0e8d:7961` | `mediatek/WIFI_RAM_CODE_MT7961_1.bin`, `mediatek/WIFI_MT7961_patch_mcu_1_2_hdr.bin` |
+
+### 4.9 RTL8153 and RTL8156 (`r8152`)
+
+`0bda:8153` and `0bda:8156` use the in-tree driver `r8152`. On open it
+requests a patch under `rtl_nic/`. A missing file is a warning. The driver
+continues with its built-in setup, and the link comes up. The image does
+not ship those files (D-0050). Add them from the pinned `linux-firmware`
+package if a link problem shows up.
+
+### 4.10 ROCK Pi 4C onboard radio
+
+The radio is soldered to the board. Declare it the same way as §4.7:
+`match.onboard = true`, one access point, and a LAN member of that
+name. `hostapd` uses the same `nl80211` shape, including
+`wmm_enabled=1` and `ht_capab=[HT20][SHORT-GI-20]`. `channel = "auto"`
+is 6 on `2g` and 36 on `5g`. Evaluation fails for `security` other than
+`wpa2`, and for a channel outside 1–13 or
+36, 40, 44, 48, 149, 153, 157, 161, 165. The regulatory country is
+`janus.network.wifiCountry`. Unset, it follows `janus.system.region`
+(D-0054). The NVRAM has no `ccode`, so this is the country the kernel
+applies. A channel that country disallows fails when `hostapd` starts.
+
+The SKU names an AP6256. The kernel maps that chip to
+`brcmfmac43456-sdio` and asks first for
+`brcmfmac43456-sdio.radxa,rockpi4c.txt`, then
+`brcmfmac43456-sdio.txt`. Pinned `linux-firmware` has neither, and it
+has no 43456 blob. The image copies the bin, the CLM blob, and the
+NVRAM from Armbian firmware commit `9934dbd5541bb49e2063089437a981f752c87b7f`
+and installs the NVRAM under both names. The NVRAM text is
+`AP6256_NVRAM_V1.1_08252017`. It has no `ccode`. The June 2020
+schematic names an AP6255. That chip asks for `brcmfmac43455-sdio`,
+which this image does not ship. Bluetooth stays unused.
+
+The SDIO host is `dw_mmc-rockchip`, which the arm64 defconfig builds
+in. Declaring the access point does not add a kernel patch.
+`brcmfmac` is loaded for that access point and is blacklisted
+otherwise.
+
 ## 5. Performance notes (guidance for NFR-004/005)
 
 | Board | NAT (1500 B) | VLESS+Vision through tunnel | Note |
 |-------|--------------|-----------------------------|------|
 | NanoPi R4S | line rate 1 GbE | 300–500 Mbit/s | RK3399 crypto extensions help TLS |
+| ROCK Pi 4C | untested; one native GbE | untested | Same RK3399 as the R4S. One RTL8211E, no PCIe NIC |
 | RPi 4 (Tier 2) | ~900 Mbit/s | 200–350 Mbit/s | Guidance only. USB NIC for a second port costs CPU |
 | RPi 3 | ~95 Mbit/s | 40–60 Mbit/s | USB 2 bus shared |
 | RPi Zero 2 W | ~90 Mbit/s via USB NIC | 30–50 Mbit/s | 512 MiB RAM; Wi-Fi AP and a tunnel together are the tight case |

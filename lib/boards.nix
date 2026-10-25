@@ -8,6 +8,7 @@
   rpi3 = "aarch64-linux";
   rpi4 = "aarch64-linux";
   nanopi-r4s = "aarch64-linux";
+  rockpi-4c = "aarch64-linux";
   le-potato = "aarch64-linux";
   visionfive2 = "riscv64-linux";
   yanyu-stx-r19f = "x86_64-linux";

@@ -69,6 +69,15 @@
       security = ["wpa2"];
       channels = [1 2 3 4 5 6 7 8 9 10 11 12 13];
     };
+    # AP6256 on the ROCK Pi 4C. docs/10 §4.10. HT20, same hostapd shape as §4.7.
+    "rockpi-4c" = {
+      class = "wifi";
+      driver = "brcmfmac";
+      capabilities = ["ap"];
+      bands = ["2g" "5g"];
+      security = ["wpa2"];
+      channels = [1 2 3 4 5 6 7 8 9 10 11 12 13 36 40 44 48 149 153 157 161 165];
+    };
   };
 
   # INA219 profiles. docs/10 §4.5. Address 0x43 stays unarmed.

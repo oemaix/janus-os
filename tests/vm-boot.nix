@@ -11,6 +11,9 @@
     modules = [
       ({pkgs, ...}: {
         janus.hardware.board = "x86_64-test";
+        janus.storage.nix.minimumSize = "64M";
+        # Between the flashed 512 MiB state and the extra 256 MiB below.
+        janus.storage.state.maximumSize = "640M";
         janus.access.ssh.authorizedKeys = [
           "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyForJanusEval janus-eval"
         ];
@@ -31,6 +34,7 @@
             nix=$(findmnt -n -o OPTIONS /nix)
             var=$(findmnt -n -o OPTIONS /var)
             bytes=$(findmnt -n -b -o SIZE /var)
+            part=$(blockdev --getsize64 "$(findmnt -n -o SOURCE /var)")
             echo "root=$root nix=$nix var=$var" > /dev/console
             case ",$root," in *,ro,*) ;; *) fail root ;; esac
             case ",$nix," in *,ro,*) ;; *) fail nix ;; esac
@@ -44,6 +48,7 @@
             fi
             echo JANUS_SEED_OK > /dev/console
             echo "JANUS_VAR_BYTES=$bytes" > /dev/console
+            echo "JANUS_VAR_PART=$part" > /dev/console
             echo JANUS_BOOT_OK > /dev/console
             systemctl poweroff
           '';
@@ -104,9 +109,10 @@ in
     boot large.img serial-large.log
     require_ok serial-large.log
     bytes=$(sed -n 's/.*JANUS_VAR_BYTES=\([0-9]*\).*/\1/p' serial-large.log | tail -n 1)
-    # 512 MiB state plus 256 MiB of extra disk, after f2fs overhead.
-    if [ -z "$bytes" ] || [ "$bytes" -lt 629145600 ]; then
-      echo "state filesystem did not grow (''${bytes:-missing})" >&2
+    part=$(sed -n 's/.*JANUS_VAR_PART=\([0-9]*\).*/\1/p' serial-large.log | tail -n 1)
+    # The cap is 640 MiB. The extra 256 MiB would make a larger partition.
+    if [ "$part" != 671088640 ]; then
+      echo "state partition did not stop at 640 MiB (''${part:-missing}, fs ''${bytes:-missing})" >&2
       exit 1
     fi
 

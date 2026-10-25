@@ -93,8 +93,10 @@
       }
       // nixpkgs.lib.optionalAttrs (pkgs.stdenv.hostPlatform.system == "x86_64-linux") {
         vm-x86_64-test = import ./tests/vm-boot.nix {inherit pkgs self;};
+        vm-x86_64-slots = import ./tests/vm-slots.nix {inherit pkgs self;};
         vm-x86_64-net = import ./tests/vm-net.nix {inherit pkgs nixpkgs self;};
         limine-bios = import ./tests/limine-bios.nix {inherit pkgs;};
+        eval-kernel-config = import ./tests/kernel-config.nix {inherit pkgs self;};
       });
 
     formatter = forAllSystems (pkgs: pkgs.alejandra);

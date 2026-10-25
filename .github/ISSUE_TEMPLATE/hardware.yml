@@ -1,0 +1,55 @@
+name: Hardware
+description: A listed board or peripheral fails, or measurements for hardware the list does not include.
+labels: ["hardware"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The list is [docs/10-hardware-support.md](https://github.com/oemaix/janus-os/blob/main/docs/10-hardware-support.md).
+
+        A new profile waits for that document. Out-of-tree drivers are not added. Closed firmware is allowed when the blob is redistributable and the hardware requires it (D-0010). WWAN is an allowlist (D-0011).
+
+        Leave out credentials, subscription URLs, age keys, and node lists that name a relay.
+  - type: dropdown
+    id: relation
+    attributes:
+      label: Relation to the hardware list
+      options:
+        - A listed board fails
+        - A listed peripheral fails
+        - Measurements for hardware the list does not include
+    validations:
+      required: true
+  - type: input
+    id: hardware
+    attributes:
+      label: Board or peripheral
+      description: Profile id when it is listed (`nanopi-r4s`, `rpi4`, `rpi3`, `rpi-zero-2w`, `le-potato`, `visionfive2`, `rpi2`, `yanyu-stx-r19f`). Otherwise the board name, SoC, and a USB id or PCI id.
+    validations:
+      required: true
+  - type: input
+    id: revision
+    attributes:
+      label: Revision
+      description: Train or git revision of the image.
+    validations:
+      required: true
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened
+      description: Boot, link, Wi-Fi, WWAN, power, or the panel. Include the card, dongle, or HAT you used.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: dmesg or other evidence
+      description: The lines that name the device. A photo of a port label belongs here as a description when the kernel name and the case label disagree.
+  - type: checkboxes
+    id: hygiene
+    attributes:
+      label: Before opening
+      options:
+        - label: This report has no credential, subscription URL, age key, or relay list.
+          required: true

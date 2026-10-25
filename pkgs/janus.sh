@@ -1,8 +1,55 @@
 # docs/14. deploy and fleet name janus-build.
 usage() {
   echo "janus [--json] <command> [<args>]" >&2
-  echo "See docs/14-cli.md." >&2
+  echo "Run 'janus --help' for the command list." >&2
   exit 2
+}
+
+help() {
+  cat <<'EOF'
+janus [--json] <command> [<args>]
+janus --help
+janus --usage
+
+--help and --usage print this text on stdout and exit 0.
+--json prints one JSON object on stdout and keeps logs on stderr.
+Exit 0 is success. Exit 2 is a usage or validation error. Exit 1 is a runtime failure.
+
+  status
+  proxy refresh [name]
+  proxy geodata refresh
+  proxy select <group> <node>
+  proxy groups
+  proxy test <group>
+  wan restart <name>
+  wan show <name>
+  lan leases [lan]
+  traffic [iface] [--daily|--monthly]
+  traffic top
+  dns query <name>
+  dns flush
+  dns stats
+  dns check
+  logs [unit] [-f]
+  fw list
+  version [--components]
+  reboot
+  reset --state --yes
+  override show [--secrets]
+  override diff
+  override set proxy.subscriptions.<name>.url [<url>]
+  override set network.lans.<name>.dhcp.staticLeases.<host> --mac <mac> --ip <ip>
+  override set network.wifi.<name>.passphrase
+  override unset <key>
+  secrets install-age-key
+  secrets put <name>
+  backup
+  restore --yes
+  audit start|stop|status|export
+  web start|stop|status|fingerprint
+
+deploy and fleet are build-host commands. On the board they exit 2 and name janus-build.
+EOF
 }
 
 json=0
@@ -10,6 +57,12 @@ if [ "${1:-}" = "--json" ]; then
   json=1
   shift
 fi
+case "${1:-}" in
+  --help|--usage)
+    help
+    exit 0
+    ;;
+esac
 cmd=${1:-}
 if [ -z "$cmd" ]; then
   usage
@@ -469,10 +522,21 @@ case "$cmd" in
     case "$sub" in
       install-age-key)
         # JANUS_SECRETS_DIR overrides the directory in tests. On the router it is /var/lib/janus/secrets.
+        # The previous key stays until stdin contains an AGE-SECRET-KEY-1 line.
         secrets_dir=${JANUS_SECRETS_DIR:-/var/lib/janus/secrets}
+        if [ -t 0 ]; then
+          echo "Paste the age private key, then press Enter and Ctrl-D." >&2
+        fi
+        work=$(mktemp)
+        cat > "$work"
+        if ! grep -q '^AGE-SECRET-KEY-1' "$work"; then
+          rm -f "$work"
+          echo "Refusing an age key that has no AGE-SECRET-KEY-1 line." >&2
+          exit 1
+        fi
         install -d -m 0700 "$secrets_dir"
-        cat > "${secrets_dir}/age.key"
-        chmod 0600 "${secrets_dir}/age.key"
+        install -m 0600 "$work" "${secrets_dir}/age.key"
+        rm -f "$work"
         if systemctl cat sops-install-secrets.service >/dev/null 2>&1; then
           systemctl restart sops-install-secrets.service
           failed=$(systemctl list-units --failed --no-legend --plain --type=service)
@@ -480,6 +544,16 @@ case "$cmd" in
             case "$unit" in
               janus-pppoe-*.service)
                 systemctl restart "$unit" || true
+                ;;
+              janus-wireguard-secret-*.service)
+                if systemctl restart "$unit"; then
+                  iface=${unit#janus-wireguard-secret-}
+                  iface=wg-${iface%.service}
+                  if command -v networkctl >/dev/null 2>&1; then
+                    # One device. Reload only when that device is not there yet.
+                    networkctl reconfigure "$iface" || networkctl reload || true
+                  fi
+                fi
                 ;;
               janus-hostapd-*.service)
                 secret_unit=janus-wifi-secret-${unit#janus-hostapd-}
@@ -497,8 +571,12 @@ case "$cmd" in
               ;;
           esac
           # The listener is janus-web-tls and it stops when janus-web restarts, so the page unit comes last.
+          # The passphrase oneshot stays failed when the file was empty, even if the page unit never started.
           case "$failed" in
-            *janus-web.service*|*janus-web-tls.service*)
+            *janus-web-secret.service*|*janus-web.service*|*janus-web-tls.service*)
+              if systemctl cat janus-web-secret.service >/dev/null 2>&1; then
+                systemctl restart janus-web-secret.service || true
+              fi
               systemctl restart janus-web.service || true
               systemctl restart janus-web-tls.service || true
               ;;

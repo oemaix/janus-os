@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-20 |
+| Last updated | 2026-10-25 |
 
 This file is the implementation plan, the progress of the code, and the
 notes for work that is specified but not started. Choices are *18*.
@@ -74,6 +74,8 @@ power-cut. Tier 3 ships the profile. The Future list stays after 1.0.
 * WAN VLAN, the `iptv` role, and IGMP proxy (*06*, FR-NET-003, FR-NET-020).
 * Optional local configuration wizard, a front end for the build-host commands in *16*. No hosted build service.
 * A check that a destination refuses the exit because the address is in Iran, China, or Russia, for example Gemini. A country guessed from the node name, and a connect check (ping, TCP, or a handshake), do not show that refusal.
+* A per-board kernel profile, `matched` (D-0052). `standard` and `compact` are implemented (D-0051).
+* The maintenance page (*20*) is in the image. The retro console in *20* §7 is the design: no radius, no shadow, no gradient. Some functions and elements are still unusable or only partly worked out. Later work keeps that simple console and works out every function and every element so each behaves clearly and fluidly. The shape is in Notes.
 
 ## 2. Progress
 
@@ -82,38 +84,56 @@ tree does not mean that behavior exists. Stubs are not finished features.
 
 ### Done
 
+* `janus.system.kernelProfile` is `standard` (default, the NixOS kernel)
+  or `compact` (D-0051). `compact` is one config for every board.
 * Apache-2.0 license at the repository root.
 * Flake with `nixosModules.janus`, `nixosModules.boards`, `lib.mkRouter`,
   `templates.default`, and `devShells.default` (`nix develop`).
 * `lib.mkRouter` reads `janus.hardware.board` and returns a NixOS
   configuration, including `system.build.janusImage`. Implemented boards
-  are `x86_64-test`, `yanyu-stx-r19f`, `nanopi-r4s`, `le-potato`,
+  are `x86_64-test`, `yanyu-stx-r19f`, `nanopi-r4s`, `rockpi-4c`, `le-potato`,
   `rpi-zero-2w`, `rpi3`, `rpi4`, `rpi2`, and `visionfive2`. It
   does not return an empty configuration. `armv7l` and `riscv64` default
   to a cross build (`janus.build.strategy`).
 * `janus.*` option types, defaults, and the structural assertions in
   *08* §12. Storage is lowered: partition labels, read-only `/` and
   `/nix`, one read-write `/var`, and `system.etc.overlay` with
-  `mutable = false`.
+  `mutable = false`. `JANUS_STATE` grows to at most `state.maximumSize`
+  (default 4 GiB). Boot runs `fsck.f2fs -a --no-kernel-check`. A full
+  check runs only on the maintenance reboot with `janus.system.reboot.fsck`
+  (D-0049).
 * `janus.network` lowers ports, LAN VLANs, WAN `dhcp`/`static`/`pppoe`,
   LAN bridges, DHCPv4, and the IPv6 modes into networkd, pppd, and
   dnsmasq. `janus.firewall` lowers zones, NAT, and port forwards into
   nftables. OpenSSH is key-only. vnstat keeps interface counters.
 * `janus` and `janus-build` implement the phase 1 commands in *14* and
   *16* (`init`, `host add`, `secret keygen`, `secret set`, `check`,
-  `build`, `update`, and the router status commands). The age private
+  `build`, `update`, and the router status commands). `--help` and
+  `--usage` print that command list and exit 0. The age private
   key path is `/var/lib/janus/secrets/age.key`. sops-nix decrypts to
   `/run/secrets` at activation. Every credential in FR-SEC-002 is one
   sops file from `janus-build secret set`: one-line credentials under
   the `value` key, and a PPPoE file or a node file as YAML. Wi-Fi,
   the maintenance page, Tailscale, a subscription URL, and PPPoE name
   that secret, and the module sets its key. `janus-wifi-secret-<name>`
-  checks the passphrase file and waits for `sops-install-secrets`.
-  `janus-hostapd-<name>` waits for that check. WireGuard and a manual
-  node stay file paths. The fleet sets `sops.secrets.<name>.key` to
-  `value` or `""`. `secret rewrap` is not implemented.
+  waits for `sops-install-secrets` and passes when that file or the hot
+  override `/var/lib/janus/secrets/wifi-<name>` is non-empty. A failed
+  sops unit does not hide the override. `janus-hostapd-<name>` waits for
+  that check and uses the override when it is present. A subscription
+  refresh reads the hot override, then the sops URL, then the saved URL.
+  `janus-web-secret` checks the page passphrase and waits for
+  `sops-install-secrets`. `janus web start` runs that
+  install before it tests the file. A PPPoE password file, a WireGuard
+  private-key file, or a manual-node password file that is a sops path
+  waits for the same install. The module sets `key` to `value` for that
+  PPPoE file, the WireGuard key, and a page passphrase file, and to `""`
+  for the node file. A key set in the fleet wins. WireGuard stays a file
+  path. A missing WireGuard key does not fail `systemd-networkd`. That
+  interface stays down until `install-age-key` reconfigures `wg-<name>`.
+  `secret rewrap` is not implemented.
 * Board profiles: `x86_64-test` (virtio, no raw firmware), NanoPi R4S
-  (U-Boot at sector 64, `eth0`/`eth1`, no WAN chosen), Le Potato (U-Boot
+  (U-Boot at sector 64, `eth0`/`eth1`, no WAN chosen, port LEDs follow
+  the silkscreen jacks, the SYS LED heartbeats, *10* §3.2), Le Potato (U-Boot
   FIP, one `eth0`), Raspberry Pi Zero 2 W (FAT `config.txt`, no Ethernet
   port), Raspberry Pi 3 / 3+ (`rpi3`, FAT `config.txt`, hybrid MBR, one `eth0`),
   Raspberry Pi 4 and Compute Module 4 (`rpi4`, FAT `config.txt`, hybrid
@@ -121,7 +141,11 @@ tree does not mean that behavior exists. Stubs are not finished features.
   Raspberry Pi 2 v1.1 (`rpi2`, 32-bit, hybrid MBR, one `eth0`; a v1.2
   uses `rpi3`), and StarFive VisionFive 2 (U-Boot from QSPI, one GPT
   image for SD, eMMC, and NVMe, boot order eMMC then SD then NVMe,
-  `eth0`/`eth1`, no WAN chosen, D-0047).
+  `eth0`/`eth1`, no WAN chosen, D-0047), and ROCK Pi 4C (`rockpi-4c`,
+  v1.2, U-Boot at sector 64, one `eth0`, no WAN chosen, serial menu
+  for eMMC then SD, onboard AP6256 access point when `match.onboard`
+  is set, D-0053). The regulatory country follows the region unless
+  `janus.network.wifiCountry` is set (D-0054). The ROCK Pi 4C image has not been booted on the lab unit.
   Yanyu names `lan1`–`lan4` by PCI path and installs Limine
   (D-0029). The image boots on the lab AMI board. Tier 3
   images are not boot-tested here.
@@ -171,6 +195,7 @@ tree does not mean that behavior exists. Stubs are not finished features.
   off unless set. `janus web stop` pauses the listener without a rebuild.
   Login is a per-host sops passphrase (`secrets/web/<host>.yaml`), not the root password. The page calls the
   allowlisted `janus` commands and does not edit the rest of the configuration.
+  Some functions and elements are still unusable or only partly worked out. Working those out inside the retro console is Future.
 * A mcuzone INA219 at `0x40` reports the cell in `janus status` and powers
   the router off while the cell is discharging, at the thresholds in *10*
   §4.5. The Waveshare address `0x43` stays unarmed.
@@ -195,6 +220,9 @@ tree does not mean that behavior exists. Stubs are not finished features.
 * Accepted ADRs bind. They are listed in `docs/adr/` and are not restated here.
 * Undecided choices, if any, are *18* §2. Do not invent an answer for one.
   D-0045 asks whether the board-local secret path goes away.
+  D-0048 asks whether an existing PPPoE username and password join the
+  hot-override allowlist.
+  D-0052 asks whether a later kernel profile drops drivers one board does not use.
 * sing-box renders D-0037 through D-0042: fake-IP for names that LAN
   will proxy, `strip-for-proxied` per name, one policy per LAN, region
   bootstrap addresses, and `janus dns check` once per LAN. xray 26 routes
@@ -222,6 +250,28 @@ tree does not mean that behavior exists. Stubs are not finished features.
   unarmed.
 * The CSR Bluetooth dongle `0a12:0001` stays on the allowlist. BlueZ stays
   off. No Bluetooth feature is assigned.
+* `janus.system.kernelProfile` is `standard` or `compact` (D-0051).
+  It belongs under `janus.system` because both are one kernel for every
+  board. `standard` is the default and is the NixOS kernel, so aarch64
+  and x86_64 keep the binary cache. `compact` drops a subsystem only
+  when no household router board, current or later, has a use for it.
+  The symbols are `modules/janus/system/kernel-profile.nix`. Sound,
+  desktop and 3D GPUs, compute accelerators, cameras and TV, HDMI-CEC
+  and infrared remotes, industrial I/O and Comedi, InfiniBand, and SAN
+  go. NIC drivers stay, including ones no current board uses. Wi-Fi,
+  USB, WWAN, Bluetooth, MMC, the NVMe host, AHCI, f2fs, vfat, virtio,
+  simpledrm, and SoC scanout that does not depend on ALSA stay.
+  Raspberry Pi HDMI (VC4) depends on ALSA, so it is not in `compact`.
+  The board consoles are serial. On the
+  riscv64 6.18.54 NixOS kernel the sound, GPU, camera, industrial I/O,
+  SAN, and InfiniBand trees were 13 616 of 22 886 compiler invocations,
+  about 59 %, and about half of a 64-minute build phase at `-j20`.
+  `compact` keeps the small SoC scanout drivers inside the GPU tree, so
+  that share is an upper bound. The flashed image already ships the
+  shrunk module set, so current boards do not gain storage from
+  `compact`. The compile-time cut matters while kernel patches still
+  force a rebuild, and on riscv64 and armv7l, which have no cache.
+  `matched` is not a value (D-0052).
 * The board image must not contain a compiler or `janus-build`. The `nix`
   binary stays for activation and for `nix-store --import` (*05*, *09*
   §8.2). `nix.enable = false`, nixpkgs sources are absent, and `/nix` is
@@ -230,6 +280,15 @@ tree does not mean that behavior exists. Stubs are not finished features.
 * No MCP server is included. One would only repeat `janus-build` before
   that program exists, and a stub that returned invented data would be
   worse than no server.
+* The maintenance page (*20*) listens, logs in, and runs the allowlisted
+  commands. The retro console is the intended design: one column, one
+  geometry for light and dark, and no radius, shadow, gradient, icon,
+  or webfont. The page stays that simple. Some functions and elements
+  are still unusable or only partly worked out. Later work keeps the
+  console and considers every function and every element already on
+  the page, until each behavior is clear and fluid. It does not replace
+  the console with another style, and it does not add a control *20*
+  leaves out.
 
 ## 4. Risks
 

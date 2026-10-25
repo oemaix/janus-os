@@ -10,11 +10,23 @@ Read this file before answering a question about using Janus OS.
   key once. The operator stores it in a password manager. The image
   contains ciphertext and not that key. After boot, `janus-build deploy
   --age-key` or `janus secrets install-age-key` installs it.
+  On a terminal, `install-age-key` prints `Paste the age private key, then press Enter and Ctrl-D.` on stderr. A pipe stays quiet. Input with no `AGE-SECRET-KEY-1` line is refused, and the previous key stays.
+  `deploy --age-key` probes SSH with stdin closed, then prints that line on a terminal. A failed probe prints nothing and does not read stdin. The key is not an argument and is not stored. The second SSH does not allocate a terminal, so the router command stays quiet on that path.
+  `janus.access.deploy.address` is the SSH destination for `deploy`, `fleet apply`, `fleet pull`, `status`, and `backup`. `mkRouter` sets it to the attribute name. A later `hostName` does not move it.
+  `janus-build` reads it from the fleet repo when the command runs. `deploy`, `fleet pull`, `status`, and `backup` read an uncommitted edit. `fleet apply` still refuses a dirty tree. A LAN address can be replaced with a MagicDNS name, the Tailscale IPv4, or an IPv6 literal without a new image. A bare IPv6 literal is sent as `root@[address]` (Q-0043).
   `install-age-key` restarts `sops-install-secrets` when that unit
-  exists, then a failed PPPoE unit, then `janus-wifi-secret-<name>` when
+  exists, then a failed PPPoE unit, then a failed `janus-wireguard-secret-<name>`
+  and reconfigures `wg-<name>` when that restart succeeds. If that device
+  is not there yet, it reloads networkd. Then `janus-wifi-secret-<name>` when
   that unit exists and `janus-hostapd-<name>` failed, then failed Wi-Fi
   units, then `janus-tailscale-auth` and `tailscaled` when either failed,
-  then `janus-web` and `janus-web-tls` when either page unit failed. A `urlSecret` subscription stays an empty snapshot until
+  then `janus-web-secret` when that unit exists and a page unit failed,
+  then `janus-web` and `janus-web-tls`. `janus web start` runs
+  `janus-web-secret` or `sops-install-secrets` before it treats a sops
+  passphrase as missing. If that install fails, it says the passphrase
+  secret could not be installed. A `urlSecret` subscription refresh waits
+  for `sops-install-secrets` and still runs when that unit fails, so a hot
+  override or a saved URL still applies. A `urlSecret` subscription stays an empty snapshot until
   `janus proxy refresh`. `subscriptions.<name>.enable` defaults to true.
   False on one host drops that subscription's nodes, snapshot, and timer,
   and keeps `url` or `urlSecret` so the host still names the secret file
@@ -23,7 +35,11 @@ Read this file before answering a question about using Janus OS.
   The day-of-month and the month stay `*`. A destination that refuses an
   exit from Iran, China, or Russia is future work (*13*).
 - Router commands are `docs/14-cli.md`. Build-host commands are
-  `docs/16-build-host-cli.md`. `janus-build build` prints the store path
+  `docs/16-build-host-cli.md`. `janus --help` and `janus --usage` print
+  the router command list and exit 0. `janus-build --help` and
+  `janus-build --usage` print the build-host command list and exit 0.
+  An unknown command prints the synopsis on stderr and exits 2.
+  `janus-build build` prints the store path
   and links the output directory at `result/<host>`. The image file in
   that directory is `janus-<hostName>.img`. `janus.system.hostName`
   defaults to the fleet host name. `janus.*` options are
@@ -32,6 +48,12 @@ Read this file before answering a question about using Janus OS.
   On the board, `janus deploy` exits 2 and names `janus-build`. Hot
   overrides cover an existing subscription URL, a static lease on an
   existing LAN, and an existing Wi-Fi passphrase.
+- `janus.system.kernelProfile` is `standard` (default) or `compact` (D-0051).
+  `standard` is the NixOS kernel. `compact` drops sound, desktop and 3D GPUs,
+  cameras, industrial I/O, InfiniBand, and SAN, and keeps NIC drivers, Wi-Fi,
+  USB, WWAN, MMC, NVMe, AHCI, the serial console, and virtio.
+  Raspberry Pi HDMI depends on ALSA and is not in `compact`.
+  `matched` is not a value (D-0052).
 - `janus.system.region` is `cn` (default), `ru`, or `ir`. It selects domestic DNS
   and the `blockQuic` default. That reject follows direct rules; it is
   not a drop of every UDP/443. `janus.proxy.rules` stays empty until
@@ -91,6 +113,25 @@ Read this file before answering a question about using Janus OS.
 - `janus.storage.slots.enable` defaults to false. With it set, deploy
   writes the inactive ROOT and NIX slot and then changes the boot entry.
   The state partition is shared. Confirm with `janus-build deploy --confirm`.
+  Each Nix partition is the closure plus 15%, one 4 KiB block per file,
+  and 128 MiB, and at least `janus.storage.nix.minimumSize` (default
+  `2.5G`). `JANUS_NIX.size` may be smaller than that floor. Without A/B
+  slots, 4 GiB holds the image while each Nix partition stays at that
+  floor (about 3.3 GiB with no firmware gap). 8 GiB or more is
+  recommended. With A/B slots that floor makes an image of about 5.9 GiB,
+  so 8 GiB is the minimum and 16 GiB or more is recommended. A larger
+  closure needs a larger card by the same amount. A Nix
+  image that does not fit the flashed Nix partition makes deploy name
+  that partition and stop.
+  The flashed state partition is 512 MiB. The first boot grows it to
+  `janus.storage.state.maximumSize` (default `4G`) or the end of the
+  card. A smaller cap does not shrink. Every boot runs `fsck.f2fs -a`
+  and does not scan the volume. `janus.system.reboot.schedule` is off
+  unless set to `monthly`, `yearly`, or a five-field cron whose
+  day-of-week is `*`. `janus.system.reboot.fsck = true` runs a full
+  check on that reboot only and lets it finish. The request is removed
+  before the check, so a check that does not finish is not repeated
+  (D-0049).
 - A Waveshare 1.3" OLED HAT on a Raspberry Pi Zero 2 W, a Raspberry Pi 3,
   or a Raspberry Pi 4 is a status panel. It runs `janus proxy refresh`, `janus proxy select`,
   `janus reboot`, and `janus reset --state --yes`. It does not edit
@@ -119,6 +160,17 @@ Read this file before answering a question about using Janus OS.
   `janus-build` on another machine uses that machine's system and refuses
   a mismatch. A Raspberry Pi 2 v1.2 uses the `rpi3` profile. `rpi4` is
   the Raspberry Pi 4 and the Compute Module 4. The Pi 400 is not a board.
+- ROCK Pi 4C (`rockpi-4c`) is the v1.2 board (D-0053, docs/10 §3.5,
+  §4.10). GPT, mainline U-Boot at sector 64, console `ttyS2` at
+  1500000, one `eth0`, no WAN chosen. The boot ROM tries SPI NOR before
+  eMMC and SD. The image does not program SPI. Clear SPI, or hold the
+  maskrom button, so that U-Boot runs. The serial menu waits two
+  seconds: eMMC then SD, or the SD card alone. `match.onboard = true`
+  is the AP6256 access point, WPA2, 2.4 GHz or 5 GHz, HT20.
+  `janus.network.wifiCountry` defaults from `janus.system.region`
+  (`cn` is `CN`, `ru` is `RU`, `ir` is `IR`, D-0054).
+  `brcmfmac` stays blacklisted until then. `hci_uart` stays
+  blacklisted. ROCK 4C+ is not this profile.
 - A mcuzone UPS at I²C `0x40` shows the cell in `janus status` and powers
   the router off while that cell is discharging, at the thresholds in
   docs/10 §4.5. Address `0x43` stays unarmed.

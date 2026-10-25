@@ -1,0 +1,39 @@
+name: Definition change
+description: A change to what Janus does. A feature request belongs here.
+labels: ["definition"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        `docs/` defines the system. An open choice is a `D-nnnn` row in [docs/18-decisions.md](https://github.com/oemaix/janus-os/blob/main/docs/18-decisions.md). Work that is specified and not started is [docs/13-roadmap.md](https://github.com/oemaix/janus-os/blob/main/docs/13-roadmap.md).
+
+        Read the non-goals in [docs/00-vision-and-scope.md](https://github.com/oemaix/janus-os/blob/main/docs/00-vision-and-scope.md) §4. Janus is a router profile. The board does not evaluate Nix. There is no hosted image builder, and the maintenance page is not a second configuration system.
+
+        A new `janus.*` option is named in `docs/08-configuration-reference.md` before code grows it. A change to an Approved document is an ADR.
+  - type: input
+    id: anchor
+    attributes:
+      label: Document, requirement, or decision
+      description: A section, `FR-…`, an ADR, a `D-nnnn` row, a Future item, or “none yet”.
+      placeholder: D-0046, or docs/06 §4
+    validations:
+      required: true
+  - type: textarea
+    id: today
+    attributes:
+      label: What an operator can do today
+    validations:
+      required: true
+  - type: textarea
+    id: change
+    attributes:
+      label: What should change
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Why this belongs in Janus
+      description: Which goal in docs/00 it serves, and which non-goal it stays clear of.
+    validations:
+      required: true

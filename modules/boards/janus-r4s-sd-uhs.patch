@@ -1,0 +1,13 @@
+--- a/arch/arm64/boot/dts/rockchip/rk3399-nanopi-r4s.dtsi
++++ b/arch/arm64/boot/dts/rockchip/rk3399-nanopi-r4s.dtsi
+@@ -127,4 +127,10 @@
+ 
+ &vcc3v3_sys {
+ 	vin-supply = <&vcc5v0_sys>;
+ };
++
++&sdmmc {
++	/delete-property/ sd-uhs-sdr104;
++	cap-sd-highspeed;
++	no-1-8-v;
++};

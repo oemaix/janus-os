@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-20 |
+| Last updated | 2026-10-22 |
 
 ## 1. Architectural drivers
 
@@ -123,10 +123,13 @@ engine to keep is *07* §2.1.
 
 1. Board firmware → U-Boot, Raspberry Pi firmware, or Limine (Yanyu,
    legacy BIOS) → kernel + initrd from the read-only boot partition.
-2. systemd-initrd: mounts `/` (ro), `/nix` (ro); fsck + mount `/var`
-   (state, rw); mounts tmpfs `/run`, `/tmp`; sets up `/etc` overlay (lower =
-   store-generated `/etc`, upper = tmpfs, with selected paths bind-mounted
-   from `/var/lib/janus/etc` e.g. `machine-id`, SSH host keys).
+2. systemd-initrd: mounts `/` (ro), `/nix` (ro); `fsck.f2fs -a` + mount
+   `/var` (state, rw). A full check runs only on the maintenance reboot
+   when `janus.system.reboot.fsck` is set (D-0049). Mounts tmpfs `/run`,
+   `/tmp`; sets up `/etc`
+   overlay (lower = store-generated `/etc`, upper = tmpfs, with selected
+   paths bind-mounted from `/var/lib/janus/etc` e.g. `machine-id`, SSH
+   host keys).
 3. Seed check (*05* §6): copy the embedded snapshot (subscriptions,
    Geo data) when `/var/lib/janus` is missing or empty, when its
    `seed.stamp` is stale against the embedded seed hash and the embedded
