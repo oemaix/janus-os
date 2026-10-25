@@ -212,9 +212,9 @@
     ++ (lib.optional (board == "rpi4") "BROADCOM_PHY")
     ++ (lib.optionals (lib.elem board ["nanopi-r4s" "rockpi-4c"]) ["MMC_DW_ROCKCHIP"])
     ++ (lib.optional (board == "rockpi-4c") "MMC_SDHCI_OF_ARASAN")
-    ++ (lib.optionals (lib.elem board ["rpi2" "rpi4"]) ["MMC_SDHCI_IPROC"])
+    ++ (lib.optional (board == "rpi2") "MMC_SDHCI_IPROC")
     ++ (lib.optional (board == "rpi2") "MMC_BCM2835")
-    ++ (lib.optional (board == "rpi-zero-2w" && onboardWifi) "MMC_SDHCI_IPROC")
+    ++ (lib.optional ((board == "rpi-zero-2w" || board == "rpi3") && onboardWifi) "MMC_SDHCI_IPROC")
     ++ (lib.optional (board == "visionfive2") "MMC_DW_STARFIVE")
     ++ (lib.optional wantNvme "BLK_DEV_NVME")
     ++ (lib.optionals wantAhci ["SATA_AHCI" "SATA_AHCI_PLATFORM" "USB_STORAGE" "USB_UAS"])
@@ -255,11 +255,13 @@
     ++ (lib.optional wantNvme "NVME_MULTIPATH");
 
   # Built in. The initrd does not list the module, so m cannot mount the root.
-  # Le Potato: meson-gx-mmc. Zero 2 W, Pi 3, and Pi 3+: sdhost. docs/10 §3
-  # and §4.7. On those Pis the Arasan host is the radio, not the card.
+  # Le Potato: meson-gx-mmc. Zero 2 W, Pi 3, and Pi 3+: sdhost. The Pi 4
+  # card is the Arasan host, so that symbol stays y on every image.
+  # docs/10 §3, §4.7, and §4.12. T-0005.
   keepBuiltin =
     (lib.optional (board == "le-potato") "MMC_MESON_GX")
-    ++ (lib.optionals (lib.elem board ["rpi-zero-2w" "rpi3"]) ["MMC_BCM2835"]);
+    ++ (lib.optionals (lib.elem board ["rpi-zero-2w" "rpi3"]) ["MMC_BCM2835"])
+    ++ (lib.optional (board == "rpi4") "MMC_SDHCI_IPROC");
 
   # Nixpkgs sets these as required answers. Once the parent menu is n they
   # are not asked, and a required answer then fails the config. optional n

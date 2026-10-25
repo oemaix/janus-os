@@ -59,7 +59,7 @@
     "0a12:0001" = {class = "bluetooth";};
   };
 
-  # Onboard radios. docs/10 §4.7. Not a USB id.
+  # Onboard radios. docs/10 §4.7, §4.10, and §4.12. Not a USB id.
   onboard = {
     "rpi-zero-2w" = {
       class = "wifi";
@@ -68,6 +68,25 @@
       bands = ["2g"];
       security = ["wpa2"];
       channels = [1 2 3 4 5 6 7 8 9 10 11 12 13];
+    };
+    # Pi 3 and Pi 3+. docs/10 §4.12. The profile is also the Pi 2 v1.2,
+    # which has no radio. 2.4 GHz is the band both soldered chips share.
+    "rpi3" = {
+      class = "wifi";
+      driver = "brcmfmac";
+      capabilities = ["ap"];
+      bands = ["2g"];
+      security = ["wpa2"];
+      channels = [1 2 3 4 5 6 7 8 9 10 11 12 13];
+    };
+    # Pi 4 and CM4. docs/10 §4.12. A CM4 without the chip leaves match.onboard unset.
+    "rpi4" = {
+      class = "wifi";
+      driver = "brcmfmac";
+      capabilities = ["ap"];
+      bands = ["2g" "5g"];
+      security = ["wpa2"];
+      channels = [1 2 3 4 5 6 7 8 9 10 11 12 13 36 40 44 48 149 153 157 161 165];
     };
     # AP6256 on the ROCK Pi 4C. docs/10 §4.10. HT20, same hostapd shape as §4.7.
     "rockpi-4c" = {

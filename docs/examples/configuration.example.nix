@@ -45,8 +45,10 @@
 
     # Zero 2 W onboard radio. The board must be rpi-zero-2w. 2.4 GHz, WPA2.
     # ROCK Pi 4C uses the same declaration. 2.4 or 5 GHz, WPA2, HT20.
+    # Pi 3 is 2.4 GHz WPA2. Pi 4 is 2.4 or 5 GHz, WPA2, HT20.
+    # A Pi 2 v1.2 and a CM4 without the chip leave match.onboard unset.
     # wifiCountry follows janus.system.region unless set. docs/06 §11.
-    # Add "ap" to the LAN members. docs/10 §4.7 and §4.10.
+    # Add "ap" to the LAN members. docs/10 §4.7, §4.10, and §4.12.
     # radio = { class = "wifi"; match.onboard = true; };
   };
 

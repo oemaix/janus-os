@@ -1,9 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
-# Raspberry Pi 3 / 3+. docs/10 §3. Tier 2. One 100 MbE port on the USB bus.
-# Mainline names the trees bcm2837-rpi-3-b.dtb and bcm2837-rpi-3-b-plus.dtb.
+# Raspberry Pi 3 / 3+. docs/10 §3 and §4.12. Tier 2. One 100 MbE port on the USB bus.
+# A Pi 2 v1.2 is a BCM2837 and uses this profile. It has no radio.
 # The GPU firmware on the FAT partition loads the kernel (config.txt).
 # The boot ROM reads an MBR. The image stays GPT and writes a hybrid MBR
 # whose first entry is that FAT filesystem.
+# Mainline names the trees bcm2837-rpi-3-b.dtb and bcm2837-rpi-3-b-plus.dtb.
+# Those trees enable the onboard SDIO radio. The downstream bcm2710 names
+# are not what this kernel installs.
 {
   config,
   lib,

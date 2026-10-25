@@ -210,7 +210,7 @@ role (FR-SVC-002, FR-SVC-003, D-0060). The vendor choice stays under
 |--------|------|---------|-------------|
 | `board` | enum | — (required) | `rpi-zero-2w` `rpi2` `rpi3` `rpi4` `nanopi-r4s` `rockpi-4c` `le-potato` `visionfive2` `yanyu-stx-r19f` `x86_64-test` |
 | `peripherals.<name>.class` | enum | — | `wifi` `nic` `wwan` `bluetooth` `hmi` `power`. A `bluetooth` row selects the dongle driver. BlueZ starts when `janus.audio.playback.output` or `janus.audio.recording.input` is `bluetooth` (D-0061). `recording.input = bluetooth` still fails while HFP and HSP stay off. An Ara240 or Hailo-10H class is later work (*13*, D-0056) and is not an option in this tree. |
-| `peripherals.<name>.match` | attrs | — | `usbVendorProduct = "0bda:8153"`, or `usbPath`, `pciSlot`, `mac`. `onboard = true` is the radio soldered to the board (*10* §4.7, §4.10). |
+| `peripherals.<name>.match` | attrs | — | `usbVendorProduct = "0bda:8153"`, or `usbPath`, `pciSlot`, `mac`. `onboard = true` is the radio soldered to the board (*10* §4.7, §4.10, §4.12). |
 | `peripherals.<name>.wwan.mode` | enum | `auto` | `auto` uses the mode the allowlist records for that USB ID (*10* §4.2). Explicit values: `ecm` `ncm` `rndis` `qmi` `mbim`. |
 | `peripherals.<name>.wwan.modeSwitch` | attrs | `{}` | usb_modeswitch parameters. Empty does not run usb_modeswitch. |
 | `peripherals.<name>.wwan.atPort` | str/null | auto | Serial device for AT commands (status only) |

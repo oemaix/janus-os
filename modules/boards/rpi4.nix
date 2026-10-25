@@ -5,6 +5,10 @@
 # The EEPROM loads start4.elf from the FAT partition. docs/05 §2: the
 # profile writes a hybrid MBR so that firmware still finds the GPT boot
 # partition.
+# The SD card is emmc2 and the onboard radio is the Arasan SDHCI. Both
+# are sdhci-iproc. The host is built in. docs/10 §4.12. brcmfmac stays
+# unloaded until match.onboard is set, so a CM4 without the chip does
+# not request firmware.
 {
   config,
   lib,
@@ -13,6 +17,9 @@
 }: let
   fw = "${pkgs.raspberrypifw}/share/raspberrypi/boot";
   dtbDir = "${config.boot.kernelPackages.kernel}/dtbs/broadcom";
+  onboardWifi = lib.any (
+    peripheral: (peripheral.class or null) == "wifi" && (peripheral.match.onboard or false)
+  ) (lib.attrValues config.janus.hardware.peripherals);
 in {
   config = lib.mkIf (config.janus.hardware.board == "rpi4") {
     janus.storage.firmwareOffsetMiB = lib.mkDefault 0;
@@ -26,10 +33,23 @@ in {
     boot.initrd.availableKernelModules = [
       "genet"
       "broadcom"
-      "sdhci_iproc"
       "mmc_block"
       "xhci_pci"
       "pcie_brcmstb"
+    ];
+    boot.blacklistedKernelModules = lib.mkIf (!onboardWifi) ["brcmfmac"];
+    # ARCH_BCM_IPROC is on in the arm64 defconfig, and MMC_SDHCI_IPROC
+    # defaults to that symbol, so the host is built in. Pin it. A module
+    # would leave the card dependent on the initrd. The initrd list does
+    # not name sdhci_iproc: there is no module to copy.
+    boot.kernelPatches = [
+      {
+        name = "janus-rpi4-sdhci";
+        patch = null;
+        structuredExtraConfig = {
+          MMC_SDHCI_IPROC = lib.kernel.yes;
+        };
+      }
     ];
     boot.loader.grub.enable = false;
     boot.loader.systemd-boot.enable = false;
