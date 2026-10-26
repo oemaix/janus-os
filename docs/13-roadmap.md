@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-25 |
+| Last updated | 2026-10-26 |
 
 This file is the implementation plan, the progress of the code, and the
 notes for work that is specified but not started. Choices are *18*.
@@ -75,6 +75,7 @@ power-cut. Tier 3 ships the profile. The Future list stays after 1.0.
 * Optional local configuration wizard, a front end for the build-host commands in *16*. No hosted build service.
 * A check that a destination refuses the exit because the address is in Iran, China, or Russia, for example Gemini. A country guessed from the node name, and a connect check (ping, TCP, or a handshake), do not show that refusal.
 * A per-board kernel profile, `matched` (D-0052). `standard` and `compact` are implemented (D-0051).
+* A log of packets the filter drops is not a `janus.debug` option. The closed-fail path is a blackhole route, so a line at the end of the forward chain would not show it. Later work names that path before it adds a switch.
 * The maintenance page (*20*) is in the image. The retro console in *20* §7 is the design: no radius, no shadow, no gradient. Some functions and elements are still unusable or only partly worked out. Later work keeps that simple console and works out every function and every element so each behaves clearly and fluidly. The shape is in Notes.
 
 ## 2. Progress
@@ -86,6 +87,11 @@ tree does not mean that behavior exists. Stubs are not finished features.
 
 * `janus.system.kernelProfile` is `standard` (default, the NixOS kernel)
   or `compact` (D-0051). `compact` is one config for every board.
+* `janus.debug` defaults to off (D-0056, D-0057): serial root login,
+  an initrd shell when the state check fails (`fsck.f2fs` on its path),
+  a kernel console loglevel, `tcpdump`/`ethtool`/`iw`/`conntrack`, and
+  engine debug logs. `janus.system.journal.persistent` stays the capped
+  journal (ADR-0013). The full state check stops after 30 minutes (D-0049).
 * Apache-2.0 license at the repository root.
 * Flake with `nixosModules.janus`, `nixosModules.boards`, `lib.mkRouter`,
   `templates.default`, and `devShells.default` (`nix develop`).
@@ -101,7 +107,7 @@ tree does not mean that behavior exists. Stubs are not finished features.
   `mutable = false`. `JANUS_STATE` grows to at most `state.maximumSize`
   (default 4 GiB). Boot runs `fsck.f2fs -a --no-kernel-check`. A full
   check runs only on the maintenance reboot with `janus.system.reboot.fsck`
-  (D-0049).
+  and stops after 30 minutes (D-0049).
 * `janus.network` lowers ports, LAN VLANs, WAN `dhcp`/`static`/`pppoe`,
   LAN bridges, DHCPv4, and the IPv6 modes into networkd, pppd, and
   dnsmasq. `janus.firewall` lowers zones, NAT, and port forwards into
@@ -219,6 +225,10 @@ tree does not mean that behavior exists. Stubs are not finished features.
 ## 3. Notes for later implementation
 
 * Accepted ADRs bind. They are listed in `docs/adr/` and are not restated here.
+* A log of packets the filter drops is not a `janus.debug` option.
+  The closed-fail path is a blackhole route, so a line at the end of
+  the forward chain would not show it. Later work names that path
+  before it adds a switch.
 * Undecided choices, if any, are *18* §2. Do not invent an answer for one.
   D-0045 asks whether the board-local secret path goes away.
   D-0048 asks whether an existing PPPoE username and password join the

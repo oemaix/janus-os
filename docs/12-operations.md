@@ -200,7 +200,7 @@ after that boot.
 | Refresh yields < `minimumNodes` or invalid data | rejected; previous kept |
 | Engine crash | systemd restart with backoff; proxied traffic stays dropped until the engine is back (ADR-0016). `failMode = "open"` is the override that lets it leave via the WAN |
 | WAN down | health check marks it; backup WAN promoted if configured; DNS keeps answering from cache |
-| State partition corrupted | `fsck.f2fs -a` every boot; a full check only when the maintenance reboot sets `janus.system.reboot.fsck`. If unrecoverable, reformat and reseed (logged, HMI notice). A slow check or a missing block device is not corruption. Status 4 or 255 is checked again before that. A failed grow does not skip the check (D-0049). |
+| State partition corrupted | `fsck.f2fs -a` every boot; a full check only when the maintenance reboot sets `janus.system.reboot.fsck`. That check stops after 30 minutes. Hitting the cap fails the boot and does not reformat. If unrecoverable, reformat and reseed (logged, HMI notice). A slow check or a missing block device is not corruption. Status 4 or 255 is checked again before that. A failed grow does not skip the check (D-0049). |
 | Time far off at boot (no RTC) | engine waits for NTP up to 90 s, then starts anyway; REALITY/TLS may fail until time syncs |
 | Full state partition | bounded writers make this unlikely; `janus status` warns at 80 %; journal/vnstat rotate |
 

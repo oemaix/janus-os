@@ -294,7 +294,7 @@ says so and does not resize the table.
 |-------|------|-------|
 | Evaluation | assertions fire for known-bad configs; option docs render; the rendered Shadowsocks outbound completes a hop to `127.0.0.1` | `checks.eval-*` |
 | Rendering | golden files for engine configs, nftables rulesets, networkd units from fixture configurations | `checks.render-golden-*` |
-| VM | `x86_64-test` boots with two virtual NICs. `vm-x86_64-test` checks the mount model. `vm-x86_64-slots` checks that `janus.slot` mounts slot A or slot B. `vm-x86_64-net` checks DHCP, NAT, a static DNS answer, and the WAN/LAN firewall | `checks.vm-*` |
+| VM | `x86_64-test` boots with two virtual NICs. `vm-x86_64-test` checks the mount model. `vm-x86_64-debug` checks the serial root login and the initrd emergency shell. `vm-x86_64-slots` checks that `janus.slot` mounts slot A or slot B. `vm-x86_64-net` checks DHCP, NAT, a static DNS answer, and the WAN/LAN firewall | `checks.vm-*` |
 | Board build | each board's image builds in CI (aarch64 daily, others weekly) | `checks.build-<board>` |
 | Hardware | Tier-1 boards boot-and-route on a lab bench (manual/semi-automated) | release checklist |
 | Chaos | power-cut loop on Tier-1 hardware (NFR-REL-001) | release checklist |

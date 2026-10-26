@@ -4544,7 +4544,7 @@ in {
         else "no"
       } = no
       test ${lib.escapeShellArg recover.serviceConfig.TimeoutStartSec} = 15min
-      test ${lib.escapeShellArg full.serviceConfig.TimeoutStartSec} = infinity
+      test ${lib.escapeShellArg full.serviceConfig.TimeoutStartSec} = 30min
       test ${lib.escapeShellArg full.unitConfig.ConditionPathExists} = /run/janus/full-fsck
       grep -F -q -- '--no-kernel-check' <<'EOF'
       ${recover.script}
@@ -4829,4 +4829,152 @@ in {
       test ${tri led.structuredExtraConfig.LEDS_TRIGGER_HEARTBEAT} = y
       echo ok > "$out"
     '';
+  eval-serial-autologin = let
+    off = mk [base];
+    on = mk [
+      base
+      {janus.debug.serialAutologin = true;}
+    ];
+    text = v:
+      if builtins.isList v
+      then lib.concatStringsSep "\n" v
+      else toString v;
+    serial = os: text os.config.systemd.services."serial-getty@".serviceConfig.ExecStart;
+    vtRaw = on.config.systemd.services."getty@".serviceConfig.ExecStart;
+    vtScript =
+      if builtins.isList vtRaw
+      then lib.last vtRaw
+      else vtRaw;
+    yesNo = v:
+      if v
+      then "yes"
+      else "no";
+  in
+    pkgs.runCommand "eval-serial-autologin" {} ''
+      test ${yesNo off.config.janus.debug.serialAutologin} = no
+      test ${yesNo on.config.janus.debug.serialAutologin} = yes
+      test ${yesNo on.config.services.openssh.settings.PasswordAuthentication} = no
+      test ${lib.escapeShellArg on.config.services.openssh.settings.PermitRootLogin} = prohibit-password
+      printf '%s\n' ${lib.escapeShellArg (serial off)} > off.txt
+      printf '%s\n' ${lib.escapeShellArg (serial on)} > on.txt
+      grep -q agetty off.txt
+      if grep -q -- '--autologin' off.txt; then
+        echo "serial autologin is on by default" >&2
+        exit 1
+      fi
+      grep -q -- '--autologin root' on.txt
+      grep -q -- '--keep-baud' on.txt
+      if grep -q -- '--autologin' ${vtScript}; then
+        echo "virtual console also autologins" >&2
+        exit 1
+      fi
+      echo ${lib.escapeShellArg (lib.concatStringsSep "\n" on.config.warnings)} | grep -q 'janus.debug.serialAutologin is on'
+      if echo ${lib.escapeShellArg (lib.concatStringsSep "\n" off.config.warnings)} | grep -q 'janus.debug.serialAutologin is on'; then
+        echo "warning without the option" >&2
+        exit 1
+      fi
+      echo ok > "$out"
+    '';
+  eval-debug = let
+    off = mk [
+      base
+      {janus.proxy.enable = true;}
+    ];
+    on = mk [
+      base
+      {
+        janus.proxy.enable = true;
+        janus.debug = {
+          initrdShell = true;
+          kernelLogLevel = 7;
+          tools = true;
+          engineLog = true;
+        };
+      }
+    ];
+    yesNo = v:
+      if v
+      then "yes"
+      else "no";
+    names = os: map lib.getName os.config.environment.systemPackages;
+    has = name: os: lib.elem name (names os);
+    levels = os: lib.filter (p: lib.hasPrefix "loglevel=" p) os.config.boot.kernelParams;
+    shown = v:
+      if v == null
+      then ""
+      else if builtins.isList v
+      then lib.concatStringsSep " " v
+      else toString v;
+    failure = os: unit: shown (os.config.boot.initrd.systemd.services.${unit}.unitConfig.OnFailure or null);
+    warns = os: lib.concatStringsSep "\n" os.config.warnings;
+  in
+    pkgs.runCommand "eval-debug" {
+      nativeBuildInputs = [pkgs.jq pkgs.janet pkgs.xray];
+    } ''
+      test ${yesNo off.config.janus.system.journal.persistent} = no
+      test ${yesNo off.config.janus.debug.initrdShell} = no
+      test ${yesNo off.config.janus.debug.tools} = no
+      test ${yesNo off.config.janus.debug.engineLog} = no
+      test ${yesNo (lib.elem "f2fs-tools" (map lib.getName off.config.boot.initrd.systemd.initrdBin))} = yes
+      test ${lib.escapeShellArg (shown off.config.janus.debug.kernelLogLevel)} = ""
+      test ${toString off.config.boot.consoleLogLevel} = 4
+      test ${toString (lib.length (levels off))} = 1
+      test ${yesNo (lib.elem "loglevel=4" (levels off))} = yes
+      test ${yesNo (has "tcpdump" off)} = no
+      test ${yesNo (has "ethtool" off)} = no
+      test ${yesNo (has "iw" off)} = no
+      test ${yesNo (has "conntrack-tools" off)} = no
+      test ${yesNo off.config.boot.initrd.systemd.emergencyAccess} = no
+      test ${lib.escapeShellArg (failure off "janus-state-recover")} = ""
+      test ${lib.escapeShellArg (failure off "janus-grow-state")} = ""
+      jq -e 'has("logLevel") | not' ${off.config.environment.etc."janus/proxy-model.json".source} >/dev/null
+      jq -e '.log.level == "info"' ${off.config.system.build.janusEngineConfig} >/dev/null
+
+      test ${yesNo on.config.janus.debug.initrdShell} = yes
+      test ${toString on.config.janus.debug.kernelLogLevel} = 7
+      test ${toString on.config.boot.consoleLogLevel} = 7
+      test ${toString (lib.length (levels on))} = 1
+      test ${yesNo (lib.elem "loglevel=7" (levels on))} = yes
+      test ${yesNo (has "tcpdump" on)} = yes
+      test ${yesNo (has "ethtool" on)} = yes
+      test ${yesNo (has "iw" on)} = yes
+      test ${yesNo (has "conntrack-tools" on)} = yes
+      test ${yesNo (lib.elem "f2fs-tools" (map lib.getName on.config.boot.initrd.systemd.initrdBin))} = yes
+      test ${yesNo on.config.boot.initrd.systemd.emergencyAccess} = yes
+      test ${lib.escapeShellArg (failure on "janus-state-recover")} = emergency.target
+      test ${lib.escapeShellArg (failure on "janus-state-fsck-full")} = emergency.target
+      test ${lib.escapeShellArg (failure on "janus-grow-state")} = ""
+      test ${lib.escapeShellArg on.config.boot.initrd.systemd.services.janus-state-recover.unitConfig.OnFailureJobMode} = replace-irreversibly
+      jq -e '.logLevel == "debug"' ${on.config.environment.etc."janus/proxy-model.json".source} >/dev/null
+      jq -e '.log.level == "debug"' ${on.config.system.build.janusEngineConfig} >/dev/null
+      printf '%s\n' '[]' > nodes.json
+      janet ${../janet/janus.janet} render \
+        --model ${on.config.environment.etc."janus/proxy-model.json".source} \
+        --nodes nodes.json \
+        --engine xray \
+        --output xray.json
+      jq -e '.log.loglevel == "debug"' xray.json >/dev/null
+      xray run -test -c xray.json
+      echo ${lib.escapeShellArg (warns on)} | grep -q 'janus.debug.initrdShell is on'
+      echo ${lib.escapeShellArg (warns on)} | grep -q 'janus.debug.kernelLogLevel is 7'
+      echo ${lib.escapeShellArg (warns on)} | grep -q 'janus.debug.tools is on'
+      echo ${lib.escapeShellArg (warns on)} | grep -q 'janus.debug.engineLog is on'
+      if echo ${lib.escapeShellArg (warns off)} | grep -q 'janus.debug.initrdShell is on'; then
+        echo "initrd shell warns while off" >&2
+        exit 1
+      fi
+      echo ok > "$out"
+    '';
+  eval-debug-loglevel = fail "eval-debug-loglevel" [
+    base
+    {janus.debug.kernelLogLevel = 8;}
+  ];
+  eval-debug-journal = fail "eval-debug-journal" [
+    base
+    {janus.debug.journal.persistent = true;}
+  ];
+  eval-debug-firewall = fail "eval-debug-firewall" [
+    base
+    {janus.debug.firewallTrace = true;}
+  ];
 }

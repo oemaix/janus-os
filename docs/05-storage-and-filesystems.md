@@ -140,7 +140,8 @@ dedicated service users with `StateDirectory=` in their units.
 * Every boot runs `fsck.f2fs -a --no-kernel-check` on `JANUS_STATE`.
   That repairs a checkpoint the kernel marked bad. It does not scan the
   volume. A full `fsck.f2fs -f` runs only on the maintenance reboot when
-  `janus.system.reboot.fsck` is set, and that boot does not cap the check.
+  `janus.system.reboot.fsck` is set, and that check stops after 30 minutes.
+  Hitting that cap fails the boot and does not reformat.
   The on-disk request is removed before that check, so a check that does
   not finish is not repeated (D-0049).
 * If `/var` fails to mount even after fsck, the initrd re-formats the state

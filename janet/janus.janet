@@ -1113,8 +1113,9 @@
       (array/push inbounds @{:type "direct" :tag (string inbound "-tcp") :listen address :listen_port 53 :network "tcp"})))
   (array/push inbounds @{:type "socks" :tag "refresh" :listen "127.0.0.1" :listen_port 2080})
   (def dns-final (or house-boot (if (empty? servers) "bootstrap-house-0" (get (first servers) :tag))))
+  (def log-level (or (get model "logLevel") "info"))
   @{
-    :log @{:level "info"}
+    :log @{:level log-level}
     :dns @{
       :servers servers
       :rules dns-rules
@@ -1498,8 +1499,9 @@
     :disableFallbackIfMatch true})
   (when (= fallback "none") (put dns :disableFallback true))
   (when (not (empty? (keys hosts))) (put dns :hosts hosts))
+  (def log-level (or (get model "logLevel") "warning"))
   (def cfg @{
-    :log @{:loglevel "warning"}
+    :log @{:loglevel log-level}
     :api @{:tag "api" :services @["RoutingService"]}
     :inbounds inbounds
     :outbounds outbounds

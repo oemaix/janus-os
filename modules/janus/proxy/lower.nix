@@ -178,6 +178,9 @@
     geodataSources = {
       inherit (sources) geosite geoip tags;
     };
+  }
+  // lib.optionalAttrs config.janus.debug.engineLog {
+    logLevel = "debug";
   };
 
   nodeOf = name: n: {

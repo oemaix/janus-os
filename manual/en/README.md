@@ -273,9 +273,10 @@ A maintenance reboot is off. Set `janus.system.reboot.schedule` to
 `monthly`, `yearly`, or a five-field cron whose last field is `*`.
 `monthly` is 04:00 on day 1. `yearly` is 04:00 on 1 January.
 `janus.system.reboot.fsck = true` runs a full check of the state
-partition on that reboot and lets the check finish. The request is
-removed before the check starts, so a check that does not finish is not
-repeated.
+partition on that reboot. The check stops after 30 minutes. Reaching
+that limit fails the boot and does not format the partition. The request
+is removed before the check starts, so a check that does not finish is
+not repeated.
 
 ## Connection audit
 

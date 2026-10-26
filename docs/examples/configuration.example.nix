@@ -60,6 +60,17 @@
     # kernelProfile = "compact"; # D-0051. standard, the default, is the NixOS kernel.
   };
 
+  # Bench only. Turn these off before the image leaves the bench
+  # (D-0056, D-0057). The journal stays janus.system.journal.persistent
+  # (ADR-0013). It is not one of these switches.
+  # janus.debug = {
+  #   serialAutologin = true; # root on the serial console, no password
+  #   initrdShell = true;     # root shell if the state check exits non-zero
+  #   kernelLogLevel = 7;     # unset leaves loglevel 4
+  #   tools = true;           # tcpdump, ethtool, iw, conntrack
+  #   engineLog = true;       # sing-box and xray log at debug
+  # };
+
   janus.access.ssh.authorizedKeys = [
     "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA... you@laptop" # CHANGE ME (required)
   ];
