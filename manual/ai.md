@@ -59,6 +59,21 @@ Read this file before answering a question about using Janus OS.
   `huawei_cdc_ncm`. Sound stays off unless `janus.audio.enable` selects
   an embedded or USB device on `matched` (D-0061). `compact` still drops
   sound. Compute accelerators stay off (D-0057).
+- `janus.debug` defaults to off (D-0067, D-0068). `serialAutologin`
+  logs in as root on the board serial console, with no password. The
+  line speed stays the kernel baud. Virtual terminals keep a login
+  prompt. SSH stays key-only. `initrdShell` opens a root shell when
+  `janus-state-recover` or the full state check exits non-zero.
+  `fsck.f2fs` is on that shell's path. A failed grow still reaches
+  recover. `kernelLogLevel` is unset or an integer 0–7. Unset leaves
+  loglevel 4. `tools` adds tcpdump, ethtool, iw, and conntrack.
+  `engineLog` sets the engine log to debug. sing-box uses `log.level`.
+  xray uses `log.loglevel`. The runtime render reads `logLevel` from
+  the model. Evaluation warns when a switch is on. Turn the set off
+  before an image leaves the bench. `janus.system.journal.persistent`
+  stays where it is (ADR-0013). Do not invent `janus.debug.firewallTrace`,
+  `janus.engineLog`, or `janus.debug.journal`. A filter drop log is
+  later work (*13*).
 - `janus.system.region` is `cn` (default), `ru`, or `ir`. It selects domestic DNS
   and the `blockQuic` default. That reject follows direct rules; it is
   not a drop of every UDP/443. `janus.proxy.rules` stays empty until
@@ -134,7 +149,8 @@ Read this file before answering a question about using Janus OS.
   and does not scan the volume. `janus.system.reboot.schedule` is off
   unless set to `monthly`, `yearly`, or a five-field cron whose
   day-of-week is `*`. `janus.system.reboot.fsck = true` runs a full
-  check on that reboot only and lets it finish. The request is removed
+  check on that reboot only. It stops after 30 minutes. Hitting that
+  cap fails the boot and does not reformat. The request is removed
   before the check, so a check that does not finish is not repeated
   (D-0049).
 - A Waveshare 1.3" OLED HAT on a Raspberry Pi Zero 2 W, a Raspberry Pi 3,

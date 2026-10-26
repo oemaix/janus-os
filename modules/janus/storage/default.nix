@@ -669,7 +669,8 @@ in {
 
     # -a repairs a checkpoint the kernel marked bad. It does not scan the
     # volume. --no-kernel-check skips the 30-day full scan inside fsck.f2fs.
-    # 15 min bounds a stuck card. A full check has its own unit and no cap.
+    # 15 min bounds a stuck card. A full check has its own unit and stops
+    # after 30 minutes.
     boot.initrd.systemd.services.janus-state-recover = {
       description = "Repair or reformat the Janus state partition";
       requiredBy = ["local-fs-pre.target"];
@@ -784,8 +785,9 @@ in {
     };
 
     # Runs only when recover copied /var/lib/janus/full-fsck into /run.
-    # The on-disk request is removed before fsck -f, so a hang is not repeated.
-    # No start timeout: a full check of a large volume is allowed to finish.
+    # The on-disk request is removed before fsck -f, so a stopped check
+    # is not repeated and does not reformat. 30 minutes covers a 4 GiB
+    # state partition and a 64 GiB one. Hitting the cap fails this boot.
     boot.initrd.systemd.services.janus-state-fsck-full = {
       description = "Full check of the Janus state partition";
       requiredBy = ["local-fs-pre.target"];
@@ -798,7 +800,7 @@ in {
       path = [pkgs.f2fs-tools pkgs.util-linux pkgs.kmod pkgs.coreutils];
       serviceConfig = {
         Type = "oneshot";
-        TimeoutStartSec = "infinity";
+        TimeoutStartSec = "30min";
       };
       script = ''
         set -eu

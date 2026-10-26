@@ -50,6 +50,17 @@
   agent/X11 forwarding, `MaxAuthTries 3`, rate-limited in nftables.
 * Password login: opt-in; requires an existing key; a root password hash
   file on the state partition is used, never an inline plaintext.
+* Serial console: a login prompt. `janus.debug.serialAutologin` (default
+  off) logs in as root on that serial getty only (D-0067). It does not
+  change SSH. Anyone who can open the UART gets a root shell.
+  Evaluation warns.
+* Initrd: `janus.debug.initrdShell` (default off) opens a root shell
+  when the state check exits non-zero (D-0068). The shell is the
+  initrd emergency console. `fsck.f2fs` is on its path.
+* Bench packages and logs: `janus.debug.tools` and `engineLog` default
+  off (D-0068). The engine log writes destinations into the journal.
+  The journal stays volatile unless `janus.system.journal.persistent`
+  is set (ADR-0013).
 * `janus` CLI is the only privileged operator tool; runs via `sudo` policies
   scoped to specific systemd units and files (no general shell needed for
   daily tasks, but root shell remains available to the key holder).
@@ -197,6 +208,12 @@ not document two first-class paths.
   `allowedServers`/`allowedPorts` filters (P2), and TLS verification never
   disabled by default (`tls.insecure` prints a warning).
 * Traffic analysis of the tunnel itself (volume/timing) is out of scope.
+* `janus.debug.serialAutologin` left on gives the UART pins a root shell
+  with no password. `janus.debug.initrdShell` does the same when the
+  state check fails. The header is often exposed. Turn both off before
+  an image leaves the bench.
+* `janus.debug.engineLog` left on writes engine destinations to the
+  journal. `janus.debug.tools` leaves `tcpdump` on the router.
 
 ## 6. Security update policy
 

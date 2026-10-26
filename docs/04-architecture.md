@@ -133,7 +133,7 @@ engine to keep is *07* §2.1.
    legacy BIOS) → kernel + initrd from the read-only boot partition.
 2. systemd-initrd: mounts `/` (ro), `/nix` (ro); `fsck.f2fs -a` + mount
    `/var` (state, rw). A full check runs only on the maintenance reboot
-   when `janus.system.reboot.fsck` is set (D-0049). Mounts tmpfs `/run`,
+   when `janus.system.reboot.fsck` is set, and stops after 30 minutes (D-0049). Mounts tmpfs `/run`,
    `/tmp`; sets up `/etc`
    overlay (lower = store-generated `/etc`, upper = tmpfs, with selected
    paths bind-mounted from `/var/lib/janus/etc` e.g. `machine-id`, SSH
@@ -201,7 +201,8 @@ janus-os/
 │   │   ├── power/            battery readings and cutoff
 │   │   ├── remote-access/
 │   │   ├── access/           ssh, cli, maintenance page
-│   │   └── system/           hostname, time, journald limits
+│   │   ├── system/           hostname, time, journald limits
+│   │   └── debug.nix         bench switches, default off
 │   └── boards/               one profile per board
 ├── pkgs/                     janus-cli, janus-tools (Janet), image builder,
 │                             renderers, pinned engines if nixpkgs lags
