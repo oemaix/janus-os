@@ -23,11 +23,7 @@
     && lib.any (secret: secret.path == path) (lib.attrValues config.sops.secrets);
   # passphraseFile may name the same /run/secrets path without the secret option.
   needsSops = cfg.passphraseSecret != null || pathIsSops cfg.passphraseFile;
-  janusCmd = pkgs.writeShellApplication {
-    name = "janus";
-    runtimeInputs = with pkgs; [jq iproute2 nftables vnstat coreutils systemd util-linux gnutar];
-    text = builtins.readFile ../../../pkgs/janus.sh;
-  };
+  janusCmd = pkgs.callPackage ../../../pkgs/janus-cli.nix {};
   runCmd = pkgs.writeShellApplication {
     name = "janus-web-run";
     runtimeInputs = [janusCmd pkgs.jq pkgs.coreutils];

@@ -63,6 +63,32 @@ require_repo() {
   fi
 }
 
+# Plaintext and plan files. Armed before the first mktemp. ${name:-}
+# keeps an unset name from tripping nounset. A function that exits
+# does not run its own RETURN trap, so this is the shell EXIT trap.
+sops_work=""
+plan_structural=""
+plan_file=""
+pull_values=""
+pull_radios=""
+pull_leases=""
+pull_reached=""
+pull_refs=""
+cleanup_temps() {
+  [ -n "${sops_work:-}" ] && rm -rf "$sops_work"
+  [ -n "${plan_structural:-}" ] && rm -f "$plan_structural"
+  [ -n "${plan_file:-}" ] && rm -f "$plan_file"
+  [ -n "${pull_values:-}" ] && rm -f "$pull_values" "${pull_values}.files"
+  [ -n "${pull_radios:-}" ] && rm -f "$pull_radios"
+  [ -n "${pull_leases:-}" ] && rm -f "$pull_leases"
+  [ -n "${pull_reached:-}" ] && rm -f "$pull_reached"
+  [ -n "${pull_refs:-}" ] && rm -f "$pull_refs"
+  # A failed test in `&&` returns 1. Under set -e that becomes the
+  # shell's exit status and hides a successful command.
+  true
+}
+trap cleanup_temps EXIT
+
 # Write stdin to $1 as a sops document for the age public-key files in
 # the remaining arguments. A PPPoE file stays YAML with username and
 # password. A manual node file is that YAML document too. Every other
@@ -94,35 +120,36 @@ sops_encrypt() {
       keys=$key
     fi
   done
-  work=$(mktemp -d)
-  # RETURN runs on every exit from this function, including `set -e`.
-  # The plaintext stays in the temp dir and never enters argv.
-  trap 'rm -rf "$work"' RETURN
-  cat > "${work}/plain"
+  # The plaintext stays in this directory and never enters argv.
+  # cleanup_temps is armed before any mktemp in this file.
+  sops_work=$(mktemp -d)
+  cat > "${sops_work}/plain"
   case "$out" in
     secrets/pppoe/*|secrets/nodes/*)
-      if [ ! -s "${work}/plain" ]; then
+      if [ ! -s "${sops_work}/plain" ]; then
         echo "Refusing an empty secret for ${out}." >&2
         exit 1
       fi
-      cp "${work}/plain" "${work}/in"
+      cp "${sops_work}/plain" "${sops_work}/in"
       intype=yaml
       ;;
     *)
       # Drop trailing newlines. jq reads the file; the secret is not an argument.
-      jq -Rs 'sub("\n+$"; "") | {value: .}' < "${work}/plain" > "${work}/in"
-      if ! jq -e '.value | length > 0' "${work}/in" >/dev/null; then
+      jq -Rs 'sub("\n+$"; "") | {value: .}' < "${sops_work}/plain" > "${sops_work}/in"
+      if ! jq -e '.value | length > 0' "${sops_work}/in" >/dev/null; then
         echo "Refusing an empty secret for ${out}." >&2
         exit 1
       fi
       intype=json
       ;;
   esac
-  if ! sops encrypt --age "$keys" --input-type "$intype" --output-type yaml "${work}/in" > "${out}.new"; then
+  if ! sops encrypt --age "$keys" --input-type "$intype" --output-type yaml "${sops_work}/in" > "${out}.new"; then
     rm -f "${out}.new"
     exit 1
   fi
   mv "${out}.new" "$out"
+  rm -rf "$sops_work"
+  sops_work=""
 }
 
 host_nix_system() {
@@ -140,14 +167,15 @@ host_nix_system() {
 
 # Pure flake evaluation has no currentSystem. A fleet flake that writes
 # `builtins.currentSystem or "x86_64-linux"` would then cross-compile a
-# Tier 3 image for x86_64. On any other machine, --impure makes
-# currentSystem this machine. x86_64 stays pure, which is that fallback.
+# Tier 3 image for x86_64. On any other machine, eval runs impurely so
+# currentSystem is that machine. Nix 2.34 rejects `nix --impure build`,
+# so a build stays pure and uses the x86_64 fallback.
 nix_fleet() {
   mine=$(host_nix_system) || return 1
-  if [ "$mine" = x86_64-linux ]; then
+  if [ "$mine" = x86_64-linux ] || [ "${1:-}" != eval ]; then
     nix "$@"
   else
-    nix --impure "$@"
+    nix eval --impure "${@:2}"
   fi
 }
 
@@ -286,7 +314,8 @@ deploy_slots() {
     ssh_to "$addr" "umount /run/janus-slot-nix || true; mount -o remount,ro /boot || true"
     exit 1
   fi
-  ssh_to "$addr" "umount /run/janus-slot-nix || true; install -d -m 0755 /var/lib/janus && : > /var/lib/janus/deploy-pending && rm -f /var/lib/janus/deploy-confirmed /var/lib/janus/deploy-booted && mount -o remount,ro /boot || true; systemctl reboot"
+  # Reboot after sshd can finish this session. A reboot in the session hangs the client.
+  ssh_to "$addr" "umount /run/janus-slot-nix || true; install -d -m 0755 /var/lib/janus && : > /var/lib/janus/deploy-pending && rm -f /var/lib/janus/deploy-confirmed /var/lib/janus/deploy-booted && mount -o remount,ro /boot || true; nohup sh -c 'sleep 1; systemctl reboot' >/dev/null 2>&1 & exit 0"
 }
 
 require_clean() {
@@ -297,13 +326,87 @@ require_clean() {
 }
 
 subscription_secrets() {
-  nix_fleet eval --json ".#nixosConfigurations.${1}.config.janus.proxy.subscriptions" \
-    | jq -r 'to_entries[] | select(.value.urlSecret != null) | "\(.key) \(.value.urlSecret)"'
+  raw=$(nix_fleet eval --json ".#nixosConfigurations.${1}.config.janus.proxy.subscriptions") || return 1
+  printf '%s\n' "$raw" | jq -r 'to_entries[] | select(.value.urlSecret != null) | "\(.key)\t\(.value.urlSecret)"'
 }
 
 wifi_secrets() {
-  nix_fleet eval --json ".#nixosConfigurations.${1}.config.janus.network.wifi" \
-    | jq -r 'to_entries[] | select(.value.passphraseSecret != null) | "\(.key) \(.value.passphraseSecret)"'
+  raw=$(nix_fleet eval --json ".#nixosConfigurations.${1}.config.janus.network.wifi") || return 1
+  printf '%s\n' "$raw" | jq -r 'to_entries[] | select(.value.passphraseSecret != null) | "\(.key)\t\(.value.passphraseSecret)"'
+}
+
+# sops secret name, tab, repo-relative file. The fleet ties the name to
+# the file with sops.secrets.<name>.sopsFile. The name is not the path.
+# Pure evaluation copies the flake into a store path ending in -source.
+# Impure evaluation keeps the repo path.
+secret_files() {
+  raw=$(nix_fleet eval --json --apply \
+    'c: builtins.mapAttrs (n: v: if v ? sopsFile && v.sopsFile != null then toString v.sopsFile else "") (c.sops.secrets or {})' \
+    ".#nixosConfigurations.${1}.config") || return 1
+  lines=$(printf '%s\n' "$raw" | jq -r 'to_entries[] | select(.value != "") | "\(.key)\t\(.value)"') || return 1
+  printf '%s\n' "$lines" | while IFS=$'\t' read -r name file; do
+    [ -n "$name" ] || continue
+    case "$file" in
+      "$PWD"/*) printf '%s\t%s\n' "$name" "${file#"$PWD"/}" ;;
+      *-source/*) printf '%s\t%s\n' "$name" "${file#*-source/}" ;;
+      *)
+        echo "janus-build: sopsFile ${file} for ${name} is not a path in this repo; it was skipped." >&2
+        ;;
+    esac
+  done
+}
+
+sops_path() {
+  printf '%s\n' "$1" | awk -F '\t' -v n="$2" '$1 == n { print $2; exit }'
+}
+
+# One tab pair. Sets pair_a and pair_b. A tab, a newline, or a carriage
+# return in a field makes a row this cannot represent.
+split_pair() {
+  case "$1" in
+    *$'\n'*|*$'\r'*) return 1 ;;
+  esac
+  pair_a=""
+  pair_b=""
+  pair_extra=""
+  IFS=$'\t' read -r pair_a pair_b pair_extra <<< "$1"
+  [ -n "$pair_a" ] && [ -n "$pair_b" ] && [ -z "$pair_extra" ]
+}
+
+# One plan row: kind, host, file, name. Sets those names. Shared with
+# the tests. A field may contain spaces. A tab, a newline, a carriage
+# return, a missing name, or a name equal to the file is rejected.
+parse_plan_row() {
+  case "$1" in
+    *$'\n'*|*$'\r'*) return 1 ;;
+  esac
+  kind=""
+  host=""
+  file=""
+  name=""
+  extra=""
+  IFS=$'\t' read -r kind host file name extra <<< "$1"
+  [ -n "$kind" ] && [ -n "$host" ] && [ -n "$file" ] && [ -n "$name" ] && [ -z "$extra" ] || return 1
+  [ "$name" != "$file" ]
+}
+
+# Single-quote one word for a remote command assembled as a string.
+shq() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
+
+plan_add() {
+  saved_kind=${kind:-}
+  saved_host=${host:-}
+  saved_file=${file:-}
+  saved_name=${name:-}
+  if ! parse_plan_row "$(printf '%s\t%s\t%s\t%s' "$1" "$2" "$3" "$4")"; then
+    echo "janus-build: refusing a plan field that contains a tab, a newline, or a carriage return." >&2
+    exit 2
+  fi
+  printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" >> "$plan"
+  kind=$saved_kind
+  host=$saved_host
+  file=$saved_file
+  name=$saved_name
 }
 
 apply_leases() {
@@ -351,6 +454,8 @@ fleet_apply() {
   require_clean
   structural=$(mktemp)
   plan=$(mktemp)
+  plan_structural=$structural
+  plan_file=$plan
   unknown_diff=0
   : > "$structural"
   : > "$plan"
@@ -363,8 +468,18 @@ fleet_apply() {
       echo "unreachable: ${host}" >> "$plan"
       continue
     fi
-    secrets=$(subscription_secrets "$host" || true)
-    radios=$(wifi_secrets "$host" || true)
+    secrets=$(subscription_secrets "$host") || {
+      echo "janus-build: nix eval failed for ${host} (janus.proxy.subscriptions); the configuration does not evaluate" >&2
+      exit 2
+    }
+    radios=$(wifi_secrets "$host") || {
+      echo "janus-build: nix eval failed for ${host} (janus.network.wifi); the configuration does not evaluate" >&2
+      exit 2
+    }
+    sopsmap=$(secret_files "$host") || {
+      echo "janus-build: nix eval failed for ${host} (sops.secrets); the configuration does not evaluate" >&2
+      exit 2
+    }
     files=""
     if [ "$rev" = unknown ] || [ -z "$rev" ] || ! git cat-file -e "${rev}^{commit}" 2>/dev/null; then
       if [ "$only" != 1 ]; then
@@ -379,57 +494,81 @@ fleet_apply() {
       unknown_diff=1
       while IFS= read -r pair; do
         [ -n "$pair" ] || continue
-        secret=${pair#* }
-        file="secrets/${secret}"
-        if [ -f "$file" ]; then
-          printf 'subscription %s %s\n' "$host" "$file" >> "$plan"
+        if ! split_pair "$pair"; then
+          echo "janus-build: refusing a field that contains a tab, a newline, or a carriage return." >&2
+          exit 2
+        fi
+        file=$(sops_path "$sopsmap" "$pair_b")
+        if [ -n "$file" ] && [ -f "$file" ]; then
+          plan_add subscription "$host" "$file" "$pair_a"
         else
-          echo "${host}: ${file} is not in this repo, so it was not applied." >&2
+          echo "${host}: ${pair_b} resolves to no file in this repo, so it was not applied." >&2
         fi
       done <<< "$secrets"
       while IFS= read -r pair; do
         [ -n "$pair" ] || continue
-        secret=${pair#* }
-        file="secrets/${secret}"
-        if [ -f "$file" ]; then
-          printf 'wifi %s %s\n' "$host" "$file" >> "$plan"
+        if ! split_pair "$pair"; then
+          echo "janus-build: refusing a field that contains a tab, a newline, or a carriage return." >&2
+          exit 2
+        fi
+        file=$(sops_path "$sopsmap" "$pair_b")
+        if [ -n "$file" ] && [ -f "$file" ]; then
+          plan_add wifi "$host" "$file" "$pair_a"
         else
-          echo "${host}: ${file} is not in this repo, so it was not applied." >&2
+          echo "${host}: ${pair_b} resolves to no file in this repo, so it was not applied." >&2
         fi
       done <<< "$radios"
       if [ -f "hosts/${host}/overrides.nix" ]; then
-        printf 'leases %s -\n' "$host" >> "$plan"
+        plan_add leases "$host" "hosts/${host}/overrides.nix" -
       fi
     else
       files=$(git diff --name-only "$rev" HEAD)
     fi
-    printf '%s\n' "$files" | while IFS= read -r file; do
+    while IFS= read -r file; do
       [ -n "$file" ] || continue
-      kind=structural
       case "$file" in
         "hosts/${host}/overrides.nix")
-          kind=leases
-          ;;
-        secrets/wifi/"${host}"/*)
-          kind=wifi
+          plan_add leases "$host" "$file" -
           ;;
         secrets/*)
+          # One cipher can feed several subscriptions. A deleted cipher
+          # still matches the map and has nothing to send, so it stays
+          # structural instead of becoming a plan row that cannot apply.
+          matched=0
           while IFS= read -r pair; do
             [ -n "$pair" ] || continue
-            secret=${pair#* }
-            if [ "$file" = "secrets/${secret}" ]; then
-              kind=subscription
+            if ! split_pair "$pair"; then
+              echo "janus-build: refusing a field that contains a tab, a newline, or a carriage return." >&2
+              exit 2
+            fi
+            resolved=$(sops_path "$sopsmap" "$pair_b")
+            if [ "$file" = "$resolved" ] && [ -f "$file" ]; then
+              plan_add subscription "$host" "$file" "$pair_a"
+              matched=1
             fi
           done <<< "$secrets"
+          while IFS= read -r pair; do
+            [ -n "$pair" ] || continue
+            if ! split_pair "$pair"; then
+              echo "janus-build: refusing a field that contains a tab, a newline, or a carriage return." >&2
+              exit 2
+            fi
+            resolved=$(sops_path "$sopsmap" "$pair_b")
+            if [ "$file" = "$resolved" ] && [ -f "$file" ]; then
+              plan_add wifi "$host" "$file" "$pair_a"
+              matched=1
+            fi
+          done <<< "$radios"
+          if [ "$matched" = 0 ]; then
+            printf '%s %s\n' "$host" "$file" >> "$structural"
+          fi
+          ;;
+        *)
+          printf '%s %s\n' "$host" "$file" >> "$structural"
           ;;
       esac
-      case "$kind" in
-        structural) printf '%s %s\n' "$host" "$file" >> "$structural" ;;
-        leases) printf 'leases %s -\n' "$host" >> "$plan" ;;
-        wifi) printf 'wifi %s %s\n' "$host" "$file" >> "$plan" ;;
-        subscription) printf 'subscription %s %s\n' "$host" "$file" >> "$plan" ;;
-      esac
-    done
+    # Quoted, so a path that contains $(...) or a backtick stays a path.
+    done <<< "$files"
   done < <(list_hosts "$host_arg")
   if [ -s "$structural" ] && [ "$only" != 1 ]; then
     echo "These paths are outside the hot-override projection:" >&2
@@ -448,25 +587,23 @@ fleet_apply() {
         echo "$row" >&2
         ;;
       *)
-        kind=${row%% *}
-        rest=${row#* }
-        host=${rest%% *}
-        file=${rest#* }
+        if ! parse_plan_row "$row"; then
+          echo "janus-build fleet apply: bad plan row" >&2
+          exit 2
+        fi
         addr=$(host_address "$host")
         case "$kind" in
           subscription)
-            name=$(subscription_secrets "$host" | awk -v path="${file#secrets/}" '$2 == path {print $1}')
-            if [ -z "$name" ]; then
-              echo "${file} is not a subscription secret for ${host}." >&2
-              exit 2
-            fi
-            ssh_to "$addr" "umask 077; mkdir -p /var/lib/janus/secrets/inbox; cat > /var/lib/janus/secrets/inbox/${name}.age" < "$file"
-            ssh_to "$addr" "age -d -i /var/lib/janus/secrets/age.key /var/lib/janus/secrets/inbox/${name}.age | janus override set proxy.subscriptions.${name}.url"
+            # The inbox file is a sops document. The router decrypts it
+            # with its own age key (ADR-0022). age cannot read sops.
+            box="/var/lib/janus/secrets/inbox/$(printf '%s' "$name" | tr '/' '_').sops"
+            ssh_to "$addr" "umask 077; mkdir -p /var/lib/janus/secrets/inbox; cat > $(shq "$box")" < "$file"
+            ssh_to "$addr" "set -o pipefail; SOPS_AGE_KEY_FILE=/var/lib/janus/secrets/age.key sops decrypt --extract '[\"value\"]' $(shq "$box") | janus override set proxy.subscriptions.$(shq "$name").url; rc=\$?; rm -f $(shq "$box"); exit \$rc"
             ;;
           wifi)
-            ap=$(basename "$file" .yaml)
-            ssh_to "$addr" "umask 077; mkdir -p /var/lib/janus/secrets/inbox; cat > /var/lib/janus/secrets/inbox/${ap}.age" < "$file"
-            ssh_to "$addr" "age -d -i /var/lib/janus/secrets/age.key /var/lib/janus/secrets/inbox/${ap}.age | janus override set network.wifi.${ap}.passphrase"
+            box="/var/lib/janus/secrets/inbox/$(printf '%s' "$name" | tr '/' '_').sops"
+            ssh_to "$addr" "umask 077; mkdir -p /var/lib/janus/secrets/inbox; cat > $(shq "$box")" < "$file"
+            ssh_to "$addr" "set -o pipefail; SOPS_AGE_KEY_FILE=/var/lib/janus/secrets/age.key sops decrypt --extract '[\"value\"]' $(shq "$box") | janus override set network.wifi.$(shq "$name").passphrase; rc=\$?; rm -f $(shq "$box"); exit \$rc"
             ;;
           leases)
             apply_leases "$host"
@@ -487,6 +624,8 @@ fleet_apply() {
     code=2
   fi
   rm -f "$structural" "$plan"
+  plan_structural=""
+  plan_file=""
   exit "$code"
 }
 
@@ -509,11 +648,23 @@ fleet_pull() {
     echo "flake.nix does not import hosts/<name>/overrides.nix." >&2
     exit 2
   fi
-  values=$(mktemp)
-  radios=$(mktemp)
-  leases=$(mktemp)
-  reached=$(mktemp)
-  refs=$(mktemp)
+  # Plaintext from the routers. /dev/shm is RAM when the host has it.
+  # The EXIT trap is already armed. The names start empty so a failure
+  # before mktemp does not delete an unrelated path.
+  pull_tmp=${TMPDIR:-/tmp}
+  if [ -d /dev/shm ] && [ -w /dev/shm ]; then
+    pull_tmp=/dev/shm
+  fi
+  pull_values=$(mktemp "${pull_tmp}/janus-pull-values.XXXXXX")
+  pull_radios=$(mktemp "${pull_tmp}/janus-pull-radios.XXXXXX")
+  pull_leases=$(mktemp "${pull_tmp}/janus-pull-leases.XXXXXX")
+  pull_reached=$(mktemp "${pull_tmp}/janus-pull-reached.XXXXXX")
+  pull_refs=$(mktemp "${pull_tmp}/janus-pull-refs.XXXXXX")
+  values=$pull_values
+  radios=$pull_radios
+  leases=$pull_leases
+  reached=$pull_reached
+  refs=$pull_refs
   : > "$values"
   : > "$radios"
   : > "$leases"
@@ -534,16 +685,38 @@ fleet_pull() {
       continue
     fi
     printf '%s\n' "$host" >> "$reached"
-    printf '%s\n' "$raw" | jq -r --arg host "$host" '
+    while IFS= read -r obj; do
+      [ -n "$obj" ] || continue
+      key=$(printf '%s\n' "$obj" | jq -r '.key')
+      value=$(printf '%s\n' "$obj" | jq -r '.value')
+      case "${key}${value}" in
+        *$'\t'*|*$'\n'*|*$'\r'*)
+          echo "janus-build: refusing to pull a value that contains a tab, a newline, or a carriage return." >&2
+          exit 2
+          ;;
+      esac
+      printf '%s\t%s\t%s\n' "$host" "$key" "$value" >> "$values"
+    done < <(printf '%s\n' "$raw" | jq -c '
       to_entries[]
       | select(.key | startswith("proxy.subscriptions."))
-      | "\($host) \(.key) \(.value)"
-    ' >> "$values"
-    printf '%s\n' "$raw" | jq -r --arg host "$host" '
+      | {key: .key, value: (.value | tostring)}
+    ')
+    while IFS= read -r obj; do
+      [ -n "$obj" ] || continue
+      key=$(printf '%s\n' "$obj" | jq -r '.key')
+      value=$(printf '%s\n' "$obj" | jq -r '.value')
+      case "${key}${value}" in
+        *$'\t'*|*$'\n'*|*$'\r'*)
+          echo "janus-build: refusing to pull a value that contains a tab, a newline, or a carriage return." >&2
+          exit 2
+          ;;
+      esac
+      printf '%s\t%s\t%s\n' "$host" "$key" "$value" >> "$radios"
+    done < <(printf '%s\n' "$raw" | jq -c '
       to_entries[]
       | select(.key | startswith("network.wifi."))
-      | "\($host) \(.key) \(.value)"
-    ' >> "$radios"
+      | {key: .key, value: (.value | tostring)}
+    ')
     printf '%s\n' "$raw" | jq -c --arg host "$host" '
       {host: $host, leases: [to_entries[] | select(.key | startswith("network.lans."))]}
     ' >> "$leases"
@@ -553,18 +726,23 @@ fleet_pull() {
   fi
   while IFS= read -r row; do
     [ -n "$row" ] || continue
-    host=${row%% *}
-    rest=${row#* }
-    key=${rest%% *}
-    value=${rest#* }
+    IFS=$'\t' read -r host key value extra <<< "$row"
+    if [ -n "${extra:-}" ]; then
+      echo "janus-build: refusing to pull a value that contains a tab, a newline, or a carriage return." >&2
+      exit 2
+    fi
     name=${key#proxy.subscriptions.}
     name=${name%.url}
-    secret=$(subscription_secrets "$host" | awk -v n="$name" '$1 == n {print $2}')
+    secret=$(subscription_secrets "$host" | awk -F '\t' -v n="$name" '$1 == n {print $2; exit}')
     if [ -z "$secret" ]; then
       echo "${host}: ${key} has no urlSecret in this repo." >&2
       exit 2
     fi
-    file="secrets/${secret}"
+    file=$(sops_path "$(secret_files "$host")" "$secret")
+    if [ -z "$file" ]; then
+      echo "${host}: ${secret} resolves to no file in this repo." >&2
+      exit 2
+    fi
     if [ "$with_secrets" != 1 ] || [ "$value" = "(redacted)" ]; then
       echo "${host}: ${key} changed. Not fetched."
       continue
@@ -573,18 +751,23 @@ fleet_pull() {
   done < "$values"
   while IFS= read -r row; do
     [ -n "$row" ] || continue
-    host=${row%% *}
-    rest=${row#* }
-    key=${rest%% *}
-    value=${rest#* }
+    IFS=$'\t' read -r host key value extra <<< "$row"
+    if [ -n "${extra:-}" ]; then
+      echo "janus-build: refusing to pull a value that contains a tab, a newline, or a carriage return." >&2
+      exit 2
+    fi
     ap=${key#network.wifi.}
     ap=${ap%.passphrase}
-    secret=$(wifi_secrets "$host" | awk -v n="$ap" '$1 == n {print $2}')
+    secret=$(wifi_secrets "$host" | awk -F '\t' -v n="$ap" '$1 == n {print $2; exit}')
     if [ -z "$secret" ]; then
       echo "${host}: ${key} has no passphraseSecret in this repo." >&2
       exit 2
     fi
-    file="secrets/${secret}"
+    file=$(sops_path "$(secret_files "$host")" "$secret")
+    if [ -z "$file" ]; then
+      echo "${host}: ${secret} resolves to no file in this repo." >&2
+      exit 2
+    fi
     if [ "$with_secrets" != 1 ] || [ "$value" = "(redacted)" ]; then
       echo "${host}: ${key} changed. Not fetched."
       continue
@@ -592,16 +775,38 @@ fleet_pull() {
     printf '%s\t%s\t%s\n' "$file" "$host" "$value" >> "${values}.files"
   done < "$radios"
   while IFS= read -r host; do
+    sopsmap=$(secret_files "$host") || {
+      echo "janus-build: nix eval failed for ${host} (sops.secrets); the configuration does not evaluate" >&2
+      exit 2
+    }
+    pairs=$(subscription_secrets "$host") || {
+      echo "janus-build: nix eval failed for ${host} (janus.proxy.subscriptions); the configuration does not evaluate" >&2
+      exit 2
+    }
     while IFS= read -r pair; do
       [ -n "$pair" ] || continue
-      secret=${pair#* }
-      printf '%s %s\n' "secrets/${secret}" "$host" >> "$refs"
-    done <<< "$(subscription_secrets "$host" || true)"
+      if ! split_pair "$pair"; then
+        echo "janus-build: refusing a field that contains a tab, a newline, or a carriage return." >&2
+        exit 2
+      fi
+      file=$(sops_path "$sopsmap" "$pair_b")
+      [ -n "$file" ] || continue
+      printf '%s\t%s\n' "$file" "$host" >> "$refs"
+    done <<< "$pairs"
+    pairs=$(wifi_secrets "$host") || {
+      echo "janus-build: nix eval failed for ${host} (janus.network.wifi); the configuration does not evaluate" >&2
+      exit 2
+    }
     while IFS= read -r pair; do
       [ -n "$pair" ] || continue
-      secret=${pair#* }
-      printf '%s %s\n' "secrets/${secret}" "$host" >> "$refs"
-    done <<< "$(wifi_secrets "$host" || true)"
+      if ! split_pair "$pair"; then
+        echo "janus-build: refusing a field that contains a tab, a newline, or a carriage return." >&2
+        exit 2
+      fi
+      file=$(sops_path "$sopsmap" "$pair_b")
+      [ -n "$file" ] || continue
+      printf '%s\t%s\n' "$file" "$host" >> "$refs"
+    done <<< "$pairs"
   done < <(list_hosts)
   if [ -f "${values}.files" ]; then
     while IFS= read -r file; do
@@ -622,7 +827,7 @@ fleet_pull() {
           echo "${file} is referenced by ${owner}, which was not reached. The file was left unchanged." >&2
           blocked=1
         fi
-      done < <(awk -v f="$file" '$1 == f {print $2}' "$refs")
+      done < <(awk -F '\t' -v f="$file" '$1 == f {print $2}' "$refs")
       if [ "$blocked" = 1 ]; then
         continue
       fi
@@ -635,7 +840,7 @@ fleet_pull() {
           exit 1
         fi
         pubs+=("$pub")
-      done < <(awk -v f="$file" '$1 == f {print $2}' "$refs")
+      done < <(awk -F '\t' -v f="$file" '$1 == f {print $2}' "$refs")
       if [ "${#pubs[@]}" -eq 0 ]; then
         echo "No referencing host key for ${file}." >&2
         exit 1
@@ -675,6 +880,11 @@ fleet_pull() {
   done < <(list_hosts "$host_arg")
   git diff --stat || true
   rm -f "$values" "${values}.files" "$radios" "$leases" "$reached" "$refs"
+  pull_values=""
+  pull_radios=""
+  pull_leases=""
+  pull_reached=""
+  pull_refs=""
 }
 
 write_host() {
@@ -1114,7 +1324,7 @@ case "$cmd" in
       ssh_to "$addr" "nix-env -p /nix/var/nix/profiles/system --rollback" || true
       exit 1
     fi
-    ssh_to "$addr" "install -d -m 0755 /var/lib/janus && : > /var/lib/janus/deploy-pending && rm -f /var/lib/janus/deploy-confirmed /var/lib/janus/deploy-booted && mount -o remount,ro /nix || true; mount -o remount,ro /boot || true; systemctl reboot"
+    ssh_to "$addr" "install -d -m 0755 /var/lib/janus && : > /var/lib/janus/deploy-pending && rm -f /var/lib/janus/deploy-confirmed /var/lib/janus/deploy-booted && mount -o remount,ro /nix || true; mount -o remount,ro /boot || true; nohup sh -c 'sleep 1; systemctl reboot' >/dev/null 2>&1 & exit 0"
     ;;
   *)
     usage

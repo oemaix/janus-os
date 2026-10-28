@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-24 |
+| Last updated | 2026-10-28 |
 
 `janus-build` runs on the build host. After the fleet repo exists, every
 command runs in that repo. The router command stays `janus` (*14*). The
@@ -224,8 +224,11 @@ clean. The projection, per host, is only:
 
 Each reachable router receives its own projection. Static leases are
 passed to `janus override set` as plaintext. Secret files are sent as
-ciphertext. The router decrypts them with its age key and applies the
-override. The build host does not decrypt. A shared subscription file is
+ciphertext. The file is a sops document, resolved from
+`sops.secrets.<name>.sopsFile`, not from the spelling of the secret
+name. The router decrypts it with `sops decrypt` and
+`SOPS_AGE_KEY_FILE` pointing at its age key, then applies the override.
+`age -d` cannot read that document. The build host does not decrypt. A shared subscription file is
 the same ciphertext on every host that references it; each of those hosts
 can decrypt it. A changed URL is followed by `janus proxy refresh` for
 that subscription.

@@ -192,6 +192,122 @@ ip_in_prefix() {
   [ "$(( (ip & mask) == (base & mask) ))" -eq 1 ]
 }
 
+wan_show() {
+  name=$1
+  wan_dir="/run/janus/wan/$name"
+  if [ ! -d "$wan_dir" ]; then
+    echo "janus: unknown WAN '${name}'." >&2
+    if [ -d /run/janus/wan ]; then
+      echo "Known WANs:" >&2
+      ls /run/janus/wan >&2 || true
+    fi
+    exit 2
+  fi
+  if [ -s "$wan_dir/iface" ]; then
+    iface=$(head -1 "$wan_dir/iface")
+  else
+    iface=$(sed -n 's/^Name=//p' \
+      "/etc/systemd/network/40-wan-${name}.network" \
+      "/etc/systemd/network/40-wan-parent-${name}.network" 2>/dev/null || true)
+    iface=${iface%%$'\n'*}
+  fi
+  if [ -z "$iface" ]; then
+    echo "janus: cannot resolve the link for WAN '${name}'." >&2
+    exit 1
+  fi
+  state=$(cat "/sys/class/net/$iface/operstate" 2>/dev/null || true)
+  carrier=$(cat "/sys/class/net/$iface/carrier" 2>/dev/null || true)
+  v4=$(ip -4 -o addr show dev "$iface" 2>/dev/null || true)
+  v6=$(ip -6 -o addr show dev "$iface" 2>/dev/null || true)
+  # A point-to-point route has no "via". The third field is then the device.
+  gw=$(ip -4 route show default dev "$iface" 2>/dev/null | awk '{
+    for (i = 1; i <= NF; i++) if ($i == "via" && $(i + 1) != "") { print $(i + 1); exit }
+  }' || true)
+  health=$(head -1 "$wan_dir/health" 2>/dev/null || true)
+  if [ -z "$health" ]; then
+    health=unknown
+  fi
+  if [ -f "$wan_dir/dns" ]; then
+    dns_file=$wan_dir/dns
+  else
+    dns_file=/dev/null
+  fi
+  addr_json=$(printf '%s\n%s\n' "$v4" "$v6" | awk 'NF {print $4}' | jq -R . | jq -s .)
+  dns_json=$(jq -Rsc 'split("\n") | map(select(length > 0))' "$dns_file")
+  vlt=$(printf '%s\n' "$v4" | awk 'NR==1 {for (i = 1; i <= NF; i++) if ($i == "valid_lft") {print $(i + 1); exit}}')
+  lease_json=null
+  case "$vlt" in
+    *sec)
+      secs=${vlt%sec}
+      case "$secs" in
+        ''|*[!0-9]*) ;;
+        *) lease_json=$secs ;;
+      esac
+      ;;
+  esac
+  uptime_json=null
+  uptime_text=unknown
+  if [ -s "$wan_dir/up-since" ]; then
+    since=$(head -1 "$wan_dir/up-since")
+    now=$(date +%s)
+    case "$since" in
+      ''|*[!0-9]*) ;;
+      *)
+        if [ "$now" -ge "$since" ]; then
+          uptime_json=$((now - since))
+          uptime_text=$(printf '%s\n' "$uptime_json" | awk '{
+            s = $1
+            if (s < 60) { printf "%ss", s; exit }
+            if (s < 3600) { printf "%sm", int(s / 60); exit }
+            printf "%sh %sm", int(s / 3600), int((s % 3600) / 60)
+          }')
+        fi
+        ;;
+    esac
+  fi
+  if [ "${json:-0}" = 1 ]; then
+    jq -n \
+      --arg name "$name" \
+      --arg link "$iface" \
+      --arg state "$state" \
+      --arg carrier "$carrier" \
+      --arg gateway "$gw" \
+      --arg health "$health" \
+      --argjson addresses "$addr_json" \
+      --argjson dns "$dns_json" \
+      --argjson lease "$lease_json" \
+      --argjson uptime "$uptime_json" \
+      '{name:$name, link:$link, state:$state, carrier:$carrier, addresses:$addresses, gateway:(if $gateway == "" then null else $gateway end), dns:$dns, leaseSeconds:$lease, uptimeSeconds:$uptime, health:$health}'
+    return 0
+  fi
+  echo "WAN ${name} (link ${iface})"
+  echo "Link:     operstate=${state:-unknown} carrier=${carrier:-unknown}"
+  echo "Addresses:"
+  printf '%s\n%s\n' "$v4" "$v6" | awk 'NF {printf "  %s\n", $4}'
+  echo "Gateway:  ${gw:-none}"
+  dns_text=$(tr '\n' ' ' < "$dns_file" | sed 's/ *$//')
+  echo "DNS:      ${dns_text:-none}"
+  case "$vlt" in
+    ''|forever) ;;
+    *sec)
+      secs=${vlt%sec}
+      case "$secs" in
+        ''|*[!0-9]*) echo "Lease:    ${vlt} remaining" ;;
+        *)
+          if [ "$secs" -lt 60 ]; then
+            echo "Lease:    ${secs}s remaining"
+          else
+            echo "Lease:    $((secs / 3600))h $(((secs % 3600) / 60))m remaining"
+          fi
+          ;;
+      esac
+      ;;
+    *) echo "Lease:    ${vlt} remaining" ;;
+  esac
+  echo "Uptime:   ${uptime_text}"
+  echo "Health:   ${health}"
+}
+
 case "$cmd" in
   deploy|fleet)
     echo "janus ${cmd} runs on the build host as janus-build. See docs/16-build-host-cli.md." >&2
@@ -360,13 +476,7 @@ case "$cmd" in
         systemctl restart "janus-pppoe-${name}.service" 2>/dev/null || networkctl renew "$name" || networkctl reconfigure "$name"
         ;;
       show)
-        if [ "$json" = 1 ]; then
-          printf '{"name":"%s","dns":"%s"}\n' "$name" "$(tr '\n' ' ' < "/run/janus/wan/${name}/dns" 2>/dev/null || true)"
-        else
-          ip -4 addr show
-          echo "DNS:"
-          cat "/run/janus/wan/${name}/dns" 2>/dev/null || true
-        fi
+        wan_show "$name"
         ;;
       *) usage ;;
     esac
@@ -458,7 +568,10 @@ case "$cmd" in
       echo "janus reset: /var is not a mounted state partition." >&2
       exit 1
     fi
-    find /var -mindepth 1 -maxdepth 1 -exec rm -rf {} + || true
+    if ! find /var -mindepth 1 -maxdepth 1 -exec rm -rf {} +; then
+      echo "janus reset: could not wipe /var." >&2
+      exit 1
+    fi
     sync || true
     systemctl reboot
     ;;

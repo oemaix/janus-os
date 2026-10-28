@@ -6,6 +6,7 @@
   config,
   lib,
   options,
+  pkgs,
   ...
 }: let
   cfg = config.janus;
@@ -56,6 +57,9 @@ in {
     # The age key is the identity. SSH host keys are not age keys (ADR-0022).
     sops.age.sshKeyPaths = lib.mkDefault [];
     sops.gnupg.sshKeyPaths = lib.mkDefault [];
+    # fleet apply copies a sops document to the inbox. The router runs
+    # `sops decrypt` with its age key. The build host does not decrypt.
+    environment.systemPackages = lib.optional (config.sops.secrets != {}) pkgs.sops;
     sops.secrets = lib.mkMerge [
       (lib.genAttrs oneLine (_: {key = lib.mkDefault "value";}))
       (lib.genAttrs pppoe (_: {key = lib.mkDefault "";}))

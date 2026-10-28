@@ -410,21 +410,56 @@
         table=${toString (wanTable name)}
         pri=${toString (10000 + wanIndex.${name})}
         mkdir -p "/run/janus/wan/$name"
+        printf '%s\n' "$iface" > "/run/janus/wan/$name/iface"
         ${
           if wan.mode == "static"
           then ''
             printf '%s\n' ${lib.escapeShellArgs wan.static.dns} > "/run/janus/wan/$name/dns"
           ''
           else ''
-            if [ -e "/sys/class/net/$iface/ifindex" ]; then
-              idx=$(cat "/sys/class/net/$iface/ifindex")
+            dns=""
+            # Resolver entries are objects under DNS. Address is a byte
+            # array and AddressString is the text (systemd json-util).
+            # DHCP servers are absent here because WAN links set
+            # UseDNS = false, so the lease file below is the source.
+            if [ -e "/sys/class/net/$iface" ]; then
+              # Keep the order networkctl reports. unique would sort it.
+              dns=$(${pkgs.systemd}/bin/networkctl status --json=short "$iface" 2>/dev/null | ${pkgs.jq}/bin/jq -r '[.. | objects | .DNS? | arrays | .[]? | objects | .AddressString // empty | select(length > 0)] | reduce .[] as $s ([]; if index($s) then . else . + [$s] end) | join(" ")' 2>/dev/null || true)
+            fi
+            if [ -z "$dns" ] && [ -e "/sys/class/net/$iface/ifindex" ]; then
+              idx=$(${pkgs.coreutils}/bin/cat "/sys/class/net/$iface/ifindex")
               if [ -f "/run/systemd/netif/leases/$idx" ]; then
-                sed -n 's/^DNS=//p' "/run/systemd/netif/leases/$idx" > "/run/janus/wan/$name/dns"
+                dns=$(${pkgs.gnused}/bin/sed -n 's/^DNS=//p' "/run/systemd/netif/leases/$idx" | ${pkgs.coreutils}/bin/tr '\n' ' ')
               fi
+            fi
+            # An empty read leaves the last learned file. Wiping it would
+            # drop resolvers while the lease is briefly absent.
+            if [ -n "$dns" ]; then
+              printf '%s\n' "$dns" | ${pkgs.coreutils}/bin/tr ' ' '\n' | ${pkgs.gnugrep}/bin/grep -v '^$' > "/run/janus/wan/$name/dns" || true
             fi
           ''
         }
         if [ -e "/sys/class/net/$iface" ]; then
+          op=$(${pkgs.coreutils}/bin/cat "/sys/class/net/$iface/operstate" 2>/dev/null || true)
+          # Ethernet reports "up". PPP and some tunnels stay "unknown"
+          # while the session has an address.
+          live=0
+          if [ "$op" = up ]; then
+            live=1
+          elif [ "$op" = unknown ]; then
+            if ${pkgs.iproute2}/bin/ip -4 -o addr show dev "$iface" | ${pkgs.gawk}/bin/awk 'NF { found = 1 } END { exit found ? 0 : 1 }'; then
+              live=1
+            elif ${pkgs.iproute2}/bin/ip -6 -o addr show dev "$iface" | ${pkgs.gawk}/bin/awk '$4 !~ /^fe80:/ && NF { found = 1 } END { exit found ? 0 : 1 }'; then
+              live=1
+            fi
+          fi
+          if [ "$live" = 1 ]; then
+            if [ ! -s "/run/janus/wan/$name/up-since" ]; then
+              ${pkgs.coreutils}/bin/date +%s > "/run/janus/wan/$name/up-since"
+            fi
+          else
+            ${pkgs.coreutils}/bin/rm -f "/run/janus/wan/$name/up-since"
+          fi
           # One rule per address. pipefail keeps a failed ip from looking like success.
           addrs=$(${pkgs.iproute2}/bin/ip -4 -o addr show dev "$iface" | ${pkgs.gawk}/bin/awk '{print $4}')
           printf '%s\n' "$addrs" | while read -r cidr; do
@@ -434,10 +469,18 @@
             ${pkgs.iproute2}/bin/ip rule del from "$addr" lookup "$table" priority "$pri" 2>/dev/null || true
             ${pkgs.iproute2}/bin/ip rule add from "$addr" lookup "$table" priority "$pri"
           done
-          gw=$(${pkgs.iproute2}/bin/ip -4 route show default dev "$iface" | ${pkgs.gawk}/bin/awk '{print $3; exit}')
-          if [ -n "$gw" ]; then
+          # No "via" means the default route is on-link, as with PPPoE.
+          gw=$(${pkgs.iproute2}/bin/ip -4 route show default dev "$iface" | ${pkgs.gawk}/bin/awk '{
+            saw = 1
+            for (i = 1; i <= NF; i++) if ($i == "via" && $(i + 1) != "") { print $(i + 1); found = 1; exit }
+          } END { if (saw && !found) print "dev" }')
+          if [ "$gw" = dev ]; then
+            ${pkgs.iproute2}/bin/ip route replace default dev "$iface" table "$table"
+          elif [ -n "$gw" ]; then
             ${pkgs.iproute2}/bin/ip route replace default via "$gw" dev "$iface" table "$table"
           fi
+        else
+          ${pkgs.coreutils}/bin/rm -f "/run/janus/wan/$name/up-since"
         fi
       '')
       wanNames}

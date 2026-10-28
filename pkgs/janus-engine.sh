@@ -114,6 +114,12 @@ xray_pin_balancers() {
 }
 
 tun_up() {
+  # networkd can flush the fwmark rule between intercept-up and here.
+  # DNS tproxy needs it for sing-box and for xray, including a LAN that
+  # is not intercepted. xray returns below, so this has to run first.
+  if [ "${JANUS_DNS_TPROXY}" = 1 ]; then
+    tproxy_route
+  fi
   if [ "${JANUS_ENGINE}" = xray ]; then
     if [ "${JANUS_FAIL_MODE}" = open ] && [ -n "${JANUS_XRAY_NFT:-}" ]; then
       nft delete table inet janus_xray 2>/dev/null || true
@@ -316,8 +322,9 @@ render_config() {
 
 # A function called from `if` ignores set -e, and so does a subshell it starts.
 # A new bash does not, and die() exits only that bash, so the caller can record it.
+# $BASH is this interpreter. The service PATH has no bash.
 render_or_fail() {
-  bash "$0" render-internal
+  "$BASH" "$0" render-internal
 }
 
 geo_base() {

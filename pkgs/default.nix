@@ -8,11 +8,7 @@
   janusModified,
   upstreamLock,
 }: let
-  janus-cli = pkgs.writeShellApplication {
-    name = "janus";
-    runtimeInputs = with pkgs; [jq iproute2 nftables vnstat coreutils systemd util-linux gnutar];
-    text = builtins.readFile ./janus.sh;
-  };
+  janus-cli = pkgs.callPackage ./janus-cli.nix {};
   bootInstall = pkgs.writeText "janus-boot-install.sh" (builtins.readFile ./janus-boot-install.sh);
   janus-build = pkgs.writeShellApplication {
     name = "janus-build";

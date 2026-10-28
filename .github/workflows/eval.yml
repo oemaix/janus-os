@@ -59,4 +59,11 @@ jobs:
             .#checks.x86_64-linux.limine-bios \
             .#checks.x86_64-linux.cli-usage \
             .#checks.x86_64-linux.cli-init \
+            .#checks.x86_64-linux.cli-plan \
+            .#checks.x86_64-linux.cli-runtime-deps \
+            .#checks.x86_64-linux.eval-wan-show \
+            .#checks.x86_64-linux.eval-engine-reentry \
+            .#checks.x86_64-linux.eval-wan-policy \
+            .#checks.x86_64-linux.eval-deploy-slots \
+            .#checks.x86_64-linux.eval-web-sops \
             .#packages.x86_64-linux.docs-options

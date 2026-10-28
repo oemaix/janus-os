@@ -273,6 +273,9 @@ in {
       janus-build init "$TMPDIR/fleet"
       test -f "$TMPDIR/fleet/flake.nix"
       test -d "$TMPDIR/fleet/.git"
+      test -f "$TMPDIR/fleet/.gitignore"
+      grep -qx 'result/' "$TMPDIR/fleet/.gitignore"
+      grep -qx 'backup/' "$TMPDIR/fleet/.gitignore"
       url=$(sed -n 's/.*inputs\.janus\.url = "\([^"]*\)".*/\1/p' "$TMPDIR/fleet/flake.nix")
       case "$url" in
         github:oemaix/janus-os/*)
@@ -2364,10 +2367,19 @@ in {
       fi
       case "$1 $2 $3" in
         "-4 -o addr")
+          if [ -n "''${JANUS_IP_NOADDR:-}" ]; then
+            exit 0
+          fi
           printf '%s\n' "2: eth0 inet 10.0.0.2/24 scope global" "2: eth0 inet 10.0.0.3/24 scope global"
           ;;
+        "-6 -o addr")
+          ;;
         "-4 route show")
-          printf '%s\n' "default via 10.0.0.1 dev eth0"
+          if [ -n "''${JANUS_IP_ONLINK:-}" ]; then
+            printf '%s\n' "default dev eth0 scope link"
+          else
+            printf '%s\n' "default via 10.0.0.1 dev eth0"
+          fi
           ;;
         "rule del from")
           exit 1
@@ -2397,11 +2409,17 @@ in {
       fi
       ip=$(grep -o '/nix/store/[^ ]*/bin/ip' ${script} | head -1)
       awk=$(grep -o '/nix/store/[^ ]*/bin/awk' ${script} | head -1)
+      networkctl=$(grep -o '/nix/store/[^ ]*/bin/networkctl' ${script} | head -1)
       test -x "$ip"
       test -x "$awk"
+      test -n "$networkctl"
       root=$TMPDIR/wan-policy
-      mkdir -p "$root/sys/class/net/eth0"
-      sed -e "s|$ip|${ipStub}|g" -e "s|/run/janus|$root/run|g" -e "s|/sys/class/net|$root/sys/class/net|g" ${script} > "$root/policy"
+      mkdir -p "$root/sys/class/net/eth0" "$root/bin" "$root/leases"
+      printf '9\n' > "$root/sys/class/net/eth0/ifindex"
+      printf 'DNS=1.1.1.1\nDNS=9.9.9.9\n' > "$root/leases/9"
+      printf '%s\n' '#!/bin/sh' 'exit 1' > "$root/bin/networkctl"
+      chmod +x "$root/bin/networkctl"
+      sed -e "s|$ip|${ipStub}|g" -e "s|$networkctl|$root/bin/networkctl|g" -e "s|/run/janus|$root/run|g" -e "s|/sys/class/net|$root/sys/class/net|g" -e "s|/run/systemd/netif/leases|$root/leases|g" ${script} > "$root/policy"
       chmod +x "$root/policy"
       export JANUS_IP_LOG=$root/ip.log
       if JANUS_IP_FAIL=1 "$root/policy"; then
@@ -2416,6 +2434,49 @@ in {
       grep -q 'rule add from 10.0.0.2 ' "$JANUS_IP_LOG"
       grep -q 'rule add from 10.0.0.3 ' "$JANUS_IP_LOG"
       grep -q 'route replace default via 10.0.0.1 ' "$JANUS_IP_LOG"
+      grep -qx '1.1.1.1' "$root/run/wan/main/dns"
+      grep -qx '9.9.9.9' "$root/run/wan/main/dns"
+      rm -f "$root/leases/9"
+      "$root/policy"
+      grep -qx '1.1.1.1' "$root/run/wan/main/dns"
+      grep -qx '9.9.9.9' "$root/run/wan/main/dns"
+      test "$(tr -d '\n' < "$root/run/wan/main/iface")" = eth0
+      printf 'up\n' > "$root/sys/class/net/eth0/operstate"
+      "$root/policy"
+      stamp=$(cat "$root/run/wan/main/up-since")
+      echo "$stamp" | grep -Eq '^[0-9]+$'
+      sleep 1
+      "$root/policy"
+      test "$(cat "$root/run/wan/main/up-since")" = "$stamp"
+      printf 'down\n' > "$root/sys/class/net/eth0/operstate"
+      "$root/policy"
+      test ! -e "$root/run/wan/main/up-since"
+      printf 'unknown\n' > "$root/sys/class/net/eth0/operstate"
+      "$root/policy"
+      echo "$(cat "$root/run/wan/main/up-since")" | grep -Eq '^[0-9]+$'
+      JANUS_IP_NOADDR=1 "$root/policy"
+      test ! -e "$root/run/wan/main/up-since"
+      unset JANUS_IP_NOADDR
+      : > "$JANUS_IP_LOG"
+      JANUS_IP_ONLINK=1 "$root/policy"
+      grep -q 'route replace default dev eth0 table ' "$JANUS_IP_LOG"
+      if grep -q 'route replace default via ' "$JANUS_IP_LOG"; then
+        echo "a point-to-point default route was installed with via" >&2
+        exit 1
+      fi
+      unset JANUS_IP_ONLINK
+      printf '1\n' > "$root/run/wan/main/up-since"
+      rm -rf "$root/sys/class/net/eth0"
+      "$root/policy"
+      test ! -e "$root/run/wan/main/up-since"
+      grep -qx '1.1.1.1' "$root/run/wan/main/dns"
+      filter='[.. | objects | .DNS? | arrays | .[]? | objects | .AddressString // empty | select(length > 0)] | reduce .[] as $s ([]; if index($s) then . else . + [$s] end) | join(" ")'
+      grep -F -q "$filter" ${script}
+      jqbin=$(grep -o '/nix/store/[^ ]*/bin/jq' ${script} | head -1)
+      printf '%s\n' '{"Name":"eth0","DNS":[{"Address":[8,8,8,8],"AddressString":"8.8.8.8"},{"Address":[1,1,1,1],"AddressString":"1.1.1.1"}],"Nexthop":{"Gateway":[{"AddressString":"10.0.0.1"}]}}' > "$root/net.json"
+      test "$("$jqbin" -r "$filter" "$root/net.json")" = "8.8.8.8 1.1.1.1"
+      printf '%s\n' '{"Link":{"DNS":[{"Address":[9,9,9,9],"AddressString":"9.9.9.9"},{"Address":[1,0,0,1]}]}}' > "$root/nested.json"
+      test "$("$jqbin" -r "$filter" "$root/nested.json")" = "9.9.9.9"
       echo ok > "$out"
     '';
   eval-backup-health = let
@@ -3342,7 +3403,9 @@ in {
       tail -n 1 "$dir/ssh-log" | grep -q 'umount /run/janus-slot-nix'
       tail -n 1 "$dir/ssh-log" | grep -q deploy-pending
       tail -n 1 "$dir/ssh-log" | grep -q 'mount -o remount,ro /boot'
-      tail -n 1 "$dir/ssh-log" | grep -q 'systemctl reboot'
+      tail -n 1 "$dir/ssh-log" | grep -q 'nohup sh -c'
+      tail -n 1 "$dir/ssh-log" | grep -q 'sleep 1; systemctl reboot'
+      tail -n 1 "$dir/ssh-log" | grep -q ' & exit 0'
       echo ok > "$out"
     '';
 
@@ -4332,6 +4395,11 @@ in {
       printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " after)} | grep -q sops-install-secrets.service
       printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " secretRequires)} | grep -q sops-install-secrets.service
       printf '%s\n' ${lib.escapeShellArg secretStart} | grep -q ${lib.escapeShellArg os.config.sops.secrets.web-router.path}
+      test ${
+        if lib.elem pkgs.sops os.config.environment.systemPackages
+        then "yes"
+        else "no"
+      } = yes
       echo ok > "$out"
     '';
   eval-sops-file-paths = let
@@ -4863,4 +4931,248 @@ in {
       test ${tri led.structuredExtraConfig.LEDS_TRIGGER_HEARTBEAT} = y
       echo ok > "$out"
     '';
+  eval-engine-reentry = pkgs.runCommand "eval-engine-reentry" {} ''
+    set -eu
+    awk '
+      /^tun_up\(\)/ { on = 1 }
+      on && /^}/ { exit }
+      on && /tproxy_route/ { seen = 1 }
+      on && /JANUS_ENGINE/ && /xray/ && !seen {
+        print "xray returns before DNS tproxy is restored" > "/dev/stderr"
+        exit 1
+      }
+      on && /JANUS_INTERCEPT/ && !seen {
+        print "DNS tproxy is installed after the intercept return" > "/dev/stderr"
+        exit 1
+      }
+      END { if (!seen) exit 1 }
+    ' ${../pkgs/janus-engine.sh}
+    grep -q '"\$BASH" "\$0" render-internal' ${../pkgs/janus-engine.sh}
+    if grep -q 'bash "\$0" render-internal' ${../pkgs/janus-engine.sh}; then
+      echo "render still looks up bash on PATH" >&2
+      exit 1
+    fi
+    echo ok > "$out"
+  '';
+  eval-wan-show = pkgs.runCommand "eval-wan-show" {
+    nativeBuildInputs = [pkgs.bash pkgs.jq pkgs.gawk pkgs.gnused pkgs.coreutils pkgs.gnugrep];
+  } ''
+    set -eu
+    set -o pipefail
+    root=$TMPDIR/wan
+    mkdir -p "$root/run/janus/wan/main" "$root/sys/class/net/eth0" "$root/bin"
+    printf 'eth0\n' > "$root/run/janus/wan/main/iface"
+    printf '1.1.1.1\n9.9.9.9\n' > "$root/run/janus/wan/main/dns"
+    printf 'up\n' > "$root/run/janus/wan/main/health"
+    now=$(date +%s)
+    printf '%s\n' "$((now - 125))" > "$root/run/janus/wan/main/up-since"
+    printf 'up\n' > "$root/sys/class/net/eth0/operstate"
+    printf '1\n' > "$root/sys/class/net/eth0/carrier"
+    printf '%s\n' '#!/bin/sh' \
+      'case "$1 $2 $3" in' \
+      '  "-4 -o addr") printf "%s\n" "2: eth0 inet 10.0.0.2/24 brd 10.0.0.255 scope global dynamic eth0 valid_lft 3661sec preferred_lft 3661sec" ;;' \
+      '  "-6 -o addr") printf "%s\n" "2: eth0 inet6 2001:db8::2/64 scope global valid_lft forever preferred_lft forever" ;;' \
+      '  "-4 route show") printf "%s\n" "default via 10.0.0.1 dev eth0" ;;' \
+      '  *) echo "unexpected ip: $*" >&2; exit 1 ;;' \
+      'esac' > "$root/bin/ip"
+    chmod +x "$root/bin/ip"
+    export PATH="$root/bin:$PATH"
+    {
+      printf '%s\n' 'set -u' 'set -o pipefail'
+      sed -e "s|/run/janus/wan|$root/run/janus/wan|g" -e "s|/sys/class/net|$root/sys/class/net|g" ${../pkgs/janus.sh}
+    } > "$root/janus.sh"
+    outj=$(bash "$root/janus.sh" --json wan show main)
+    printf '%s\n' "$outj" | jq -e '.name == "main" and .link == "eth0" and .state == "up" and .carrier == "1" and .gateway == "10.0.0.1" and .health == "up" and .dns == ["1.1.1.1","9.9.9.9"] and .addresses == ["10.0.0.2/24","2001:db8::2/64"] and .leaseSeconds == 3661' >/dev/null
+    up=$(printf '%s\n' "$outj" | jq '.uptimeSeconds')
+    test "$up" -ge 125
+    test "$up" -le 130
+    text=$(bash "$root/janus.sh" wan show main)
+    printf '%s\n' "$text" | grep -q 'Health:   up'
+    printf '%s\n' "$text" | grep -q 'Uptime:'
+    printf '%s\n' "$text" | grep -q '1h 1m remaining'
+    sed -i 's/default via 10.0.0.1 dev eth0/default dev eth0 scope link/' "$root/bin/ip"
+    outp=$(bash "$root/janus.sh" --json wan show main)
+    printf '%s\n' "$outp" | jq -e '.gateway == null' >/dev/null
+    textp=$(bash "$root/janus.sh" wan show main)
+    printf '%s\n' "$textp" | grep -q 'Gateway:  none'
+    set +e
+    bash "$root/janus.sh" wan show missing >/dev/null 2>"$root/err"
+    code=$?
+    set -e
+    test "$code" = 2
+    echo ok > "$out"
+  '';
+  cli-runtime-deps = let
+    system = pkgs.stdenv.hostPlatform.system;
+  in
+    pkgs.runCommand "cli-runtime-deps" {
+      nativeBuildInputs = [pkgs.bash pkgs.coreutils pkgs.gnugrep];
+    } ''
+      set -eu
+      wrapper=${self.packages.${system}.janus-cli}/bin/janus
+      script=${../pkgs/janus.sh}
+      path=$(sed -n 's/^export PATH="\(.*\)"$/\1/p' "$wrapper" | head -1)
+      path=''${path%:\$PATH}
+      if [ -z "$path" ]; then
+        echo "no PATH line in the janus wrapper" >&2
+        exit 1
+      fi
+      # Walk the wrapper directories. Do not search the ambient PATH:
+      # a command present only in the sandbox would hide a missing input.
+      IFS=':' read -r -a dirs <<< "$path"
+      have() {
+        for d in "''${dirs[@]}"; do
+          if [ -n "$d" ] && [ -x "$d/$1" ]; then
+            return 0
+          fi
+        done
+        return 1
+      }
+      # External utilities pkgs/janus.sh calls. Builtins and functions are
+      # not on this list. A new utility has to be added here and to the
+      # shared runtimeInputs.
+      for cmd in awk sed grep find head mktemp install cat tr ls wc basename date sync rm cp mv chmod tar jq ip nft systemctl networkctl journalctl findmnt vnstat; do
+        if ! grep -qE "(^|[^A-Za-z0-9_-])''${cmd}([^A-Za-z0-9_-]|\$)" "$script"; then
+          continue
+        fi
+        if ! have "$cmd"; then
+          echo "janus CLI runtime lacks $cmd" >&2
+          exit 1
+        fi
+      done
+      if ! grep -qE '(^|[^A-Za-z0-9_-])find([^A-Za-z0-9_-]|$)' "$script"; then
+        echo "janus reset no longer calls find" >&2
+        exit 1
+      fi
+      echo ok > "$out"
+    '';
+  cli-plan = pkgs.runCommand "cli-plan" {
+    nativeBuildInputs = [pkgs.bash pkgs.jq pkgs.gnused pkgs.git pkgs.gnugrep pkgs.gawk pkgs.coreutils];
+  } ''
+    set -eu
+    set -u
+    set -o pipefail
+    JANUS_BUILD_LIB=1
+    # shellcheck disable=SC1091
+    . ${../pkgs/janus-build.sh}
+
+    nix_fleet() {
+      jq -n --arg repo "$PWD" '{
+        "sub-a": "\($repo)/secrets/subscription/shared.yaml",
+        "wifi-a": "/nix/store/xxx-source/secrets/wifi/h1/living.yaml",
+        "stolen": "/outside/not-in-repo.yaml"
+      }'
+    }
+    printf 'sub-a\tsecrets/subscription/shared.yaml\nwifi-a\tsecrets/wifi/h1/living.yaml\n' > expected
+    secret_files h1 >got 2>skipped.log || { echo "secret_files failed" >&2; exit 1; }
+    if ! cmp expected got; then
+      echo "secret file map differed" >&2
+      echo "expected:" >&2
+      cat -A expected >&2
+      echo "got:" >&2
+      cat -A got >&2
+      exit 1
+    fi
+    if ! grep -q '/outside/not-in-repo.yaml' skipped.log; then
+      echo "an outside path was not reported" >&2
+      cat skipped.log >&2
+      exit 1
+    fi
+
+    row=$(printf 'subscription\th1\tsecrets/subscription/shared.yaml\tmy sub')
+    if ! parse_plan_row "$row"; then
+      echo "a good plan row was rejected" >&2
+      exit 1
+    fi
+    test "$kind" = subscription
+    test "$host" = h1
+    test "$name" = "my sub"
+    for row in "$(printf 'subscription\th1\tfile')" "$(printf 'subscription\th1\tfile\tfile')" "$(printf 'subscription\th1\tfile\tbad\trow')"; do
+      if parse_plan_row "$row"; then
+        echo "a bad plan row was accepted: $row" >&2
+        exit 1
+      fi
+    done
+    if parse_plan_row "$(printf 'subscription\th1\tfile\tb\rname')"; then
+      echo "a carriage return was accepted" >&2
+      exit 1
+    fi
+
+    repo=$(mktemp -d)
+    cd "$repo"
+    git init -q
+    mkdir -p hosts/h1 secrets/subscription secrets/wifi/h1 secrets/keys
+    printf '{}\n' > flake.nix
+    printf '{ ... }: {}\n' > hosts/h1/configuration.nix
+    printf '{ ... }: {}\n' > hosts/h1/overrides.nix
+    printf 'cipher-v1\n' > secrets/subscription/shared.yaml
+    printf 'age1fake\n' > secrets/keys/h1.pub
+    git add .
+    git -c user.email=t@t -c user.name=t commit -qm baseline
+    printf 'cipher-v2\n' > secrets/subscription/shared.yaml
+    git add .
+    git -c user.email=t@t -c user.name=t commit -qm rotate
+    host_address() { printf '%s\n' 10.0.0.1; }
+    ssh_to() {
+      shift
+      if [ "$*" = "janus version --json" ]; then
+        printf '{"configRevision":"%s"}\n' "$(git rev-parse HEAD~1)"
+      else
+        printf '%s\n' "$*" >> "$PWD/applied.log"
+      fi
+    }
+    nix_fleet() {
+      case "$*" in
+        *.config.janus.proxy.subscriptions*) printf '%s' '{"my sub":{"urlSecret":"sub-a"}}' ;;
+        *.config.janus.network.wifi*) printf '%s' '{}' ;;
+        *sops.secrets*.config*) printf '%s' "{\"sub-a\":\"$PWD/secrets/subscription/shared.yaml\"}" ;;
+        *) return 1 ;;
+      esac
+    }
+    if ! (fleet_apply h1); then
+      echo "fleet_apply failed" >&2
+      exit 1
+    fi
+    grep -q "sops decrypt --extract" applied.log
+    grep -q "proxy.subscriptions.'my sub'.url" applied.log
+    if grep -q 'age -d' applied.log; then
+      echo "fleet apply still decrypts with age" >&2
+      exit 1
+    fi
+    rm -f applied.log
+    git rm -q secrets/subscription/shared.yaml
+    git -c user.email=t@t -c user.name=t commit -qm 'drop cipher'
+    rc=0
+    scratch=''${TMPDIR:-/tmp}
+    err=$scratch/cli-plan-err
+    (fleet_apply h1) >"$scratch/cli-plan-out" 2>"$err" || rc=$?
+    if [ "$rc" -ne 2 ]; then
+      echo "a deleted cipher exited $rc, want 2" >&2
+      cat "$err" >&2
+      exit 1
+    fi
+    grep -q 'outside the hot-override projection' "$err"
+    grep -q 'secrets/subscription/shared.yaml' "$err"
+    if grep -q 'proxy.subscriptions' applied.log 2>/dev/null; then
+      echo "a deleted cipher was applied" >&2
+      exit 1
+    fi
+    weird='secrets/$(touch pwned)'
+    printf 'x\n' > "$weird"
+    git add -- "$weird"
+    git -c user.email=t@t -c user.name=t commit -qm 'odd path'
+    rm -f pwned
+    rc=0
+    (fleet_apply h1) >"$scratch/cli-plan-out" 2>"$err" || rc=$?
+    if [ -e pwned ]; then
+      echo "a diff path was executed" >&2
+      exit 1
+    fi
+    if [ "$rc" -ne 2 ]; then
+      echo "a shell-looking path exited $rc, want 2" >&2
+      cat "$err" >&2
+      exit 1
+    fi
+    echo ok > "$out"
+  '';
 }

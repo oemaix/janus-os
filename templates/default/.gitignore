@@ -1,0 +1,4 @@
+# janus-build artifacts. A first build leaves these untracked, and
+# fleet apply refuses a dirty tree.
+result/
+backup/
