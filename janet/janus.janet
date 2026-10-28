@@ -462,7 +462,10 @@
         (def reality (get tls "reality"))
         (when reality
           (put-in node [:tls :reality :publicKey] (get reality "public_key"))
-          (put-in node [:tls :reality :shortId] (get reality "short_id"))))
+          (put-in node [:tls :reality :shortId] (get reality "short_id")))
+        (def utls (get tls "utls"))
+        (when (and utls (get utls "enabled"))
+          (put-in node [:tls :utls] (get utls "fingerprint"))))
       (array/push out node)))
   out)
 
@@ -1100,6 +1103,9 @@
   (def inbounds @[
     @{:type "tun" :tag "tun-in" :interface_name "tun0"
       :address @["172.19.0.1/30" "fdfe:dcba:9876::1/126"]
+      # gvisor answers a SYN that policy routing delivered to tun0.
+      # The system stack does not (ADR-0025).
+      :stack "gvisor"
       :auto_route false :strict_route false}
     @{:type "redirect" :tag "dns-tcp" :listen "::" :listen_port 5353}
     # TProxy delivers a packet only to a socket of the same family.
@@ -1136,6 +1142,7 @@
 (defn xray-stream [node]
   (def tls (at node :tls))
   (def transport (or (at-in node [:transport :type]) "tcp"))
+  (def utls (at-in node [:tls :utls]))
   (def stream @{:network transport :sockopt @{:mark 74}})
   (when (and tls (at tls :enable))
     (def reality (at-in tls [:reality :publicKey]))
@@ -1150,7 +1157,10 @@
         (put stream :security "tls")
         (def settings @{})
         (when (at tls :serverName) (put settings :serverName (at tls :serverName)))
-        (put stream :tlsSettings settings))))
+        (put stream :tlsSettings settings)))
+    # xray rejects an unknown fingerprint at `xray run -test`.
+    (when utls
+      (put-in stream [(if reality :realitySettings :tlsSettings) :fingerprint] utls)))
   (when (not= transport "tcp")
     (def extra @{})
     (when (at-in node [:transport :path]) (put extra :path (at-in node [:transport :path])))
@@ -1520,6 +1530,16 @@
   (def i (index-of flag args))
   (if i (get args (+ i 1)) nil))
 
+(defn merge-raw [base over]
+  # engineSettings merges last. JSON keys are strings. The rendered
+  # config uses keywords. Arrays replace.
+  (def out (table/clone base))
+  (eachp [k v] over
+    (def nk (if (string? k) (keyword k) k))
+    (def b (get out nk))
+    (put out nk (if (and (table? b) (table? v)) (merge-raw b v) v)))
+  out)
+
 (defn main [&]
   (def args (dyn :args))
   (def cmd
@@ -1548,8 +1568,10 @@
           mode (or (arg-value args "--rule-set") "remote")
           engine (or (arg-value args "--engine") "sing-box")
           dst (or (arg-value args "--output") "-")
-          rendered (if (= engine "xray") (render-xray model nodes) (render model nodes mode))]
-      (write-out dst (json-encode rendered)))
+          rendered (if (= engine "xray") (render-xray model nodes) (render model nodes mode))
+          raw (or (get model "engineSettings") @{})
+          merged (if (empty? raw) rendered (merge-raw rendered raw))]
+      (write-out dst (json-encode merged)))
     "match"
     (let [kind (get args (+ (index-of "match" args) 1))
           pattern (get args (+ (index-of "match" args) 2))

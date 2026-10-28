@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-17 |
+| Last updated | 2026-10-28 |
 
 ## 1. Scope
 
@@ -27,7 +27,7 @@ for one engine:
 | Shadowsocks + `simple-obfs` | yes (built-in `obfs-local` plugin) | via external plugin process | Xray: evaluation fails. No sidecar (ADR-0006). |
 | Shadowsocks + `v2ray-plugin` | yes (built-in) | external process | as above |
 | Hysteria2 / TUIC | yes | no | assertion when engine = xray |
-| Transparent inbound | TUN, TPROXY, redirect | TPROXY, redirect, (TUN via external) | default: sing-box TUN with auto-route off (Janus owns routing); Xray TPROXY |
+| Transparent inbound | TUN, TPROXY, redirect | TPROXY, redirect, (TUN via external) | default: sing-box TUN, auto-route off, gvisor stack (ADR-0025; Janus owns routing); Xray TPROXY |
 | Rule sets | binary `.srs` (remote/local) | `geosite.dat`/`geoip.dat` | fetched per engine format at build; refreshable |
 | DNS server | built-in with fake-IP, per-LAN rules | one DNS module, per-domain servers | sing-box keeps a DNS policy per LAN. xray 26 has one policy for every LAN (§2.1) |
 | Selector/URL-test groups | `selector`, `urltest` | `balancer` (leastPing, roundRobin) — no persistent manual selector | Xray: manual strategy emulated by regenerating config on `janus select` |
@@ -221,8 +221,9 @@ themselves when `via = "direct"`).
 * Source set: LANs whose mode is `rule-based` or `proxy-all` (nftables set
   `janus_proxied_src`). A `bypass` LAN is not in the set.
 * TCP+UDP for IPv4 and IPv6 are redirected to the engine's transparent
-  inbound (sing-box TUN with `auto_route = false` and Janus-managed `ip
-  rule`/`ip route` to the TUN for marked traffic; or TPROXY on Xray).
+  inbound (sing-box TUN with `auto_route = false`, `stack: gvisor`
+  (ADR-0025), and Janus-managed `ip rule`/`ip route` to the TUN for
+  marked traffic; or TPROXY on Xray).
   With Xray, that TPROXY target is port 12345 and mark `0x4a02` (D-0031).
 * Engine egress is marked `0x4a` and routed via the WAN tables, never back
   into interception. The engine binds to no specific WAN by default;

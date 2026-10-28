@@ -652,7 +652,15 @@
     @{}))
 
 (defn strip-nl [s]
-  (if (and (> (length s) 0) (= (string/slice s -1) "\n"))
+  # A negative start with no end is exclusive, so (string/slice s -1)
+  # is empty and never the last byte. End -1 is the length, so -2 drops
+  # one byte and -3 drops two.
+  (def b (string/bytes s))
+  (def n (length b))
+  (cond
+    (and (>= n 2) (= (get b (- n 1)) 10) (= (get b (- n 2)) 13))
+    (string/slice s 0 -3)
+    (and (>= n 1) (= (get b (- n 1)) 10))
     (string/slice s 0 -2)
     s))
 
@@ -730,6 +738,10 @@
   (string buf))
 
 (defn check []
+  (expect (= (strip-nl "secret\n") "secret") "strip nl")
+  (expect (= (strip-nl "secret\r\n") "secret") "strip crlf")
+  (expect (= (strip-nl "secret") "secret") "strip bare")
+  (expect (= (strip-nl "") "") "strip empty")
   (expect (ct-eq "same" "same") "ct equal")
   (expect (not (ct-eq "same" "other")) "ct differ")
   (expect (not (ct-eq "same" "same!")) "ct length")

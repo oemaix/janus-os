@@ -207,6 +207,7 @@ in {
   in
     pkgs.runCommand "eval-vlan" {} ''
       test ${lib.escapeShellArg vlan} = lan.20
+      test ${lib.escapeShellArg (lib.concatStringsSep " " os.config.systemd.network.networks."20-port-lan".networkConfig.VLAN)} = lan.20
       echo ok > "$out"
     '';
   cli-usage = let
@@ -405,6 +406,10 @@ in {
         else "no"
       } = yes
       test ${toString yanyu.config.janus.storage.firmwareOffsetMiB} = 1
+      echo ${lib.escapeShellArg (lib.concatStringsSep " " yanyu.config.boot.initrd.availableKernelModules)} | grep -q usb_storage
+      echo ${lib.escapeShellArg (lib.concatStringsSep " " yanyu.config.boot.initrd.availableKernelModules)} | grep -q uas
+      echo ${lib.escapeShellArg (lib.concatStringsSep " " yanyu.config.boot.initrd.availableKernelModules)} | grep -q xhci_pci
+      echo ${lib.escapeShellArg (lib.concatStringsSep " " yanyu.config.boot.initrd.availableKernelModules)} | grep -q ehci_pci
       echo ${text yanyu.config.system.build.janusImage.limineConfigScript} | grep -q 'editor_enabled: no'
       echo ${text yanyu.config.system.build.janusImage.limineBiosPartitionScript} | grep -q 'bios-install'
       test ${toString r4s.config.janus.storage.firmwareOffsetMiB} = 15
@@ -1074,6 +1079,18 @@ in {
       hash=$(cat ${seed}/seed.hash)
       echo "$hash" | grep -Eq '^[0-9a-f]{64}$'
       test "$(cat ${seed}/seed.generation)" = 1
+      printf '%s\n' ${lib.escapeShellArg os.config.systemd.services.janus-seed.script} > seed.sh
+      grep -q 'mkdir -p' seed.sh
+      grep -q 'for name in subscriptions geodata engine' seed.sh
+      if grep -q 'install -d' seed.sh; then
+        echo "janus-seed chmods state directories" >&2
+        exit 1
+      fi
+      if grep -q 'engine/.' seed.sh; then
+        echo "janus-seed copies the engine directory onto itself" >&2
+        exit 1
+      fi
+      test ${lib.escapeShellArg os.config.systemd.services.janus-seed.serviceConfig.ProtectSystem} = strict
       echo ok > "$out"
     '';
   eval-proxy = let
@@ -1127,7 +1144,7 @@ in {
       nativeBuildInputs = [pkgs.sing-box pkgs.jq];
     } ''
       sing-box check -c ${engine}
-      jq -e '.inbounds[] | select(.type == "tun" and .auto_route == false)' ${engine} >/dev/null
+      jq -e '.inbounds[] | select(.type == "tun" and .auto_route == false and .stack == "gvisor")' ${engine} >/dev/null
       jq -e '.outbounds[] | select(.tag == "direct" and .routing_mark == 74)' ${engine} >/dev/null
       jq -e '[.inbounds[] | select(.type == "tproxy" and .network == "udp" and .listen == "0.0.0.0" and .listen_port == 5353)] | length == 1' ${engine} >/dev/null
       jq -e '[.inbounds[] | select(.type == "tproxy" and .network == "udp" and .listen == "::" and .listen_port == 5353)] | length == 1' ${engine} >/dev/null
@@ -1160,7 +1177,10 @@ in {
         exit 1
       fi
       grep -q 'tproxy to :5353' ${dnsFile}
+      grep -q 'fib daddr type local return' ${dnsFile}
       grep -q '0x00004a02' ${dnsFile}
+      grep -q 'meta mark 0x00004a01 oifname "tun0" accept' ${natFile}
+      printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep "\n" os.config.systemd.tmpfiles.rules)} | grep -q 'd /var/lib/janus/engine 3770 root janus-engine'
       grep -q 'meta l4proto tcp th dport 53 redirect to :5353' ${natFile}
       if grep -q 'l4proto udp th dport 53 redirect' ${natFile}; then
         echo "UDP/53 is still NAT-redirected" >&2
@@ -2685,6 +2705,20 @@ in {
       janet "$script" render --model block.json --nodes nodes.json --rule-set remote --output block-engine.json
       jq -e '.route.final == "direct" and any(.route.rules[]; .action == "reject")' block-engine.json >/dev/null
       sing-box check -c block-engine.json
+      jq -e '.inbounds[] | select(.type == "tun") | .stack == "gvisor"' engine.json >/dev/null
+      printf '%s\n' '{"outbounds":[{"type":"vless","tag":"a","server":"203.0.113.9","server_port":443,"uuid":"b831381d-6324-4d53-ad4f-8cda48b30811","tls":{"enabled":true,"server_name":"www.example.com","utls":{"enabled":true,"fingerprint":"chrome"}}}]}' > sb.json
+      janet "$script" normalize --format sing-box --input sb.json --output utls.json
+      jq -e '.[0].tls.utls == "chrome"' utls.json >/dev/null
+      janet "$script" render --model model.json --nodes utls.json --engine xray --rule-set remote --output xray.json
+      jq -e '.outbounds[] | select(.tag == "a") | .streamSettings.tlsSettings.fingerprint == "chrome"' xray.json >/dev/null
+      printf '%s\n' '{"outbounds":[{"type":"vless","tag":"r","server":"203.0.113.8","server_port":443,"uuid":"b831381d-6324-4d53-ad4f-8cda48b30811","tls":{"enabled":true,"server_name":"www.example.com","reality":{"enabled":true,"public_key":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","short_id":"abcd"},"utls":{"enabled":true,"fingerprint":"chrome"}}}]}' > reality.json
+      janet "$script" normalize --format sing-box --input reality.json --output reality-nodes.json
+      janet "$script" render --model model.json --nodes reality-nodes.json --engine xray --rule-set remote --output reality-xray.json
+      jq -e '.outbounds[] | select(.tag == "r") | .streamSettings.realitySettings.fingerprint == "chrome"' reality-xray.json >/dev/null
+      jq '. + {engineSettings: {log: {level: "debug"}}}' model.json > merge-model.json
+      janet "$script" render --model merge-model.json --nodes nodes.json --rule-set remote --output merged.json
+      jq -e '.log.level == "debug" and any(.inbounds[]; .type == "tun" and .stack == "gvisor")' merged.json >/dev/null
+      sing-box check -c merged.json
       echo ok > "$out"
     '';
   eval-boot-install =

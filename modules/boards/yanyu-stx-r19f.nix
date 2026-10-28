@@ -21,7 +21,13 @@
       "console=tty0"
       "console=ttyS0,115200n8"
     ];
+    # USB stick boots on the J1900. Without these the initrd has no
+    # block device and JANUS_STATE never appears.
     boot.initrd.availableKernelModules = [
+      "usb_storage"
+      "uas"
+      "xhci_pci"
+      "ehci_pci"
       "ahci"
       "sd_mod"
       "e1000e"

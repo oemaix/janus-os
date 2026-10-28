@@ -158,6 +158,7 @@
     rules = map expandRule cfg.rules;
     lans = lanViews;
     subscriptionNames = lib.attrNames enabledSubscriptions;
+    engineSettings = cfg.engineSettings;
     dns = {
       carrierResolvers = dns.carrierResolvers;
       encryption = dns.encryption;
@@ -612,7 +613,9 @@ in {
     users.groups.janus-engine = {};
 
     systemd.tmpfiles.rules = [
-      "d /var/lib/janus/engine 2750 root janus-engine -"
+      # 3770 is setgid and sticky. The engine can create cache.db.
+      # It cannot unlink the root-owned config.
+      "d /var/lib/janus/engine 3770 root janus-engine -"
       "d /var/lib/janus/geodata 0755 root root -"
       "d /var/lib/janus/subscriptions 0700 root root -"
     ];
@@ -766,11 +769,16 @@ in {
       };
     };
 
-    janus.firewall.hooks = lib.mkIf (dns.interceptPlaintext && dnsBridges != []) {
-      preroutingRaw = ''
+    janus.firewall.hooks = {
+      # Marked LAN traffic is routed to tun0, which is not a zone.
+      # The forward policy is drop. Xray uses TPROXY and has no tun0.
+      forwardExtra = lib.optionalString (intercept && cfg.engine != "xray") ''
+        iifname { ${bridgeSet} } meta mark 0x00004a01 oifname "tun0" accept
+      '';
+      preroutingRaw = lib.optionalString (dns.interceptPlaintext && dnsBridges != []) ''
         iifname { ${dnsBridgeSet} } meta l4proto tcp th dport 53 redirect to :5353
       '';
-      inputExtra = ''
+      inputExtra = lib.optionalString (dns.interceptPlaintext && dnsBridges != []) ''
         tcp dport 5353 accept
         udp dport 5353 accept
       '';
@@ -806,6 +814,9 @@ in {
       content = ''
         chain dns-udp {
           type filter hook prerouting priority mangle; policy accept;
+          # A query to the router itself must reach the per-LAN inbound.
+          # TProxy of a local-target UDP packet does not return it.
+          fib daddr type local return
           iifname { ${dnsBridgeSet} } meta l4proto udp th dport 53 meta mark set 0x00004a02 tproxy to :5353
         }
       '';

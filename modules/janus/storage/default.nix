@@ -937,9 +937,13 @@ in {
       };
       script = ''
         set -eu
-        # tmpfiles creates /var/lib/janus/root at 0700. ProtectHome follows
-        # the /root symlink onto that directory, so this sandbox cannot chmod it.
-        install -d -m 0755 \
+        # mkdir -p does not chmod a directory tmpfiles already owns.
+        # A mode-setting install would clear the setgid bit on the
+        # engine directory.
+        # /var/lib/janus/root is root's home. ProtectHome makes that
+        # path read-only here, and tmpfiles already creates it 0700.
+        # ProtectSystem stays strict. The read-only filesystems are f2fs.
+        mkdir -p \
           /var/lib/janus/etc \
           /var/lib/janus/etc/ssh \
           /var/lib/janus/secrets \
@@ -962,9 +966,15 @@ in {
           fi
         fi
         if [ "$apply" = 1 ]; then
-          cp -a ${janusSeed}/subscriptions/. /var/lib/janus/subscriptions/
-          cp -a ${janusSeed}/geodata/. /var/lib/janus/geodata/
-          cp -a ${janusSeed}/engine/. /var/lib/janus/engine/
+          # cp -a source/. dest rewrites dest's mode from the store
+          # directory (0555). Copy each entry and leave the directory
+          # to tmpfiles.
+          for name in subscriptions geodata engine; do
+            for item in ${janusSeed}/$name/*; do
+              [ -e "$item" ] || continue
+              cp -a "$item" "/var/lib/janus/$name/"
+            done
+          done
           cp -a ${janusSeed}/manifest.json /var/lib/janus/manifest.json
           printf '%s %s\n' "$embedded_hash" "$embedded_gen" > "$stamp"
         fi

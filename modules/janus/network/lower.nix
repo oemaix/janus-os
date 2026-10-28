@@ -122,7 +122,7 @@
     cfg.vlans;
 
   parentVlans = lib.zipAttrsWith (_: vs: lib.concatLists vs) (lib.mapAttrsToList (_: vlan: {
-      ${vlan.port} = [vlanNetdev vlan];
+      ${vlan.port} = [(vlanNetdev vlan)];
     })
     cfg.vlans);
 
