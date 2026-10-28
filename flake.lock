@@ -1,5 +1,22 @@
 {
   "nodes": {
+    "iran-sing-box-rules": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1793184690,
+        "narHash": "sha256-eoZEFcoYPp0kPhJNe9tOMu0+iSbXaB74I4Z2vCJtzLc=",
+        "owner": "Chocolate4U",
+        "repo": "Iran-sing-box-rules",
+        "rev": "6d88cf6a4806f4086172548aed650a8ed31864d9",
+        "type": "github"
+      },
+      "original": {
+        "owner": "Chocolate4U",
+        "ref": "rule-set",
+        "repo": "Iran-sing-box-rules",
+        "type": "github"
+      }
+    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1790450978,
@@ -18,8 +35,45 @@
     },
     "root": {
       "inputs": {
+        "iran-sing-box-rules": "iran-sing-box-rules",
         "nixpkgs": "nixpkgs",
+        "sing-geoip": "sing-geoip",
+        "sing-geosite": "sing-geosite",
         "sops-nix": "sops-nix"
+      }
+    },
+    "sing-geoip": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1791826193,
+        "narHash": "sha256-+4W7LCRLn5vtPHLbBarK5tv4F5O818Vw4xAiOIp5BVU=",
+        "owner": "SagerNet",
+        "repo": "sing-geoip",
+        "rev": "eb32cd6ed4a16fcb3bf9a36ccebf28e45716ae84",
+        "type": "github"
+      },
+      "original": {
+        "owner": "SagerNet",
+        "ref": "rule-set",
+        "repo": "sing-geoip",
+        "type": "github"
+      }
+    },
+    "sing-geosite": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1793163140,
+        "narHash": "sha256-yrI97Y03eNSbWHFutMe4RXi4myVTf6ptLERpsADoz+E=",
+        "owner": "SagerNet",
+        "repo": "sing-geosite",
+        "rev": "61e1ba9d6dd6f3b8e996d80facd828374d84a4bb",
+        "type": "github"
+      },
+      "original": {
+        "owner": "SagerNet",
+        "ref": "rule-set",
+        "repo": "sing-geosite",
+        "type": "github"
       }
     },
     "sops-nix": {

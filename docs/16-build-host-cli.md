@@ -124,7 +124,7 @@ IPv6 form there is `root@[address]`.
 | Pull overrides | `janus-build fleet pull [<host>]` | Current overrides from one router, or every reachable router, into this repo (§5). |
 | Look | `janus-build status [<host>]` | SSH `janus status` on one host or every host. |
 | Save a router | `janus-build backup <host>` | SSH `janus backup` and write the archive on the build host. |
-| New Janus pin | `janus-build update [--train <train>]` | `nix flake update janus`. `--train` rewrites `inputs.janus.url` to that train first (§0). Does not build or deploy. |
+| New Janus pin | `janus-build update [--train <train>]` | `nix flake update janus`. `--train` rewrites `inputs.janus.url` to that train first (§0). Does not build or deploy. The new Janus revision carries the geo-data lock from its `flake.lock` (*07* §8). This command does not follow the upstream `rule-set` branch on its own. |
 
 A later local wizard is a front end for `init` and `host add`. It is
 not a hosted builder (*00* §4, *13* Future). Until it exists, those two

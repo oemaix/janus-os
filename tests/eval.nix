@@ -32,6 +32,11 @@
       echo ok > "$out"
     '';
   key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyForJanusEval janus-eval";
+  # The unit's ExecStart is the board package set's script. Reading .text
+  # and dropping its store context keeps an x86_64 check from building
+  # aarch64 hostapd, ip, and iw. The image still runs those binaries.
+  hostapdText = name: exec:
+    pkgs.writeText name (builtins.unsafeDiscardStringContext exec.text);
   base = {
     janus.hardware.board = "x86_64-test";
     janus.access.ssh.authorizedKeys = [key];
@@ -1192,6 +1197,11 @@ in {
       test -s ${geo}/geosite-private.srs
       test -s ${geo}/geosite-cn.srs
       test -s ${geo}/geosite-geolocation-cn.srs
+      for f in geosite-private.srs geosite-cn.srs geosite-geolocation-cn.srs; do
+        src=$(readlink "${geo}/$f")
+        test -f "$src"
+        test "$(dirname "$src")" = /nix/store
+      done
       grep -a -F -q 'dest}.partial' ${proxyBin}
       if grep -a -F -q 'rm -f "/var/lib/janus/geodata/' ${proxyBin}; then
         echo "geo refresh deletes the live rule set" >&2
@@ -1935,7 +1945,7 @@ in {
         };
       }
     ];
-    script = os.config.systemd.services.janus-hostapd-home.serviceConfig.ExecStart;
+    script = hostapdText "eval-wifi-onboard-script" os.config.systemd.services.janus-hostapd-home.serviceConfig.ExecStart;
     patch = lib.findFirst (p: p.name == "janus-rpi-onboard-wifi") null os.config.boot.kernelPatches;
     member = os.config.systemd.network.networks."30-member-lan-home";
     firmwareNames = lib.concatMapStringsSep " " (p: p.name) (
@@ -2000,7 +2010,7 @@ in {
         };
       }
     ];
-    script = os.config.systemd.services.janus-hostapd-home.serviceConfig.ExecStart;
+    script = hostapdText "eval-wifi-rockpi-script" os.config.systemd.services.janus-hostapd-home.serviceConfig.ExecStart;
     piPatch = lib.findFirst (p: p.name == "janus-rpi-onboard-wifi") null os.config.boot.kernelPatches;
     firmwarePkgs = lib.filter (p: lib.isAttrs p && lib.isDerivation p) (
       lib.flatten os.options.hardware.firmware.definitions
@@ -2062,7 +2072,7 @@ in {
         };
       }
     ];
-    script = os.config.systemd.services.janus-hostapd-home.serviceConfig.ExecStart;
+    script = hostapdText "eval-wifi-onboard-isolate-script" os.config.systemd.services.janus-hostapd-home.serviceConfig.ExecStart;
   in
     pkgs.runCommand "eval-wifi-onboard-isolate" {} ''
       grep -q 'bridge link set dev wifi-home isolated on' ${script}
@@ -2212,6 +2222,10 @@ in {
           passphrase = "secret-pass";
           lan = "lan";
         };
+        # Cross keeps linux-config on the build machine. The emulated
+        # aarch64 configfile does not run here. The greps read the
+        # generated .config, after generate-config.pl.
+        janus.build.strategy = "cross";
       }
     ];
     kernel = os.config.boot.kernelPackages.kernel;
@@ -3013,7 +3027,8 @@ in {
     EOF
     cat > "$bindir/nix" << 'EOF'
     #!/bin/sh
-    if [ "$1" = "--impure" ]; then
+    # aarch64 fleet eval is `nix eval --impure`. x86_64 is `nix eval`.
+    if [ "$1" = eval ] && [ "$2" = --impure ]; then
       printf '%s\n' impure
       exit 0
     fi
@@ -4562,7 +4577,11 @@ in {
       jq -e '.dns.domestic.domains == ["ir","geosite:ir"]' ${model} >/dev/null
       jq -e '.rules | length == 0' ${model} >/dev/null
       jq -e '.geodataSources.tags["geosite-ir"] | test("Chocolate4U/Iran-sing-box-rules")' ${model} >/dev/null
-      echo ${lib.escapeShellArg sources} | grep -q 'Chocolate4U/Iran-sing-box-rules/rule-set/geosite-ir.srs'
+      echo ${lib.escapeShellArg sources} | grep -q ${lib.escapeShellArg "Chocolate4U/Iran-sing-box-rules/${self.inputs.iran-sing-box-rules.rev}/geosite-ir.srs"}
+      if grep -q 'raw.githubusercontent.com' ${../janet/janus.janet}; then
+        echo "janet hardcodes a geo URL; the model carries geodataSources" >&2
+        exit 1
+      fi
       jq -e '.route.rule_set[] | select(.tag == "geosite-ir") | .url | test("Chocolate4U/Iran-sing-box-rules")' ${engine} >/dev/null
       echo ok > "$out"
     '';

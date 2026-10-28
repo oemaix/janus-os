@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-25 |
+| Last updated | 2026-10-28 |
 
 ## 1. Principles
 
@@ -139,7 +139,7 @@ machine.
 | Data | Mechanism | Purity |
 |------|-----------|--------|
 | nixpkgs, Janus, engines | flake inputs, fixed hashes | pure |
-| Geo data | `fetchurl` with version pin + hash from Janus release metadata; `janus.proxy.geodata.pin = "latest"` switches to impure | pure by default |
+| Geo data | flake inputs `sing-geosite`, `sing-geoip`, and `iran-sing-box-rules`. The URL names the `rule-set` branch. `flake.lock` records the commit and the narHash. A fleet takes that lock with `janus-build update`. The router re-fetches that commit (*07* §8). | pure |
 | Subscription snapshot | impure derivation (`__impure = true` or `--impure` with `builtins.fetchurl`) unless `snapshot.hash` is set (then fixed-output) | impure by default |
 
 DoH and DoT hostnames are not resolved at build time. `janus.dns.bootstrap`
@@ -297,7 +297,7 @@ says so and does not resize the table.
 | VM | `x86_64-test` boots with two virtual NICs. `vm-x86_64-test` checks the mount model. `vm-x86_64-slots` checks that `janus.slot` mounts slot A or slot B. `vm-x86_64-net` checks DHCP, NAT, a static DNS answer, and the WAN/LAN firewall | `checks.vm-*` |
 | Board build | each board's image builds in CI (aarch64 daily, others weekly) | `checks.build-<board>` |
 | Hardware | Tier-1 boards boot-and-route on a lab bench (manual/semi-automated) | release checklist |
-| Chaos | power-cut loop on Tier-1 hardware (NFR-REL-001) | release checklist |
+| Chaos | power-cut loop on Tier-1 hardware (NFR-008) | release checklist |
 
 ## 10. Release
 

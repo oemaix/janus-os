@@ -507,7 +507,7 @@ in {
     geodata.hashes = mkOption {
       type = types.attrsOf types.str;
       default = {};
-      description = "sha256 pins for Geo rule-set tags. These override the built-in pins. A referenced tag with no pin is not fetched at build time.";
+      description = "sha256 for a tag that is not taken from the locked rule-set input. The image fetches that tag's URL at build. A referenced tag with neither the lock nor a hash is left for the router.";
     };
     engineSettings = mkOption {
       type = types.attrs;

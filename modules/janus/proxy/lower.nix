@@ -6,6 +6,7 @@
   lib,
   options,
   pkgs,
+  janusGeodata,
   ...
 }: let
   cfg = config.janus.proxy;
@@ -313,16 +314,26 @@
   geoTags = map (n: "geosite-${n}") geosites ++ map (n: "geoip-${n}") geoips;
 
   userSources = cfg.geodata.sources;
+  # rev is null until flake.lock records the input. The narHash next to
+  # that rev is the pin. janus-build update takes the Janus revision,
+  # and that revision's lock is these commits. docs/07 §8, docs/16 §1.
+  geoRev = name: input:
+    if (input.rev or null) == null
+    then throw "The ${name} flake input has no rev. flake.lock is the pin."
+    else input.rev;
+  geositeRev = geoRev "sing-geosite" janusGeodata.geosite;
+  geoipRev = geoRev "sing-geoip" janusGeodata.geoip;
+  iranRev = geoRev "iran-sing-box-rules" janusGeodata.iran;
   sources =
     {
-      geosite = "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set";
-      geoip = "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set";
+      geosite = "https://raw.githubusercontent.com/SagerNet/sing-geosite/${geositeRev}";
+      geoip = "https://raw.githubusercontent.com/SagerNet/sing-geoip/${geoipRev}";
     }
     // removeAttrs userSources ["tags"]
     // {
       tags =
         {
-          geosite-ir = "https://raw.githubusercontent.com/Chocolate4U/Iran-sing-box-rules/rule-set/geosite-ir.srs";
+          geosite-ir = "https://raw.githubusercontent.com/Chocolate4U/Iran-sing-box-rules/${iranRev}/geosite-ir.srs";
         }
         // (userSources.tags or {});
     };
@@ -336,29 +347,51 @@
       else sources.geosite
     }/${tag}.srs";
 
-  # Pins are the rule-set files as of 2026-10-13, plus the preset tags
-  # measured on 2026-10-16 (docs/21). geodata.hashes overrides them.
-  # sing-geoip's rule-set branch has no geoip-private.srs, so that tag is compiled below.
-  defaultPins = {
-    geosite-private = "sha256-JgSRJD4CZuW6VD9QnKfxOwfW9MLCat4/Z13eoWYfMhM=";
-    geosite-cn = "sha256-fl7aoxVpGOu3MmKfe0qz8DBAuZQEVkOPl2wgRgM/wVw=";
-    geosite-geolocation-cn = "sha256-zVOuqBkm1GscCqE5rffd/u10s9aRO0oBSDspbk6K9Ng=";
-    geosite-category-ads-all = "sha256-hOLteWF6SSyxra8ovwxZoaQq+FSrk1YFuoTg3ro4bIg=";
-    geosite-category-ru = "sha256-VGyEFyPfZ0BxmHqQ4yGtjF8OnOD8DuRgwlj1R9MIaFc=";
-    geosite-ir = "sha256-SuD3qQ/D8Vau+PKihJU3LOuuv4vrNch2+xcF+nhHb4I=";
-    geoip-cn = "sha256-ga2lyv2dgxrcSHdvKc3+VclxPZKHyu753pJe8w9mzOQ=";
-    geoip-ru = "sha256-vcpc20TNzwlAAB5ZUjhoIqb0/6iyyO6gA0Cqb1hcf50=";
-    geoip-ir = "sha256-Q6AiIGYZPBTzQ8hV29j2djNRFsBAfEtGTeXz7SIemxc=";
-  };
-  pins = defaultPins // cfg.geodata.hashes;
-  pinned = lib.filterAttrs (tag: _: builtins.elem tag geoTags) pins;
-  fetched = lib.mapAttrs (tag: hash:
+  # These files live in the locked trees. A hash, or a URL the user
+  # replaced, is fetched instead. sing-geoip has no geoip-private.srs,
+  # so that tag is compiled below.
+  builtinLocked = [
+    "geosite-private"
+    "geosite-cn"
+    "geosite-geolocation-cn"
+    "geosite-category-ads-all"
+    "geosite-category-ru"
+    "geosite-ir"
+    "geoip-cn"
+    "geoip-ru"
+    "geoip-ir"
+  ];
+  urlOverridden = tag:
+    (userSources.tags or {} ? ${tag})
+    || (lib.hasPrefix "geoip-" tag && userSources ? geoip)
+    || (lib.hasPrefix "geosite-" tag && tag != "geosite-ir" && userSources ? geosite);
+  lockPath = tag:
+    if tag == "geosite-ir"
+    then "${janusGeodata.iran}/geosite-ir.srs"
+    else if lib.hasPrefix "geoip-" tag
+    then "${janusGeodata.geoip}/${tag}.srs"
+    else "${janusGeodata.geosite}/${tag}.srs";
+  # A symlink into the flake input would keep the whole checkout in the
+  # image. The copy is one store path per tag. docs/07 §8.
+  copyLocked = tag: path:
+    pkgs.runCommand "${tag}.srs" {} ''
+      cp ${path} "$out"
+    '';
+  locked = lib.mapAttrs (tag: _: copyLocked tag (lockPath tag)) (
+    lib.filterAttrs (tag: _:
+      builtins.elem tag geoTags
+      && !(cfg.geodata.hashes ? ${tag})
+      && !urlOverridden tag)
+    (lib.genAttrs builtinLocked (_: null))
+  );
+  hashed = lib.mapAttrs (tag: hash:
     pkgs.fetchurl {
       url = tagUrl tag;
       sha256 = hash;
     })
-  pinned;
-  compiled = lib.optionalAttrs (builtins.elem "geoip-private" geoTags && !(pinned ? "geoip-private")) {
+  (lib.filterAttrs (tag: _: builtins.elem tag geoTags) cfg.geodata.hashes);
+  fetched = locked // hashed;
+  compiled = lib.optionalAttrs (builtins.elem "geoip-private" geoTags && !(fetched ? "geoip-private")) {
     geoip-private = pkgs.runCommand "geoip-private.srs" {nativeBuildInputs = [pkgs.sing-box];} ''
       cat > source.json <<'EOF'
       {"version":2,"rules":[{"ip_cidr":["0.0.0.0/8","10.0.0.0/8","127.0.0.0/8","169.254.0.0/16","172.16.0.0/12","192.168.0.0/16","224.0.0.0/4","::1/128","fc00::/7","fe80::/10","ff00::/8"]}]}

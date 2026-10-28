@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-18 |
+| Last updated | 2026-10-28 |
 
 Key words MUST / SHOULD / MAY follow RFC 2119. Priority: **P1** required for
 1.0, **P2** planned, **P3** desirable.
@@ -101,7 +101,7 @@ Key words MUST / SHOULD / MAY follow RFC 2119. Priority: **P1** required for
 | FR-PRX-010 | Each subscription MUST implicitly form a group. | P1 |
 | FR-PRX-011 | Groups by matcher MUST be supported with kinds `regex`, `glob`, `peg` (Janet PEG), scoped to one or more subscriptions or to all nodes. | P1 |
 | FR-PRX-012 | Groups by manual node list MUST be supported and MAY nest other groups. | P1 |
-| FR-PRX-013 | Group selection strategies MUST include `manual` (fixed default with SSH override), `url-test`, `fallback`, `load-balance`. | P1 |
+| FR-PRX-013 | Group selection strategies MUST include `manual` (fixed default with SSH override) and `url-test` on both engines. `load-balance` MUST be available on xray and MUST fail evaluation on sing-box. `fallback` MUST fail evaluation on both engines. | P1 |
 | FR-PRX-014 | The example configuration MUST ship region templates (JP, US, HK, EU, UK, SG, IN) and commented-out usage templates (Telegram, Gemini, Claude, Netflix, …). | P1 |
 | FR-PRX-015 | An empty group (matcher matched nothing) MUST be a warning at build time and a runtime fallback to `direct` or a configured alternative, never a crash. | P1 |
 | FR-PRX-020 | A traffic mode MUST be `bypass`, `rule-based`, or `proxy-all`. `janus.proxy.mode` is the default a LAN inherits. | P1 |
@@ -119,7 +119,7 @@ Key words MUST / SHOULD / MAY follow RFC 2119. Priority: **P1** required for
 | ID | Requirement | Prio |
 |----|-------------|------|
 | FR-DNS-001 | The router MUST be the only resolver advertised to LAN clients and MUST intercept outbound plaintext DNS to enforce policy (configurable). | P1 |
-| FR-DNS-002 | Carrier-provided resolvers (from DHCP/PPPoE) MUST NOT be used by default; a policy option MUST allow `never`, `fallback-only`, `domestic-only`. | P1 |
+| FR-DNS-002 | Carrier-provided resolvers (from DHCP/PPPoE) MUST NOT be used by default. The policy option MUST accept `never`, `fallback-only`, and `domestic-only`. `never` MUST leave those addresses unused. `domestic-only` MUST place the first learned WAN address at the front of the domestic list and MUST use that address as the one domestic server. `fallback-only` MUST be accepted and logged as unavailable, and MUST NOT add the carrier addresses: one server per DNS rule means a second address is not tried. Learned addresses MUST be recorded for that policy and MUST NOT be installed into `resolv.conf`. | P1 |
 | FR-DNS-003 | Split resolution MUST be supported: domestic domain sets → domestic resolver; everything else → remote resolver via tunnel or fake-IP. | P1 |
 | FR-DNS-004 | Encrypted transports (DoH, DoT, DoQ) MUST be supported for both domestic and remote resolvers, with a policy `prefer` or `require`. | P1 |
 | FR-DNS-005 | Fake-IP for names the router will proxy MUST be supported and be the default in `rule-based` and `proxy-all`. That set is a rule whose target is a group, and the default target when that target is a group. A `direct` rule uses the domestic resolver. A `block` rule is rejected and is not a fake-IP. An exclusion list MUST exist. `proxy-all` exceptions are not fake-IP. | P1 |
@@ -214,7 +214,7 @@ Key words MUST / SHOULD / MAY follow RFC 2119. Priority: **P1** required for
 | NFR-003 | Idle RAM footprint | ≤ 256 MiB including the engine with 500 proxy nodes, on boards with at least 2 GiB RAM. Zero 2 W and Le Potato are not 500-node targets. |
 | NFR-004 | NAT throughput | Line rate for 1 GbE on NanoPi R4S |
 | NFR-005 | Engine throughput (VLESS+Vision) | ≥ 300 Mbit/s on NanoPi R4S |
-| NFR-REL-001 | Power-loss robustness | 100 random power cuts without re-flash |
-| NFR-REL-002 | Subscription refresh failure tolerance | Router remains functional with last good data indefinitely |
 | NFR-006 | Documentation | Every option documented; every board in the matrix has a tested image |
 | NFR-007 | Supported architectures | `aarch64-linux`, `x86_64-linux`, `armv7l-linux`, and `riscv64-linux` for every Tier 1, Tier 2, and Tier 3 board in *10*. 1.0 includes those boards (D-0046). `x86_64-test` stays a CI image. Tier is a per-board test obligation (*10*), not a property of the architecture, and not a promise that every Tier 1 board meets the NanoPi R4S throughput numbers. |
+| NFR-008 | Power-loss robustness | 100 random power cuts without re-flash |
+| NFR-009 | Subscription refresh failure tolerance | Router remains functional with last good data indefinitely |

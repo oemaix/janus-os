@@ -439,18 +439,26 @@ router should keep.
 
 ## 8. Geo data
 
-* Build-time fetch of engine-native rule sets for every `geosite:`/`geoip:`
+* Build-time copy of engine-native rule sets for every `geosite:`/`geoip:`
   tag referenced anywhere (rules, DNS sets, exclusions). Unreferenced
-  categories are not shipped (slimness). A tag is fetched at build time
-  when it has a sha256 pin (`janus.proxy.geodata.hashes`, which overrides
-  the built-in pins, including the reference-region tags in *21*). The sing-geoip rule-set branch does not
-  publish `geoip-private`, so Janus compiles that set from the private
-  ranges. A referenced tag with no pin is copied from the image when the
-  image has it, and otherwise downloaded on the router.
-* Runtime refresh (`janus.proxy.geodata.refresh = "weekly"`) downloads the
-  same set via the tunnel, verifies the download is non-empty, replaces
-  the live file only then, and reloads the engine. A failed download
-  leaves the previous file in place.
+  categories are not shipped (slimness). The default files come from the
+  flake inputs `sing-geosite`, `sing-geoip`, and `iran-sing-box-rules`.
+  Each input follows the `rule-set` branch, and `flake.lock` records the
+  commit and the narHash. That is the pin. A per-file hash of the branch
+  URL goes stale when the branch is regenerated. `nix flake update` of
+  those three inputs, in this repository, moves the pin. A fleet takes
+  that Janus revision with `janus-build update` and a rebuild (*16* §1).
+  `janus.proxy.geodata.hashes` fetches a tag whose URL is not that lock.
+  The locked sing-geoip commit does not publish `geoip-private`, so Janus
+  compiles that set from the private ranges. A referenced tag with neither
+  the lock nor a hash is copied from the image when the image has it, and
+  otherwise downloaded on the router.
+* Runtime refresh (`janus.proxy.geodata.refresh = "weekly"`) re-downloads
+  those locked commits via the tunnel, verifies the download is non-empty,
+  replaces the live file only then, and reloads the engine. It repairs a
+  damaged copy. It does not follow the `rule-set` branch. A newer list is
+  the lock bump above, then a rebuild. A failed download leaves the
+  previous file in place.
 * Source repositories are configurable (`janus.proxy.geodata.sources`),
   defaulting to the widely used community sets for the chosen engine.
   `geodata.sources.tags.<file>` is the full URL of one rule-set file.

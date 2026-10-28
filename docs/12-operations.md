@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-22 |
+| Last updated | 2026-10-28 |
 
 ## 1. What maintenance is
 
@@ -180,7 +180,7 @@ All subcommands are also usable non-interactively (JSON output with
 | Timer | Default | Purpose |
 |-------|---------|---------|
 | `janus-proxy-refresh-<name>` | per subscription (`6h`) | Fetch, validate, reload. The template unit is `janus-proxy-refresh@.service`. A subscription with `enable = false` has no timer (D-0044). |
-| `janus-geodata-refresh` | weekly | Geo rule sets. The schedule may be a five-field cron whose day-of-week is a list, such as `0 4 * * 2,4,6` (D-0044). |
+| `janus-geodata-refresh` | weekly | Re-fetches the geo commits locked in this Janus revision (*07* §8). A newer list is a rebuild after `janus-build update`. The schedule may be a five-field cron whose day-of-week is a list, such as `0 4 * * 2,4,6` (D-0044). |
 | `janus-reboot` | off | Maintenance reboot (`janus.system.reboot.schedule`). `monthly` is 04:00 on the 1st, `yearly` is 04:00 on 1 January, or a five-field cron whose day-of-week is `*`. The service only reboots. `janus.system.reboot.fsck` runs `janus-reboot-fsck` first, which requests a full state check on that boot only (D-0049). |
 | `janus-wan-health` | 30 s after boot, then the WAN interval (`10s`) | WAN health and backup failover. Engine restart is the unit's own `Restart=`. |
 | `janus-metrics` | 60 s | Engine metrics text, when Prometheus is on |

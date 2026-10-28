@@ -13,57 +13,28 @@ jobs:
       - uses: cachix/install-nix-action@v31
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
+      # The attrset is the list. A hand-written subset drifts. vm-* guests
+      # stay out of this job. docs-options is a package, so it stays last.
       - name: Evaluate the phase 1 checks and the options document
         run: |
-          nix build --print-build-logs \
-            .#checks.x86_64-linux.eval-minimal \
-            .#checks.x86_64-linux.eval-missing-board \
-            .#checks.x86_64-linux.eval-missing-key \
-            .#checks.x86_64-linux.eval-root-writable \
-            .#checks.x86_64-linux.eval-overlap \
-            .#checks.x86_64-linux.eval-bad-uplink \
-            .#checks.x86_64-linux.eval-inline-secret \
-            .#checks.x86_64-linux.eval-wwan \
-            .#checks.x86_64-linux.eval-nix-size \
-            .#checks.x86_64-linux.eval-seed \
-            .#checks.x86_64-linux.eval-router \
-            .#checks.x86_64-linux.eval-vlan \
-            .#checks.x86_64-linux.eval-boards \
-            .#checks.x86_64-linux.eval-kernel-profile \
-            .#checks.x86_64-linux.eval-kernel-config \
-            .#checks.x86_64-linux.eval-boot-slot \
-            .#checks.x86_64-linux.eval-rpi2-mbr \
-            .#checks.x86_64-linux.eval-tier3-boot \
-            .#checks.x86_64-linux.eval-monitoring \
-            .#checks.x86_64-linux.eval-monitoring-collector \
-            .#checks.x86_64-linux.eval-monitoring-zone \
-            .#checks.x86_64-linux.eval-monitoring-iface \
-            .#checks.x86_64-linux.eval-refresh-error \
-            .#checks.x86_64-linux.eval-build-host \
-            .#checks.x86_64-linux.eval-pppoe-secret \
-            .#checks.x86_64-linux.eval-pppoe-file \
-            .#checks.x86_64-linux.eval-hmi \
-            .#checks.x86_64-linux.eval-hmi-board \
-            .#checks.x86_64-linux.eval-hmi-profile \
-            .#checks.x86_64-linux.eval-hmi-key \
-            .#checks.x86_64-linux.eval-power \
-            .#checks.x86_64-linux.eval-power-x86 \
-            .#checks.x86_64-linux.eval-power-unarmed \
-            .#checks.x86_64-linux.eval-power-low \
-            .#checks.x86_64-linux.eval-power-arm \
-            .#checks.x86_64-linux.eval-web \
-            .#checks.x86_64-linux.eval-web-wan \
-            .#checks.x86_64-linux.eval-web-pass \
-            .#checks.x86_64-linux.eval-web-zone \
-            .#checks.x86_64-linux.eval-proxy-local \
-            .#checks.x86_64-linux.limine-bios \
-            .#checks.x86_64-linux.cli-usage \
-            .#checks.x86_64-linux.cli-init \
-            .#checks.x86_64-linux.cli-plan \
-            .#checks.x86_64-linux.cli-runtime-deps \
-            .#checks.x86_64-linux.eval-wan-show \
-            .#checks.x86_64-linux.eval-engine-reentry \
-            .#checks.x86_64-linux.eval-wan-policy \
-            .#checks.x86_64-linux.eval-deploy-slots \
-            .#checks.x86_64-linux.eval-web-sops \
-            .#packages.x86_64-linux.docs-options
+          list=$(mktemp)
+          nix eval --raw --apply '
+            checks:
+            builtins.concatStringsSep "\n" (
+              builtins.filter (name: builtins.match "vm-.*" name == null) (
+                builtins.attrNames checks
+              )
+            )
+          ' .#checks.x86_64-linux > "$list"
+          mapfile -t checks < "$list"
+          rm -f "$list"
+          if [ "${#checks[@]}" -eq 0 ]; then
+            echo "the check set is empty" >&2
+            exit 1
+          fi
+          args=()
+          for name in "${checks[@]}"; do
+            args+=(".#checks.x86_64-linux.${name}")
+          done
+          args+=(".#packages.x86_64-linux.docs-options")
+          nix build --print-build-logs "${args[@]}"

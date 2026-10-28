@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-17 |
+| Last updated | 2026-10-28 |
 
 ## 1. Personas
 
@@ -82,9 +82,10 @@ requirements it drives (see *03 — Requirements*).
 * **Flow:** Configure two subscriptions with names and refresh intervals.
   At build time, the build host fetches the node lists and embeds a snapshot
   in the image. At runtime, a timer refreshes the lists through the current
-  tunnel and reloads the Engine. Nodes from subscriptions are read-only in
-  the configuration.
-* **Drives:** FR-PRX-001..008
+  tunnel and reloads the Engine. A failed refresh keeps the last good
+  list, and the router stays up on it (NFR-009). Nodes from subscriptions
+  are read-only in the configuration.
+* **Drives:** FR-PRX-001..008, NFR-009
 
 ### UC-06 Group nodes by region and by application
 
@@ -131,13 +132,15 @@ requirements it drives (see *03 — Requirements*).
 * **Flow:** Power is cut at an arbitrary moment. On next boot, read-only file
   systems mount unchanged; the state partition is fsck'd and mounted;
   services start with the last successfully written data.
-* **Drives:** FR-STO-*, NFR-REL-*
+* **Drives:** FR-STO-*, NFR-008
 
 ### UC-11 Remote access from behind carrier NAT
 
 * **Actor:** Priya
-* **Flow:** Configure a WireGuard peer to a VPS (or a mesh backend); the
-  router establishes an outbound tunnel at boot; SSH is reachable through it.
+* **Flow:** Join the tailnet (Tailscale, or a Headscale named by
+  `loginServer`). The router dials out at boot, and SSH is reachable
+  through that tunnel. A WireGuard peer to an endpoint the operator
+  controls MAY be added. It is not the backend.
 * **Drives:** FR-RA-*
 
 ### UC-12 Watch traffic per interface

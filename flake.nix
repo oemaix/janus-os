@@ -5,11 +5,21 @@
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
   inputs.sops-nix.url = "github:Mic92/sops-nix/5efb5a6f4f5ab192817d28557dd4d650fa14d866";
   inputs.sops-nix.inputs.nixpkgs.follows = "nixpkgs";
+  # The rule-set branch is the ref `nix flake update` follows. flake.lock
+  # records the commit and the narHash. A per-file hash of that branch
+  # goes stale when the branch is regenerated. docs/07 §8, docs/09 §5.
+  inputs.sing-geosite.url = "github:SagerNet/sing-geosite/rule-set";
+  inputs.sing-geosite.flake = false;
+  inputs.sing-geoip.url = "github:SagerNet/sing-geoip/rule-set";
+  inputs.sing-geoip.flake = false;
+  inputs.iran-sing-box-rules.url = "github:Chocolate4U/Iran-sing-box-rules/rule-set";
+  inputs.iran-sing-box-rules.flake = false;
 
   outputs = {
     self,
     nixpkgs,
     sops-nix,
+    ...
   }: let
     systems = ["x86_64-linux" "aarch64-linux"];
     forAllSystems = f:

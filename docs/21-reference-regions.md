@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-25 |
+| Last updated | 2026-10-28 |
 
 This document is the preset that makes one Janus router practical in
 mainland China, Russia, or Iran. The module is `modules/janus/region.nix`.
@@ -118,7 +118,7 @@ already uses.
 | Domestic resolvers | `https://dns.alidns.com/dns-query`, `tls://dot.pub` |
 | Bootstrap | `223.5.5.5`, `223.6.6.6` |
 | `blockQuic` | `false` |
-| Source | SagerNet sing-geosite and sing-geoip, as today |
+| Source | SagerNet sing-geosite and sing-geoip, the commits in `flake.lock` (`inputs.sing-geosite`, `inputs.sing-geoip`) |
 
 `geolocation-cn` is on the DNS domestic set, and on the `cn` list in the
 example. Copying that list is what keeps those names from being resolved
@@ -134,11 +134,11 @@ inland and then sent through the tunnel.
 | Domestic resolvers | `https://common.dot.dns.yandex.net/dns-query`, `tls://common.dot.dns.yandex.net` |
 | Bootstrap | `77.88.8.8`, `77.88.8.1` |
 | `blockQuic` | `true` |
-| Source | SagerNet sing-geosite and sing-geoip |
+| Source | SagerNet sing-geosite and sing-geoip, the commits in `flake.lock` (`inputs.sing-geosite`, `inputs.sing-geoip`) |
 
-Checked on 2026-10-16: `geosite-category-ru.srs` on SagerNet is about 8 KiB
-and `geosite-ru.srs` is not published there (404). `geoip-ru.srs` is about
-50 KiB. Country suffixes cover banks and government names the small
+Checked on 2026-10-28 against the commits above: `geosite-category-ru.srs`
+on SagerNet is about 9 KiB and `geosite-ru.srs` is not published there
+(404). `geoip-ru.srs` is about 50 KiB. Country suffixes cover banks and government names the small
 category misses. `geoip:ru` catches a Russian address after the domestic
 resolver has answered. Services on `.com` that are absent from
 `category-ru` still need a later list; that list is not part of this preset.
@@ -158,14 +158,14 @@ user can set `blockQuic = false`.
 | Domestic resolvers | none. With the proxy enabled, evaluation fails until the user sets them. |
 | Bootstrap | none. A DoH or DoT hostname needs `janus.dns.bootstrap`. |
 | `blockQuic` | `false` |
-| GeoSite source | Chocolate4U `geosite-ir.srs` |
-| GeoIP source | SagerNet sing-geoip `geoip-ir.srs` |
+| GeoSite source | Chocolate4U `geosite-ir.srs`, the commit in `flake.lock` (`inputs.iran-sing-box-rules`) |
+| GeoIP source | SagerNet sing-geoip `geoip-ir.srs`, the same lock as §4.2 |
 
-Checked on 2026-10-16: SagerNet `geosite-category-ir.srs` is about 1.6 KiB
-and `geosite-ir.srs` is not published there (404). Chocolate4U
-`geosite-ir.srs` is about 300 KiB and includes `.ir`. That is the domain
-list this preset uses. `geoip-ir.srs` on sing-geoip is about 13 KiB and
-stays the address list.
+Checked on 2026-10-28 against the commits above: SagerNet
+`geosite-category-ir.srs` is about 1.6 KiB and `geosite-ir.srs` is not
+published there (404). Chocolate4U `geosite-ir.srs` is about 300 KiB and
+includes `.ir`. That is the domain list this preset uses. `geoip-ir.srs`
+on the pinned sing-geoip commit is about 13 KiB and stays the address list.
 
 One base URL still covers every other GeoSite tag. `geosite-ir` does not
 live on that base. `janus.proxy.geodata.sources.tags.<file>` is the full
@@ -173,12 +173,16 @@ URL of one rule-set file and replaces `<base>/<file>.srs` for that file.
 The built-in value is:
 
 ```
-geosite-ir = "https://raw.githubusercontent.com/Chocolate4U/Iran-sing-box-rules/rule-set/geosite-ir.srs";
+geosite-ir = "https://raw.githubusercontent.com/Chocolate4U/Iran-sing-box-rules/<rev>/geosite-ir.srs";
 ```
 
-The tag is fetched only when the configuration references `geosite:ir`.
-Its sha256 pin is in `modules/janus/proxy/lower.nix`, measured on
-2026-10-16.
+`<rev>` is `inputs.iran-sing-box-rules` in `flake.lock`. The tag is
+copied into the image only when the configuration references
+`geosite:ir`. The other preset files are the same kind of URL: the
+locked commit of `inputs.sing-geosite` or `inputs.sing-geoip`. A
+`rule-set` branch URL is not a pin, because that branch is regenerated.
+`nix flake update` of those inputs moves the lock. `janus-build update`
+then takes that Janus revision (*16* §1).
 
 There is no built-in Iranian resolver. Shecan, Electro, Begzar, and 403
 are anti-filter resolvers: they answer names the filter blocks. Janus
@@ -199,7 +203,8 @@ DNS decision for one shared policy and routes each LAN by source. A
 household whose LANs do not share that policy stays on sing-box (*07*
 §2.1). Per-tag URLs and the pins for the preset files, including
 Chocolate4U `geosite-ir`, are in
-`modules/janus/proxy/lower.nix`. The pins were measured on 2026-10-16.
+`modules/janus/proxy/lower.nix`. The commits are the flake inputs in §4.
+The file sizes below were measured on 2026-10-28.
 The example writes the `cn` list and comments out `ru` and `ir`.
 `eval-region-ru` checks that an unset rule list stays empty.
 

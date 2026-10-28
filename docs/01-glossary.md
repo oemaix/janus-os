@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-17 |
+| Last updated | 2026-10-28 |
 
 Terms are listed alphabetically. Where an informal word is easy to confuse
 with the canonical one, the informal word is marked *avoid*.
@@ -50,8 +50,9 @@ refreshed at runtime.
 
 **Group** — A named set of proxy nodes used as a routing target. Groups are
 formed by a proxy subscription (implicit), by a *matcher* (regex, glob, PEG
-over node names) or by a *manual list*. A group has a *selection strategy*
-(e.g. manual, url-test, fallback, load-balance).
+over node names) or by a *manual list*. A group has a *selection strategy*.
+`manual` and `url-test` work on both engines. `load-balance` is xray
+only. `fallback` fails evaluation on both (FR-PRX-013).
 
 **Hot override** — A value from a fixed allowlist (proxy subscription URL,
 static DHCP lease, Wi-Fi passphrase) changed on the board, stored as

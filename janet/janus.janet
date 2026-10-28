@@ -836,9 +836,11 @@
     specific
     (let [base
           (if (string/has-prefix? "geoip-" tag)
-            (or (get sources "geoip") "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set")
-            (or (get sources "geosite") "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set"))]
-      (string base "/" tag ".srs"))))
+            (get sources "geoip")
+            (get sources "geosite"))]
+      (if (nil? base)
+        (error (string "geodataSources has no URL for " tag))
+        (string base "/" tag ".srs")))))
 
 (defn bootstrap-ips [policy]
   (def raw (get policy "bootstrap"))

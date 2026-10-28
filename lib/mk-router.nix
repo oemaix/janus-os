@@ -70,6 +70,13 @@
           # builder is this machine, so an x86_64 host does not need qemu
           # to produce them for an aarch64 board.
           janusBuildPkgs = nixpkgs.legacyPackages.${buildSystem};
+          # Locked rule-set trees. The rev is the pin; the narHash is in
+          # flake.lock. docs/07 §8.
+          janusGeodata = {
+            geosite = janus.inputs.sing-geosite;
+            geoip = janus.inputs.sing-geoip;
+            iran = janus.inputs.iran-sing-box-rules;
+          };
         };
         modules =
           [
