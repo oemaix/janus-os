@@ -136,6 +136,7 @@ See *06* §7–8: `zones`, `policies`, `rules`, `services`, `portForwards`,
 | `subscriptions.<name>` | submodule | | *07* §3.2 |
 | `nodes.<name>` | submodule | | Manual nodes; protocol-specific submodules `vless`, `trojan`, `shadowsocks`, `hysteria2`, `tuic` |
 | `groups.<name>` | submodule | | *07* §4 |
+| `groupsAuto` | bool | `true` | Implicit `Auto` and `sub:<name>` groups. `false` is sing-box only and keeps the groups the fleet names (ADR-0026). |
 | `rules` | list | `[]` | Inherited by a LAN that does not set `proxy.rules`. A set LAN list replaces this one. *07* §5, *21*. Empty until written. The example has the `cn`, `ru`, and `ir` lists. |
 | `exceptions` | list | private, iptv | `proxy-all` exceptions. A LAN inherits this list. |
 | `egressWan` | str/null | `null` | Pin engine egress to a WAN |
@@ -145,8 +146,9 @@ See *06* §7–8: `zones`, `policies`, `rules`, `services`, `portForwards`,
 | `geodata.hashes` | attrs of sha256 | `{}` | Overrides the built-in pins. A referenced tag with no pin is left for the router |
 | `engineSettings` | attrs | `{}` | Raw engine config merged last (escape hatch; unsupported) |
 
-Built-in group `Auto`: `url-test` over all subscription nodes unless the
-user defines `groups.Auto`.
+Built-in group `Auto`: `url-test` over every node, unless the fleet defines
+`groups.Auto` or sets `groupsAuto = false`. Each enabled subscription is
+`sub:<name>` on the same condition (ADR-0026).
 
 ### 6.1 Node submodule (manual) — common fields
 

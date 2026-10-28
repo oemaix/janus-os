@@ -52,7 +52,10 @@ refreshed at runtime.
 formed by a proxy subscription (implicit), by a *matcher* (regex, glob, PEG
 over node names) or by a *manual list*. A group has a *selection strategy*.
 `manual` and `url-test` work on both engines. `load-balance` is xray
-only. `fallback` fails evaluation on both (FR-PRX-013).
+only. `fallback` fails evaluation on both (FR-PRX-013). `groupsAuto`
+(default true) adds `Auto` and one `sub:<name>` group per enabled
+subscription. `false` is sing-box only and leaves the groups the fleet
+names (ADR-0026).
 
 **Hot override** — A value from a fixed allowlist (proxy subscription URL,
 static DHCP lease, Wi-Fi passphrase) changed on the board, stored as

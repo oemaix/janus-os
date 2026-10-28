@@ -98,7 +98,7 @@ Key words MUST / SHOULD / MAY follow RFC 2119. Priority: **P1** required for
 | FR-PRX-006 | At runtime, a scheduled job MUST refresh subscriptions (through the active tunnel when necessary), validate, atomically replace the cache and reload the engine. Failed refreshes MUST keep the previous data. | P1 |
 | FR-PRX-007 | Nodes originating from subscriptions MUST NOT be editable by the user; overrides are expressed as group/rule configuration. | P1 |
 | FR-PRX-008 | Manually defined nodes MUST be supported with the full protocol option set. | P1 |
-| FR-PRX-010 | Each subscription MUST implicitly form a group. | P1 |
+| FR-PRX-010 | Each enabled subscription MUST form an implicit group `sub:<name>` while `janus.proxy.groupsAuto` is true (the default), and `Auto` MUST be the implicit group over every node unless the fleet defines `groups.Auto`. `groupsAuto = false` MUST omit both, MUST fail evaluation on xray, and MUST send tunnel DNS through the default target. A LAN rule and a LAN `defaultTarget` MUST pass the same target check as the router (ADR-0026). | P1 |
 | FR-PRX-011 | Groups by matcher MUST be supported with kinds `regex`, `glob`, `peg` (Janet PEG), scoped to one or more subscriptions or to all nodes. | P1 |
 | FR-PRX-012 | Groups by manual node list MUST be supported and MAY nest other groups. | P1 |
 | FR-PRX-013 | Group selection strategies MUST include `manual` (fixed default with SSH override) and `url-test` on both engines. `load-balance` MUST be available on xray and MUST fail evaluation on sing-box. `fallback` MUST fail evaluation on both engines. | P1 |

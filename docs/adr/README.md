@@ -31,3 +31,4 @@ An accepted ADR is the record. It is not copied into *18*.
 | [0023](0023-maintenance-passphrase-sops.md) | Maintenance page passphrase is a per-host sops file | Accepted; refines 0022 |
 | [0024](0024-release-trains.md) | Release trains are branches; versions are tags | Accepted; refines 0018 |
 | [0025](0025-tun-gvisor-stack.md) | tun runs the gvisor stack | Accepted; refines 0011 |
+| [0026](0026-explicit-groups.md) | Explicit groups omit the implicit Auto and subscription groups | Accepted; refines 0006 |

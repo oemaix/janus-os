@@ -1154,6 +1154,7 @@ in {
       sing-box check -c ${engine}
       jq -e '.inbounds[] | select(.type == "tun" and .auto_route == false and .stack == "gvisor")' ${engine} >/dev/null
       jq -e '.outbounds[] | select(.tag == "direct" and .routing_mark == 74)' ${engine} >/dev/null
+      jq -e 'any(.outbounds[]; .tag == "Auto")' ${engine} >/dev/null
       jq -e '[.inbounds[] | select(.type == "tproxy" and .network == "udp" and .listen == "0.0.0.0" and .listen_port == 5353)] | length == 1' ${engine} >/dev/null
       jq -e '[.inbounds[] | select(.type == "tproxy" and .network == "udp" and .listen == "::" and .listen_port == 5353)] | length == 1' ${engine} >/dev/null
       jq -e '[.inbounds[] | select(.type == "tproxy" and .network == "tcp")] | length == 0' ${engine} >/dev/null
@@ -2522,6 +2523,232 @@ in {
       grep -q 'healthy=' ${script}
       echo ok > "$out"
     '';
+  eval-groups-explicit = let
+    os = mk [
+      base
+      {
+        janus.proxy = {
+          enable = true;
+          groupsAuto = false;
+          defaultTarget = "group:Work";
+          nodes.demo = {
+            protocol = "vless";
+            server = "203.0.113.10";
+            port = 443;
+            vless.uuid = "b831381d-6324-4d53-ad4f-8cda48b30811";
+          };
+          groups.Work = {
+            members = ["node:demo"];
+            strategy = "manual";
+            default = "node:demo";
+          };
+          subscriptions.vendor = {
+            urlSecret = "subscription/vendor";
+          };
+        };
+        sops.secrets."subscription/vendor".sopsFile = ./fixtures/sops-placeholder;
+        janus.network.lans.home = {
+          members = ["lan"];
+          address = "192.168.10.1";
+          prefixLength = 24;
+          proxy.defaultTarget = "group:Work";
+          proxy.rules = [
+            {
+              match.domains = ["example.com"];
+              target = "group:Work";
+            }
+          ];
+        };
+      }
+    ];
+    engine = os.config.system.build.janusEngineConfig;
+    model = os.config.environment.etc."janus/proxy-model.json".source;
+  in
+    pkgs.runCommand "eval-groups-explicit" {
+      nativeBuildInputs = [pkgs.sing-box pkgs.jq];
+    } ''
+      sing-box check -c ${engine}
+      jq -e '.groupsAuto == false' ${model} >/dev/null
+      jq -e '.subscriptionNames == ["vendor"]' ${model} >/dev/null
+      if jq -e 'any(.outbounds[]; .tag == "Auto" or (.tag | startswith("sub:")))' ${engine} >/dev/null; then
+        echo "groupsAuto = false still rendered an implicit group" >&2
+        exit 1
+      fi
+      jq -e 'any(.dns.servers[]; .detour == "Work")' ${engine} >/dev/null
+      jq -e 'any(.outbounds[]; .tag == "Work" and .type == "selector" and .default == "demo")' ${engine} >/dev/null
+      echo ok > "$out"
+    '';
+  eval-groups-named-auto = let
+    os = mk [
+      base
+      {
+        janus.proxy = {
+          enable = true;
+          groupsAuto = false;
+          defaultTarget = "group:Work";
+          nodes.demo = {
+            protocol = "vless";
+            server = "203.0.113.10";
+            port = 443;
+            vless.uuid = "b831381d-6324-4d53-ad4f-8cda48b30811";
+          };
+          groups.Auto = {
+            members = ["node:demo"];
+            strategy = "manual";
+            default = "node:demo";
+          };
+          groups.Work = {
+            members = ["node:demo"];
+            strategy = "manual";
+            default = "node:demo";
+          };
+        };
+      }
+    ];
+    engine = os.config.system.build.janusEngineConfig;
+  in
+    pkgs.runCommand "eval-groups-named-auto" {
+      nativeBuildInputs = [pkgs.sing-box pkgs.jq];
+    } ''
+      sing-box check -c ${engine}
+      jq -e 'any(.outbounds[]; .tag == "Auto")' ${engine} >/dev/null
+      if jq -e 'any(.dns.servers[]; .detour == "Auto")' ${engine} >/dev/null; then
+        echo "a fleet group named Auto captured tunnel DNS" >&2
+        exit 1
+      fi
+      jq -e 'any(.dns.servers[]; .detour == "Work")' ${engine} >/dev/null
+      echo ok > "$out"
+    '';
+  eval-groups-xray-empty = let
+    os = mk [
+      base
+      {
+        janus.security.allowInlineSecrets = true;
+        janus.proxy = {
+          enable = true;
+          engine = "xray";
+          nodes.demo = {
+            protocol = "trojan";
+            server = "203.0.113.10";
+            port = 443;
+            trojan.password = "janus-build-check";
+          };
+          groups.Backup = {
+            members = ["node:demo"];
+            strategy = "manual";
+            default = "node:demo";
+          };
+          groups.Empty = {
+            emptyFallback = "group:Backup";
+            strategy = "url-test";
+          };
+        };
+      }
+    ];
+    engine = os.config.system.build.janusEngineConfig;
+  in
+    pkgs.runCommand "eval-groups-xray-empty" {
+      nativeBuildInputs = [pkgs.jq pkgs.xray];
+    } ''
+      xray run -test -c ${engine}
+      jq -e '.routing.balancers[] | select(.tag == "Empty") | .selector == ["direct"]' ${engine} >/dev/null
+      echo ok > "$out"
+    '';
+  eval-groups-member-sub = fail "eval-groups-member-sub" [
+    base
+    {
+      janus.proxy = {
+        groupsAuto = false;
+        defaultTarget = "direct";
+        subscriptions.vendor.urlSecret = "subscription/vendor";
+        groups.Work.members = ["sub:vendor"];
+      };
+      sops.secrets."subscription/vendor".sopsFile = ./fixtures/sops-placeholder;
+    }
+  ];
+  eval-groups-member-auto = fail "eval-groups-member-auto" [
+    base
+    {
+      janus.proxy = {
+        groupsAuto = false;
+        defaultTarget = "direct";
+        groups.Work.members = ["group:Auto"];
+      };
+    }
+  ];
+  eval-groups-member-group = pass "eval-groups-member-group" [
+    base
+    {
+      janus.proxy.groups.Other.members = ["node:demo"];
+      janus.proxy.groups.Work.members = ["group:Other"];
+    }
+  ];
+  eval-groups-auto-off = fail "eval-groups-auto-off" [
+    base
+    {janus.proxy.groupsAuto = false;}
+  ];
+  eval-groups-auto-xray = fail "eval-groups-auto-xray" [
+    base
+    {
+      janus.proxy = {
+        enable = true;
+        engine = "xray";
+        groupsAuto = false;
+        defaultTarget = "direct";
+      };
+    }
+  ];
+  eval-groups-auto-lan = fail "eval-groups-auto-lan" [
+    base
+    {
+      janus.proxy = {
+        enable = true;
+        groupsAuto = false;
+        defaultTarget = "direct";
+      };
+      janus.network.lans.home = {
+        members = ["lan"];
+        address = "192.168.10.1";
+        prefixLength = 24;
+        proxy.rules = [
+          {
+            match.domains = ["example.com"];
+            target = "group:Auto";
+          }
+        ];
+      };
+    }
+  ];
+  eval-groups-empty-fallback = fail "eval-groups-empty-fallback" [
+    base
+    {
+      janus.proxy.groups.A = {
+        members = ["node:demo"];
+        emptyFallback = "group:Nope";
+      };
+    }
+  ];
+  eval-groups-manual-default = fail "eval-groups-manual-default" [
+    base
+    {
+      janus.proxy.groups.A = {
+        strategy = "manual";
+        members = ["node:demo"];
+        default = "node:other";
+      };
+    }
+  ];
+  eval-groups-manual-match = pass "eval-groups-manual-match" [
+    base
+    {
+      janus.proxy.groups.A = {
+        strategy = "manual";
+        default = "node:later";
+        match.kind = "glob";
+        match.pattern = "*";
+      };
+    }
+  ];
   eval-proxy-fallback = fail "eval-proxy-fallback" [
     base
     {

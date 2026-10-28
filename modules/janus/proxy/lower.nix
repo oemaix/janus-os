@@ -145,6 +145,7 @@
     mode = cfg.mode;
     defaultTarget = cfg.defaultTarget;
     blockQuic = cfg.blockQuic;
+    groupsAuto = cfg.groupsAuto;
     groups =
       lib.mapAttrs (_: g: {
         fromSubscriptions = g.fromSubscriptions;

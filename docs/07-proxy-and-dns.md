@@ -50,6 +50,7 @@ dropped.
 | A DNS cache size other than 4096, or a written TTL other than 60 | sing-box. xray 26 has neither knob. Another value fails evaluation. The defaults are accepted and left to xray's own cache. |
 | A blocked name answered by a DNS reject | sing-box. xray 26 has no reject code. The lookup is sent to a closed port on the router, and the client receives the failure. |
 | Group strategy `load-balance` | xray. sing-box has no such group. |
+| `groupsAuto = false` | sing-box. xray keeps the implicit `Auto` group and fails evaluation (ADR-0026). |
 | Nodes written for xray, with every LAN on one DNS policy | xray |
 
 Address, port, and protocol rules may still differ per LAN on xray, because
@@ -156,9 +157,27 @@ Matcher kinds:
 Groups are computed at build time (for the snapshot) and recomputed at every
 refresh by the same Janet code, guaranteeing identical semantics.
 
-Implicit groups: every enabled subscription is a group `sub:<name>` with strategy
-`url-test` unless overridden. `fallback` fails evaluation on both engines.
-`load-balance` is xray only (§2.1).
+Implicit groups, while `janus.proxy.groupsAuto` is true (the default): every
+enabled subscription is a group `sub:<name>` with strategy `url-test`, and
+`Auto` is a `url-test` over every node unless the fleet defines
+`groups.Auto`. `groupsAuto = false` omits both. Every `defaultTarget` and
+every rule target, including a LAN override, must then name `direct`,
+`block`, or a group the fleet defined. Tunnel DNS uses that default target
+instead of the tag `Auto`. A group the fleet named `Auto` does not put the
+detour back on that tag. False fails evaluation on xray (ADR-0026).
+
+`emptyFallback` must be `direct` or `group:<name>` for a group that exists.
+`Auto` and `sub:<name>` count only while `groupsAuto` is true. On xray an
+empty group renders `direct`: a balancer selector names outbounds, and a
+group tag is not one. A `members` entry `sub:<name>` requires `groupsAuto`.
+`group:<name>` must be a group on this router, or `Auto` while the implicit
+group exists. A `manual`
+group's `default` must be one of its members when the group has no matcher.
+A matcher that matches nothing stays a warning and uses that fallback
+(FR-PRX-015). At render time a `manual` default that is not in the member
+list is a warning, and the first member is used, so the engine still starts.
+
+`fallback` fails evaluation on both engines. `load-balance` is xray only (§2.1).
 
 ## 5. Traffic mode and routing rules
 

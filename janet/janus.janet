@@ -686,18 +686,62 @@
     "url-test" "urltest"
     (die (string "sing-box cannot express group strategy " strategy))))
 
+(defn groups-auto? [model]
+  (not= (get model "groupsAuto") false))
+
+(defn ref-tag [ref]
+  (cond
+    (nil? ref) nil
+    (= ref "direct") "direct"
+    (= ref "block") nil
+    (string/has-prefix? "group:" ref) (string/slice ref 6)
+    (string/has-prefix? "node:" ref) (string/slice ref 5)
+    ref))
+
+(defn outbound-exists? [model tag]
+  (when tag
+    (or
+      (= tag "direct")
+      (get (or (get model "groups") @{}) tag)
+      (and (= tag "Auto") (groups-auto? model))
+      (and (groups-auto? model)
+           (string/has-prefix? "sub:" tag)
+           (find |(= tag (string "sub:" $)) (or (get model "subscriptionNames") @[]))))))
+
+(defn fallback-tag [model name group]
+  (def fb (or (get group "emptyFallback") "direct"))
+  (def tag (or (ref-tag fb) "direct"))
+  (if (outbound-exists? model tag)
+    tag
+    (do
+      (eprint (string "janus: group " name " fallback " fb " is not an outbound; using direct"))
+      "direct")))
+
+(defn tunnel-tag [model view]
+  # groupsAuto keeps the literal Auto detour. A fleet group named Auto
+  # does not: false follows that view's default target.
+  (if (groups-auto? model)
+    "Auto"
+    (let [target (or (get view "defaultTarget") (get model "defaultTarget") "direct")
+          tag (ref-tag target)]
+      (if (outbound-exists? model tag) tag "direct"))))
+
 (defn group-outbound [model nodes name]
   (def groups (or (get model "groups") @{}))
   (def group (or (get groups name) @{}))
   (def strategy (or (get group "strategy") "url-test"))
   (var mem (members-of model nodes name))
   (when (empty? mem)
-    (eprint (string "janus: group " name " is empty; using " (or (get group "emptyFallback") "direct")))
-    (def fb (or (get group "emptyFallback") "direct"))
-    (set mem @[(if (string/has-prefix? "group:" fb) (string/slice fb 6) "direct")]))
+    (def tag (fallback-tag model name group))
+    (eprint (string "janus: group " name " is empty; using " tag))
+    (set mem @[tag]))
   (def ob @{:type (strategy-type strategy) :tag name :outbounds mem})
   (when (= strategy "manual")
-    (put ob :default (or (get group "default") (first mem))))
+    (def wanted (or (ref-tag (get group "default")) (first mem)))
+    (def chosen (if (find |(= $ wanted) mem) wanted (first mem)))
+    (when (not= chosen wanted)
+      (eprint (string "janus: group " name " default " (or (get group "default") wanted) " is not a member; using " chosen)))
+    (put ob :default chosen))
   (def test (or (get group "test") @{}))
   (when (= strategy "url-test")
     (put ob :url (or (get test "url") "https://www.gstatic.com/generate_204"))
@@ -867,14 +911,15 @@
   (each name (keys groups)
     (array/push outbounds (group-outbound model nodes name)))
   (def subs (or (get model "subscriptionNames") @[]))
-  (each sub subs
-    (def tag (string "sub:" sub))
-    (def mem (filter |(string/has-prefix? (string sub "/") $) (map tag-of nodes)))
-    (array/push outbounds
-      (if (empty? mem)
-        @{:type "selector" :tag tag :outbounds @["direct"] :default "direct"}
-        @{:type "urltest" :tag tag :outbounds mem :url "https://www.gstatic.com/generate_204" :interval "5m" :tolerance 50})))
-  (unless (get groups "Auto")
+  (when (groups-auto? model)
+    (each sub subs
+      (def tag (string "sub:" sub))
+      (def mem (filter |(string/has-prefix? (string sub "/") $) (map tag-of nodes)))
+      (array/push outbounds
+        (if (empty? mem)
+          @{:type "selector" :tag tag :outbounds @["direct"] :default "direct"}
+          @{:type "urltest" :tag tag :outbounds mem :url "https://www.gstatic.com/generate_204" :interval "5m" :tolerance 50}))))
+  (when (and (groups-auto? model) (not (get groups "Auto")))
     (def all (map tag-of nodes))
     (array/push outbounds
       (if (empty? all)
@@ -976,7 +1021,7 @@
         (when remote-url
           (set rem-tag (string "remote-" label "-0"))
           (def item (dns-server rem-tag remote-url boot encryption))
-          (when (= (get remote "via") "tunnel") (put item :detour "Auto"))
+          (when (= (get remote "via") "tunnel") (put item :detour (tunnel-tag model view)))
           (array/push servers item))))
     (when (and on (not saw-fake))
       (array/push servers @{
@@ -1088,7 +1133,7 @@
         (put catch :action "reject")
         (do
           (put catch :action "route")
-          (put catch :outbound (or (rule-outbound target) "Auto"))))
+          (put catch :outbound (or (rule-outbound target) (tunnel-tag model view)))))
       (when cidr (put catch :source_ip_cidr @[cidr]))
       (array/push rules catch)))
   (def final-target (or (get model "defaultTarget") "group:Auto"))
@@ -1101,7 +1146,7 @@
   (def final
     (if (not (empty? (or (get model "lans") @[])))
       "direct"
-      (if (= final-target "block") "direct" (or (rule-outbound final-target) "Auto"))))
+      (if (= final-target "block") "direct" (or (rule-outbound final-target) (tunnel-tag model @{})))))
   (def inbounds @[
     @{:type "tun" :tag "tun-in" :interface_name "tun0"
       :address @["172.19.0.1/30" "fdfe:dcba:9876::1/126"]
@@ -1300,10 +1345,16 @@
     (def group (get groups name))
     (def strategy (or (get group "strategy") "url-test"))
     (when (not= strategy "manual")
-      (def mem (members-of model nodes name))
-      (array/push balancers @{:tag name :selector (if (empty? mem) @["direct"] mem) :strategy @{:type (xray-balancer-strategy strategy)}})
+      (var mem (members-of model nodes name))
+      (when (empty? mem)
+        # A balancer selector names outbounds. direct is one. A group tag is not.
+        (let [wanted (or (get group "emptyFallback") "direct")]
+          (when (not= wanted "direct")
+            (eprint (string "janus: xray group " name " is empty; " wanted " is not an outbound, using direct"))))
+        (set mem @["direct"]))
+      (array/push balancers @{:tag name :selector mem :strategy @{:type (xray-balancer-strategy strategy)}})
       (each tag mem (array/push observed tag))))
-  (unless (get groups "Auto")
+  (when (and (groups-auto? model) (not (get groups "Auto")))
     (def all (map tag-of nodes))
     (array/push balancers @{:tag "Auto" :selector (if (empty? all) @["direct"] all) :strategy @{:type "leastPing"}})
     (each tag all (array/push observed tag)))
@@ -1487,7 +1538,15 @@
   (def rules @[
     @{:type "field" :inboundTag @["api"] :outboundTag "api"}])
   (when (some |(= (get $ :tag) "dns-remote") servers)
-    (array/push rules @{:type "field" :inboundTag @["dns-remote"] :balancerTag "Auto"}))
+    (def where
+      (if (groups-auto? model)
+        ["balancer" "Auto"]
+        (xray-dispatch model (or (get anchor "defaultTarget") (get model "defaultTarget") "direct"))))
+    (def item @{:type "field" :inboundTag @["dns-remote"]})
+    (if (= (get where 0) "balancer")
+      (put item :balancerTag (get where 1))
+      (put item :outboundTag (get where 1)))
+    (array/push rules item))
   (array/push rules @{:type "field" :inboundTag dns-tags :outboundTag "dns-out"})
   (each view views
     (when (not= (or (get view "mode") "rule-based") "bypass")

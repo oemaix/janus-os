@@ -153,7 +153,7 @@
 
   groupNames = lib.attrNames proxy.groups;
   groupList =
-    if proxy.enable && !(lib.elem "Auto" groupNames)
+    if proxy.enable && proxy.groupsAuto && !(lib.elem "Auto" groupNames)
     then groupNames ++ ["Auto"]
     else groupNames;
 

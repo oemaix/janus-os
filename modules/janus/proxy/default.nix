@@ -80,6 +80,9 @@
       })
       lans;
 
+  # Auto is a target while the implicit group exists, or the fleet defined groups.Auto.
+  autoGroup = cfg.groupsAuto || cfg.groups ? "Auto";
+
   targetOk = target: let
     group =
       if lib.hasPrefix "group:" target
@@ -91,7 +94,40 @@
     target
     == "direct"
     || target == "block"
-    || (group != null && (group == "Auto" || cfg.groups ? ${group}));
+    || (group != null && (cfg.groups ? ${group} || (group == "Auto" && cfg.groupsAuto)));
+
+  targetMessage = where: value:
+    "${where} '${value}' is not direct, block, ${
+      if autoGroup
+      then "Auto, or a defined group."
+      else "or a defined group."
+    }";
+
+  refTag = ref:
+    if lib.hasPrefix "node:" ref
+    then lib.removePrefix "node:" ref
+    else if lib.hasPrefix "group:" ref
+    then lib.removePrefix "group:" ref
+    else ref;
+
+  fallbackOk = fb: let
+    name = lib.removePrefix "group:" fb;
+    sub = lib.removePrefix "sub:" name;
+  in
+    fb == "direct"
+    || (
+      lib.hasPrefix "group:" fb
+      && (
+        cfg.groups ? ${name}
+        || (name == "Auto" && cfg.groupsAuto)
+        || (
+          cfg.groupsAuto
+          && lib.hasPrefix "sub:" name
+          && cfg.subscriptions ? ${sub}
+          && cfg.subscriptions.${sub}.enable
+        )
+      )
+    );
 in {
   imports = [./lower.nix];
 
@@ -420,7 +456,18 @@ in {
         };
       });
       default = {};
-      description = "Proxy groups. docs/07 §4. Auto exists unless the user defines groups.Auto.";
+      description = "Proxy groups. docs/07 §4. The implicit Auto group exists unless groupsAuto is false or the fleet defines groups.Auto.";
+    };
+    groupsAuto = mkOption {
+      type = types.bool;
+      default = true;
+      description = ''
+        Render the implicit Auto group over every node, and one url-test
+        group per enabled subscription. False omits both. Every default
+        target and every rule, including a LAN override, must then name
+        direct, block, or a group this fleet defined. Tunnel DNS uses that
+        default target. False is sing-box only (ADR-0026).
+      '';
     };
     rules = mkOption {
       type = types.listOf (types.submodule {
@@ -520,11 +567,11 @@ in {
     assertions =
       (lib.optional (!targetOk cfg.defaultTarget) {
         assertion = false;
-        message = "janus.proxy.defaultTarget '${cfg.defaultTarget}' is not direct, block, Auto, or a defined group.";
+        message = targetMessage "janus.proxy.defaultTarget" cfg.defaultTarget;
       })
       ++ lib.imap0 (i: rule: {
         assertion = targetOk rule.target;
-        message = "janus.proxy.rules.${toString i}.target '${rule.target}' does not name a defined group, direct, or block.";
+        message = targetMessage "janus.proxy.rules.${toString i}.target" rule.target;
       })
       cfg.rules
       ++ lib.mapAttrsToList (name: group: {
@@ -581,13 +628,28 @@ in {
       cfg.groups)
       ++ lib.concatLists (lib.mapAttrsToList (name: group:
         lib.concatMap (member:
-          lib.optional (lib.hasPrefix "sub:" member) {
-            assertion = let
-              sub = lib.removePrefix "sub:" member;
-            in
-              cfg.subscriptions ? ${sub} && cfg.subscriptions.${sub}.enable;
-            message = "janus.proxy.groups.${name}.members names '${member}', which is not an enabled subscription on this router.";
-          })
+          (lib.optionals (lib.hasPrefix "sub:" member) [
+            {
+              assertion = let
+                sub = lib.removePrefix "sub:" member;
+              in
+                cfg.subscriptions ? ${sub} && cfg.subscriptions.${sub}.enable;
+              message = "janus.proxy.groups.${name}.members names '${member}', which is not an enabled subscription on this router.";
+            }
+            {
+              assertion = cfg.groupsAuto;
+              message = "janus.proxy.groups.${name}.members names '${member}', and groupsAuto = false does not render that group.";
+            }
+          ])
+          ++ (lib.optionals (lib.hasPrefix "group:" member) [
+            {
+              assertion = let
+                groupName = lib.removePrefix "group:" member;
+              in
+                cfg.groups ? ${groupName} || (groupName == "Auto" && cfg.groupsAuto);
+              message = "janus.proxy.groups.${name}.members names '${member}', which is not a group on this router.";
+            }
+          ]))
         group.members)
       cfg.groups)
       ++ lib.concatMap (
@@ -622,6 +684,39 @@ in {
           }
         ]
       ) (lib.attrNames cfg.nodes)
+      ++ lib.mapAttrsToList (name: group: {
+        assertion = group.emptyFallback == null || fallbackOk group.emptyFallback;
+        message = "janus.proxy.groups.${name}.emptyFallback '${toString group.emptyFallback}' does not name direct or a group that exists.";
+      })
+      cfg.groups
+      ++ lib.mapAttrsToList (name: group: {
+        assertion =
+          group.strategy != "manual"
+          || group.default == null
+          || group.match.kind != null
+          || lib.elem (refTag group.default) (map refTag group.members);
+        message = "janus.proxy.groups.${name}.default '${toString group.default}' is not a member of the group.";
+      })
+      cfg.groups
+      ++ lib.optionals (!cfg.groupsAuto) [
+        {
+          assertion = cfg.engine == "sing-box";
+          message = "janus.proxy.groupsAuto = false is sing-box only. xray keeps the implicit Auto group (ADR-0026).";
+        }
+      ]
+      ++ lib.concatLists (lib.mapAttrsToList (name: lan:
+        (lib.optionals (lan.proxy.defaultTarget != null) [
+          {
+            assertion = targetOk lan.proxy.defaultTarget;
+            message = targetMessage "janus.network.lans.${name}.proxy.defaultTarget" lan.proxy.defaultTarget;
+          }
+        ])
+        ++ (lib.optionals (lan.proxy.rules != null) (lib.imap0 (i: rule: {
+          assertion = targetOk rule.target;
+          message = targetMessage "janus.network.lans.${name}.proxy.rules.${toString i}.target" rule.target;
+        })
+        lan.proxy.rules)))
+      lans)
       ++ lib.mapAttrsToList (name: group: {
         assertion = cfg.engine != "sing-box" || !(lib.elem group.strategy ["fallback" "load-balance"]);
         message = "janus.proxy.groups.${name}.strategy ${group.strategy} is not expressible by sing-box (ADR-0006).";
