@@ -1,5 +1,0 @@
-#!/bin/sh
-# Start zsh inside the flake development shell.
-root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-cd "$root" || exit 1
-exec nix develop --command zsh
