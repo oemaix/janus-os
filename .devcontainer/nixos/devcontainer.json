@@ -15,8 +15,12 @@
     "source=/run/current-system,target=/run/current-system,type=bind,readonly",
     "source=${localEnv:HOME}/.config/git/config,target=/etc/gitconfig.host,type=bind,readonly",
     "source=${localEnv:HOME}/.config/gh,target=/home/dev/.config/gh,type=bind,readonly",
+    "source=${localEnv:XDG_RUNTIME_DIR}/bus,target=/run/host-bus,type=bind",
     "source=/etc/nix/nix.conf,target=/etc/nix/nix.conf,type=bind,readonly"
   ],
+  "containerEnv": {
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/host-bus"
+  },
   "postCreateCommand": "sudo /opt/devcontainer/realize.sh \"$(id -un)\"",
   "customizations": {
     "vscode": {

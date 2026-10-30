@@ -13,8 +13,12 @@
   "mounts": [
     "source=devcontainer-nix,target=/nix,type=volume",
     "source=${localEnv:HOME}/.config/git/config,target=/etc/gitconfig.host,type=bind,readonly",
-    "source=${localEnv:HOME}/.config/gh,target=/home/dev/.config/gh,type=bind,readonly"
+    "source=${localEnv:HOME}/.config/gh,target=/home/dev/.config/gh,type=bind,readonly",
+    "source=${localEnv:XDG_RUNTIME_DIR}/bus,target=/run/host-bus,type=bind"
   ],
+  "containerEnv": {
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/host-bus"
+  },
   "postCreateCommand": "sudo /opt/devcontainer/realize.sh \"$(id -un)\" private",
   "customizations": {
     "vscode": {

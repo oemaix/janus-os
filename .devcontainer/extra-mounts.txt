@@ -1,5 +1,6 @@
 source=${localEnv:HOME}/.config/git/config,target=/etc/gitconfig.host,type=bind,readonly
 source=${localEnv:HOME}/.config/gh,target=/home/dev/.config/gh,type=bind,readonly
+source=${localEnv:XDG_RUNTIME_DIR}/bus,target=/run/host-bus,type=bind
 # NixOS profile only. This host's /etc/nix/nix.conf sets experimental-features.
 # The other-host profile omits it: a missing source fails the create, and the
 # image already enables flakes.
