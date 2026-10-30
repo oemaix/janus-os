@@ -1,5 +1,5 @@
 {
-  "name": "Other host",
+  "name": "janus-os (Other host)",
   "build": {
     "dockerfile": "../Dockerfile",
     "context": ".."
@@ -9,6 +9,7 @@
   "workspaceFolder": "/workspace",
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind",
   "initializeCommand": "sh .devcontainer/require-host.sh other",
+  "runArgs": ["--name", "janus-os-other"],
   "mounts": [
     "source=devcontainer-nix,target=/nix,type=volume",
     "source=${localEnv:HOME}/.config/git/config,target=/etc/gitconfig.host,type=bind,readonly",

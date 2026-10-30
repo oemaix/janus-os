@@ -1,5 +1,5 @@
 {
-  "name": "NixOS host",
+  "name": "janus-os (NixOS host)",
   "build": {
     "dockerfile": "../Dockerfile",
     "context": ".."
@@ -9,6 +9,7 @@
   "workspaceFolder": "/workspace",
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind",
   "initializeCommand": "sh .devcontainer/require-host.sh nixos",
+  "runArgs": ["--name", "janus-os-nixos"],
   "mounts": [
     "source=/nix,target=/nix,type=bind",
     "source=/run/current-system,target=/run/current-system,type=bind,readonly",
