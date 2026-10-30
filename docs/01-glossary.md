@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-28 |
+| Last updated | 2026-10-30 |
 
 Terms are listed alphabetically. Where an informal word is easy to confuse
 with the canonical one, the informal word is marked *avoid*.
@@ -55,7 +55,9 @@ over node names) or by a *manual list*. A group has a *selection strategy*.
 only. `fallback` fails evaluation on both (FR-PRX-013). `groupsAuto`
 (default true) adds `Auto` and one `sub:<name>` group per enabled
 subscription. `false` is sing-box only and leaves the groups the fleet
-names (ADR-0026).
+names (ADR-0026). A later operator model uses a Label and does not ask
+the operator to name a group (ADR-0027, *07* §11). Until that work in
+*13*, a group remains the routing target.
 
 **Hot override** — A value from a fixed allowlist (proxy subscription URL,
 static DHCP lease, Wi-Fi passphrase) changed on the board, stored as
@@ -68,6 +70,12 @@ partitions, boot firmware, populated file systems. The unit of deployment.
 **Janet** — A small Lisp-family scripting language with built-in PEG support.
 Janus uses Janet for the PEG matcher and for build-time helper scripts where
 a full language is warranted.
+
+**Label** — A key and a value on a proxy node. Predefined keys are
+`vendor`, `region`, and `latency`. The operator may add keys. A routing
+rule constrains keys. sing-box and xray still receive a generated group.
+Not implemented; the current routing target remains a Group (ADR-0027,
+*07* §11, *13*). *Avoid:* calling the current group a label.
 
 **LAN** — A downstream network segment served by the router (DHCP server,
 NAT source, firewall zone). Janus supports multiple LANs, each with its own
@@ -83,6 +91,8 @@ is not a configuration editor.
 
 **Matcher** — A predicate over a proxy node's name (and optionally other
 attributes) that assigns it to a Group. Kinds: `regex`, `glob`, `peg`.
+The later labeling rules use the same kinds, plus GeoIP of the node
+server, to set a Label (*07* §11).
 
 **Mode (traffic mode)** — How one LAN's traffic is handled by the proxy
 layer: `bypass` (nothing tunneled), `rule-based` (routing rules decide),
@@ -107,7 +117,8 @@ runtime, not user-editable) or from a manual definition in
 
 **Proxy subscription** — A URL that yields a list of proxy nodes in a known
 format (Clash YAML, a base64 share-link list, sing-box JSON). It has a
-name, an update schedule, and yields an implicit Group. The option is
+name, an update schedule, and yields an implicit Group. Later, that
+name is the node's `vendor` label (ADR-0027). The option is
 `janus.proxy.subscriptions`. *Avoid:* "relay subscription". The relay is
 the proxy node. The subscription is the list.
 
@@ -122,7 +133,8 @@ would need to compile or download on the Board is an error.
 
 **Routing rule** — An ordered predicate → target mapping (domain set, IP set,
 GeoSite/GeoIP category, port, source LAN, protocol → Group, `direct`,
-`block`) evaluated by the Engine in `rule-based` mode.
+`block`) evaluated by the Engine in `rule-based` mode. A later target
+may be a label selector instead of a Group (ADR-0027, *07* §11).
 
 **State partition** — The single read-write f2fs partition, mounted at
 `/var`, that holds all persistent mutable data (proxy subscription cache,

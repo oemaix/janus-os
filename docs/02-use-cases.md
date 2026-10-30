@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-28 |
+| Last updated | 2026-10-30 |
 
 ## 1. Personas
 
@@ -94,7 +94,9 @@ requirements it drives (see *03 — Requirements*).
   define `Streaming` group as a manual list; assign a selection strategy
   (`url-test`) to each group. Example configuration ships commented-out
   templates for `Telegram`, `Gemini`, `Claude`, `Netflix`.
-* **Drives:** FR-PRX-010..015
+* **Drives:** FR-PRX-010..015. A later flow sets labels on the nodes and
+  constrains them from the rule, and does not ask Mei to name a group
+  (ADR-0027, *07* §11, *13*). This use case stays until that work lands.
 
 ### UC-07 Rule-based routing with domestic bypass
 

@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-24 |
+| Last updated | 2026-10-30 |
 
 This is the contract for the on-router `janus` command. Implementation
 follows this file. The user manual will later show the same commands with
@@ -58,6 +58,9 @@ These do not change configuration or hot overrides.
 | `janus version [--components]` | Image provenance from `/etc/janus/build.json` |
 | `janus reboot` | Reboot |
 | `janus reset --state` | Wipe the state partition and reboot. Requires `--yes`. |
+
+Label inspection is not a command in this table. ADR-0027 and *07* §11
+specify it for later. `groups`, `select`, and `test` stay until that work.
 
 ## 3. Hot overrides
 

@@ -32,7 +32,7 @@ Choices that are not ADRs are *18*. Explanations are *19*.
 | 04 | [System Architecture](04-architecture.md) | Components, layers, data flow, module structure | Developers |
 | 05 | [Storage and File System Design](05-storage-and-filesystems.md) | Partition layout, read-only root, mutable state | Developers |
 | 06 | [Networking Design](06-networking.md) | WAN/LAN/VLAN, firewall, NAT, IPv6 | Developers |
-| 07 | [Proxy and DNS Design](07-proxy-and-dns.md) | Tunnel engines, nodes, subscriptions, grouping, routing, DNS policy | Developers |
+| 07 | [Proxy and DNS Design](07-proxy-and-dns.md) | Tunnel engines, nodes, subscriptions, grouping, later labels, routing, DNS policy | Developers |
 | 08 | [Configuration Reference](08-configuration-reference.md) | The `janus.*` option tree exposed to users | Users, developers |
 | 09 | [Build and Deployment](09-build-and-deployment.md) | Flake layout, image build, cross-compilation, deployment workflow | Developers, users |
 | 10 | [Hardware Support](10-hardware-support.md) | Supported boards and peripherals, support tiers | Users, developers |

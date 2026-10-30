@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-09-27 |
+| Last updated | 2026-10-30 |
 
 The panel is a status and maintenance surface. It does not edit
 `configuration.nix`, hot overrides, or secrets. Anything it can change is
@@ -48,7 +48,10 @@ screen. Text that does not fit the column is cut at the end. `medium` and
 The tunnel page can push one screen, the node list for the focused group.
 That screen is not a page in the ring. It is a list of node names. Confirm
 runs `janus proxy select` for the focused node and returns to the tunnel
-page. There is no other pushed screen.
+page. There is no other pushed screen. The tunnel page names groups until
+ADR-0027. That later work shows labels and the node the engine picked,
+and drops `janus proxy select` from this page. The rows above stay until
+then.
 
 ## 3. Input capabilities
 

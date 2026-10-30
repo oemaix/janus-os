@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-25 |
+| Last updated | 2026-10-30 |
 
 These answers explain a choice that already binds somewhere else. The
 cited ADR, requirement, or section is that place. This list does not
@@ -61,3 +61,5 @@ Each question is `Q-nnnn`. The number is assigned once and is not reused.
 | Q-0045 | Why does the ROCK Pi 4C not use nixpkgs `ubootRockPi4` as shipped, and why must SPI be clear? | That package is the 4A/4B defconfig and does not install `u-boot-rockchip.bin`. The profile builds `rock-pi-4c-rk3399_defconfig` and writes the combined image at sector 64. The boot ROM tries SPI NOR before eMMC and SD. A bootloader left in SPI is what the ROM starts, so sector 64 never runs. The image does not program SPI. After this U-Boot starts, a two-second serial menu tries eMMC and then SD, or the SD card alone. ROCK 4C+ is a different board. See D-0053 and *10* §3.5. |
 | Q-0046 | Why does the Wi-Fi country follow `janus.system.region`, and why can it be replaced? | With no country the kernel uses the world domain, which disables channels an access point needs, including 5 GHz channels used in China. The region letters are the three countries this router is built for, so they are the default. The region stays the censorship environment. `janus.network.wifiCountry` is the regulatory country when the transmitter is somewhere else. See D-0054 and *06* §11. |
 | Q-0047 | Why is the Le Potato image not a plain GPT disk? | The mask ROM needs sector 1 for `@AML`. A primary GPT in that sector fails the header check, and writing one back after boot wipes the firmware. Six partitions do not fit in four MBR primaries, so the extra ones are logical. The board still mounts by the GPT PARTUUIDs, through the backup header and the kernel parameter `gpt`. See D-0055 and *10* §3.6. |
+| Q-0048 | Why does a routing rule not name a group once labels exist? | The operator writes labels on the nodes and constraints on the rule. sing-box and xray still take a named set of outbounds. Janus builds that set from the selector and does not ask for a group name. See ADR-0027 and *07* §11. |
+| Q-0049 | Why measure latency as a label when the engine already url-tests? | The label decides which nodes are eligible, for example under 150 ms, or `low` and `mid`. The rendered url-test then picks among those that passed and moves when one stops answering. See *07* §11. |

@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.8.0 |
-| Last updated | 2026-10-21 |
+| Last updated | 2026-10-30 |
 
 The maintenance page is the browser surface deferred by ADR-0007 and
 bounded by FR-ACC-005 and D-0012. It calls the `janus` commands in *14*.
@@ -145,6 +145,10 @@ not change. Where each action sits is §7.5.
 | `overrides` | Allowlist rows in §5 | `set`, `unset` |
 | `monitoring` | `janus traffic`, `janus dns stats`, and one audit line from `janus audit status` when that feature is in the image | `traffic`, `daily`, `monthly`, and `top` when the scope is `per-host`. `stats`, `check`, `flush`. `query` for one name. |
 | `system` | `janus version --components` | `reboot` |
+
+The `status` and `tunnel` sections name groups until ADR-0027. That later
+work shows labels and the node the engine picked. These rows stay until
+then.
 
 `status` refreshes every 10 seconds while it is the open section and the
 browser tab is visible. Tunnel, overrides, monitoring, and system load

@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-26 |
+| Last updated | 2026-10-30 |
 
 This file is the implementation plan, the progress of the code, and the
 notes for work that is specified but not started. Choices are *18*.
@@ -77,6 +77,7 @@ power-cut. Tier 3 ships the profile. The Future list stays after 1.0.
 * A per-board kernel profile, `matched` (D-0052). `standard` and `compact` are implemented (D-0051).
 * One GPIO LED with the `heartbeat` trigger on `rpi2`, `rpi3`, `rpi4`, `rpi-zero-2w`, `rockpi-4c`, and `le-potato`. A dark LED then means the kernel timer has stopped. The GPIO is not chosen. The ROCK Pi 4C blue status LED already uses that trigger in the device tree (*10* §3.5). The Le Potato blue LED does the same in the mainline tree and is not yet recorded in *10*. The Raspberry Pi profiles do not set one.
 * The maintenance page (*20*) is in the image. The retro console in *20* §7 is the design: no radius, no shadow, no gradient. Some functions and elements are still unusable or only partly worked out. Later work keeps that simple console and works out every function and every element so each behaves clearly and fluidly. The shape is in Notes.
+* Operator-facing node labels (ADR-0027, *07* §11, FR-PRX-029). The operator sets key-value labels and constrains them from a routing rule. sing-box and xray still receive one generated group per selector. Not started. `groups`, `groupsAuto`, and `janus proxy select` stay until this item.
 
 ## 2. Progress
 
@@ -220,6 +221,7 @@ tree does not mean that behavior exists. Stubs are not finished features.
 ## 3. Notes for later implementation
 
 * Accepted ADRs bind. They are listed in `docs/adr/` and are not restated here.
+* ADR-0027 is accepted and does not replace the group model yet. Implement labels from *07* §11 when the Future item starts. Do not add `janus.proxy.labels` before then.
 * Undecided choices, if any, are *18* §2. Do not invent an answer for one.
   D-0045 asks whether the board-local secret path goes away.
   D-0048 asks whether an existing PPPoE username and password join the

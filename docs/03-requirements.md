@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-28 |
+| Last updated | 2026-10-30 |
 
 Key words MUST / SHOULD / MAY follow RFC 2119. Priority: **P1** required for
 1.0, **P2** planned, **P3** desirable.
@@ -113,6 +113,7 @@ Key words MUST / SHOULD / MAY follow RFC 2119. Priority: **P1** required for
 | FR-PRX-026 | `janus.system.region` MUST be `cn` (default), `ru`, or `ir`. It selects the preset in *21*. Any other value MUST fail evaluation. The region MUST NOT be a hot override. | P1 |
 | FR-PRX-027 | When `janus.proxy.rules` is unset, the rule list MUST be empty. The example MUST ship the three lists in *21* §4, with `cn` active and `ru` and `ir` commented. The module MUST NOT insert a list because `janus.system.region` is set. `blockQuic` MUST default to true for `ru` and false for `cn` and `ir`, unless set. | P1 |
 | FR-PRX-028 | A Geo rule-set tag MUST be fetchable from a per-tag URL (`janus.proxy.geodata.sources.tags`) so one tag can leave the SagerNet base. The `ir` preset's domain set MUST be the Chocolate4U `geosite-ir` file named in *21* §4.3. | P1 |
+| FR-PRX-029 | Labels replace groups for the operator. Deferred until the *13* item; specified in *07* §11 and ADR-0027. Until that work, FR-PRX-010 through FR-PRX-015 and a group target in FR-PRX-021 remain. When it lands, the operator MUST set membership with labels, a rule target MUST be `direct`, `block`, or a label selector, and the renderer MUST emit one engine group per distinct selector. The operator MUST NOT name that group. | P2 |
 
 ## 7. DNS (DNS)
 

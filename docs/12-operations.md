@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-28 |
+| Last updated | 2026-10-30 |
 
 ## 1. What maintenance is
 
@@ -107,7 +107,9 @@ The tunnel needs its own signals because it fails more often than Ethernet:
 | The same URL is shared by several routers | `janus-build secret set` on that subscription file, commit, `janus-build fleet apply` | one ciphertext file, then each reachable host decrypts and applies it (*12* §1.3) |
 
 `janus status` shows the last success, the last error, and the selected
-node for each group. That is the maintenance surface for 1.0. The
+node for each group. That is the maintenance surface for 1.0. A later
+model shows labels and the node the engine picked, and drops the manual
+select (ADR-0027, *07* §11). This table stays until that work. The
 maintenance page (*20*) calls these commands and the hot-override
 allowlist. It does not replace the CLI and it does not edit
 `configuration.nix`. The image includes it only when

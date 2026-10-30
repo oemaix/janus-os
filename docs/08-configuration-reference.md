@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-25 |
+| Last updated | 2026-10-30 |
 
 This document defines the **shape and semantics** of the `janus.*` option
 tree. The final, exhaustive reference (every option with type, default,
@@ -148,7 +148,9 @@ See *06* §7–8: `zones`, `policies`, `rules`, `services`, `portForwards`,
 
 Built-in group `Auto`: `url-test` over every node, unless the fleet defines
 `groups.Auto` or sets `groupsAuto = false`. Each enabled subscription is
-`sub:<name>` on the same condition (ADR-0026).
+`sub:<name>` on the same condition (ADR-0026). Labels (*07* §11,
+ADR-0027) are not options. `groups` and `groupsAuto` remain the membership
+options until that roadmap item.
 
 ### 6.1 Node submodule (manual) — common fields
 
