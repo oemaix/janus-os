@@ -1,0 +1,34 @@
+{
+  "name": "Other host",
+  "build": {
+    "dockerfile": "../Dockerfile",
+    "context": ".."
+  },
+  "remoteUser": "dev",
+  "updateRemoteUserUID": true,
+  "workspaceFolder": "/workspace",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind",
+  "initializeCommand": "sh .devcontainer/require-host.sh other",
+  "mounts": [
+    "source=devcontainer-nix,target=/nix,type=volume",
+    "source=${localEnv:HOME}/.config/git/config,target=/etc/gitconfig.host,type=bind,readonly",
+    "source=${localEnv:HOME}/.config/gh,target=/home/dev/.config/gh,type=bind,readonly"
+  ],
+  "postCreateCommand": "sudo /opt/devcontainer/realize.sh \"$(id -un)\" private",
+  "customizations": {
+    "vscode": {
+      "extensions": [],
+      "settings": {
+      "terminal.integrated.defaultProfile.linux": "janus-dev",
+      "terminal.integrated.profiles.linux": {
+        "janus-dev": {
+          "path": "nix",
+          "args": ["develop", "--command", "zsh"],
+          "cwd": "${workspaceFolder}",
+          "overrideName": true
+        }
+      }
+    }
+    }
+  }
+}

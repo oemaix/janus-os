@@ -4,5 +4,6 @@
 .direnv
 
 /.vscode
+/.devcontainer/host-user
 /.cursor
 /.VSCodeCounter

@@ -24,6 +24,12 @@ How to report a defect or send a change is
 `nix develop` opens the development shell. Inside it, run programs
 directly (`janet`, `janus-build`).
 
+A Dev Container is optional. On a NixOS host or any other host that
+already has Nix, it uses that store and the same shell. On a host with
+no Nix, the Other profile installs a private Nix inside the container.
+Without Docker, the command above is unchanged. Opening the container
+asks for the NixOS host, the Nix host, or the Other host.
+
 What is specified, and what is done, is
 [docs/13-roadmap.md](docs/13-roadmap.md). The definition suite in
 [docs/](docs/README.md) stays English.
