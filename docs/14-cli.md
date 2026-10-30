@@ -65,6 +65,9 @@ These do not change configuration or hot overrides.
 | `janus bluetooth disconnect <address-or-name>` | Disconnect that device. This boot does not connect that address again. Another address is left alone. The next boot connects the last device again. |
 | `janus bluetooth remove <address-or-name>` | Remove the pairing. If it was the last device, nothing is connected after boot. |
 
+Label inspection is not a command in this table. ADR-0027 and *07* §11
+specify it for later. `groups`, `select`, and `test` stay until that work.
+
 ## 3. Hot overrides
 
 Allowlist (FR-OPS-007). Nothing else is accepted.

@@ -125,6 +125,11 @@ through D-0042 per LAN, plus ECS and the DNS cache. xray 26 has one DNS
 module, so LANs that do not share a DNS policy fail evaluation. Which
 engine to keep is *07* §2.1.
 
+The diagram above is the model the modules implement. ADR-0027 specifies
+a later operator model: labels on nodes, label constraints on rules, and
+one generated engine group per selector (*07* §11). That model is not
+implemented. This diagram stays until the *13* item lands.
+
 ## 5. Key runtime flows
 
 ### 5.1 Boot

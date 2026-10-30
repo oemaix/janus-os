@@ -147,6 +147,10 @@ not change. Where each action sits is §7.5.
 | `monitoring` | `janus traffic`, `janus dns stats`, and one audit line from `janus audit status` when that feature is in the image | `traffic`, `daily`, `monthly`, and `top` when the scope is `per-host`. `stats`, `check`, `flush`. `query` for one name. |
 | `system` | `janus version --components` | `reboot` |
 
+The `status` and `tunnel` sections name groups until ADR-0027. That later
+work shows labels and the node the engine picked. These rows stay until
+then.
+
 `status` refreshes every 10 seconds while it is the open section and the
 browser tab is visible. Tunnel, bluetooth, overrides, monitoring, and
 system load on entry and again after an action. Network draws its rows

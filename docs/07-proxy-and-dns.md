@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-28 |
+| Last updated | 2026-10-30 |
 
 ## 1. Scope
 
@@ -129,6 +129,10 @@ build snapshot) used for first boot / recovery, and the runtime copy. The
 service unit prefers the runtime copy when present and valid.
 
 ## 4. Groups
+
+Labels, which replace this section for the operator, are §11. They are
+not implemented. This section stays in force until the roadmap item in
+*13*.
 
 ```
 janus.proxy.groups.<name> = {
@@ -498,4 +502,168 @@ Region groups (enabled): `JP`, `US`, `HK`, `SG`, `EU`, `UK`, `IN`, each a
 `url-test`. Usage groups (commented out): `Telegram`, `Gemini`, `Claude`,
 `Netflix`, `YouTube`, `GitHub`, each with a suggested member group and the
 matching rule block, so a user enables a feature by uncommenting two
-stanzas.
+stanzas. When §11 lands, those region patterns become `region` labeling
+rules, and a usage block constrains labels instead of naming a group.
+
+## 11. Labels (later)
+
+This section is the operator model in ADR-0027 (FR-PRX-029). It is not
+implemented. §4, §5, and §9 stay in force until the *13* item starts.
+The module must not grow these options before that work. The manual-node
+`tags` list is a string list on the node. It is not a label.
+
+The operator attaches labels to nodes and constrains those labels from a
+routing rule. A group is the outbound set sing-box or xray accepts. Janus
+builds that set. The operator does not name it.
+
+### 11.1 Label
+
+A label is one key and one value on one node. A key matches
+`[A-Za-z][A-Za-z0-9]*`. A value is either a string token
+(`[A-Za-z0-9-]+`) or a non-negative integer. One key uses one value kind
+on a router. A string constraint on a number key, or a numeric constraint
+on a string key, fails evaluation.
+
+Predefined keys are `vendor`, `region`, and `latency`. The operator may
+add further keys under `janus.proxy.labels.<key>`. A selector that names
+an unknown key fails evaluation.
+
+Subscription nodes stay immutable (FR-PRX-007). Their labels come from
+the derivations and labeling rules below. A manual node may set
+`nodes.<name>.labels.<key>`. That explicit value replaces a derived value
+for the same key.
+
+### 11.2 Predefined keys
+
+`vendor` is always present.
+
+* A node from subscription `<name>` has `vendor` = `<name>`.
+* A manual node has the configured value, or `unknown` when unset.
+
+`vendor` is not a pattern rule. Another grouping uses another key.
+
+`region` is absent until a labeling rule or an explicit manual value sets
+it. The example, when this section lands, ships the §10 name patterns as
+enabled `region` rules (`jp`, `us`, `hk`, `sg`, `eu`, `uk`, `in`). The
+module does not insert them because a region string appeared in a node
+name. An unset rule list leaves `region` unset, in the same way an unset
+`janus.proxy.rules` stays empty.
+
+`latency` is absent until a sample exists. The probe is a TCP connect to
+the node's server and port. The stored value is the handshake time in
+milliseconds. The default timeout is `3s`. The default interval is `5m`.
+A failed probe keeps the previous sample for that node. A node that left
+the subscription drops its sample. Samples live at
+`/var/lib/janus/engine/latency.json` on the state partition. The probe
+runs only when some selector constrains `latency`, including the default
+target. A node with no sample does not satisfy a latency constraint.
+
+```
+janus.proxy.labels.latency = {
+  as = "number" | "enum";    # default: number
+  timeout = "3s";
+  interval = "5m";
+  bands = [
+    { below = 150; value = "low"; }
+    { below = 300; value = "mid"; }
+    { value = "high"; }
+  ];
+};
+```
+
+`as = "number"` stores the milliseconds. `bands` is then unused.
+`as = "enum"` stores the string from the first matching band, in list
+order. A trailing band with only `value` matches the rest. `below` on a
+band means the sample is strictly less than that number.
+
+### 11.3 Labeling rules
+
+A custom key, and `region`, take an ordered rule list. The first matching
+rule sets the value. Later rules do not replace it. An explicit manual
+value still wins.
+
+```
+janus.proxy.labels.region.rules = [
+  { match = { kind = "regex" | "glob" | "peg"; pattern = "…"; caseInsensitive = true; };
+    value = "jp"; }
+  { match = { kind = "geoip"; countries = [ "jp" ]; };
+    value = "jp"; }
+];
+janus.proxy.labels.streaming.rules = [
+  { match = { kind = "regex"; pattern = "(?i)netflix|nf"; }; value = "video"; }
+];
+```
+
+`regex`, `glob`, and `peg` are the §4 matcher kinds, applied to the node
+name. `geoip` classifies the node's server address with the GeoIP data
+the router already uses for destination rules. An IP literal is classified
+directly. A hostname is resolved on the router when labels are recomputed,
+not at image build. A failed lookup does not match that rule.
+
+### 11.4 Routing
+
+Traffic predicates stay §5. The target is `direct`, `block`, or a
+selector. There is no `group:` name.
+
+```
+janus.proxy.rules = [
+  { match = { domainSuffix = [ "netflix.com" "nflxvideo.net" ]; };
+    labels = {
+      region = [ "jp" "kr" "sg" ];       # any of these
+      latency = { below = 150; };        # milliseconds < 150, when latency is a number
+    }; }
+];
+```
+
+A string key's constraint is a list of tokens. Any one value matches. A
+number key's constraint is `{ below = N; }` or `{ above = N; }`, and not
+both. `below` means strictly less. `above` means strictly greater. Several
+keys on one selector combine with AND. A node that lacks a constrained
+key does not match.
+
+The same Nix value may be bound into several rules. That is how two rules
+share a constraint. It does not create a name the operator manages.
+
+`defaultTarget` may be a selector, `direct`, or `block`. Unset, the
+default selector has no label constraint, so every node is eligible.
+That is the current `Auto` set, without the name `Auto`.
+
+An empty match is a warning. The rendered target is `direct`. Evaluation
+does not fail.
+
+A selector is a proxied target for DNS. Fake-IP follows D-0037: a name
+the LAN will proxy includes a selector target and a default target that
+is a selector.
+
+### 11.5 What the renderer emits
+
+Janet computes labels at build time for the snapshot, and again on
+subscription refresh and on the latency interval. The same code runs in
+both places.
+
+Each distinct selector, including the default selector, becomes one
+engine outbound:
+
+| Engine | Outbound | Members |
+|--------|----------|---------|
+| sing-box | `urltest` | flat node tags |
+| xray | leastPing balancer | flat node tags |
+
+The tag is `sel-` plus a stable hash of the canonical selector. It is not
+an option and not a name the operator writes. Nested group tags are not
+emitted. xray remote DNS detours through the generated tag of the default
+selector. `groupsAuto` is not an option in this model. ADR-0026 continues
+to bind the group model until this section replaces it.
+
+`urltest` uses the current test defaults: URL
+`https://www.gstatic.com/generate_204`, interval `5m`, tolerance `50`.
+The latency label decides eligibility. The url-test picks among the nodes
+that passed and moves when one stops answering.
+
+`load-balance` and `manual` are not strategies of this model.
+`janus proxy select` has no group argument once this section replaces §4
+and §9. The later CLI shows the labels on each node and the node the
+engine picked, and the latency probe is the test action. *14* gains those
+commands in the same change. The panel tunnel page and the maintenance
+`tunnel` section follow that CLI.
+

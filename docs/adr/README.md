@@ -32,3 +32,4 @@ An accepted ADR is the record. It is not copied into *18*.
 | [0024](0024-release-trains.md) | Release trains are branches; versions are tags | Accepted; refines 0018 |
 | [0025](0025-tun-gvisor-stack.md) | tun runs the gvisor stack | Accepted; refines 0011 |
 | [0026](0026-explicit-groups.md) | Explicit groups omit the implicit Auto and subscription groups | Accepted; refines 0006 |
+| [0027](0027-node-labels.md) | The operator configures labels; the engine still receives a group | Accepted; future work; refines 0006 when it lands |
