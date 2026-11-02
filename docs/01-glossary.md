@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-28 |
+| Last updated | 2026-11-03 |
 
 Terms are listed alphabetically. Where an informal word is easy to confuse
 with the canonical one, the informal word is marked *avoid*.
@@ -18,6 +18,14 @@ Tailscale exit node, Prometheus `node-exporter`.
 **Activation** — The NixOS step that switches a booted system to a system
 closure (creating `/etc`, starting units). In Janus, activation happens once
 at boot from the read-only store; it never fetches or builds.
+
+**Ara240** — An NXP neural processor (DNPU) attached over PCIe or USB.
+After 1.0 the router may run its runtime and an HTTP service so another
+device can use an edge LLM of 0.5B to 3B parameters (D-0056, D-0060).
+Vision models are not in that plan. Not a routing feature, and not a
+peripheral class in 1.0.
+*Avoid:* treating the router as an i.MX board because the vendor guide
+is written for one.
 
 **Board** — A supported single-board computer that runs Janus OS (e.g.
 Raspberry Pi 4, NanoPi R4S, VisionFive 2). *Avoid:* "device", "the
@@ -56,6 +64,11 @@ only. `fallback` fails evaluation on both (FR-PRX-013). `groupsAuto`
 (default true) adds `Auto` and one `sub:<name>` group per enabled
 subscription. `false` is sing-box only and leaves the groups the fleet
 names (ADR-0026).
+
+**Hailo-10H** — A Hailo M.2 accelerator with its own DRAM. After 1.0 the
+router may run HailoRT GenAI so another device can use an edge LLM of
+0.5B to 3B parameters (D-0056, D-0060). Vision models are not in that
+plan. Not a peripheral class in 1.0. *Avoid:* "Hailo-8", "Hailo-8L".
 
 **Hot override** — A value from a fixed allowlist (proxy subscription URL,
 static DHCP lease, Wi-Fi passphrase) changed on the board, stored as
@@ -123,6 +136,11 @@ would need to compile or download on the Board is an error.
 **Routing rule** — An ordered predicate → target mapping (domain set, IP set,
 GeoSite/GeoIP category, port, source LAN, protocol → Group, `direct`,
 `block`) evaluated by the Engine in `rule-based` mode.
+
+**Spotify Soloist** — A later playback program that makes the router a
+Spotify Connect device. The API key is a sops secret. The program binary
+is not part of this repository. Audio leaves over Bluetooth. Not in the
+1.0 image (D-0056). *Avoid:* "spotifyd", "librespot".
 
 **State partition** — The single read-write f2fs partition, mounted at
 `/var`, that holds all persistent mutable data (proxy subscription cache,

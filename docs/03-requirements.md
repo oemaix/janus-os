@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-28 |
+| Last updated | 2026-11-03 |
 
 Key words MUST / SHOULD / MAY follow RFC 2119. Priority: **P1** required for
 1.0, **P2** planned, **P3** desirable.
@@ -164,6 +164,7 @@ Key words MUST / SHOULD / MAY follow RFC 2119. Priority: **P1** required for
 | FR-ACC-004 | A `janus` CLI MUST exist on the router for status, group selection, data refresh and diagnostics. | P1 |
 | FR-ACC-005 | A general configuration GUI is out of scope. A later maintenance page MAY expose status, maintenance actions, and the hot-override allowlist, and MUST NOT edit the rest of the configuration. | P3 |
 | FR-ACC-006 | When `janus.access.web.enable` is set, the maintenance page MUST follow *20*. `janus web stop` MUST stop the listener without a rebuild, and `janus web start` MUST start it again. `janus web start` MUST exit 2 when the image was built with the option false. | P3 |
+| FR-ACC-007 | After 1.0, pairing and forgetting a Bluetooth audio device MAY be an HTTP interface. It MUST listen only on `lan` and `mgmt`. It MUST NOT listen on `wan`. It is not the Spotify Soloist WebSocket, and it MUST NOT add pairing to the maintenance page in *20*. Which process serves it stays open (D-0059). Deferred until after 1.0. | P3 |
 
 ## 11. Hardware (HW)
 
@@ -177,6 +178,9 @@ Key words MUST / SHOULD / MAY follow RFC 2119. Priority: **P1** required for
 | FR-HW-006 | Redistributable closed-source firmware blobs required by a supported board or peripheral (Raspberry Pi wireless firmware, board boot firmware) MUST be allowed. Out-of-tree kernel drivers and device-specific mode-switch hacks MUST NOT be added to make an unlisted device work. | P1 |
 | FR-HW-007 | WWAN support MUST be an allowlist of known devices and modes. A dongle that needs an undocumented or fragile setup MUST be rejected with a pointer to the matrix rather than given a best-effort configuration. | P1 |
 | FR-HW-008 | A `power` peripheral class MUST support a TI INA219 on I²C. The mcuzone profile at `0x40` MUST expose readings in `janus status` and MUST shut down on a sustained low cell while discharging, at the thresholds in *10* §4.5. A negative current on that profile means discharge. The Waveshare address `0x43` is reserved. It MUST NOT expose readings or arm shutdown until a discharge measurement exists. Janus MUST NOT shut down while charging, when the sensor has failed, or because a threshold was set below those defaults. | P2 |
+| FR-HW-009 | After 1.0, a declared `bluetooth` peripheral MAY be the audio output for Spotify Soloist (FR-SVC-001). That path is not a routing feature. Until *13* lands it, BlueZ stays off, the image configures no audio path, and evaluation grows no playback options. The CSR dongle `0a12:0001` stays on the allowlist. Onboard Bluetooth on the Zero 2 W and the ROCK Pi 4C stays unused. | P3 |
+| FR-HW-010 | After 1.0, an NXP Ara240 DNPU MAY be attached over PCIe or USB so another device can use an edge LLM of 0.5B to 3B parameters through FR-SVC-002. 1.0 has no accelerator peripheral class and no Ara240 USB or PCI ID. Declaring that hardware fails evaluation until an allowlist row exists. | P3 |
+| FR-HW-011 | After 1.0, a Hailo-10H MAY be attached over PCIe (M.2) so another device can use an edge LLM of 0.5B to 3B parameters through FR-SVC-003. 1.0 has no Hailo PCI ID. Declaring that hardware fails evaluation until an allowlist row exists. Hailo-8 and Hailo-8L are not this row. | P3 |
 
 ## 12. Operations (OPS)
 
@@ -204,6 +208,7 @@ Key words MUST / SHOULD / MAY follow RFC 2119. Priority: **P1** required for
 | FR-SEC-003 | The system MUST run with a read-only root and store, no setuid helpers beyond what NixOS requires, and systemd hardening on Janus services. | P1 |
 | FR-SEC-010 | IPv6 privacy controls (FR-NET-032/033) MUST be enabled by default. | P1 |
 | FR-SEC-011 | Outbound telemetry from any bundled component MUST be disabled. | P1 |
+| FR-SEC-012 | When Spotify Soloist is configured, its API key MUST follow FR-SEC-002: one sops file under `secrets/`, encrypted to that host, plaintext only in `/run/secrets`. The key MUST NOT be inline, MUST NOT be committed in the OS repository, and MUST NOT be shared between operators. The file path is chosen with the option. This credential is not part of the 1.0 secret set. Deferred until after 1.0. | P3 |
 
 ## 14. Non-functional requirements
 
@@ -218,3 +223,17 @@ Key words MUST / SHOULD / MAY follow RFC 2119. Priority: **P1** required for
 | NFR-007 | Supported architectures | `aarch64-linux`, `x86_64-linux`, `armv7l-linux`, and `riscv64-linux` for every Tier 1, Tier 2, and Tier 3 board in *10*. 1.0 includes those boards (D-0046). `x86_64-test` stays a CI image. Tier is a per-board test obligation (*10*), not a property of the architecture, and not a promise that every Tier 1 board meets the NanoPi R4S throughput numbers. |
 | NFR-008 | Power-loss robustness | 100 random power cuts without re-flash |
 | NFR-009 | Subscription refresh failure tolerance | Router remains functional with last good data indefinitely |
+
+## 15. Later services (SVC)
+
+These requirements are after 1.0 (D-0056). 1.0 does not implement them.
+No `janus.*` option exists for them. Building them waits on D-0057 and
+D-0058. The accelerator model in FR-SVC-002 and FR-SVC-003 is an LLM of
+0.5B to 3B parameters. A vision model is out of those two requirements
+(D-0060).
+
+| ID | Requirement | Prio |
+|----|-------------|------|
+| FR-SVC-001 | After 1.0, the router MAY run Spotify Soloist as a Spotify Connect playback device. The account that creates the API key has Premium. The key is FR-SEC-012. Janus MUST NOT redistribute the Soloist binary (D-0058). If the Soloist WebSocket is enabled, it MUST bind to loopback only. Playback audio leaves through FR-HW-009. | P3 |
+| FR-SVC-002 | After 1.0, the router MAY run the NXP Ara240 runtime (AraRT) and an HTTP service that other devices call for an edge LLM of 0.5B to 3B parameters (D-0060). The HTTP face is the vendor Chat Completions service (eIQ AAF Connector) or a later program that speaks that shape. Listeners default to `lan` and `mgmt`. `guest` and `iot` stay off unless the later configuration names them. `wan` fails evaluation. AraRT's own socket stays on the board and MUST NOT be published to the LAN. Vision models are out. The NXP runtime is not redistributed by this repository until D-0058 records a license and the architectures it covers. | P3 |
+| FR-SVC-003 | After 1.0, the router MAY run HailoRT GenAI for a Hailo-10H and an HTTP service that other devices call for an edge LLM of 0.5B to 3B parameters (D-0060). The HTTP face is HailoRT GenAI, compatible with OpenAI and Ollama. Zones match FR-SVC-002. `wan` fails evaluation. The HailoRT library socket stays on the board. Vision models are out. Hailo-8 and Hailo-8L fail this requirement. The Hailo-10H firmware and library are not redistributed until D-0058 records the license. | P3 |

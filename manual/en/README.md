@@ -454,6 +454,10 @@ are [docs/14-cli.md](../../docs/14-cli.md) on the router and
 [docs/16-build-host-cli.md](../../docs/16-build-host-cli.md) on the build
 machine. Hardware and the phased plan are in [docs/](../../docs/README.md).
 
+Spotify playback, a Bluetooth speaker, an NXP Ara240 accelerator, and a
+Hailo-10H accelerator are later work. They are not in this image. The
+plan is [docs/13-roadmap.md](../../docs/13-roadmap.md).
+
 ## Languages
 
 1. English, this file.

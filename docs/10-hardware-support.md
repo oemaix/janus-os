@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-26 |
+| Last updated | 2026-11-03 |
 
 ## 1. Terminology
 
@@ -32,7 +32,7 @@ obligation for that release, not a reason to omit the profile.
 | **ROCK Pi 4C** (`rockpi-4c`) | RK3399 · aarch64 | 1× 1 GbE (RTL8211E). A second port is a USB peripheral. M.2 is NVMe. Wi-Fi 5 onboard. | 1 | Lab unit is v1.2 (D-0016, D-0053). Mainline U-Boot at sector 64; GPT. SPI NOR is tried first and this image does not program it (§3.5). One `eth0`; the profile does not choose a WAN. The onboard radio is a WPA2 access point when `match.onboard` is set (§4.10). ROCK 4C+ is not this profile. |
 | **Raspberry Pi 4 / CM4** (`rpi4`) | BCM2711 · aarch64 | Pi 4: 1× 1 GbE. CM4: that port on the official IO board. USB 3 NICs are peripherals. | 2 | Tier 2 (D-0016). EEPROM firmware, FAT `config.txt`, hybrid MBR so the bootloader finds the GPT boot partition. One `eth0`; the profile does not choose a WAN. The Pi 400 is not a board: it has no Ethernet jack (D-0032). |
 | **Raspberry Pi 3 / 3+** | BCM2837 · aarch64 | 1× 100 MbE (USB 2 shared) | 2 | Low throughput; fine for tunnel-only use behind another router. FAT `config.txt`, hybrid MBR so the boot ROM finds the GPT boot partition. |
-| **Raspberry Pi Zero 2 W** | BCM2710A1 · aarch64 | Wi-Fi 4 + Bluetooth, no Ethernet | 1 | Owner's lab. 512 MiB RAM. Needs a USB Ethernet peripheral for a wired WAN or LAN. FAT `config.txt`, hybrid MBR. The onboard radio is a 2.4 GHz WPA2 access point (§4.7, D-0043). Bluetooth is present and unused. Not a 500-node target. INA219 UPS overlay is part of this board's lab setup (FR-HW-008). |
+| **Raspberry Pi Zero 2 W** | BCM2710A1 · aarch64 | Wi-Fi 4 + Bluetooth, no Ethernet | 1 | Owner's lab. 512 MiB RAM. Needs a USB Ethernet peripheral for a wired WAN or LAN. FAT `config.txt`, hybrid MBR. The onboard radio is a 2.4 GHz WPA2 access point (§4.7, D-0043). Bluetooth is present and unused. Later audio output is *13*. Not a 500-node target. INA219 UPS overlay is part of this board's lab setup (FR-HW-008). |
 | **Libre Computer Le Potato (AML-S905X-CC)** | S905X · aarch64 | 1× 100 MbE | 1 | Owner's lab. Mainline U-Boot FIP at sector 1 (`u-boot.gxl.sd.bin`); DOS table plus a backup GPT (§3.6, D-0055). eMMC or SD. Lab peripherals: Fibocom NL668 as USB Ethernet (§4.2), RTL8188CUS as AP (§4.4), CSR Bluetooth. |
 | **StarFive VisionFive 2** | JH7110 · riscv64 | 2× 1 GbE | 3 | Needs recent kernel. U-Boot 2026.04 runs from QSPI (D-0047). One GPT image for SD, eMMC, and NVMe. Boot order is eMMC, then SD, then NVMe. No binary cache. v1.3B clocks both MACs from the Motorcomm PHY. The kernel keeps that receive clock running so the DMA reset can finish with no link. |
 | **Raspberry Pi 2 (v1.1)** | BCM2836 · armv7l | 1× 100 MbE | 3 | 32-bit; no cache; RPi 2 v1.2 is BCM2837 and uses the `rpi3` profile. |
@@ -153,7 +153,8 @@ The onboard radio is an access point when the configuration sets
 AP6256. The June 2020 schematic names an AP6255. The mainline Wi-Fi
 node is `brcm,bcm4329-fmac` and the Bluetooth node is `brcm,bcm4345c5`.
 `hci_uart` stays blacklisted. `btusb` stays available for a USB dongle.
-Bluetooth on this board stays unused. ROCK 4C+ is another board
+Bluetooth on this board stays unused. Later audio output is *13*.
+ROCK 4C+ is another board
 (`rk3399-rock-4c-plus.dtb`, RK3399-T, RK809,
 `rock-4c-plus-rk3399_defconfig`, AW-CM256SM, SPI not fitted) and is
 not this profile.
@@ -209,7 +210,7 @@ without the kernel property. Grow waits for both links before it exits.
 | `nic` | Additional Ethernet port (USB 3 GbE, USB 2.5 GbE) | kernel drivers (`r8152`, `ax88179`, `aqc111`); udev naming |
 | `wifi` | Access point for a LAN (STA/uplink mode out of scope for 1.0) | `hostapd`, mac80211 drivers; firmware from `linux-firmware` |
 | `wwan` | 4G/5G uplink | `usb_modeswitch`, kernel `cdc_ether`/`cdc_ncm`/`rndis_host`/`qmi_wwan`/`cdc_mbim`; `qmicli` / `mbimcli` for QMI and MBIM (ADR-0015) |
-| `bluetooth` | Present on the allowlist. No routing feature is assigned yet (U5). | BlueZ (optional, off by default) |
+| `bluetooth` | Allowlisted. No routing feature. Later audio output for Spotify Soloist is *13* (FR-HW-009). BlueZ stays off until then. | BlueZ (optional, off by default) |
 | `hmi` | Small LCD/OLED/e-ink status display, optional buttons | `janus-hmi` daemon (framebuffer/SPI drivers), `gpio-keys` |
 | `power` | Battery voltage, current, power (INA219) | in-tree `ti,ina219` hwmon; a generated device-tree overlay on boards that need one |
 
@@ -279,7 +280,7 @@ are not part of the profile. QMI and MBIM are not how this unit attaches.
 | Huawei E3372s (stick) | `12d1:1506` | wwan (ncm) + AT | supported |
 | Quectel EC25 / EM12 (USB) | `2c7c:0125` / `2c7c:0512` | wwan (qmi) + AT | supported |
 | ZTE MF833 | `19d2:1405` | wwan (rndis) | supported |
-| Generic CSR BT 4.0 dongle | `0a12:0001` | bluetooth | supported; confirmed on Le Potato. Purpose undecided (U5). |
+| Generic CSR BT 4.0 dongle | `0a12:0001` | bluetooth | supported; confirmed on Le Potato. Allowlisted only. Audio output is after 1.0 (*13*, FR-HW-009). BlueZ stays off. |
 | Waveshare 1.3" OLED HAT | 40-pin HAT, SH1106, 4-wire SPI | hmi | supported on Raspberry Pi boards (§4.6) |
 | SSD1306 128×64 I²C OLED | — | hmi | supported |
 | Waveshare 2.13" e-Paper HAT | — | hmi | supported |
@@ -461,12 +462,23 @@ NVRAM from Armbian firmware commit `9934dbd5541bb49e2063089437a981f752c87b7f`
 and installs the NVRAM under both names. The NVRAM text is
 `AP6256_NVRAM_V1.1_08252017`. It has no `ccode`. The June 2020
 schematic names an AP6255. That chip asks for `brcmfmac43455-sdio`,
-which this image does not ship. Bluetooth stays unused.
+which this image does not ship. Bluetooth stays unused. Later audio
+output is *13*. `hci_uart` stays blacklisted (D-0053).
 
 The SDIO host is `dw_mmc-rockchip`, which the arm64 defconfig builds
 in. Declaring the access point does not add a kernel patch.
 `brcmfmac` is loaded for that access point and is blacklisted
 otherwise.
+
+### 4.11 Planned later, not in 1.0
+
+These rows are not support. Evaluation does not accept them (D-0056).
+
+| Item | Bus | Status |
+|------|-----|--------|
+| Bluetooth audio output | onboard HCI or CSR `0a12:0001` | After 1.0. Carries Spotify Soloist playback to a paired speaker (UC-23, FR-HW-009). Pairing is HTTP on `lan` and `mgmt` (FR-ACC-007). BlueZ stays off. `compact` drops sound (D-0057). |
+| NXP Ara240 DNPU | PCIe or USB | After 1.0. No USB or PCI ID is recorded. No peripheral class. Other devices call an HTTP service for an LLM of 0.5B to 3B parameters (UC-24, FR-HW-010, FR-SVC-002, D-0060). Vision models are out. `compact` drops compute accelerators (D-0057). |
+| Hailo-10H | PCIe, M.2 | After 1.0. No PCI ID is recorded. No peripheral class. Hailo-8 and Hailo-8L are not this row. Other devices call HailoRT GenAI over HTTP for an LLM of 0.5B to 3B parameters (UC-24, FR-HW-011, FR-SVC-003, D-0060). Vision models are out. `compact` drops compute accelerators (D-0057). |
 
 ## 5. Performance notes (guidance for NFR-004/005)
 

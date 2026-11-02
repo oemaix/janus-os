@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-25 |
+| Last updated | 2026-11-03 |
 
 ## 1. Assets
 
@@ -119,6 +119,10 @@ host only.
 | Maintenance page passphrase | yes | One line in `secrets/web/<host>.yaml`, encrypted to that host (ADR-0023). Not the SSH root password. `passphraseFile` remains for a file created on the board. |
 | SSH host keys | no | Generated on first boot, stored under `/var/lib/janus/etc`. Not the age key. |
 | Age private key | no | One per router, on that router's state partition. The build host does not keep it. Whoever has the SD card can read it and the ciphertext encrypted to that router. Disk encryption is not in scope (see §5). |
+
+A later Spotify Soloist API key is not a row in this table. When that
+service exists it follows the same sops rules (FR-SEC-012). The 1.0 image
+has no such file.
 
 | Style | Where the secret ends up | Use when |
 |-------|--------------------------|----------|

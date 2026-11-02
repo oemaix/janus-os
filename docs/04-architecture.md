@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-22 |
+| Last updated | 2026-11-03 |
 
 ## 1. Architectural drivers
 
@@ -79,6 +79,10 @@
 | Maintenance page | `janus-web` (Janet) behind stunnel | Optional. Pages and routes are *20*. Off unless `janus.access.web.enable` is set. |
 | HMI | `janus-hmi` daemon | Renders the pages in *15* from the framebuffer size; control events map onto the capabilities in *15*. |
 | Power | `janus-power` | INA219 readings in `janus status`. Early cutoff while the cell is discharging (*10* §4.5). |
+
+Spotify Soloist, Bluetooth audio output, and the Ara240 and Hailo-10H
+HTTP services are not rows in this table. They are after 1.0 (*13*,
+D-0056). No module directory exists for them.
 
 ## 4. Data model (canonical)
 

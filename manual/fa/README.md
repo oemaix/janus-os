@@ -444,6 +444,10 @@ accept، دور ریخته می‌شود. `prometheus.zones` این ناحیه�
 [docs/16-build-host-cli.md](../../docs/16-build-host-cli.md) است. سخت‌افزار
 و برنامه مرحله‌ای در [docs/](../../docs/README.md) است.
 
+پخش Spotify، بلندگوی بلوتوث، شتاب‌دهنده NXP Ara240 و شتاب‌دهنده Hailo-10H
+کار بعدی است. در این تصویر نیستند. طرح در
+[docs/13-roadmap.md](../../docs/13-roadmap.md) است.
+
 ## زبان‌ها
 
 1. [انگلیسی](../en/README.md).

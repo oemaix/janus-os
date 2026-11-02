@@ -196,3 +196,11 @@ Read this file before answering a question about using Janus OS.
   is a short-lived `X.Y-<topic>` branch, not a train and not `X.Y-dev`.
 - `docs/13-roadmap.md` says what the repository can already
   do. A placeholder module is not a finished feature.
+  Spotify Soloist, Bluetooth audio output, the NXP Ara240 runtime, and
+  the Hailo-10H runtime are future work in that file (D-0056). They are
+  not `janus.*` options. The planned accelerator model is an LLM of
+  0.5B to 3B parameters. Vision models are not in that plan. The Hailo
+  device is the Hailo-10H, not a Hailo-8 (D-0060).
+  The Soloist API key is not a secret this image has. BlueZ stays off.
+  `compact` still drops sound and compute accelerators. Do not invent
+  a playback option, a pairing route, or an accelerator class.

@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-28 |
+| Last updated | 2026-11-03 |
 
 ## 1. Personas
 
@@ -254,3 +254,41 @@ requirements it drives (see *03 — Requirements*).
   `janus.dns.domestic.resolvers` to an encrypted resolver that answers
   inland names. Rebuild on the build host and deploy.
 * **Drives:** FR-PRX-026, FR-PRX-027, FR-PRX-028, FR-DNS-012
+
+### UC-23 Play Spotify on a Bluetooth speaker
+
+* **Actor:** Mei
+* **Release:** after 1.0 (D-0056)
+* **Precondition:** A Spotify account with Premium, a Soloist API key
+  created for that account, and a Bluetooth speaker. The router declares
+  a `bluetooth` peripheral (onboard radio or the CSR dongle). The image
+  uses `standard` until D-0057 is decided, because `compact` drops sound.
+* **Flow:**
+  1. Mei stores the API key with `janus-build secret set`. The key is one
+     sops file for that router. It is not written into the OS repository
+     and not shared.
+  2. The later image runs Spotify Soloist. The phone selects the router
+     as a Spotify Connect device. Soloist plays on the router. Bluetooth
+     sends that audio to the paired speaker. This is not a routing rule.
+  3. From a browser on `lan` or `mgmt`, Mei pairs or forgets the speaker
+     over HTTP. That page is not the maintenance page. Soloist's own
+     control socket stays on loopback.
+* **Drives:** FR-SVC-001, FR-HW-009, FR-ACC-007, FR-SEC-012
+
+### UC-24 Another device uses an edge LLM
+
+* **Actor:** Jonas
+* **Release:** after 1.0 (D-0056)
+* **Precondition:** An NXP Ara240 is attached over PCIe or USB, or a
+  Hailo-10H is attached over PCIe (M.2). Another device on the LAN needs
+  a local language model of 0.5B to 3B parameters (D-0060). A vision
+  model is not this case. The image uses `standard` until D-0057 is
+  decided, because `compact` drops compute accelerators. No USB or PCI
+  ID is on the allowlist yet.
+* **Flow:** The later image runs AraRT or HailoRT GenAI on the router
+  and an HTTP service in front of it. The other device sends language
+  work to that service. The router still routes. The service is
+  reachable on `lan` and `mgmt`. It is not on `wan`, and `guest` and
+  `iot` are not accepted unless the later configuration names them.
+  The runtime's own local socket is not published to the LAN.
+* **Drives:** FR-HW-010, FR-HW-011, FR-SVC-002, FR-SVC-003, D-0060

@@ -457,6 +457,10 @@ Geo и была ли ошибка этого обновления.
 [docs/16-build-host-cli.md](../../docs/16-build-host-cli.md). Оборудование
 и план по этапам — в [docs/](../../docs/README.md).
 
+Воспроизведение Spotify, колонка Bluetooth, ускоритель NXP Ara240 и
+ускоритель Hailo-10H — более поздняя работа. В этом образе их нет. План —
+[docs/13-roadmap.md](../../docs/13-roadmap.md).
+
 ## Языки
 
 1. [Английский](../en/README.md).
