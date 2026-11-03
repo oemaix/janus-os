@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-24 |
+| Last updated | 2026-11-04 |
 
 This is the contract for the on-router `janus` command. Implementation
 follows this file. The user manual will later show the same commands with
@@ -58,6 +58,12 @@ These do not change configuration or hot overrides.
 | `janus version [--components]` | Image provenance from `/etc/janus/build.json` |
 | `janus reboot` | Reboot |
 | `janus reset --state` | Wipe the state partition and reboot. Requires `--yes`. |
+| `janus bluetooth list` | Paired devices: address, name, paired, connected, trusted, and whether this is the last connected speaker. Exit `2` when Bluetooth playback is not in the image. |
+| `janus bluetooth discover` | Nearby devices for about eight seconds: address and name. This is how an unknown address is learned. |
+| `janus bluetooth pair <address-or-name> [code]` | Pair, trust, and connect one speaker. A name must match exactly one device. No argument is rejected. `code` is 1 to 16 letters or digits when the speaker asks for one. Omit it for Just Works. That device becomes the last connected device. |
+| `janus bluetooth connect <address-or-name>` | Connect one paired speaker and remember it. A name must match exactly one paired device. |
+| `janus bluetooth disconnect <address-or-name>` | Disconnect that device. This boot does not connect that address again. Another address is left alone. The next boot connects the last device again. |
+| `janus bluetooth remove <address-or-name>` | Remove the pairing. If it was the last device, nothing is connected after boot. |
 
 ## 3. Hot overrides
 

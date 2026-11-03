@@ -273,6 +273,7 @@ button:focus, input:focus, select:focus, .tab:focus { outline: 2px solid var(--b
       <button type="button" class="tab on" data-section="status" data-i18n="status">status</button>
       <button type="button" class="tab" data-section="tunnel" data-i18n="tunnel">tunnel</button>
       <button type="button" class="tab" data-section="network" data-i18n="network">network</button>
+      <button type="button" class="tab" data-section="bluetooth" data-i18n="bluetooth" hidden>bluetooth</button>
       <button type="button" class="tab" data-section="overrides" data-i18n="overrides">overrides</button>
       <button type="button" class="tab" data-section="monitoring" data-i18n="monitoring">monitoring</button>
       <button type="button" class="tab" data-section="system" data-i18n="system">system</button>
@@ -297,6 +298,17 @@ button:focus, input:focus, select:focus, .tab:focus { outline: 2px solid var(--b
       <div class="row"><span class="lab ltr">wan</span><input id="wan-name" autocomplete="off" dir="ltr"><span class="seg"><button type="button" id="wan-show" data-i18n="show">show</button><button type="button" id="wan-restart" data-i18n="restart">restart</button></span></div>
       <div class="row" id="lan-row"><span class="lab ltr">lan</span><select id="lan-name" dir="ltr"></select><button type="button" id="lan-leases" data-i18n="leases">leases</button></div>
       <pre class="value text ltr" id="network-out"></pre>
+    </section>
+    <section class="box" id="bluetooth-box" data-panel="bluetooth" hidden>
+      <div class="hd" data-i18n="bluetooth">bluetooth</div>
+      <div class="actions">
+        <button type="button" id="bt-discover" data-i18n="discover">discover</button>
+      </div>
+      <div id="bt-found"></div>
+      <div class="row"><span class="lab" data-i18n="code">code</span><span class="value cluster"><input id="bt-code" autocomplete="off" dir="ltr" maxlength="16"></span></div>
+      <div class="row"><span class="lab" data-i18n="address">address</span><span class="value cluster"><input id="bt-address" autocomplete="off" dir="ltr" placeholder="aa:bb:cc:dd:ee:ff"><button type="button" id="bt-pair" data-i18n="pair">pair</button></span></div>
+      <div id="bt-devices"></div>
+      <pre class="value text ltr" id="bt-out"></pre>
     </section>
     <section class="box" id="overrides-box" data-panel="overrides" hidden>
       <div class="hd" data-i18n="overrides">overrides</div>
@@ -344,12 +356,14 @@ var STR = {
   en: {
     light: "light", dark: "dark", host: "host", fingerprint: "fingerprint", passphrase: "passphrase",
     enter: "enter", rejected: "rejected", closed: "closed", status: "status", tunnel: "tunnel",
-    network: "network", overrides: "overrides", monitoring: "monitoring", system: "system",
+    network: "network", bluetooth: "bluetooth", overrides: "overrides", monitoring: "monitoring", system: "system",
     refresh: "refresh", geo: "geo", subscription: "subscription", group: "group", node: "node",
     select: "select", test: "test", show: "show", restart: "restart", leases: "leases", lease: "lease",
     set: "set", unset: "unset", scope: "scope", iface: "iface", traffic: "traffic", daily: "daily",
     monthly: "monthly", top: "top", stats: "stats", check: "check", flush: "flush", name: "name",
-    query: "query", audit: "audit", reboot: "reboot", "reboot-hint": "type reboot", ok: "ok",
+    query: "query", audit: "audit",     pair: "pair", connect: "connect", disconnect: "disconnect",
+    remove: "remove", discover: "discover", address: "address", code: "code", paired: "paired", connected: "connected",
+    trusted: "trusted", last: "last", reboot: "reboot", "reboot-hint": "type reboot", ok: "ok",
     alarm: "alarm", up: "up", down: "down", running: "running", failed: "failed", image: "image",
     override: "override", engine: "engine", drift: "drift", state: "state", power: "power",
     active: "active", inactive: "inactive", yes: "yes", no: "no", selector: "selector",
@@ -360,12 +374,14 @@ var STR = {
   ru: {
     light: "светлая", dark: "тёмная", host: "хост", fingerprint: "отпечаток", passphrase: "пароль",
     enter: "войти", rejected: "отказано", closed: "закрыто", status: "состояние", tunnel: "туннель",
-    network: "сеть", overrides: "переопределения", monitoring: "мониторинг", system: "система",
+    network: "сеть", bluetooth: "bluetooth", overrides: "переопределения", monitoring: "мониторинг", system: "система",
     refresh: "обновить", geo: "гео", subscription: "подписка", group: "группа", node: "узел",
     select: "выбрать", test: "тест", show: "показать", restart: "перезапустить", leases: "аренды",
     lease: "аренда", set: "задать", unset: "снять", scope: "охват", iface: "интерфейс",
     traffic: "трафик", daily: "сутки", monthly: "месяц", top: "топ", stats: "статистика",
     check: "проверить", flush: "сбросить", name: "имя", query: "запрос", audit: "аудит",
+    pair: "связать", connect: "подключить", disconnect: "отключить", remove: "удалить",
+    discover: "найти", address: "адрес", code: "код", paired: "связан", connected: "подключён", trusted: "доверенный", last: "последний",
     reboot: "перезагрузка", "reboot-hint": "введите reboot", ok: "ок", alarm: "сбой", up: "вкл",
     down: "выкл", running: "идёт", failed: "ошибка", image: "образ", override: "замена",
     engine: "движок", drift: "расхождение", state: "раздел", power: "питание",
@@ -377,12 +393,14 @@ var STR = {
   fa: {
     light: "روشن", dark: "تیره", host: "میزبان", fingerprint: "اثرانگشت", passphrase: "گذرواژه",
     enter: "ورود", rejected: "رد شد", closed: "بسته", status: "وضعیت", tunnel: "تونل",
-    network: "شبکه", overrides: "بازنویسی", monitoring: "پایش", system: "سیستم",
+    network: "شبکه", bluetooth: "بلوتوث", overrides: "بازنویسی", monitoring: "پایش", system: "سیستم",
     refresh: "تازه‌سازی", geo: "ژئو", subscription: "اشتراک", group: "گروه", node: "گره",
     select: "انتخاب", test: "آزمون", show: "نمایش", restart: "شروع دوباره", leases: "اجاره‌ها",
     lease: "اجاره", set: "ثبت", unset: "برداشتن", scope: "دامنه", iface: "رابط",
     traffic: "ترافیک", daily: "روزانه", monthly: "ماهانه", top: "برترین", stats: "آمار",
     check: "بررسی", flush: "تخلیه", name: "نام", query: "پرس‌وجو", audit: "بازبینی",
+    pair: "جفت‌سازی", connect: "اتصال", disconnect: "قطع", remove: "حذف",
+    discover: "کشف", address: "نشانی", code: "رمز", paired: "جفت", connected: "متصل", trusted: "مورد اعتماد", last: "آخرین",
     reboot: "راه‌اندازی دوباره", "reboot-hint": "کلمه reboot را بنویسید", ok: "سالم", alarm: "هشدار",
     up: "وصل", down: "قطع", running: "در حال اجرا", failed: "ناموفق", image: "تصویر",
     override: "بازنویسی", engine: "موتور", drift: "ناسازگاری", state: "بخش", power: "توان",
@@ -394,12 +412,14 @@ var STR = {
   zh: {
     light: "浅色", dark: "深色", host: "主机", fingerprint: "指纹", passphrase: "口令",
     enter: "进入", rejected: "拒绝", closed: "锁定", status: "状态", tunnel: "隧道",
-    network: "网络", overrides: "覆盖", monitoring: "监测", system: "系统",
+    network: "网络", bluetooth: "蓝牙", overrides: "覆盖", monitoring: "监测", system: "系统",
     refresh: "刷新", geo: "地理", subscription: "订阅", group: "分组", node: "节点",
     select: "选择", test: "测试", show: "显示", restart: "重启", leases: "租约",
     lease: "租约", set: "设置", unset: "取消", scope: "范围", iface: "接口",
     traffic: "流量", daily: "每日", monthly: "每月", top: "排行", stats: "统计",
     check: "检查", flush: "清空", name: "名称", query: "查询", audit: "审计",
+    pair: "配对", connect: "连接", disconnect: "断开", remove: "移除",
+    discover: "发现", address: "地址", code: "配对码", paired: "已配对", connected: "已连接", trusted: "已信任", last: "上次",
     reboot: "重新启动", "reboot-hint": "输入 reboot", ok: "正常", alarm: "告警",
     up: "在线", down: "离线", running: "进行中", failed: "失败", image: "镜像",
     override: "已覆盖", engine: "引擎", drift: "偏离", state: "分区", power: "电源",
@@ -820,6 +840,7 @@ function showSection(name) {
   if (name === "system") {
     api("GET", "/api/version").then(function (res) { fillOut("version-out", res); });
   }
+  if (name === "bluetooth") loadBluetooth(false);
 }
 
 function loadGroups(keepOut) {
@@ -974,6 +995,119 @@ function renderOverrideRows(data) {
   });
 }
 
+function macOk(value) {
+  return /^[0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5}$/.test(value || "");
+}
+
+function btWord(key, on) {
+  if (!on) return null;
+  var el = document.createElement("span");
+  el.className = "text";
+  el.setAttribute("data-state", key);
+  el.textContent = t(key);
+  return el;
+}
+
+function pairBody(address) {
+  var body = {address: address};
+  var code = document.getElementById("bt-code").value || "";
+  if (code) body.code = code;
+  return body;
+}
+
+function renderFound(data) {
+  var el = document.getElementById("bt-found");
+  el.textContent = "";
+  var devices = data && data.devices;
+  if (!devices || !devices.length) return;
+  devices.forEach(function (device) {
+    if (!device || !macOk(device.address)) return;
+    var row = document.createElement("div");
+    row.className = "row";
+    var label = document.createElement("span");
+    label.className = "lab ltr";
+    label.textContent = device.name || device.address;
+    var value = document.createElement("span");
+    value.className = "value text ltr";
+    value.textContent = device.address;
+    var actions = document.createElement("span");
+    actions.className = "seg";
+    if (!device.paired) {
+      var button = document.createElement("button");
+      button.type = "button";
+      button.setAttribute("data-i18n", "pair");
+      button.textContent = t("pair");
+      button.addEventListener("click", function () {
+        running(button, function () {
+          return api("POST", "/api/bluetooth/pair", pairBody(device.address), true);
+        }).then(function (res) {
+          setOut("bt-out", res);
+          if (res.status === 200) loadBluetooth(true);
+        });
+      });
+      actions.appendChild(button);
+    }
+    row.appendChild(label);
+    row.appendChild(value);
+    row.appendChild(actions);
+    el.appendChild(row);
+  });
+}
+
+function renderBluetooth(data) {
+  var el = document.getElementById("bt-devices");
+  el.textContent = "";
+  var devices = data && data.devices;
+  if (!devices || !devices.length) return;
+  devices.forEach(function (device) {
+    var row = document.createElement("div");
+    row.className = "row";
+    var label = document.createElement("span");
+    label.className = "lab ltr";
+    label.textContent = device.name || device.address || "";
+    var value = document.createElement("span");
+    value.className = "value text ltr";
+    [btWord("paired", device.paired), btWord("connected", device.connected), btWord("trusted", device.trusted), btWord("last", device.last)].forEach(function (part) {
+      if (!part) return;
+      if (value.childNodes.length) value.appendChild(document.createTextNode(" "));
+      value.appendChild(part);
+    });
+    if (!value.childNodes.length) value.textContent = device.address || "";
+    var actions = document.createElement("span");
+    actions.className = "seg";
+    ["connect", "disconnect", "remove"].forEach(function (action) {
+      var button = document.createElement("button");
+      button.type = "button";
+      button.setAttribute("data-i18n", action);
+      button.textContent = t(action);
+      button.addEventListener("click", function () {
+        running(button, function () {
+          return api("POST", "/api/bluetooth/" + action, {address: device.address}, true);
+        }).then(function (res) {
+          setOut("bt-out", res);
+          if (res.status === 200) loadBluetooth(true);
+        });
+      });
+      actions.appendChild(button);
+    });
+    row.appendChild(label);
+    row.appendChild(value);
+    row.appendChild(actions);
+    el.appendChild(row);
+  });
+}
+
+function loadBluetooth(keepOut) {
+  return api("GET", "/api/bluetooth").then(function (res) {
+    if (res.status === 200) {
+      renderBluetooth(res.data);
+      if (!keepOut) document.getElementById("bt-out").textContent = "";
+    } else if (!keepOut) {
+      setOut("bt-out", res);
+    }
+  });
+}
+
 function applyMeta(meta) {
   META.proxy = meta.proxy;
   META.subscriptions = meta.subscriptions || [];
@@ -981,10 +1115,12 @@ function applyMeta(meta) {
   META.wifi = meta.wifi || [];
   META.monitoringScope = meta.monitoringScope || "counters";
   META.audit = meta.audit;
+  META.bluetooth = meta.bluetooth;
   var subs = META.subscriptions;
   var lans = META.lans.map(function (lan) { return lan.name; });
   var wifi = META.wifi;
   document.querySelector('[data-section="tunnel"]').hidden = !META.proxy;
+  document.querySelector('[data-section="bluetooth"]').hidden = !META.bluetooth;
   document.querySelector('[data-section="overrides"]').hidden = !META.proxy && subs.length === 0 && lans.length === 0 && wifi.length === 0;
   document.getElementById("audit-row").hidden = !META.audit;
   document.getElementById("traffic-top").hidden = META.monitoringScope !== "per-host";
@@ -1073,6 +1209,31 @@ function boot() {
     running(this, function () {
       return api("POST", "/api/wan/restart", {name: document.getElementById("wan-name").value}, true);
     }).then(function (res) { setOut("network-out", res); });
+  });
+  document.getElementById("bt-discover").addEventListener("click", function () {
+    running(this, function () {
+      return api("POST", "/api/bluetooth/discover", {}, true);
+    }).then(function (res) {
+      if (res.status === 200) {
+        renderFound(res.data);
+        document.getElementById("bt-out").textContent = "";
+      } else {
+        setOut("bt-out", res);
+      }
+    });
+  });
+  document.getElementById("bt-pair").addEventListener("click", function () {
+    var address = document.getElementById("bt-address").value;
+    if (!macOk(address)) return;
+    running(this, function () {
+      return api("POST", "/api/bluetooth/pair", pairBody(address), true);
+    }).then(function (res) {
+      setOut("bt-out", res);
+      if (res.status === 200) {
+        document.getElementById("bt-address").value = "";
+        loadBluetooth(true);
+      }
+    });
   });
   document.getElementById("lan-leases").addEventListener("click", function () {
     var name = document.getElementById("lan-name").value;

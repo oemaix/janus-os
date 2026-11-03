@@ -4494,6 +4494,7 @@ in {
       } = no
       test ${lib.escapeShellArg os.config.systemd.services.soloist.environment.SOLOIST_NAME} = "Living Room"
       test ${lib.escapeShellArg os.config.systemd.services.soloist.environment.SOLOIST_DEVICE} = alsa_output.platform-analog
+      test ${lib.escapeShellArg os.config.systemd.services.soloist.environment.PIPEWIRE_RUNTIME_DIR} = /run
       grep -F -- '-d "$SOLOIST_DEVICE"' ${start}
       test ${toString os.config.janus.firewall.services.soloist.port} = 5353
       test ${os.config.janus.firewall.services.soloist.protocol} = udp
@@ -4551,16 +4552,266 @@ in {
       janus.hardware.peripherals.speaker.class = "bluetooth";
     }
   ];
-  eval-soloist-bluetooth = fail "eval-soloist-bluetooth" [
+  eval-soloist-bluetooth = let
+    os = mk [
+      base
+      {
+        janus.soloist.enable = true;
+        janus.soloist.apiKeySecret = "soloist-router";
+        janus.soloist.sopsFile = ./fixtures/sops-placeholder;
+        janus.soloist.playback.output = "bluetooth";
+        janus.hardware.peripherals.speaker = {
+          class = "bluetooth";
+          match.usbVendorProduct = "0a12:0001";
+        };
+      }
+    ];
+    roles = os.config.services.pipewire.wireplumber.extraConfig."10-janus-bluez"."monitor.bluez.properties"."bluez5.roles";
+  in
+    pkgs.runCommand "eval-soloist-bluetooth" {} ''
+      set -eu
+      test ${
+        if os.config.hardware.bluetooth.enable
+        then "yes"
+        else "no"
+      } = yes
+      test ${
+        if os.config.hardware.bluetooth.settings.General ? Enable
+        then "yes"
+        else "no"
+      } = no
+      test ${lib.escapeShellArg (lib.concatStringsSep " " roles)} = a2dp_source
+      test ${lib.escapeShellArg os.config.services.pipewire.wireplumber.extraConfig."10-janus-bluez"."monitor.bluez.properties"."bluez5.hfphsp-backend"} = none
+      test ${
+        if os.config.systemd.services ? janus-bluetooth-reconnect
+        then "yes"
+        else "no"
+      } = yes
+      test ${
+        if os.config.environment.etc ? "janus/bin/janus-bluetooth"
+        then "yes"
+        else "no"
+      } = yes
+      test -x ${lib.escapeShellArg os.config.environment.etc."janus/bin/janus-bluetooth".source}
+      grep -q janus-bt-agent ${lib.escapeShellArg os.config.environment.etc."janus/bin/janus-bluetooth".source}
+      test ${
+        if os.config.systemd.services.soloist.environment ? SOLOIST_DEVICE
+        then "yes"
+        else "no"
+      } = no
+      test ${lib.escapeShellArg os.config.systemd.services.soloist.environment.PIPEWIRE_RUNTIME_DIR} = /run
+      test ${lib.escapeShellArg os.config.systemd.services.janus-bluetooth-reconnect.environment.PIPEWIRE_RUNTIME_DIR} = /run
+      echo ok > "$out"
+    '';
+  eval-soloist-bluetooth-compact = let
+    os = mk [
+      base
+      {
+        janus.system.kernelProfile = "compact";
+        janus.soloist.enable = true;
+        janus.soloist.apiKeySecret = "soloist-router";
+        janus.soloist.sopsFile = ./fixtures/sops-placeholder;
+        janus.soloist.playback.output = "bluetooth";
+        janus.hardware.peripherals.speaker = {
+          class = "bluetooth";
+          match.usbVendorProduct = "0a12:0001";
+        };
+      }
+    ];
+  in
+    pkgs.runCommand "eval-soloist-bluetooth-compact" {} ''
+      set -eu
+      test ${
+        if os.config.hardware.bluetooth.enable
+        then "yes"
+        else "no"
+      } = yes
+      test ${os.config.janus.system.kernelProfile} = compact
+      echo ok > "$out"
+    '';
+  eval-soloist-bluetooth-matched = let
+    os = mk [
+      {
+        janus.hardware.board = "rockpi-4c";
+        janus.access.ssh.authorizedKeys = [key];
+        janus.system.kernelProfile = "matched";
+        janus.soloist.enable = true;
+        janus.soloist.apiKeySecret = "soloist-router";
+        janus.soloist.sopsFile = ./fixtures/sops-placeholder;
+        janus.soloist.playback.output = "bluetooth";
+      }
+    ];
+    patch = lib.findFirst (p: p.name == "janus-kernel-matched") (throw "missing matched kernel patch") os.config.boot.kernelPatches;
+    tri = v:
+      if v ? content
+      then v.content.tristate or ""
+      else v.tristate or "";
+    sym = name: tri patch.structuredExtraConfig.${name};
+    mods = lib.concatStringsSep " " os.config.boot.blacklistedKernelModules;
+  in
+    pkgs.runCommand "eval-soloist-bluetooth-matched" {} ''
+      set -eu
+      test ${lib.escapeShellArg (sym "BT")} = y
+      test ${lib.escapeShellArg (sym "BT_HCIUART")} = m
+      test ${lib.escapeShellArg (sym "BT_HCIUART_BCM")} = y
+      test ${lib.escapeShellArg (sym "BT_HCIUART_SERDEV")} = y
+      test ${lib.escapeShellArg (sym "BT_HCIBTUSB")} = n
+      test ${lib.escapeShellArg (sym "SOUND")} = n
+      test ${
+        if os.config.hardware.bluetooth.enable
+        then "yes"
+        else "no"
+      } = yes
+      if printf '%s\n' ${lib.escapeShellArg mods} | grep -qw hci_uart; then
+        echo "ROCK Pi 4C still blacklists hci_uart while Bluetooth playback is on" >&2
+        exit 1
+      fi
+      echo ok > "$out"
+    '';
+  eval-soloist-bluetooth-none = fail "eval-soloist-bluetooth-none" [
     base
     {
       janus.soloist.enable = true;
       janus.soloist.apiKeySecret = "soloist-router";
       janus.soloist.sopsFile = ./fixtures/sops-placeholder;
       janus.soloist.playback.output = "bluetooth";
-      janus.hardware.peripherals.speaker.class = "bluetooth";
     }
   ];
+  cli-bluetooth =
+    pkgs.runCommand "cli-bluetooth" {
+      nativeBuildInputs = [pkgs.jq pkgs.bash pkgs.coreutils pkgs.gnugrep pkgs.gnused];
+    } ''
+      set -eu
+      dir=$TMPDIR/bt
+      mkdir -p "$dir/bin" "$dir/state" "$dir/run"
+      cat > "$dir/bin/bluetoothctl" << 'EOF'
+      #!/bin/sh
+      printf '%s\n' "$*" >> "$JANUS_BT_LOG"
+      case "$*" in
+        *'scan on'*)
+          if [ -n "''${JANUS_BT_SCAN:-}" ]; then
+            printf '%s\n' "''${JANUS_BT_SCAN}"
+          else
+            printf '%s\n' '[NEW] Device AA:BB:CC:DD:EE:FF Desk Speaker'
+          fi
+          exit 0
+          ;;
+      esac
+      if [ "$1" = devices ]; then
+        if [ -n "''${JANUS_BT_DEVICES:-}" ]; then
+          printf '%s\n' "''${JANUS_BT_DEVICES}"
+        else
+          printf '%s\n' 'Device AA:BB:CC:DD:EE:FF Desk Speaker'
+        fi
+        exit 0
+      fi
+      if [ "$1" = info ]; then
+        if [ -n "''${JANUS_BT_NONAME:-}" ]; then
+          printf '%s\n' '	Paired: no'
+          exit 0
+        fi
+        printf '%s\n' '	Name: Desk Speaker'
+        printf '%s\n' '	Paired: yes'
+        printf '%s\n' '	Trusted: yes'
+        printf '%s\n' '	Connected: yes'
+        exit 0
+      fi
+      exit 0
+      EOF
+      chmod +x "$dir/bin/bluetoothctl"
+      cat > "$dir/bin/janus-bt-agent" << 'EOF'
+      #!/bin/sh
+      printf 'agent %s\n' "$*" >> "$JANUS_BT_LOG"
+      pin=$(cat)
+      printf 'pin=%s\n' "$pin" >> "$JANUS_BT_LOG"
+      exec sleep 30
+      EOF
+      chmod +x "$dir/bin/janus-bt-agent"
+      cat > "$dir/bin/wpctl" << 'EOF'
+      #!/bin/sh
+      printf 'runtime=%s\n' "''${PIPEWIRE_RUNTIME_DIR:-}" >> "$JANUS_BT_LOG"
+      if [ "$1" = status ]; then
+        printf '%s\n' ' *   45. bluez_output.AA_BB.1'
+      fi
+      exit 0
+      EOF
+      chmod +x "$dir/bin/wpctl"
+      export PATH="$dir/bin:$PATH"
+      export JANUS_BT_STATE="$dir/state"
+      export JANUS_BT_RUN="$dir/run"
+      export JANUS_BT_LOG="$dir/log"
+      : > "$dir/log"
+      script=${../pkgs/janus-bluetooth.sh}
+      bash "$script" --json list | jq -e '.devices[0].address == "AA:BB:CC:DD:EE:FF" and .devices[0].name == "Desk Speaker" and .devices[0].paired and .devices[0].connected and .devices[0].trusted' >/dev/null
+      bash "$script" --json discover | jq -e '.devices[0].address == "AA:BB:CC:DD:EE:FF" and .devices[0].name == "Desk Speaker"' >/dev/null
+      bash "$script" pair AA:BB:CC:DD:EE:FF >/dev/null
+      grep -F -- '--agent NoInputNoOutput' "$dir/log" | grep -F 'pair AA:BB:CC:DD:EE:FF' >/dev/null
+      grep -F 'scan on' "$dir/log" >/dev/null
+      grep -F 'runtime=/run' "$dir/log" >/dev/null
+      test "$(tr -d '[:space:]' < "$dir/state/last")" = AA:BB:CC:DD:EE:FF
+      bash "$script" disconnect AA:BB:CC:DD:EE:FF >/dev/null
+      test "$(tr -d '[:space:]' < "$dir/run/hold")" = AA:BB:CC:DD:EE:FF
+      bash "$script" disconnect BB:BB:BB:BB:BB:BB >/dev/null
+      test "$(tr -d '[:space:]' < "$dir/run/hold")" = BB:BB:BB:BB:BB:BB
+      test "$(tr -d '[:space:]' < "$dir/state/last")" = AA:BB:CC:DD:EE:FF
+      bash "$script" connect AA:BB:CC:DD:EE:FF >/dev/null
+      test ! -f "$dir/run/hold"
+      bash "$script" remove AA:BB:CC:DD:EE:FF >/dev/null
+      test ! -f "$dir/state/last"
+      bash "$script" connect "Desk Speaker" >/dev/null
+      test "$(tr -d '[:space:]' < "$dir/state/last")" = AA:BB:CC:DD:EE:FF
+      bash "$script" pair "Desk Speaker" >/dev/null
+      if grep -F 'pair Desk Speaker' "$dir/log" >/dev/null; then
+        echo "name was passed to bluetoothctl" >&2
+        exit 1
+      fi
+      JANUS_BT_NONAME=1
+      JANUS_BT_DEVICES='Device CC:CC:CC:CC:CC:CC Desk Speaker'
+      JANUS_BT_SCAN=$(printf '%s\n' '[CHG] Device BB:BB:BB:BB:BB:BB RSSI: -70' '[CHG] Device BB:BB:BB:BB:BB:BB Name: Hall Speaker')
+      export JANUS_BT_NONAME JANUS_BT_DEVICES JANUS_BT_SCAN
+      bash "$script" --json discover | jq -e '.devices[0].address == "BB:BB:BB:BB:BB:BB" and .devices[0].name == "Hall Speaker"' >/dev/null
+      if bash "$script" pair "Desk Speaker" >/dev/null 2>"$dir/err"; then
+        echo "cached name was paired" >&2
+        exit 1
+      fi
+      grep -F 'no device named' "$dir/err" >/dev/null
+      test "$(tr -d '[:space:]' < "$dir/state/last")" = AA:BB:CC:DD:EE:FF
+      unset JANUS_BT_NONAME JANUS_BT_DEVICES JANUS_BT_SCAN
+      JANUS_BT_DEVICES='Device AA:BB:CC:DD:EE:FF Desk Speaker
+      Device BB:BB:BB:BB:BB:BB Desk Speaker'
+      export JANUS_BT_DEVICES
+      if bash "$script" disconnect "Desk Speaker" >/dev/null 2>"$dir/err"; then
+        echo "ambiguous name was accepted" >&2
+        exit 1
+      fi
+      grep -F 'more than one' "$dir/err" >/dev/null
+      test "$(tr -d '[:space:]' < "$dir/state/last")" = AA:BB:CC:DD:EE:FF
+      unset JANUS_BT_DEVICES
+      bash "$script" pair AA:BB:CC:DD:EE:FF 0000 >/dev/null
+      last_pair=$(grep -F 'pair AA:BB:CC:DD:EE:FF' "$dir/log" | tail -n 1)
+      case "$last_pair" in
+        *--agent*)
+          echo "code pair registered a bluetoothctl agent" >&2
+          exit 1
+          ;;
+      esac
+      grep -F 'agent AA:BB:CC:DD:EE:FF' "$dir/log" >/dev/null
+      grep -F 'pin=0000' "$dir/log" >/dev/null
+      if grep -F 'agent AA:BB:CC:DD:EE:FF 0000' "$dir/log" >/dev/null; then
+        echo "code was a process argument" >&2
+        exit 1
+      fi
+      if bash "$script" pair nope >/dev/null 2>"$dir/err"; then
+        echo "bad address was accepted" >&2
+        exit 1
+      fi
+      grep -F 'no device named' "$dir/err" >/dev/null
+      if bash "$script" pair AA:BB:CC:DD:EE:FF '12 34' >/dev/null 2>"$dir/err"; then
+        echo "bad code was accepted" >&2
+        exit 1
+      fi
+      echo ok > "$out"
+    '';
   eval-soloist-usb = fail "eval-soloist-usb" [
     base
     {

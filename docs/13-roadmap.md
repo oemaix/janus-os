@@ -77,8 +77,8 @@ power-cut. Tier 3 ships the profile. The Future list stays after 1.0.
 * A check that a destination refuses the exit because the address is in Iran, China, or Russia, for example Gemini. A country guessed from the node name, and a connect check (ping, TCP, or a handshake), do not show that refusal.
 * One GPIO LED with the `heartbeat` trigger on `rpi2`, `rpi3`, `rpi4`, `rpi-zero-2w`, `rockpi-4c`, and `le-potato`. A dark LED then means the kernel timer has stopped. The GPIO is not chosen. The ROCK Pi 4C blue status LED already uses that trigger in the device tree (*10* §3.5). The Le Potato blue LED does the same in the mainline tree and is not yet recorded in *10*. The Raspberry Pi profiles do not set one.
 * The maintenance page (*20*) is in the image. The retro console in *20* §7 is the design: no radius, no shadow, no gradient. Some functions and elements are still unusable or only partly worked out. Later work keeps that simple console and works out every function and every element so each behaves clearly and fluidly. The shape is in Notes.
-* Spotify Soloist as a playback device (*02* UC-23, FR-SVC-001). `janus.soloist.enable` defaults to false. False adds no unit, secret, or package, and the checks are not evaluated. True needs `kernelProfile = "standard"` (D-0057), the API key as a sops secret for that router (FR-SEC-012), and a board architecture of `x86_64`, `aarch64`, or `armv7l`. The image then installs the locked official build and starts Soloist with system-wide PipeWire. `playback.output` defaults to `embedded`. `embedded` and `usb` need a non-blank `playback.node`. `bluetooth` fails evaluation and does not start BlueZ (D-0061). UDP 5353 is accepted on `janus.soloist.zones` (default `lan`) and dropped elsewhere. The WebSocket stays off. Pairing over HTTP is still open (D-0059). The archives are flake inputs (D-0058, T-0010). A 1.0 image leaves the switch false.
-* Bluetooth audio output of that playback (*02* UC-23, FR-HW-009). The router is the Spotify Connect device. `janus.soloist.playback.output = bluetooth` fails evaluation and this tree does not start BlueZ (D-0061). A2DP is `hw/bluetooth-pairing`. Pairing and forgetting the speaker are still an HTTP interface on `lan` and `mgmt`, not on `wan`, and not a control on the maintenance page (FR-ACC-007, D-0059). That HTTP interface is not built. The CSR dongle `0a12:0001` stays allowlisted. Onboard Bluetooth on the Zero 2 W and the ROCK Pi 4C stays unused, and `hci_uart` stays blacklisted.
+* Spotify Soloist as a playback device (*02* UC-23, FR-SVC-001). `janus.soloist.enable` defaults to false. False adds no unit, secret, or package, and the checks are not evaluated. True needs the API key as a sops secret for that router (FR-SEC-012), and a board architecture of `x86_64`, `aarch64`, or `armv7l`. `embedded` and `usb` need `kernelProfile = "standard"` (D-0057) and a non-blank `playback.node`. `bluetooth` may use `compact` or `matched` and starts BlueZ (D-0061). The image installs the locked official build and starts Soloist with system-wide PipeWire. UDP 5353 is accepted on `janus.soloist.zones` (default `lan`) and dropped elsewhere. The WebSocket stays off. Pairing is `janus bluetooth` and the maintenance page (D-0059). The archives are flake inputs (D-0058, T-0010). A 1.0 image leaves the switch false.
+* Bluetooth audio output of that playback (*02* UC-23, FR-HW-009). The router is the Spotify Connect device. `janus.soloist.playback.output = bluetooth` starts BlueZ as an A2DP source with AVRCP (D-0061). HFP and HSP stay off. The last connected speaker connects again after boot, and again when it returns, unless it was disconnected during this boot. `janus bluetooth` discovers nearby devices, then lists, pairs, connects, disconnects, and removes them by address or by a unique name. A pairing code is optional. The maintenance page discovers, then pairs, and has the same later actions when that page is in the image (FR-ACC-007, D-0059). The CSR dongle `0a12:0001` stays allowlisted. Onboard Bluetooth on the Zero 2 W, the Pi 3, the Pi 4, and the ROCK Pi 4C is included for `compact` and `matched` when this output is set. `hci_uart` on the ROCK Pi 4C stays blacklisted until then.
 * NXP Ara240 runtime (*02* UC-24, FR-HW-010, FR-SVC-002). Another device calls an HTTP service on the router when it needs an edge LLM of 0.5B to 3B parameters (D-0060). The HTTP face is the vendor Chat Completions service (eIQ AAF Connector) in front of AraRT. Listeners default to `lan` and `mgmt`. `wan` is refused. AraRT's own socket stays on the board. No board and no USB or PCI ID is accepted yet. The published client library name is `libaraclient_aarch64.so`. Other architectures are not assumed (D-0058). Vision models are out.
 * Hailo-10H runtime (*02* UC-24, FR-HW-011, FR-SVC-003, D-0060). Same role and the same model size as the Ara240 row. The module is PCIe, M.2, with its own DRAM. HailoRT is the `master` branch. The HTTP face is HailoRT GenAI, compatible with OpenAI and Ollama. Hailo-8 and Hailo-8L are not this row. No PCI ID is accepted yet. Vision models are out. Hailo's published example is about 2B parameters. 3B is the top of this plan and is not that example.
 
@@ -232,9 +232,8 @@ tree does not mean that behavior exists. Stubs are not finished features.
   D-0045 asks whether the board-local secret path goes away.
   D-0048 asks whether an existing PPPoE username and password join the
   hot-override allowlist.
-  D-0057 asks whether Soloist audio, Ara240, and Hailo-10H require `standard`.
+  D-0057 asks whether embedded and USB Soloist audio, Ara240, and Hailo-10H require `standard`. Bluetooth A2DP is D-0061.
   D-0058 records the Soloist download and still asks how Ara240 and Hailo-10H reach an operator image.
-  D-0059 asks which process serves Bluetooth pairing over HTTP.
 * sing-box renders D-0037 through D-0042: fake-IP for names that LAN
   will proxy, `strip-for-proxied` per name, one policy per LAN, region
   bootstrap addresses, and `janus dns check` once per LAN. xray 26 routes
@@ -260,9 +259,9 @@ tree does not mean that behavior exists. Stubs are not finished features.
 * Battery shutdown arms on the mcuzone `0x40` profile, where a
   negative current means discharge. The Waveshare `0x43` profile stays
   unarmed.
-* The CSR Bluetooth dongle `0a12:0001` stays on the allowlist. BlueZ stays
-  off. Soloist playback is the board audio or a USB interface.
-  `playback.output = bluetooth` fails evaluation (D-0061, FR-HW-009).
+* The CSR Bluetooth dongle `0a12:0001` stays on the allowlist. BlueZ starts
+  when Soloist playback is `bluetooth` (D-0061, FR-HW-009). Board audio and
+  a USB interface stay the other two outputs.
 * `janus.system.kernelProfile` is `standard`, `compact`, or `matched`
   (D-0051, D-0052). `standard` and `compact` are one kernel for every
   board. `standard` is the default and is the NixOS kernel, so aarch64

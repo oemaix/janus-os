@@ -180,7 +180,8 @@ Read this file before answering a question about using Janus OS.
   `janus.network.wifiCountry` defaults from `janus.system.region`
   (`cn` is `CN`, `ru` is `RU`, `ir` is `IR`, D-0054).
   `brcmfmac` stays blacklisted until then. `hci_uart` stays
-  blacklisted. ROCK 4C+ is not this profile.
+  blacklisted until `janus.soloist.playback.output` is `bluetooth`
+  (D-0061, T-0012). ROCK 4C+ is not this profile.
 - A mcuzone UPS at I²C `0x40` shows the cell in `janus status` and powers
   the router off while that cell is discharging, at the thresholds in
   docs/10 §4.5. Address `0x43` stays unarmed.
@@ -201,25 +202,34 @@ Read this file before answering a question about using Janus OS.
   is a short-lived `X.Y-<topic>` branch, not a train and not `X.Y-dev`.
 - `docs/13-roadmap.md` says what the repository can already
   do. A placeholder module is not a finished feature.
-  Spotify Soloist, Bluetooth audio output, the NXP Ara240 runtime, and
-  the Hailo-10H runtime are future work in that file (D-0056).
+  The NXP Ara240 runtime and the Hailo-10H runtime are future work in
+  that file (D-0056). Spotify Soloist and its Bluetooth output are
+  implemented as below.
   `janus.soloist.enable` exists and defaults to false. False adds no unit,
   secret, or package, and its assertions are not evaluated. True needs
-  `kernelProfile = "standard"`, `apiKeySecret`, and `sopsFile`, and a board
-  architecture of `x86_64`, `aarch64`, or `armv7l`. True installs the locked
-  build and starts Soloist and system-wide PipeWire. It does not start BlueZ.
+  `apiKeySecret`, `sopsFile`, and a board architecture of `x86_64`,
+  `aarch64`, or `armv7l`. `embedded` and `usb` also need
+  `kernelProfile = "standard"` and a non-blank `playback.node`. A blank
+  node fails evaluation. True installs the locked build and starts Soloist
+  and system-wide PipeWire. BlueZ starts only when `playback.output` is
+  `bluetooth`.
   `name` is the Connect name and defaults to the host name. `playback.output`
-  is `embedded` (default), `usb`, or `bluetooth`. `embedded` and `usb` need
-  a non-blank `playback.node`. A blank node fails evaluation.
-  `bluetooth` fails evaluation (D-0061). UDP 5353 is opened on `zones`
+  is `embedded` (default), `usb`, or `bluetooth`. `bluetooth` is an A2DP
+  source with AVRCP. HFP and HSP stay off. It needs a `bluetooth` peripheral
+  or onboard Bluetooth on the Zero 2 W, the Pi 3, the Pi 4, or the ROCK Pi
+  4C. `compact` and `matched` may use it. The last connected speaker connects
+  again after boot. `janus bluetooth discover` lists nearby devices.
+  `list`, `pair`, `connect`, `disconnect`, and `remove` take an address
+  or a unique name. A pairing code is optional. The maintenance page
+  discovers, then pairs, and has the same section when the
+  page is in the image (D-0059, D-0061). UDP 5353 is opened on `zones`
   (default `lan`). The WebSocket stays off. Any other architecture fails
   evaluation.
   The archives are flake inputs `soloist-x86_64`, `soloist-aarch64`, and
   `soloist-armv7l`. Bump them with `nix flake update`. Do not vendor the
   archive and do not add an unpinned fetch (D-0058, T-0010). The API key
-  stays out of the unit file in the store. Bluetooth pairing HTTP and the
-  accelerator service are not options. The planned accelerator model is an
-  LLM of 0.5B to 3B parameters. Vision models are not in that plan. The Hailo
-  device is the Hailo-10H, not a Hailo-8 (D-0060). `compact` and `matched`
-  still drop sound and compute accelerators. Do not start BlueZ from Soloist
-  and do not invent a pairing route or an accelerator class.
+  stays out of the unit file in the store. The accelerator service is not
+  an option. The planned accelerator model is an LLM of 0.5B to 3B
+  parameters. Vision models are not in that plan. The Hailo device is the
+  Hailo-10H, not a Hailo-8 (D-0060). `compact` and `matched` still drop
+  kernel sound and compute accelerators. Do not invent an accelerator class.

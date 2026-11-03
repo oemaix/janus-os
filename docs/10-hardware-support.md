@@ -152,8 +152,8 @@ The onboard radio is an access point when the configuration sets
 `brcmfmac`, so the driver does not request firmware. The SKU names an
 AP6256. The June 2020 schematic names an AP6255. The mainline Wi-Fi
 node is `brcm,bcm4329-fmac` and the Bluetooth node is `brcm,bcm4345c5`.
-`hci_uart` stays blacklisted. `btusb` stays available for a USB dongle.
-Bluetooth on this board stays unused. Later audio output is *13*.
+`hci_uart` stays blacklisted until `janus.soloist.playback.output` is `bluetooth` (D-0061, T-0012). `btusb` stays available for a USB dongle.
+That playback uses the onboard controller.
 ROCK 4C+ is another board
 (`rk3399-rock-4c-plus.dtb`, RK3399-T, RK809,
 `rock-4c-plus-rk3399_defconfig`, AW-CM256SM, SPI not fitted) and is
@@ -212,7 +212,7 @@ without the kernel property. Grow waits for both links before it exits.
 | `nic` | Additional Ethernet port (USB 3 GbE, USB 2.5 GbE) | kernel drivers (`r8152`, `ax88179`, `aqc111`); udev naming |
 | `wifi` | Access point for a LAN (STA/uplink mode out of scope for 1.0) | `hostapd`, mac80211 drivers; firmware from `linux-firmware` |
 | `wwan` | 4G/5G uplink | `usb_modeswitch`, kernel `cdc_ether`/`cdc_ncm`/`huawei_cdc_ncm`/`rndis_host`/`qmi_wwan`/`cdc_mbim`; `qmicli` / `mbimcli` for QMI and MBIM (ADR-0015) |
-| `bluetooth` | Allowlisted. No routing feature. Soloist does not start BlueZ. `janus.soloist.playback.output = bluetooth` fails evaluation (D-0061, FR-HW-009). | BlueZ (off) |
+| `bluetooth` | Allowlisted. No routing feature. BlueZ starts when `janus.soloist.playback.output` is `bluetooth` (D-0061, FR-HW-009). | BlueZ |
 | `hmi` | Small LCD/OLED/e-ink status display, optional buttons | `janus-hmi` daemon (framebuffer/SPI drivers), `gpio-keys` |
 | `power` | Battery voltage, current, power (INA219) | in-tree `ti,ina219` hwmon; a generated device-tree overlay on boards that need one |
 
@@ -284,7 +284,7 @@ are not part of the profile. QMI and MBIM are not how this unit attaches.
 | Huawei E3372s (stick) | `12d1:1506` | wwan (ncm) + AT | supported via in-tree `huawei_cdc_ncm` |
 | Quectel EC25 / EM12 (USB) | `2c7c:0125` / `2c7c:0512` | wwan (qmi) + AT | supported |
 | ZTE MF833 | `19d2:1405` | wwan (rndis) | supported |
-| Generic CSR BT 4.0 dongle | `0a12:0001` | bluetooth | supported; confirmed on Le Potato. Allowlisted. Soloist playback to this dongle fails evaluation until A2DP (D-0061, FR-HW-009). BlueZ stays off. |
+| Generic CSR BT 4.0 dongle | `0a12:0001` | bluetooth | supported; confirmed on Le Potato. Allowlisted. Soloist A2DP playback uses this dongle when `playback.output` is `bluetooth` (D-0061, FR-HW-009). |
 | Waveshare 1.3" OLED HAT | 40-pin HAT, SH1106, 4-wire SPI | hmi | supported on Raspberry Pi boards (§4.6) |
 | SSD1306 128×64 I²C OLED | — | hmi | supported |
 | Waveshare 2.13" e-Paper HAT | — | hmi | supported |
@@ -467,8 +467,9 @@ NVRAM from Armbian firmware commit `9934dbd5541bb49e2063089437a981f752c87b7f`
 and installs the NVRAM under both names. The NVRAM text is
 `AP6256_NVRAM_V1.1_08252017`. It has no `ccode`. The June 2020
 schematic names an AP6255. That chip asks for `brcmfmac43455-sdio`,
-which this image does not ship. Bluetooth stays unused. Later audio
-output is *13*. `hci_uart` stays blacklisted (D-0053).
+which this image does not ship. Bluetooth playback uses `hci_uart` when
+`janus.soloist.playback.output` is `bluetooth` (D-0053, D-0061). Until
+then `hci_uart` stays blacklisted.
 
 The SDIO host is `dw_mmc-rockchip`, which the arm64 defconfig builds
 in. Declaring the access point does not add a kernel patch.
@@ -481,7 +482,7 @@ These rows are not support. Evaluation does not accept them (D-0056).
 
 | Item | Bus | Status |
 |------|-----|--------|
-| Bluetooth audio output | onboard HCI or CSR `0a12:0001` | `janus.soloist.playback.output = bluetooth` fails evaluation. A2DP and pairing HTTP are later (UC-23, FR-HW-009, D-0059, D-0061). Board audio and a USB interface are the outputs this tree starts. Both need `playback.node`. `compact` drops sound (D-0057). |
+| Bluetooth audio output | onboard HCI or CSR `0a12:0001` | `janus.soloist.playback.output = bluetooth` starts BlueZ as an A2DP source with AVRCP (UC-23, FR-HW-009, D-0059, D-0061). Board audio and a USB interface still need `playback.node`. `compact` drops kernel sound; A2DP does not use it (D-0057). |
 | NXP Ara240 DNPU | PCIe or USB | After 1.0. No USB or PCI ID is recorded. No peripheral class. Other devices call an HTTP service for an LLM of 0.5B to 3B parameters (UC-24, FR-HW-010, FR-SVC-002, D-0060). Vision models are out. `compact` drops compute accelerators (D-0057). |
 | Hailo-10H | PCIe, M.2 | After 1.0. No PCI ID is recorded. No peripheral class. Hailo-8 and Hailo-8L are not this row. Other devices call HailoRT GenAI over HTTP for an LLM of 0.5B to 3B parameters (UC-24, FR-HW-011, FR-SVC-003, D-0060). Vision models are out. `compact` drops compute accelerators (D-0057). |
 

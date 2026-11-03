@@ -261,18 +261,23 @@ requirements it drives (see *03 — Requirements*).
 * **Release:** after 1.0 (D-0056)
 * **Precondition:** A Spotify account with Premium, a Soloist API key
   created for that account, and a Bluetooth speaker. The router declares
-  a `bluetooth` peripheral (onboard radio or the CSR dongle). The image
-  uses `standard` until D-0057 is decided, because `compact` drops sound.
+  a `bluetooth` peripheral, or the board is a Zero 2 W, a Pi 3, a Pi 4,
+  or a ROCK Pi 4C. `playback.output` is `bluetooth`. `compact` and
+  `matched` may be used: A2DP does not need kernel sound (D-0061).
 * **Flow:**
   1. Mei stores the API key with `janus-build secret set`. The key is one
      sops file for that router. It is not written into the OS repository
      and not shared.
-  2. The later image runs Spotify Soloist. The phone selects the router
+  2. The image runs Spotify Soloist. The phone selects the router
      as a Spotify Connect device. Soloist plays on the router. Bluetooth
      sends that audio to the paired speaker. This is not a routing rule.
-  3. From a browser on `lan` or `mgmt`, Mei pairs or forgets the speaker
-     over HTTP. That page is not the maintenance page. Soloist's own
-     control socket stays on loopback.
+  3. Mei discovers the speaker, then pairs, connects, disconnects, or
+     removes it with `janus bluetooth`, or from the maintenance page on
+     `lan` or `mgmt`. A name is accepted when only one device has it.
+     A code is entered only when the speaker asks for one.
+     The last connected speaker connects again after a reboot, and again
+     when it comes back, unless she disconnected it during this boot.
+     Soloist's own control socket stays off.
 * **Drives:** FR-SVC-001, FR-HW-009, FR-ACC-007, FR-SEC-012
 
 ### UC-24 Another device uses an edge LLM

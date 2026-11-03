@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.8.0 |
-| Last updated | 2026-10-21 |
+| Last updated | 2026-11-04 |
 
 The maintenance page is the browser surface deferred by ADR-0007 and
 bounded by FR-ACC-005 and D-0012. It calls the `janus` commands in *14*.
@@ -142,15 +142,16 @@ not change. Where each action sits is §7.5.
 | `status` | The fields of `janus status`: one row per WAN (name, up or down, address), one row per LAN (name, lease count), engine, one row per group (name, selected node), last subscription refresh, last Geo refresh, drift, state-partition use, power readings when a `power` peripheral exists | none |
 | `tunnel` | Groups, strategy, current node, members, subscription names | `refresh` every subscription, `geo`, `test` on a group, `select` by pressing a member, `refresh` one subscription |
 | `network` | One typed WAN name, LAN names from the image | `show` and `restart` that WAN. `leases` for one LAN. |
+| `bluetooth` | Paired speakers when `janus.soloist.playback.output` is `bluetooth`, and nearby speakers after `discover` | `discover`. `pair` on a nearby row or on a typed address. Optional `code`. `connect`, `disconnect`, and `remove` on a paired device. Omitted when Bluetooth playback is not in the image. |
 | `overrides` | Allowlist rows in §5 | `set`, `unset` |
 | `monitoring` | `janus traffic`, `janus dns stats`, and one audit line from `janus audit status` when that feature is in the image | `traffic`, `daily`, `monthly`, and `top` when the scope is `per-host`. `stats`, `check`, `flush`. `query` for one name. |
 | `system` | `janus version --components` | `reboot` |
 
 `status` refreshes every 10 seconds while it is the open section and the
-browser tab is visible. Tunnel, overrides, monitoring, and system load
-on entry and again after an action. Network draws its rows from the
-image facts. `show`, `restart`, and `leases` write the report when
-pressed.
+browser tab is visible. Tunnel, bluetooth, overrides, monitoring, and
+system load on entry and again after an action. Network draws its rows
+from the image facts. `show`, `restart`, and `leases` write the report
+when pressed.
 
 `janus traffic top` is requested only when `janus.monitoring.scope` is
 `per-host`. Otherwise the monitoring section shows the scope and no top
@@ -228,6 +229,12 @@ before exec; the CLI checks again.
 | `GET /api/version` | `janus --json version --components` |
 | `POST /api/reboot` | `janus reboot`, and only when the body confirm field is `reboot` |
 | `GET /api/audit` | `janus --json audit status` |
+| `GET /api/bluetooth` | `janus --json bluetooth list` |
+| `POST /api/bluetooth/discover` | `janus --json bluetooth discover` |
+| `POST /api/bluetooth/pair` | `janus --json bluetooth pair <address>`, with the optional code on stdin |
+| `POST /api/bluetooth/connect` | `janus --json bluetooth connect <address>` |
+| `POST /api/bluetooth/disconnect` | `janus --json bluetooth disconnect <address>` |
+| `POST /api/bluetooth/remove` | `janus --json bluetooth remove <address>` |
 
 Exit `0` is HTTP 200 and the CLI JSON. Exit `2` is HTTP 400. Exit `1` is
 HTTP 409. Both error bodies are `{ "exit", "message" }` with the CLI
@@ -431,6 +438,7 @@ members keeps its head and `test`, and draws no member choice.
 | `status` | Read-only rows only. One row per WAN: label `wan` and the name, value `up` or `down` and the address. One row per LAN: label `lan` and the name, value `leases` and the count. Then `engine`, `refresh`, `geo`, `drift`, `state`, and `power` when a reading exists. One row per group: label `group` and the name, value `node` and the node name. |
 | `tunnel` | Section actions `refresh` and `geo`, sharing edges. `refresh` here has no field and refreshes every subscription. Each group is a row action: the label is the group name, the value is the strategy, the action is `test`. Under that row, the members are a choice in the value track. The current node is inverse. Activating a member runs `select`. The button text is the node name. There is no second form for typing a group and a node. One row action `subscription`: the field is a choice of names, the action is `refresh` for that name only. The same catalog word as the section action. The place is the difference. No subscription omits that row. |
 | `network` | Row action `wan`. The field is the typed name. The action is the segmented pair `show` and `restart`. Row action `lan`. The field is a choice of LAN names from the image facts. The action is `leases`. No LAN omits that row. |
+| `bluetooth` | Section action `discover`. One row per nearby speaker: the label is the name, or the address when the name is empty, the value is the address, and the action is `pair` when it is not already paired. The `code` field has no button of its own. Every `pair` in the section reads it. Empty is Just Works. A code that is not 1 to 16 letters or digits is rejected. Row action `address` with `pair`. An address that is not six hex bytes does nothing. Then one row per paired speaker. The label is the name, or the address when the name is empty. The value is `paired`, `connected`, `trusted`, and `last` for the flags that are set. The action is the segmented group `connect`, `disconnect`, `remove`. |
 | `overrides` | Each subscription and each Wi-Fi AP is a secret. A lease is a pair: `lease` (a LAN choice), `host`, `mac`, and `ip`, with `set` only on the `ip` row. An empty host, MAC, or address does nothing. Row action `unset`: the field is the key. |
 | `monitoring` | Read-only `scope`. The `iface` row is a field and no action. An empty field means every interface. Section actions `traffic`, `daily`, and `monthly` share edges and use that field. `top` joins that group only when the scope is `per-host`. A second group, sharing edges among itself: `stats`, `check`, `flush`. Row action `name` with `query`. Read-only `audit` when that feature is in the image. |
 | `system` | The version is a `pre` block. Danger: label `reboot`, the confirmation field, the red `reboot` button. The hint row is `reboot-hint`. The button runs only when the field is the Latin word `reboot`. |

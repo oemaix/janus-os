@@ -29,6 +29,29 @@
     else null;
   zones = config.janus.firewall.zones;
   nodeSet = cfg.playback.node != null && builtins.match "[ \t]*" cfg.playback.node == null;
+  bluetooth = cfg.playback.output == "bluetooth";
+  btBoards = ["rpi-zero-2w" "rpi3" "rpi4" "rockpi-4c"];
+  hasBtPeripheral = lib.any (p: p.class == "bluetooth") (lib.attrValues config.janus.hardware.peripherals);
+  btAgent = pkgs.runCommandCC "janus-bt-agent" {
+    nativeBuildInputs = [pkgs.pkg-config];
+    buildInputs = [pkgs.dbus];
+  } ''
+    mkdir -p "$out/bin"
+    cc -O2 -Wall -Wextra -o "$out/bin/janus-bt-agent" ${../../pkgs/janus-bt-agent.c} $(pkg-config --cflags --libs dbus-1)
+  '';
+  btCmd = pkgs.writeShellApplication {
+    name = "janus-bluetooth";
+    runtimeInputs = [
+      pkgs.bluez
+      btAgent
+      pkgs.wireplumber
+      pkgs.jq
+      pkgs.coreutils
+      pkgs.gnugrep
+      pkgs.gnused
+    ];
+    text = builtins.readFile ../../pkgs/janus-bluetooth.sh;
+  };
   run =
     if pkg == null
     then "${pkgs.coreutils}/bin/false"
@@ -52,7 +75,8 @@ in {
         False adds no unit, secret, or package to the image.
         True installs the locked Linux build for x86_64, aarch64, or armv7l
         and starts it with system-wide PipeWire.
-        It does not start BlueZ. docs/08, FR-SVC-001, D-0056, D-0061.
+        Bluetooth starts only when playback.output is bluetooth.
+        docs/08, FR-SVC-001, D-0056, D-0061.
       '';
     };
 
@@ -92,8 +116,9 @@ in {
               Where Soloist plays.
               embedded is the board's own audio device.
               usb is an external USB audio interface.
-              Both need node. bluetooth fails evaluation.
-              A2DP is hw/bluetooth-pairing (D-0061).
+              Both need node.
+              bluetooth starts BlueZ and plays A2DP to the speaker.
+              It does not need node. D-0061.
             '';
           };
           node = mkOption {
@@ -108,7 +133,7 @@ in {
         };
       };
       default = {};
-      description = "Playback device for Soloist. Enabling Soloist does not enable Bluetooth. D-0061.";
+      description = "Playback device for Soloist. Bluetooth starts only when output is bluetooth. D-0061.";
     };
 
     zones = mkOption {
@@ -142,24 +167,26 @@ in {
         '';
       }
       {
-        assertion = config.janus.system.kernelProfile == "standard";
+        assertion = config.janus.system.kernelProfile == "standard" || bluetooth;
         message = ''
-          janus.soloist.enable needs janus.system.kernelProfile = "standard".
-          compact and matched drop sound while D-0057 is open.
+          janus.soloist.playback.output = ${cfg.playback.output} needs janus.system.kernelProfile = "standard".
+          compact and matched drop kernel sound while D-0057 is open.
+          bluetooth does not use that sound subsystem and may use compact or matched. D-0061.
         '';
       }
       {
-        assertion = cfg.playback.output != "bluetooth";
+        assertion = !bluetooth || hasBtPeripheral || lib.elem config.janus.hardware.board btBoards;
         message = ''
-          janus.soloist.playback.output = bluetooth is not part of this tree.
-          BlueZ stays off. A2DP is hw/bluetooth-pairing. D-0061.
+          janus.soloist.playback.output = bluetooth needs a bluetooth peripheral or onboard Bluetooth.
+          Onboard controllers are the Zero 2 W, the Pi 3, the Pi 4, and the ROCK Pi 4C.
+          A USB dongle is a peripherals entry, class bluetooth. The CSR id is 0a12:0001. D-0061.
         '';
       }
       {
-        assertion = cfg.playback.output == "bluetooth" || nodeSet;
+        assertion = bluetooth || nodeSet;
         message = ''
           janus.soloist.playback.output = ${cfg.playback.output} needs playback.node, a non-blank PipeWire node.
-          That node is soloist --pipewire-device. D-0061.
+          That node is soloist --pipewire-device. bluetooth uses the connected A2DP sink and does not need node. D-0061.
         '';
       }
       {
@@ -206,7 +233,44 @@ in {
       audio.enable = true;
       alsa.enable = true;
       pulse.enable = true;
+      wireplumber = {
+        enable = true;
+        extraConfig = lib.mkIf bluetooth {
+          # A fragment merges by key. These two keys do not replace the
+          # rest of monitor.bluez.properties.
+          "10-janus-bluez" = {
+            "monitor.bluez.properties" = {
+              # a2dp_source sends audio to a speaker. AVRCP rides with it.
+              # hfp and hsp are phone calls and stay off.
+              "bluez5.roles" = ["a2dp_source"];
+              "bluez5.hfphsp-backend" = "none";
+            };
+          };
+        };
+      };
     };
+
+    # A2DP source and AVRCP are selected in WirePlumber, not in main.conf.
+    # BlueZ ignores an Enable= list. HFP and HSP stay off because
+    # bluez5.roles is only a2dp_source. D-0061.
+    hardware.bluetooth = lib.mkIf bluetooth {
+      enable = true;
+      powerOnBoot = true;
+      settings = {
+        General = {
+          FastConnectable = "true";
+        };
+        Policy = {
+          AutoEnable = "true";
+          ReconnectAttempts = "7";
+          ReconnectIntervals = "1,2,4,8,16,32,64";
+        };
+      };
+    };
+    hardware.enableRedistributableFirmware = lib.mkIf bluetooth true;
+    janus.board.configTxt = lib.mkIf (bluetooth && lib.elem config.janus.hardware.board ["rpi-zero-2w" "rpi3" "rpi4"]) ''
+      dtparam=krnbt=on
+    '';
 
     environment.systemPackages = lib.optional (pkg != null) pkg;
 
@@ -228,12 +292,14 @@ in {
         "pipewire.service"
         "sops-install-secrets.service"
       ];
-      environment =
+        environment =
         {
           SOLOIST_NAME = connectName;
           SOLOIST_KEY_FILE = "/run/soloist/api-key";
+          # System socket is /run/pipewire-0. T-0014.
+          PIPEWIRE_RUNTIME_DIR = "/run";
         }
-        // lib.optionalAttrs nodeSet {
+        // lib.optionalAttrs (nodeSet && !bluetooth) {
           SOLOIST_DEVICE = cfg.playback.node;
         };
       serviceConfig = {
@@ -251,6 +317,23 @@ in {
         PrivateTmp = true;
         ProtectHome = true;
         ProtectSystem = "strict";
+      };
+    };
+
+    environment.etc."janus/bin/janus-bluetooth" = lib.mkIf bluetooth {
+      source = "${btCmd}/bin/janus-bluetooth";
+    };
+
+    systemd.services.janus-bluetooth-reconnect = lib.mkIf bluetooth {
+      description = "Reconnect the last Bluetooth speaker";
+      wantedBy = ["multi-user.target"];
+      after = ["bluetooth.service" "wireplumber.service"];
+      requires = ["bluetooth.service"];
+      environment.PIPEWIRE_RUNTIME_DIR = "/run";
+      serviceConfig = {
+        ExecStart = "${btCmd}/bin/janus-bluetooth reconnect";
+        Restart = "on-failure";
+        RestartSec = "5s";
       };
     };
 

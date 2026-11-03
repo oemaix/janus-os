@@ -5,6 +5,7 @@
 {lib}: {
   board,
   peripherals,
+  bluetoothPlayback ? false,
 }: let
   allow = import ../hardware/allowlist.nix;
   ps = lib.attrValues peripherals;
@@ -72,6 +73,9 @@
   wantUsbNet = usbNet != [];
   wantSerial = wwanModes != [];
   wantBt = hasClass "bluetooth";
+  # Onboard controllers are UART (Broadcom). A USB dongle stays btusb.
+  # Sound stays off: A2DP is BlueZ, not ALSA. D-0061, T-0011.
+  wantOnboardBt = bluetoothPlayback && lib.elem board ["rpi-zero-2w" "rpi3" "rpi4" "rockpi-4c"];
   wantNvme = board == "rockpi-4c" || board == "visionfive2";
   wantAhci = board == "yanyu-stx-r19f";
   wantVirtio = board == "x86_64-test";
@@ -226,6 +230,7 @@
     ++ (lib.optional onboardWifi "BRCMFMAC")
     ++ wifiUsb
     ++ (lib.optional wantBt "BT_HCIBTUSB")
+    ++ (lib.optional wantOnboardBt "BT_HCIUART")
     ++ (lib.optional (hasClass "power") "SENSORS_INA2XX")
     ++ (lib.optional wantI2c "I2C_BCM2835")
     ++ (lib.optionals wantSpi ["SPI_BCM2835" "SPI_SPIDEV"]);
@@ -240,7 +245,8 @@
     ++ (lib.optionals onboardWifi ["WLAN_VENDOR_BROADCOM" "BRCMFMAC_SDIO"])
     ++ (lib.optional (hasUsb "0e8d:7612" || hasUsb "0e8d:7961") "WLAN_VENDOR_MEDIATEK")
     ++ (lib.optional (hasUsb "0bda:8176") "WLAN_VENDOR_REALTEK")
-    ++ (lib.optional wantBt "BT")
+    ++ (lib.optional (wantBt || wantOnboardBt) "BT")
+    ++ (lib.optionals wantOnboardBt ["BT_HCIUART_BCM" "BT_HCIUART_SERDEV"])
     ++ (lib.optional wantNvme "NVME_MULTIPATH");
 
   # Built in. The initrd does not list the module, so m cannot mount the root.
@@ -258,7 +264,6 @@
       "8139TOO_8129"
       "8139TOO_PIO"
       "BT_HCIUART_QCA"
-      "BT_HCIUART_SERDEV"
       "NVIDIA_SHIELD_FF"
       "USB_SERIAL_CONSOLE"
       "VIRTIO_MMIO_CMDLINE_DEVICES"
@@ -271,6 +276,7 @@
       "RTW88_8822BE"
       "RTW88_8822CE"
     ]
+    ++ lib.optionals (!wantOnboardBt) ["BT_HCIUART_SERDEV"]
     ++ lib.optionals (!wantBt) ["BT_HCIBTUSB_AUTOSUSPEND" "BT_HCIBTUSB_MTK"]
     ++ lib.optionals (!wantWifi) [
       "CFG80211_DEBUGFS"

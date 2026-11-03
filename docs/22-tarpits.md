@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-11-03 |
+| Last updated | 2026-11-04 |
 
 A tarpit is a failure that looks like progress until a later build or
 boot. The binding choice stays in the cited document. This list is the
@@ -27,3 +27,10 @@ does not undo it.
 | T-0008 | kept | `eval-kernel-profile` and `eval-kernel-profile-matched` read the Nix attribute set. `generate-config.pl` runs in `eval-kernel-config`. A symbol assertion can require `=m` for a host the initrd does not load (T-0005). A new file is invisible to the flake until `git add`. A dirty edit of a tracked file is visible. Adding the file is not a commit. |
 | T-0009 | kept | Huawei `12d1:1506` in `ncm` binds `huawei_cdc_ncm`. That driver selects `cdc_ncm` and `USB_WDM`. Loading `cdc_ncm` alone does not bind the stick. Leaving `USB_NET_HUAWEI_CDC_NCM` at its defconfig value while `USB_USBNET` is on still selects `USB_WDM` (T-0002). See *10* §4.2 and D-0052. |
 | T-0010 | kept | The Soloist URLs on the downloads page have no version and are replaced in place. `flake.lock` pins each archive (`soloist-x86_64`, `soloist-aarch64`, `soloist-armv7l`). `nix flake update` moves the narHash. An unpinned fetch follows the URL and can install a build that was not locked. A locked build expires 90 days after its build date and the program exits 10, and the unit does not restart on that status. Update the lock before then. See D-0058. |
+| T-0011 | kept | `matched` answers `BT_HCIUART_SERDEV` with optional `n` while the UART parent is off. Onboard Bluetooth needs that symbol and `BT_HCIUART_BCM` at `y`, or the controller does not bind. Set both when `playback.output` is `bluetooth`. Leaving `SERDEV` at `n` while `BT_HCIUART` is `m` looks configured and never probes. See D-0061. |
+| T-0012 | kept | The ROCK Pi 4C blacklists `hci_uart`. Building `BT_HCIUART` does not start the onboard controller while that name is blacklisted. Drop the blacklist only when `playback.output` is `bluetooth`. `btusb` stays available for a dongle. See D-0053 and D-0061. |
+| T-0013 | kept | `bluetoothctl pair` without `--agent NoInputNoOutput` does not finish Just Works pairing. The command has no terminal to confirm a prompt. A `scan on` that exits before `pair` also drops a speaker that is only discoverable briefly. Keep that agent on pair and connect when no code was given, and leave the scan running until pair returns. A code starts `janus-bt-agent` for that address only, after the scan is up, and stops it before connect. The code is stdin. The agent accepts authorization for that address and confirms a shown number only when it is the code. It exits when its parent exits. `bluetoothctl` itself does not accept the code. |
+| T-0015 | kept | `pair` by name must use devices that appeared in that search. `bluetoothctl devices` is the cache and still holds a speaker that is not nearby. Pairing the cached name connects the wrong device. `connect`, `disconnect`, and `remove` still use the cache, because those speakers are already known. |
+| T-0016 | kept | The maintenance page has one Janet thread. `os/execute` stalls every fiber for the whole command, so discovery and pairing freeze status and login. Spawn the command and wait with `os/proc-wait`, which suspends only the fiber that asked. |
+| T-0017 | kept | `janus-bluetooth` has no local variables. `parse_scan` and `find_name` run in the same shell. `parse_scan` must not assign `name`. That variable is the name the operator asked to pair. Overwriting it makes the scanned speaker match itself, so a request for a different name still pairs the nearby device. |
+| T-0014 | kept | The system PipeWire socket is `/run/pipewire-0`. A client with no `PIPEWIRE_RUNTIME_DIR` looks under `XDG_RUNTIME_DIR` and does not open that socket. Soloist and `wpctl` need `PIPEWIRE_RUNTIME_DIR=/run`. The Bluetooth path has no `playback.node`, so a missed socket is silence. |

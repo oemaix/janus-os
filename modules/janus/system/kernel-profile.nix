@@ -249,6 +249,7 @@
   matchedSymbols = import ./kernel-matched.nix {inherit lib;} {
     board = config.janus.hardware.board;
     peripherals = config.janus.hardware.peripherals;
+    bluetoothPlayback = config.janus.soloist.enable && config.janus.soloist.playback.output == "bluetooth";
   };
 in {
   options.janus.system.kernelProfile = mkOption {

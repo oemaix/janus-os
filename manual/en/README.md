@@ -153,8 +153,14 @@ it on installs the build pinned in `flake.lock` for x86_64, aarch64, or
 armv7, and starts playback. The board's own audio is
 `playback.output = "embedded"`. A USB audio interface is
 `playback.output = "usb"`. Both need `playback.node`, the PipeWire node.
-A blank node fails the check. Choosing Bluetooth fails the check and
-does not start Bluetooth.
+A blank node fails the check. Bluetooth is
+`playback.output = "bluetooth"`. That starts Bluetooth, plays to a
+speaker, and does not need `playback.node`. Discover lists nearby
+speakers. Pair, connect, disconnect, and remove one with
+`janus bluetooth`, by address or by a unique name, or on the maintenance
+page when that page is in the image. Enter a code only when the speaker
+asks for one. The last connected speaker
+connects again after a reboot.
 `nix flake update` moves that pin. Any other architecture fails the check.
 
 `janus.system.region` is `cn` (the default), `ru`, or `ir`. It chooses the
@@ -404,7 +410,8 @@ The onboard radio is a WPA2 access point when `match.onboard = true`.
 It is the AP6256: 2.4 GHz or 5 GHz, 20 MHz. Add that access point to a
 LAN, the same way as the Zero 2 W radio. The regulatory country follows
 the region (`cn`, `ru`, or `ir`) unless `janus.network.wifiCountry` is
-set. Bluetooth on the board stays unused. A USB Bluetooth dongle still uses `btusb`. The ROCK 4C+ is a
+set. Bluetooth on the board stays unused until
+`janus.soloist.playback.output` is `bluetooth`. A USB Bluetooth dongle still uses `btusb`. The ROCK 4C+ is a
 different board and does not use this profile.
 
 ## Tier 3 boards
@@ -469,8 +476,8 @@ are [docs/14-cli.md](../../docs/14-cli.md) on the router and
 [docs/16-build-host-cli.md](../../docs/16-build-host-cli.md) on the build
 machine. Hardware and the phased plan are in [docs/](../../docs/README.md).
 
-Spotify playback, a Bluetooth speaker, an NXP Ara240 accelerator, and a
-Hailo-10H accelerator are later work. They are not in this image. The
+An NXP Ara240 accelerator and a Hailo-10H accelerator are later work.
+They are not in this image. Spotify playback is `janus.soloist`. The
 plan is [docs/13-roadmap.md](../../docs/13-roadmap.md).
 
 ## Languages

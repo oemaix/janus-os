@@ -36,6 +36,20 @@ mac_arg() {
   esac
 }
 
+bt_mac() {
+  mac_arg "${1:-}"
+  if [ -n "${2:-}" ]; then
+    reject
+  fi
+}
+
+pin_arg() {
+  # Seventeen question marks is one past the 16-character code.
+  case "$1" in
+    ''|*[!0-9A-Za-z]*|?????????????????*) reject ;;
+  esac
+}
+
 ip_arg() {
   rest=$1
   i=0
@@ -185,6 +199,44 @@ case "$op" in
     ;;
   audit-status)
     exec "$janus_bin" --json audit status
+    ;;
+  bluetooth-list)
+    exec "$janus_bin" --json bluetooth list
+    ;;
+  bluetooth-discover)
+    if [ -n "${1:-}" ]; then
+      reject
+    fi
+    exec "$janus_bin" --json bluetooth discover
+    ;;
+  bluetooth-pair)
+    mac_arg "${1:-}"
+    if [ -n "${2:-}" ]; then
+      reject
+    fi
+    # The code arrives on stdin so it is not a process argument.
+    code=
+    if [ ! -t 0 ]; then
+      IFS= read -r code || true
+    fi
+    if [ -n "$code" ]; then
+      pin_arg "$code"
+      printf '%s\n' "$code" | "$janus_bin" --json bluetooth pair "$1"
+      exit $?
+    fi
+    exec "$janus_bin" --json bluetooth pair "$1"
+    ;;
+  bluetooth-connect)
+    bt_mac "$@"
+    exec "$janus_bin" --json bluetooth connect "$1"
+    ;;
+  bluetooth-disconnect)
+    bt_mac "$@"
+    exec "$janus_bin" --json bluetooth disconnect "$1"
+    ;;
+  bluetooth-remove)
+    bt_mac "$@"
+    exec "$janus_bin" --json bluetooth remove "$1"
     ;;
   *)
     echo "janus-web-run: unknown operation" >&2

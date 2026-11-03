@@ -208,7 +208,10 @@
     (file/write inf stdin)
     (file/flush inf)
     (file/seek inf :set 0))
-  (def code (os/execute argv :p {:in inf :out outf :err errf}))
+  # os/execute blocks every fiber. proc-wait suspends only this one (T-0016).
+  (def proc (os/spawn argv :p {:in inf :out outf :err errf}))
+  (def code (os/proc-wait proc))
+  (os/proc-close proc)
   (file/seek outf :set 0)
   (file/seek errf :set 0)
   (def out (file/read outf :all))
@@ -423,6 +426,35 @@
 (defn need [s]
   (if (valid-arg s) s nil))
 
+(defn mac-ok [s]
+  (if (not (and (string? s) (= (length s) 17)))
+    nil
+    (do
+      (var ok true)
+      (for i 0 17
+        (def c (in (string/bytes s) i))
+        (cond
+          (= (% i 3) 2) (when (not= c (chr ":")) (set ok false))
+          (not (or (<= (chr "0") c (chr "9")) (<= (chr "a") c (chr "f")) (<= (chr "A") c (chr "F"))))
+          (set ok false)))
+      (if ok s nil))))
+
+(defn pin-ok [s]
+  (if (not (string? s))
+    nil
+    (do
+      (def n (length s))
+      (if (or (< n 1) (> n 16))
+        nil
+        (do
+          (var ok true)
+          (each c (string/bytes s)
+            (when (not (or (<= (chr "0") c (chr "9"))
+                           (<= (chr "A") c (chr "Z"))
+                           (<= (chr "a") c (chr "z"))))
+              (set ok false)))
+          (if ok s nil))))))
+
 (defn public-doc [st]
   {"hostname" (or (get (st :doc) "hostname") "")
    "fingerprint" (or (st :fingerprint) "")})
@@ -433,7 +465,8 @@
    "lans" (or (get (st :doc) "lans") @[])
    "wifi" (or (get (st :doc) "wifi") @[])
    "monitoringScope" (or (get (st :doc) "monitoringScope") "counters")
-   "audit" (get (st :doc) "audit")})
+   "audit" (get (st :doc) "audit")
+   "bluetooth" (get (st :doc) "bluetooth")})
 
 (defn dispatch [st req]
   (def method (req :method))
@@ -539,6 +572,27 @@
       (bad "rejected"))
     (and (= method "GET") (= path "/api/audit"))
     (cli-call st "audit-status" [] nil)
+    (and (= method "GET") (= path "/api/bluetooth"))
+    (cli-call st "bluetooth-list" [] nil)
+    (and (= method "POST") (= path "/api/bluetooth/discover"))
+    (cli-call st "bluetooth-discover" [] nil)
+    (and (= method "POST") (= path "/api/bluetooth/pair"))
+    (let [address (mac-ok (get obj "address"))
+          code (get obj "code")]
+      (cond
+        (not address) (bad "rejected")
+        (or (nil? code) (= code "")) (cli-call st "bluetooth-pair" [address] nil)
+        (pin-ok code) (cli-call st "bluetooth-pair" [address] code)
+        (bad "rejected")))
+    (and (= method "POST") (= path "/api/bluetooth/connect"))
+    (let [address (mac-ok (get obj "address"))]
+      (if address (cli-call st "bluetooth-connect" [address] nil) (bad "rejected")))
+    (and (= method "POST") (= path "/api/bluetooth/disconnect"))
+    (let [address (mac-ok (get obj "address"))]
+      (if address (cli-call st "bluetooth-disconnect" [address] nil) (bad "rejected")))
+    (and (= method "POST") (= path "/api/bluetooth/remove"))
+    (let [address (mac-ok (get obj "address"))]
+      (if address (cli-call st "bluetooth-remove" [address] nil) (bad "rejected")))
     {:status 404 :ctype "text/plain; charset=utf-8" :body ""}))
 
 (defn page-html [st]
@@ -817,6 +871,10 @@
   (expect (= (no-header :status) 400) "missing header")
   (def reboot-no (authed token "POST" "/api/reboot" "{\"confirm\":\"no\"}"))
   (expect (= (reboot-no :status) 400) "reboot word")
+  (def bt-bad (authed token "POST" "/api/bluetooth/pair" "{\"address\":\"nope\"}"))
+  (expect (= (bt-bad :status) 400) "bluetooth address")
+  (def bt-code (authed token "POST" "/api/bluetooth/pair" "{\"address\":\"aa:bb:cc:dd:ee:ff\",\"code\":\"12 34\"}"))
+  (expect (= (bt-code :status) 400) "bluetooth code")
   (expect (= (length calls) 1) "reboot did not run")
   (def reboot-yes (authed token "POST" "/api/reboot" "{\"confirm\":\"reboot\"}"))
   (expect (= (reboot-yes :status) 200) "reboot")
@@ -835,6 +893,18 @@
     (authed token "POST" "/api/override" "{\"key\":\"firewall.x\",\"value\":\"y\"}"))
   (expect (= (off :status) 400) "off allowlist")
   (expect (= (length calls) 3) "off allowlist did not run")
+  (def bt-disc (authed token "POST" "/api/bluetooth/discover" "{}"))
+  (expect (= (bt-disc :status) 200) "bluetooth discover")
+  (def disc-call (get calls 3))
+  (expect (= (get disc-call 0) "bluetooth-discover") "discover op")
+  (expect (= (length (get disc-call 1)) 0) "discover args")
+  (def bt-ok (authed token "POST" "/api/bluetooth/pair" "{\"address\":\"aa:bb:cc:dd:ee:ff\",\"code\":\"0000\"}"))
+  (expect (= (bt-ok :status) 200) "bluetooth code stdin")
+  (def code-call (get calls 4))
+  (expect (= (get code-call 0) "bluetooth-pair") "pair op")
+  (expect (= (get (get code-call 1) 0) "aa:bb:cc:dd:ee:ff") "pair address")
+  (expect (= (length (get code-call 1)) 1) "code not an argument")
+  (expect (= (get code-call 2) "0000") "code stdin")
   (def hidden (make-state (string runtime "-meta") "secret" spy @{"hostname" "router" "subscriptions" ["secret-sub"] "proxy" true} (fn [] clock) html nil "AA:BB"))
   (def rendered (page-html hidden))
   (expect (string/find "<!DOCTYPE html>" rendered) "login is html")

@@ -46,6 +46,12 @@ Exit 0 is success. Exit 2 is a usage or validation error. Exit 1 is a runtime fa
   backup
   restore --yes
   audit start|stop|status|export
+  bluetooth list
+  bluetooth discover
+  bluetooth pair <address-or-name> [code]
+  bluetooth connect <address-or-name>
+  bluetooth disconnect <address-or-name>
+  bluetooth remove <address-or-name>
   web start|stop|status|fingerprint
 
 deploy and fleet are build-host commands. On the board they exit 2 and name janus-build.
@@ -312,6 +318,21 @@ case "$cmd" in
   deploy|fleet)
     echo "janus ${cmd} runs on the build host as janus-build. See docs/16-build-host-cli.md." >&2
     exit 2
+    ;;
+  bluetooth)
+    if [ ! -x /etc/janus/bin/janus-bluetooth ]; then
+      echo "janus bluetooth is not in this image. Set janus.soloist.playback.output = bluetooth and rebuild." >&2
+      exit 2
+    fi
+    sub=${1:-}
+    case "$sub" in
+      list|discover|pair|connect|disconnect|remove) ;;
+      *) usage ;;
+    esac
+    if [ "$json" = 1 ]; then
+      exec /etc/janus/bin/janus-bluetooth --json "$@"
+    fi
+    exec /etc/janus/bin/janus-bluetooth "$@"
     ;;
   audit)
     if [ ! -x /etc/janus/bin/janus-audit ]; then

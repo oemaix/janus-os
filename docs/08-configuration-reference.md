@@ -60,16 +60,16 @@ locked Linux build for `x86_64`, `aarch64`, or `armv7l` and starts it.
 Any other architecture fails evaluation. The three archives are flake
 inputs. `flake.lock` holds the narHash, and `nix flake update` moves it
 (D-0058, T-0010). The repository does not store the archive. Pairing
-over HTTP is not this section (D-0059).
+is `janus bluetooth` and the maintenance page (D-0059).
 
 | Option | Type | Default | Contract |
 |---|---|---|---|
-| `enable` | bool | `false` | Connect playback device (FR-SVC-001, D-0056). `true` needs `kernelProfile = "standard"` while D-0057 is open, and a board architecture of `x86_64`, `aarch64`, or `armv7l`. It starts Soloist and system-wide PipeWire. It does not start BlueZ (D-0061). |
+| `enable` | bool | `false` | Connect playback device (FR-SVC-001, D-0056). `true` needs a board architecture of `x86_64`, `aarch64`, or `armv7l`. `embedded` and `usb` need `kernelProfile = "standard"` while D-0057 is open. `bluetooth` may use `compact` or `matched`. It starts Soloist and system-wide PipeWire. BlueZ starts only when `playback.output` is `bluetooth` (D-0061). |
 | `apiKeySecret` | null or string | unset | sops name. One line, `value:`, in `sopsFile`. Plaintext only in `/run/secrets`. Required when `enable` is true (FR-SEC-012). |
 | `sopsFile` | null or path | unset | sops document for `apiKeySecret`. The secret is installed only when `enable` is true. |
 | `name` | null or string | the host name | Spotify Connect name. |
-| `playback.output` | `embedded` \| `usb` \| `bluetooth` | `embedded` | Where the sound goes (D-0061). `embedded` is the board's own audio. `usb` is an external USB audio interface. `bluetooth` fails evaluation. A2DP is `hw/bluetooth-pairing`. |
-| `playback.node` | null or string | unset | PipeWire node name or id (`soloist --pipewire-device`). Required for `embedded` and `usb`. A blank value fails evaluation. |
+| `playback.output` | `embedded` \| `usb` \| `bluetooth` | `embedded` | Where the sound goes (D-0061). `embedded` is the board's own audio. `usb` is an external USB audio interface. `bluetooth` is an A2DP speaker, with AVRCP. It starts BlueZ. HFP and HSP stay off. It needs a `bluetooth` peripheral or onboard Bluetooth on the Zero 2 W, the Pi 3, the Pi 4, or the ROCK Pi 4C. |
+| `playback.node` | null or string | unset | PipeWire node name or id (`soloist --pipewire-device`). Required for `embedded` and `usb`. A blank value fails evaluation. `bluetooth` uses the connected speaker and does not need this. |
 | `zones` | list of strings | `lan` | Where a Spotify Connect client may find this router. UDP 5353 is accepted there and dropped elsewhere. `wan` fails evaluation. `guest` and `iot` only when the firewall defines them. |
 
 ## 2. `janus.hardware`
@@ -77,7 +77,7 @@ over HTTP is not this section (D-0059).
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `board` | enum | — (required) | `rpi-zero-2w` `rpi2` `rpi3` `rpi4` `nanopi-r4s` `rockpi-4c` `le-potato` `visionfive2` `yanyu-stx-r19f` `x86_64-test` |
-| `peripherals.<name>.class` | enum | — | `wifi` `nic` `wwan` `bluetooth` `hmi` `power`. A `bluetooth` row does not start BlueZ. Soloist playback is `janus.soloist.playback` (D-0061). An Ara240 or Hailo-10H class is later work (*13*, D-0056) and is not an option in this tree. |
+| `peripherals.<name>.class` | enum | — | `wifi` `nic` `wwan` `bluetooth` `hmi` `power`. A `bluetooth` row selects the dongle driver. BlueZ starts only when `janus.soloist.playback.output` is `bluetooth` (D-0061). An Ara240 or Hailo-10H class is later work (*13*, D-0056) and is not an option in this tree. |
 | `peripherals.<name>.match` | attrs | — | `usbVendorProduct = "0bda:8153"`, or `usbPath`, `pciSlot`, `mac`. `onboard = true` is the radio soldered to the board (*10* §4.7, §4.10). |
 | `peripherals.<name>.wwan.mode` | enum | `auto` | `auto` uses the mode the allowlist records for that USB ID (*10* §4.2). Explicit values: `ecm` `ncm` `rndis` `qmi` `mbim`. |
 | `peripherals.<name>.wwan.modeSwitch` | attrs | `{}` | usb_modeswitch parameters. Empty does not run usb_modeswitch. |
@@ -350,4 +350,4 @@ export`. `janus-build fleet pull` writes leases into
   unless IPv6 interception is enabled. `bypass` does not warn.
 * `janus.hardware.board` is set and supports every declared peripheral class.
 * A `wwan` peripheral whose USB ID is not on the allowlist fails evaluation.
-* `janus.soloist.enable` needs the API-key secret and its sops file, `kernelProfile = "standard"`, at least one zone other than `wan`, and a board architecture of `x86_64`, `aarch64`, or `armv7l`. `playback.output = bluetooth` fails evaluation. `embedded` and `usb` need a non-blank `playback.node`. A false setting skips these checks and does not install the secret.
+* `janus.soloist.enable` needs the API-key secret and its sops file, at least one zone other than `wan`, and a board architecture of `x86_64`, `aarch64`, or `armv7l`. `embedded` and `usb` need `kernelProfile = "standard"` and a non-blank `playback.node`. `bluetooth` may use `compact` or `matched`, starts BlueZ, and needs a Bluetooth peripheral or onboard Bluetooth on the Zero 2 W, the Pi 3, the Pi 4, or the ROCK Pi 4C. A false setting skips these checks and does not install the secret.
