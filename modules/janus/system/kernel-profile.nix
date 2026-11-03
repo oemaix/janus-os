@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
-# janus.system.kernelProfile. docs/08 §1, D-0051.
+# janus.system.kernelProfile. docs/08 §1, D-0051, D-0052.
 # standard is the NixOS kernel. compact is one config for every board.
-# matched is not a value (D-0052).
+# matched is that cut, then one config for this board and its peripherals.
 {
   config,
   lib,
@@ -245,9 +245,14 @@
     "NVME_TARGET_TCP"
     "MLX5_CORE_IPOIB"
   ];
+
+  matchedSymbols = import ./kernel-matched.nix {inherit lib;} {
+    board = config.janus.hardware.board;
+    peripherals = config.janus.hardware.peripherals;
+  };
 in {
   options.janus.system.kernelProfile = mkOption {
-    type = types.enum ["standard" "compact"];
+    type = types.enum ["standard" "compact" "matched"];
     default = "standard";
     description = ''
       Kernel config. standard is the NixOS kernel and keeps the binary
@@ -257,60 +262,59 @@ in {
       InfiniBand, and SAN. NIC drivers, Wi-Fi, USB, WWAN, Bluetooth, MMC,
       the NVMe host, AHCI, simpledrm, SoC scanout that does not depend
       on ALSA, f2fs, vfat, and virtio stay. Raspberry Pi HDMI depends on
-      ALSA and is not in compact. A per-board driver cut is not a value
-      of this option (D-0052).
+      ALSA and is not in compact. matched starts from that cut and then
+      keeps a driver only when this board or a declared peripheral uses
+      it (D-0052). An MMC host the initrd does not list stays built in.
+      Sound and compute accelerators stay off (D-0057).
     '';
   };
 
-  # Reading the option here makes a bad value fail in the same pass as
-  # the other assertions. The type is what rejects it.
-  config = lib.mkMerge [
-    {
-      assertions = [
-        {
-          assertion = cfg.kernelProfile == "standard" || cfg.kernelProfile == "compact";
-          message = "janus.system.kernelProfile is standard or compact. matched is not a value (D-0052).";
-        }
+  config = let
+    cut = cfg.kernelProfile == "compact" || cfg.kernelProfile == "matched";
+    compactSymbols =
+      deny [
+        # VC4, the Pi HDMI controller, depends on SND. The board
+        # consoles are serial. Rockchip and Meson scanout do not.
+        "SOUND"
+        "IIO"
+        "COMEDI"
+        "INFINIBAND"
+        "MEDIA_SUPPORT"
+        "SCSI_SAS_ATTRS"
+        "SCSI_SAS_LIBSAS"
+      ]
+      // forceOff (
+        [
+          "INFINIBAND_IPOIB"
+          "INFINIBAND_IPOIB_CM"
+        ]
+        ++ gpu
+        ++ gpuForced
+        ++ sound
+        ++ media
+        ++ san
+      )
+      // clear [
+        "SND_AC97_POWER_SAVE_DEFAULT"
+        "SND_HDA_POWER_SAVE_DEFAULT"
       ];
-    }
-    (mkIf (cfg.kernelProfile == "compact") {
+  in
+    mkIf cut {
       boot.kernelPatches = [
         {
-          name = "janus-kernel-compact";
+          name =
+            if cfg.kernelProfile == "matched"
+            then "janus-kernel-matched"
+            else "janus-kernel-compact";
           # arm64 defconfig enables HiSilicon SAS and MPT SAS. Those select
           # the SAS transport before its question, and generate-config.pl
           # gets only two passes, so the transport stayed y after the HBAs
           # were turned off. The seed must not select it.
           patch = ./kernel-compact-arm64-defconfig.patch;
           structuredExtraConfig =
-            deny [
-              # VC4, the Pi HDMI controller, depends on SND. The board
-              # consoles are serial. Rockchip and Meson scanout do not.
-              "SOUND"
-              "IIO"
-              "COMEDI"
-              "INFINIBAND"
-              "MEDIA_SUPPORT"
-              "SCSI_SAS_ATTRS"
-              "SCSI_SAS_LIBSAS"
-            ]
-            // forceOff (
-              [
-                "INFINIBAND_IPOIB"
-                "INFINIBAND_IPOIB_CM"
-              ]
-              ++ gpu
-              ++ gpuForced
-              ++ sound
-              ++ media
-              ++ san
-            )
-            // clear [
-              "SND_AC97_POWER_SAVE_DEFAULT"
-              "SND_HDA_POWER_SAVE_DEFAULT"
-            ];
+            compactSymbols
+            // lib.optionalAttrs (cfg.kernelProfile == "matched") matchedSymbols;
         }
       ];
-    })
-  ];
+    };
 }

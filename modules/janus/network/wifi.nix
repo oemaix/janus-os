@@ -202,6 +202,8 @@ in {
     (lib.mkIf (apNames != []) {
       boot.kernelModules = lib.mkMerge [
         (lib.mkIf (lib.any (n: usbId n == "0bda:8176") apNames) ["rtl8192cu"])
+        # The Arasan host is not in the initrd. Stage 2 loads it with brcmfmac.
+        (lib.mkIf (onboardNames != [] && config.janus.hardware.board == "rpi-zero-2w") ["sdhci_iproc"])
         (lib.mkIf (onboardNames != []) ["brcmfmac"])
       ];
       # arm64 defconfig builds brcmfmac. The Zero 2 W radio sits on the

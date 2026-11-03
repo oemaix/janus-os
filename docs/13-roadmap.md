@@ -8,7 +8,8 @@
 
 This file is the implementation plan, the progress of the code, and the
 notes for work that is specified but not started. Choices are *18*.
-Explanations are *19*. Accepted ADRs are `docs/adr/`.
+Explanations are *19*. Implementation tarpits are *22*. Accepted ADRs
+are `docs/adr/`.
 
 ## 1. Phased roadmap
 
@@ -74,7 +75,6 @@ power-cut. Tier 3 ships the profile. The Future list stays after 1.0.
 * WAN VLAN, the `iptv` role, and IGMP proxy (*06*, FR-NET-003, FR-NET-020).
 * Optional local configuration wizard, a front end for the build-host commands in *16*. No hosted build service.
 * A check that a destination refuses the exit because the address is in Iran, China, or Russia, for example Gemini. A country guessed from the node name, and a connect check (ping, TCP, or a handshake), do not show that refusal.
-* A per-board kernel profile, `matched` (D-0052). `standard` and `compact` are implemented (D-0051).
 * One GPIO LED with the `heartbeat` trigger on `rpi2`, `rpi3`, `rpi4`, `rpi-zero-2w`, `rockpi-4c`, and `le-potato`. A dark LED then means the kernel timer has stopped. The GPIO is not chosen. The ROCK Pi 4C blue status LED already uses that trigger in the device tree (*10* §3.5). The Le Potato blue LED does the same in the mainline tree and is not yet recorded in *10*. The Raspberry Pi profiles do not set one.
 * The maintenance page (*20*) is in the image. The retro console in *20* §7 is the design: no radius, no shadow, no gradient. Some functions and elements are still unusable or only partly worked out. Later work keeps that simple console and works out every function and every element so each behaves clearly and fluidly. The shape is in Notes.
 * Spotify Soloist as a playback device (*02* UC-23, FR-SVC-001). The API key is a sops secret for that router (FR-SEC-012). The account that creates the key has Premium. Janus does not redistribute the Soloist binary (D-0058). The program's WebSocket, if enabled, stays on loopback. It has no authentication. Not in 1.0.
@@ -89,8 +89,12 @@ tree does not mean that behavior exists. Stubs are not finished features.
 
 ### Done
 
-* `janus.system.kernelProfile` is `standard` (default, the NixOS kernel)
-  or `compact` (D-0051). `compact` is one config for every board.
+* `janus.system.kernelProfile` is `standard` (default, the NixOS kernel),
+  `compact`, or `matched` (D-0051, D-0052). `compact` is one config for
+  every board. `matched` includes that cut, then keeps a driver only
+  when this board or a declared peripheral uses it. An MMC host the
+  initrd does not list stays built in, including the Pi 3 and Pi 3+
+  SD card.
 * Apache-2.0 license at the repository root.
 * Flake with `nixosModules.janus`, `nixosModules.boards`, `lib.mkRouter`,
   `templates.default`, and `devShells.default` (`nix develop`).
@@ -228,7 +232,6 @@ tree does not mean that behavior exists. Stubs are not finished features.
   D-0045 asks whether the board-local secret path goes away.
   D-0048 asks whether an existing PPPoE username and password join the
   hot-override allowlist.
-  D-0052 asks whether a later kernel profile drops drivers one board does not use.
   D-0057 asks whether Soloist audio, Ara240, and Hailo-10H require `standard`.
   D-0058 asks how those closed programs reach an operator image.
   D-0059 asks which process serves Bluetooth pairing over HTTP.
@@ -260,12 +263,13 @@ tree does not mean that behavior exists. Stubs are not finished features.
 * The CSR Bluetooth dongle `0a12:0001` stays on the allowlist. BlueZ stays
   off. The later feature is audio output for Spotify Soloist, not a
   routing feature (*13* Future, FR-HW-009). No playback option exists.
-* `janus.system.kernelProfile` is `standard` or `compact` (D-0051).
-  It belongs under `janus.system` because both are one kernel for every
+* `janus.system.kernelProfile` is `standard`, `compact`, or `matched`
+  (D-0051, D-0052). `standard` and `compact` are one kernel for every
   board. `standard` is the default and is the NixOS kernel, so aarch64
   and x86_64 keep the binary cache. `compact` drops a subsystem only
   when no household router board, current or later, has a use for it.
-  The symbols are `modules/janus/system/kernel-profile.nix`. Sound,
+  The symbols are `modules/janus/system/kernel-profile.nix` and
+  `kernel-matched.nix`. Sound,
   desktop and 3D GPUs, compute accelerators, cameras and TV, HDMI-CEC
   and infrared remotes, industrial I/O and Comedi, InfiniBand, and SAN
   go. NIC drivers stay, including ones no current board uses. Wi-Fi,
@@ -281,7 +285,8 @@ tree does not mean that behavior exists. Stubs are not finished features.
   shrunk module set, so current boards do not gain storage from
   `compact`. The compile-time cut matters while kernel patches still
   force a rebuild, and on riscv64 and armv7l, which have no cache.
-  `matched` is not a value (D-0052). Spotify Soloist audio, the Ara240
+  `matched` keeps a driver only when this board or a declared peripheral
+  uses it (D-0052). Spotify Soloist audio, the Ara240
   runtime, and the Hailo-10H need sound or a compute accelerator. `compact`
   drops both.
   Whether a later image that enables one of them must set `standard`, or

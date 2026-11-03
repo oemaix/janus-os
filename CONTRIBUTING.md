@@ -24,7 +24,7 @@ Issues and pull requests stay free of credentials, subscription URLs, age keys, 
 
 `docs/` is the definition suite. It stays English. When code and an Approved definition disagree, change the code or add an ADR in `docs/adr/`. A draft document still wins over an unstated guess. The ADR template is [docs/adr/0000-template.md](docs/adr/0000-template.md).
 
-Choices that are not ADRs are `D-nnnn` in [docs/18-decisions.md](docs/18-decisions.md). Explanations are `Q-nnnn` in [docs/19-questions.md](docs/19-questions.md). The number stays when a row moves from undecided to decided. A deleted number is not reused. An accepted ADR is not copied into the decision list.
+Choices that are not ADRs are `D-nnnn` in [docs/18-decisions.md](docs/18-decisions.md). Explanations are `Q-nnnn` in [docs/19-questions.md](docs/19-questions.md). The number stays when a row moves from undecided to decided. A deleted number is not reused. An accepted ADR is not copied into the decision list. Implementation tarpits are `T-nnnn` in [docs/22-tarpits.md](docs/22-tarpits.md). That number is not reused either. An open row stays until the code follows it.
 
 Implementation progress is [docs/13-roadmap.md](docs/13-roadmap.md). A stub is not a finished feature.
 

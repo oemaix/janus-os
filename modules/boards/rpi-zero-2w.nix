@@ -20,8 +20,10 @@ in {
       "console=ttyS0,115200"
       "net.ifnames=0"
     ];
+    # The SD card is the builtin sdhost (MMC_BCM2835). The Arasan host is
+    # the onboard radio. It is loaded with that access point, not here.
+    # docs/10 §4.7.
     boot.initrd.availableKernelModules = [
-      "sdhci_iproc"
       "mmc_block"
       "dwc2"
     ];

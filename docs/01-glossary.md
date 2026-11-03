@@ -149,6 +149,10 @@ Geo data, DHCP leases, persisted journal, flow statistics).
 **System closure** — The set of Nix store paths that make up one bootable
 system generation. Immutable; identified by hash.
 
+**Tarpit** — A failure that looks like progress until a later build or
+boot. The list is *22*. The number is `T-nnnn` and is not reused.
+*Avoid:* treating the row as a second copy of the decision it cites.
+
 **Uplink** — A physical or logical link that carries traffic to the
 Internet: an Ethernet port, a PPPoE session, a WWAN dongle. One WAN
 definition binds to one uplink.

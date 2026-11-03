@@ -140,7 +140,11 @@ is that kernel on every board with sound, desktop and 3D graphics,
 cameras, industrial sensors, InfiniBand, and storage-network adapters
 left out. Network cards, Wi-Fi, USB, cellular modems, SD, NVMe, and
 virtio stay, and the serial console stays. Use `compact` when a kernel
-patch forces a rebuild.
+patch forces a rebuild. `matched` starts from that cut and then keeps
+a driver only for this board and the peripherals the configuration
+names. An undeclared network device, Wi-Fi radio, cellular modem, or
+Bluetooth dongle is left out, and so are NVMe and virtio on a board
+that does not use them. The test VM keeps virtio. Sound stays out.
 
 `janus.system.region` is `cn` (the default), `ru`, or `ir`. It chooses the
 domestic resolver. For `ru`, `janus.proxy.blockQuic` defaults to true

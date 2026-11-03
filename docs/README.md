@@ -20,6 +20,7 @@ How to report a defect or send a change is
 What the code already contains, and what it does not, is *13*. Router
 commands are fixed in *14*. Build-host commands are fixed in *16*.
 Choices that are not ADRs are *18*. Explanations are *19*.
+Implementation tarpits are *22*.
 
 ## Document map
 
@@ -44,6 +45,7 @@ Choices that are not ADRs are *18*. Explanations are *19*.
 | 15 | [Panel user interface](15-hmi-ui.md) | One interaction model for small and large panels, and for different keys | Developers |
 | 20 | [Maintenance page](20-maintenance-ui.md) | Browser page for status, maintenance actions, and hot overrides | Developers |
 | 21 | [Reference regions](21-reference-regions.md) | China, Russia, and Iran: domestic DNS, QUIC default, and the example routing lists | Developers |
+| 22 | [Implementation tarpits](22-tarpits.md) | Failures that show up only in a later build or boot | Developers |
 | 18 | [Decisions](18-decisions.md) | Choices that are not ADRs, decided and undecided | Everyone |
 | 19 | [Questions](19-questions.md) | Short answers that point at the binding document | Everyone |
 | — | [Architecture Decision Records](adr/README.md) | Individual, dated decisions with rationale | Developers |
@@ -65,5 +67,6 @@ Choices that are not ADRs are *18*. Explanations are *19*.
   `D-nnnn` in *18*. The number stays when a row moves from undecided to
   decided, and a deleted number is not reused. An accepted ADR is not
   repeated there. Explanations are `Q-nnnn` in *19*, also never reused.
+  Implementation tarpits are `T-nnnn` in *22*, also never reused.
 
 These documents are the definition of Janus OS. Implementation follows them.

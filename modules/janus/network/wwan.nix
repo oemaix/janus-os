@@ -41,6 +41,15 @@
       mode
     };
 
+  # Huawei 12d1:1506 in ncm binds huawei_cdc_ncm, which selects cdc_ncm.
+  modulesOf = name: let
+    mode = effective name;
+    id = usbId name;
+  in
+    if mode == "ncm" && lib.hasPrefix "12d1:" id
+    then [(moduleOf mode) "huawei_cdc_ncm"]
+    else [(moduleOf mode)];
+
   apnOf = name: let
     apn = cfg.wans.${name}.wwan.apn;
   in
@@ -127,7 +136,7 @@
     '';
 in {
   config = lib.mkIf (wwanNames != []) {
-    boot.kernelModules = map (n: moduleOf (effective n)) wwanNames;
+    boot.kernelModules = lib.concatMap modulesOf wwanNames;
 
     services.udev.extraRules =
       lib.concatMapStrings (name: let

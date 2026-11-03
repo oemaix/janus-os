@@ -562,8 +562,8 @@ in {
         else "no"
       } = yes
       test ${lib.escapeShellArg (lib.head (lib.attrNames rpi.config.janus.network.ports))} = eth0
-      echo ${text rpi.config.system.build.janusBoardImage.bootExtra} | grep -q bcm2710-rpi-3-b.dtb
-      echo ${text rpi.config.system.build.janusBoardImage.bootExtra} | grep -q bcm2710-rpi-3-b-plus.dtb
+      echo ${text rpi.config.system.build.janusBoardImage.bootExtra} | grep -q bcm2837-rpi-3-b.dtb
+      echo ${text rpi.config.system.build.janusBoardImage.bootExtra} | grep -q bcm2837-rpi-3-b-plus.dtb
       echo ${text rpi.config.system.build.janusBoardImage.bootExtra} | grep -q '\[pi3\]'
       echo ${text rpi.config.system.build.janusBoardImage.bootExtra} | grep -q '\[pi3+\]'
       test ${
@@ -1968,6 +1968,7 @@ in {
         then "yes"
         else "no"
       } = no
+      echo ${lib.escapeShellArg (lib.concatStringsSep " " os.config.boot.kernelModules)} | grep -q sdhci_iproc
       echo ${lib.escapeShellArg (lib.concatStringsSep " " os.config.boot.kernelModules)} | grep -q brcmfmac
       test ${lib.escapeShellArg patch.structuredExtraConfig.MMC_SDHCI_IPROC.tristate} = m
       test ${lib.escapeShellArg patch.structuredExtraConfig.BRCMFMAC_SDIO.tristate} = y
@@ -2308,6 +2309,31 @@ in {
       conf=$(printf '%s\n' ${lib.escapeShellArg switch} | awk '{print $NF}')
       grep -q 'DefaultVendor=0x2c7c' "$conf"
       echo ${lib.escapeShellArg (lib.concatStringsSep " " os.config.boot.kernelModules)} | grep -q qmi_wwan
+      echo ok > "$out"
+    '';
+  eval-wwan-huawei-ncm = let
+    os = mk [
+      base
+      {
+        janus.hardware.peripherals.lte = {
+          class = "wwan";
+          match.usbVendorProduct = "12d1:1506";
+          wwan.mode = "ncm";
+        };
+        janus.network.wans.cell = {
+          uplink = "lte";
+          mode = "wwan";
+          wwan.peripheral = "lte";
+        };
+      }
+    ];
+    mods = lib.concatStringsSep " " os.config.boot.kernelModules;
+  in
+    pkgs.runCommand "eval-wwan-huawei-ncm" {} ''
+      case ${lib.escapeShellArg mods} in
+        *cdc_ncm*huawei_cdc_ncm*) ;;
+        *) echo "huawei ncm modules are ${mods}" >&2; exit 1 ;;
+      esac
       echo ok > "$out"
     '';
   eval-remote = let
@@ -5109,10 +5135,210 @@ in {
     base
     {janus.system.reboot.schedule = "0 4 1 *";}
   ];
-  eval-kernel-profile-matched = fail "eval-kernel-profile-matched" [
-    base
-    {janus.system.kernelProfile = "matched";}
-  ];
+  eval-kernel-profile-matched = let
+    one = board: peripherals:
+      mk [
+        {
+          janus.hardware.board = board;
+          janus.access.ssh.authorizedKeys = [key];
+          janus.system.kernelProfile = "matched";
+          janus.hardware.peripherals = peripherals;
+        }
+      ];
+    patchOf = os:
+      lib.findFirst (p: p.name == "janus-kernel-matched") (throw "missing matched kernel patch") os.config.boot.kernelPatches;
+    tri = v:
+      if v ? content
+      then v.content.tristate or ""
+      else v.tristate or "";
+    sym = os: name: tri (patchOf os).structuredExtraConfig.${name};
+    eq = os: name: value: "test ${lib.escapeShellArg (sym os name)} = ${value}";
+    bare = board: one board {};
+    vm = bare "x86_64-test";
+    yanyu = bare "yanyu-stx-r19f";
+    r4s = bare "nanopi-r4s";
+    r4sPlus = one "nanopi-r4s" {
+      nic = {
+        class = "nic";
+        match.usbVendorProduct = "0bda:8153";
+      };
+      wifi = {
+        class = "wifi";
+        match.usbVendorProduct = "0e8d:7612";
+      };
+    };
+    rock = bare "rockpi-4c";
+    rockRadio = one "rockpi-4c" {
+      radio = {
+        class = "wifi";
+        match.onboard = true;
+      };
+    };
+    zero = bare "rpi-zero-2w";
+    zeroFull = one "rpi-zero-2w" {
+      radio = {
+        class = "wifi";
+        match.onboard = true;
+      };
+      nic = {
+        class = "nic";
+        match.usbVendorProduct = "0bda:8156";
+      };
+      ups = {
+        class = "power";
+        match.i2cAddress = "0x40";
+      };
+      panel = {
+        class = "hmi";
+        hmi.profile = "waveshare-1.3-oled-hat";
+      };
+    };
+    potato = bare "le-potato";
+    potatoFull = one "le-potato" {
+      stick = {
+        class = "wifi";
+        match.usbVendorProduct = "0bda:8176";
+      };
+      cell = {
+        class = "wwan";
+        match.usbVendorProduct = "2c7c:0125";
+      };
+      bt = {
+        class = "bluetooth";
+        match.usbVendorProduct = "0a12:0001";
+      };
+    };
+    pi2 = bare "rpi2";
+    pi3 = bare "rpi3";
+    pi4 = bare "rpi4";
+    pi4Wifi = one "rpi4" {
+      wifi = {
+        class = "wifi";
+        match.usbVendorProduct = "0e8d:7961";
+      };
+    };
+    vf2 = bare "visionfive2";
+    potatoHuawei = one "le-potato" {
+      cell = {
+        class = "wwan";
+        match.usbVendorProduct = "12d1:1506";
+        wwan.mode = "ncm";
+      };
+    };
+    listed = os: lib.concatStringsSep " " os.config.boot.initrd.availableKernelModules;
+  in
+    pkgs.runCommand "eval-kernel-profile-matched" {} ''
+      ${eq vm "VIRTIO_NET" "m"}
+      ${eq vm "E1000E" "n"}
+      ${eq vm "R8169" "n"}
+      ${eq vm "SOUND" "n"}
+      ${eq vm "WLAN" "n"}
+      ${eq vm "BT" "n"}
+      ${eq vm "SATA_AHCI" "n"}
+      ${eq yanyu "E1000E" "m"}
+      ${eq yanyu "R8169" "n"}
+      ${eq yanyu "VIRTIO_NET" "n"}
+      ${eq yanyu "SATA_AHCI" "m"}
+      ${eq yanyu "USB_STORAGE" "m"}
+      ${eq yanyu "BLK_DEV_NVME" "n"}
+      ${eq r4s "R8169" "m"}
+      ${eq r4s "DWMAC_ROCKCHIP" "m"}
+      ${eq r4s "REALTEK_PHY" "m"}
+      ${eq r4s "E1000E" "n"}
+      ${eq r4s "BCMGENET" "n"}
+      ${eq r4s "BRCMFMAC" "n"}
+      ${eq r4s "USB_RTL8152" "n"}
+      ${eq r4s "BLK_DEV_NVME" "n"}
+      ${eq r4s "SATA_AHCI" "n"}
+      ${eq r4s "DRM_ROCKCHIP" "n"}
+      ${eq r4s "VIRTIO_NET" "n"}
+      ${eq r4s "WLAN" "n"}
+      ${eq r4sPlus "USB_RTL8152" "m"}
+      ${eq r4sPlus "USB_USBNET" "m"}
+      ${eq r4sPlus "R8169" "m"}
+      ${eq r4sPlus "MT76x2U" "m"}
+      ${eq r4sPlus "WLAN" "y"}
+      ${eq r4sPlus "BRCMFMAC" "n"}
+      ${eq r4sPlus "USB_NET_CDC_NCM" "n"}
+      ${eq rock "BRCMFMAC" "n"}
+      ${eq rock "BLK_DEV_NVME" "m"}
+      ${eq rock "R8169" "n"}
+      ${eq rock "DWMAC_ROCKCHIP" "m"}
+      ${eq rockRadio "BRCMFMAC" "m"}
+      ${eq rockRadio "BRCMFMAC_SDIO" "y"}
+      ${eq rockRadio "BRCMFMAC_USB" "n"}
+      ${eq zero "BRCMFMAC" "n"}
+      ${eq zero "MMC_SDHCI_IPROC" "n"}
+      ${eq zero "MMC_BCM2835" "y"}
+      ${eq zero "USB_RTL8152" "n"}
+      ${eq zeroFull "BRCMFMAC" "m"}
+      ${eq zeroFull "MMC_SDHCI_IPROC" "m"}
+      ${eq zeroFull "MMC_BCM2835" "y"}
+      ${eq zeroFull "USB_RTL8152" "m"}
+      ${eq zeroFull "SENSORS_INA2XX" "m"}
+      ${eq zeroFull "I2C_BCM2835" "m"}
+      ${eq zeroFull "SPI_BCM2835" "m"}
+      ${eq zeroFull "SPI_SPIDEV" "m"}
+      ${eq potato "DWMAC_MESON" "m"}
+      ${eq potato "MESON_GXL_PHY" "m"}
+      ${eq potato "MMC_MESON_GX" "y"}
+      ${eq potato "USB_NET_HUAWEI_CDC_NCM" "n"}
+      ${eq potato "R8169" "n"}
+      ${eq potato "RTL8192CU" "n"}
+      ${eq potato "BT" "n"}
+      ${eq potatoFull "RTL8192CU" "m"}
+      ${eq potatoFull "RTL8XXXU" "n"}
+      ${eq potatoFull "USB_NET_QMI_WWAN" "m"}
+      ${eq potatoFull "USB_WDM" "m"}
+      ${eq potatoFull "USB_NET_CDCETHER" "n"}
+      ${eq potatoFull "BT" "y"}
+      ${eq potatoFull "BT_HCIBTUSB" "m"}
+      ${eq potatoFull "BT_HCIUART" "n"}
+      ${eq potatoFull "DWMAC_MESON" "m"}
+      ${eq pi2 "USB_NET_SMSC95XX" "m"}
+      ${eq pi2 "USB_LAN78XX" "n"}
+      ${eq pi2 "MMC_BCM2835" "m"}
+      ${eq pi2 "BCMGENET" "n"}
+      ${eq pi3 "USB_NET_SMSC95XX" "m"}
+      ${eq pi3 "USB_LAN78XX" "m"}
+      ${eq pi3 "MMC_BCM2835" "y"}
+      ${eq pi3 "MMC_SDHCI_IPROC" "n"}
+      ${eq pi3 "USB_NET_CDC_NCM" "n"}
+      ${eq pi3 "BCMGENET" "n"}
+      ${eq pi4 "BCMGENET" "m"}
+      ${eq pi4 "USB_LAN78XX" "n"}
+      ${eq pi4 "R8169" "n"}
+      ${eq pi4 "MT7921U" "n"}
+      ${eq pi4Wifi "MT7921U" "m"}
+      ${eq pi4Wifi "WLAN_VENDOR_MEDIATEK" "y"}
+      ${eq pi4Wifi "BCMGENET" "m"}
+      ${eq vf2 "DWMAC_STARFIVE" "m"}
+      ${eq vf2 "MOTORCOMM_PHY" "m"}
+      ${eq vf2 "E1000E" "n"}
+      ${eq vf2 "R8169" "n"}
+      ${eq vf2 "BLK_DEV_NVME" "m"}
+      ${eq vf2 "VIRTIO_NET" "n"}
+      ${eq potatoHuawei "USB_NET_HUAWEI_CDC_NCM" "m"}
+      ${eq potatoHuawei "USB_NET_CDC_NCM" "m"}
+      ${eq potatoHuawei "USB_NET_CDCETHER" "m"}
+      ${eq potatoHuawei "USB_WDM" "m"}
+      ${eq potatoHuawei "MMC_MESON_GX" "y"}
+      if printf '%s\n' ${lib.escapeShellArg (listed potato)} | grep -qw meson-gx-mmc; then
+        echo "le potato initrd lists meson-gx-mmc" >&2
+        exit 1
+      fi
+      if printf '%s\n' ${lib.escapeShellArg (listed zero)} | grep -Eq 'sdhci_iproc|bcm2835'; then
+        echo "zero initrd lists a host that is not a module" >&2
+        exit 1
+      fi
+      if printf '%s\n' ${lib.escapeShellArg (listed pi3)} | grep -Eq 'sdhci_iproc|bcm2835'; then
+        echo "pi3 initrd lists a host that is not a module" >&2
+        exit 1
+      fi
+      printf '%s\n' ${lib.escapeShellArg (listed pi2)} | grep -qw bcm2835
+      printf '%s\n' ${lib.escapeShellArg (listed pi2)} | grep -qw sdhci_iproc
+      echo ok > "$out"
+    '';
   eval-kernel-profile = let
     standard = mk [base];
     compact = mk [
@@ -5200,54 +5426,55 @@ in {
     fi
     echo ok > "$out"
   '';
-  eval-wan-show = pkgs.runCommand "eval-wan-show" {
-    nativeBuildInputs = [pkgs.bash pkgs.jq pkgs.gawk pkgs.gnused pkgs.coreutils pkgs.gnugrep];
-  } ''
-    set -eu
-    set -o pipefail
-    root=$TMPDIR/wan
-    mkdir -p "$root/run/janus/wan/main" "$root/sys/class/net/eth0" "$root/bin"
-    printf 'eth0\n' > "$root/run/janus/wan/main/iface"
-    printf '1.1.1.1\n9.9.9.9\n' > "$root/run/janus/wan/main/dns"
-    printf 'up\n' > "$root/run/janus/wan/main/health"
-    now=$(date +%s)
-    printf '%s\n' "$((now - 125))" > "$root/run/janus/wan/main/up-since"
-    printf 'up\n' > "$root/sys/class/net/eth0/operstate"
-    printf '1\n' > "$root/sys/class/net/eth0/carrier"
-    printf '%s\n' '#!/bin/sh' \
-      'case "$1 $2 $3" in' \
-      '  "-4 -o addr") printf "%s\n" "2: eth0 inet 10.0.0.2/24 brd 10.0.0.255 scope global dynamic eth0 valid_lft 3661sec preferred_lft 3661sec" ;;' \
-      '  "-6 -o addr") printf "%s\n" "2: eth0 inet6 2001:db8::2/64 scope global valid_lft forever preferred_lft forever" ;;' \
-      '  "-4 route show") printf "%s\n" "default via 10.0.0.1 dev eth0" ;;' \
-      '  *) echo "unexpected ip: $*" >&2; exit 1 ;;' \
-      'esac' > "$root/bin/ip"
-    chmod +x "$root/bin/ip"
-    export PATH="$root/bin:$PATH"
-    {
-      printf '%s\n' 'set -u' 'set -o pipefail'
-      sed -e "s|/run/janus/wan|$root/run/janus/wan|g" -e "s|/sys/class/net|$root/sys/class/net|g" ${../pkgs/janus.sh}
-    } > "$root/janus.sh"
-    outj=$(bash "$root/janus.sh" --json wan show main)
-    printf '%s\n' "$outj" | jq -e '.name == "main" and .link == "eth0" and .state == "up" and .carrier == "1" and .gateway == "10.0.0.1" and .health == "up" and .dns == ["1.1.1.1","9.9.9.9"] and .addresses == ["10.0.0.2/24","2001:db8::2/64"] and .leaseSeconds == 3661' >/dev/null
-    up=$(printf '%s\n' "$outj" | jq '.uptimeSeconds')
-    test "$up" -ge 125
-    test "$up" -le 130
-    text=$(bash "$root/janus.sh" wan show main)
-    printf '%s\n' "$text" | grep -q 'Health:   up'
-    printf '%s\n' "$text" | grep -q 'Uptime:'
-    printf '%s\n' "$text" | grep -q '1h 1m remaining'
-    sed -i 's/default via 10.0.0.1 dev eth0/default dev eth0 scope link/' "$root/bin/ip"
-    outp=$(bash "$root/janus.sh" --json wan show main)
-    printf '%s\n' "$outp" | jq -e '.gateway == null' >/dev/null
-    textp=$(bash "$root/janus.sh" wan show main)
-    printf '%s\n' "$textp" | grep -q 'Gateway:  none'
-    set +e
-    bash "$root/janus.sh" wan show missing >/dev/null 2>"$root/err"
-    code=$?
-    set -e
-    test "$code" = 2
-    echo ok > "$out"
-  '';
+  eval-wan-show =
+    pkgs.runCommand "eval-wan-show" {
+      nativeBuildInputs = [pkgs.bash pkgs.jq pkgs.gawk pkgs.gnused pkgs.coreutils pkgs.gnugrep];
+    } ''
+      set -eu
+      set -o pipefail
+      root=$TMPDIR/wan
+      mkdir -p "$root/run/janus/wan/main" "$root/sys/class/net/eth0" "$root/bin"
+      printf 'eth0\n' > "$root/run/janus/wan/main/iface"
+      printf '1.1.1.1\n9.9.9.9\n' > "$root/run/janus/wan/main/dns"
+      printf 'up\n' > "$root/run/janus/wan/main/health"
+      now=$(date +%s)
+      printf '%s\n' "$((now - 125))" > "$root/run/janus/wan/main/up-since"
+      printf 'up\n' > "$root/sys/class/net/eth0/operstate"
+      printf '1\n' > "$root/sys/class/net/eth0/carrier"
+      printf '%s\n' '#!/bin/sh' \
+        'case "$1 $2 $3" in' \
+        '  "-4 -o addr") printf "%s\n" "2: eth0 inet 10.0.0.2/24 brd 10.0.0.255 scope global dynamic eth0 valid_lft 3661sec preferred_lft 3661sec" ;;' \
+        '  "-6 -o addr") printf "%s\n" "2: eth0 inet6 2001:db8::2/64 scope global valid_lft forever preferred_lft forever" ;;' \
+        '  "-4 route show") printf "%s\n" "default via 10.0.0.1 dev eth0" ;;' \
+        '  *) echo "unexpected ip: $*" >&2; exit 1 ;;' \
+        'esac' > "$root/bin/ip"
+      chmod +x "$root/bin/ip"
+      export PATH="$root/bin:$PATH"
+      {
+        printf '%s\n' 'set -u' 'set -o pipefail'
+        sed -e "s|/run/janus/wan|$root/run/janus/wan|g" -e "s|/sys/class/net|$root/sys/class/net|g" ${../pkgs/janus.sh}
+      } > "$root/janus.sh"
+      outj=$(bash "$root/janus.sh" --json wan show main)
+      printf '%s\n' "$outj" | jq -e '.name == "main" and .link == "eth0" and .state == "up" and .carrier == "1" and .gateway == "10.0.0.1" and .health == "up" and .dns == ["1.1.1.1","9.9.9.9"] and .addresses == ["10.0.0.2/24","2001:db8::2/64"] and .leaseSeconds == 3661' >/dev/null
+      up=$(printf '%s\n' "$outj" | jq '.uptimeSeconds')
+      test "$up" -ge 125
+      test "$up" -le 130
+      text=$(bash "$root/janus.sh" wan show main)
+      printf '%s\n' "$text" | grep -q 'Health:   up'
+      printf '%s\n' "$text" | grep -q 'Uptime:'
+      printf '%s\n' "$text" | grep -q '1h 1m remaining'
+      sed -i 's/default via 10.0.0.1 dev eth0/default dev eth0 scope link/' "$root/bin/ip"
+      outp=$(bash "$root/janus.sh" --json wan show main)
+      printf '%s\n' "$outp" | jq -e '.gateway == null' >/dev/null
+      textp=$(bash "$root/janus.sh" wan show main)
+      printf '%s\n' "$textp" | grep -q 'Gateway:  none'
+      set +e
+      bash "$root/janus.sh" wan show missing >/dev/null 2>"$root/err"
+      code=$?
+      set -e
+      test "$code" = 2
+      echo ok > "$out"
+    '';
   cli-runtime-deps = let
     system = pkgs.stdenv.hostPlatform.system;
   in
@@ -5292,133 +5519,134 @@ in {
       fi
       echo ok > "$out"
     '';
-  cli-plan = pkgs.runCommand "cli-plan" {
-    nativeBuildInputs = [pkgs.bash pkgs.jq pkgs.gnused pkgs.git pkgs.gnugrep pkgs.gawk pkgs.coreutils];
-  } ''
-    set -eu
-    set -u
-    set -o pipefail
-    JANUS_BUILD_LIB=1
-    # shellcheck disable=SC1091
-    . ${../pkgs/janus-build.sh}
+  cli-plan =
+    pkgs.runCommand "cli-plan" {
+      nativeBuildInputs = [pkgs.bash pkgs.jq pkgs.gnused pkgs.git pkgs.gnugrep pkgs.gawk pkgs.coreutils];
+    } ''
+      set -eu
+      set -u
+      set -o pipefail
+      JANUS_BUILD_LIB=1
+      # shellcheck disable=SC1091
+      . ${../pkgs/janus-build.sh}
 
-    nix_fleet() {
-      jq -n --arg repo "$PWD" '{
-        "sub-a": "\($repo)/secrets/subscription/shared.yaml",
-        "wifi-a": "/nix/store/xxx-source/secrets/wifi/h1/living.yaml",
-        "stolen": "/outside/not-in-repo.yaml"
-      }'
-    }
-    printf 'sub-a\tsecrets/subscription/shared.yaml\nwifi-a\tsecrets/wifi/h1/living.yaml\n' > expected
-    secret_files h1 >got 2>skipped.log || { echo "secret_files failed" >&2; exit 1; }
-    if ! cmp expected got; then
-      echo "secret file map differed" >&2
-      echo "expected:" >&2
-      cat -A expected >&2
-      echo "got:" >&2
-      cat -A got >&2
-      exit 1
-    fi
-    if ! grep -q '/outside/not-in-repo.yaml' skipped.log; then
-      echo "an outside path was not reported" >&2
-      cat skipped.log >&2
-      exit 1
-    fi
-
-    row=$(printf 'subscription\th1\tsecrets/subscription/shared.yaml\tmy sub')
-    if ! parse_plan_row "$row"; then
-      echo "a good plan row was rejected" >&2
-      exit 1
-    fi
-    test "$kind" = subscription
-    test "$host" = h1
-    test "$name" = "my sub"
-    for row in "$(printf 'subscription\th1\tfile')" "$(printf 'subscription\th1\tfile\tfile')" "$(printf 'subscription\th1\tfile\tbad\trow')"; do
-      if parse_plan_row "$row"; then
-        echo "a bad plan row was accepted: $row" >&2
+      nix_fleet() {
+        jq -n --arg repo "$PWD" '{
+          "sub-a": "\($repo)/secrets/subscription/shared.yaml",
+          "wifi-a": "/nix/store/xxx-source/secrets/wifi/h1/living.yaml",
+          "stolen": "/outside/not-in-repo.yaml"
+        }'
+      }
+      printf 'sub-a\tsecrets/subscription/shared.yaml\nwifi-a\tsecrets/wifi/h1/living.yaml\n' > expected
+      secret_files h1 >got 2>skipped.log || { echo "secret_files failed" >&2; exit 1; }
+      if ! cmp expected got; then
+        echo "secret file map differed" >&2
+        echo "expected:" >&2
+        cat -A expected >&2
+        echo "got:" >&2
+        cat -A got >&2
         exit 1
       fi
-    done
-    if parse_plan_row "$(printf 'subscription\th1\tfile\tb\rname')"; then
-      echo "a carriage return was accepted" >&2
-      exit 1
-    fi
-
-    repo=$(mktemp -d)
-    cd "$repo"
-    git init -q
-    mkdir -p hosts/h1 secrets/subscription secrets/wifi/h1 secrets/keys
-    printf '{}\n' > flake.nix
-    printf '{ ... }: {}\n' > hosts/h1/configuration.nix
-    printf '{ ... }: {}\n' > hosts/h1/overrides.nix
-    printf 'cipher-v1\n' > secrets/subscription/shared.yaml
-    printf 'age1fake\n' > secrets/keys/h1.pub
-    git add .
-    git -c user.email=t@t -c user.name=t commit -qm baseline
-    printf 'cipher-v2\n' > secrets/subscription/shared.yaml
-    git add .
-    git -c user.email=t@t -c user.name=t commit -qm rotate
-    host_address() { printf '%s\n' 10.0.0.1; }
-    ssh_to() {
-      shift
-      if [ "$*" = "janus version --json" ]; then
-        printf '{"configRevision":"%s"}\n' "$(git rev-parse HEAD~1)"
-      else
-        printf '%s\n' "$*" >> "$PWD/applied.log"
+      if ! grep -q '/outside/not-in-repo.yaml' skipped.log; then
+        echo "an outside path was not reported" >&2
+        cat skipped.log >&2
+        exit 1
       fi
-    }
-    nix_fleet() {
-      case "$*" in
-        *.config.janus.proxy.subscriptions*) printf '%s' '{"my sub":{"urlSecret":"sub-a"}}' ;;
-        *.config.janus.network.wifi*) printf '%s' '{}' ;;
-        *sops.secrets*.config*) printf '%s' "{\"sub-a\":\"$PWD/secrets/subscription/shared.yaml\"}" ;;
-        *) return 1 ;;
-      esac
-    }
-    if ! (fleet_apply h1); then
-      echo "fleet_apply failed" >&2
-      exit 1
-    fi
-    grep -q "sops decrypt --extract" applied.log
-    grep -q "proxy.subscriptions.'my sub'.url" applied.log
-    if grep -q 'age -d' applied.log; then
-      echo "fleet apply still decrypts with age" >&2
-      exit 1
-    fi
-    rm -f applied.log
-    git rm -q secrets/subscription/shared.yaml
-    git -c user.email=t@t -c user.name=t commit -qm 'drop cipher'
-    rc=0
-    scratch=''${TMPDIR:-/tmp}
-    err=$scratch/cli-plan-err
-    (fleet_apply h1) >"$scratch/cli-plan-out" 2>"$err" || rc=$?
-    if [ "$rc" -ne 2 ]; then
-      echo "a deleted cipher exited $rc, want 2" >&2
-      cat "$err" >&2
-      exit 1
-    fi
-    grep -q 'outside the hot-override projection' "$err"
-    grep -q 'secrets/subscription/shared.yaml' "$err"
-    if grep -q 'proxy.subscriptions' applied.log 2>/dev/null; then
-      echo "a deleted cipher was applied" >&2
-      exit 1
-    fi
-    weird='secrets/$(touch pwned)'
-    printf 'x\n' > "$weird"
-    git add -- "$weird"
-    git -c user.email=t@t -c user.name=t commit -qm 'odd path'
-    rm -f pwned
-    rc=0
-    (fleet_apply h1) >"$scratch/cli-plan-out" 2>"$err" || rc=$?
-    if [ -e pwned ]; then
-      echo "a diff path was executed" >&2
-      exit 1
-    fi
-    if [ "$rc" -ne 2 ]; then
-      echo "a shell-looking path exited $rc, want 2" >&2
-      cat "$err" >&2
-      exit 1
-    fi
-    echo ok > "$out"
-  '';
+
+      row=$(printf 'subscription\th1\tsecrets/subscription/shared.yaml\tmy sub')
+      if ! parse_plan_row "$row"; then
+        echo "a good plan row was rejected" >&2
+        exit 1
+      fi
+      test "$kind" = subscription
+      test "$host" = h1
+      test "$name" = "my sub"
+      for row in "$(printf 'subscription\th1\tfile')" "$(printf 'subscription\th1\tfile\tfile')" "$(printf 'subscription\th1\tfile\tbad\trow')"; do
+        if parse_plan_row "$row"; then
+          echo "a bad plan row was accepted: $row" >&2
+          exit 1
+        fi
+      done
+      if parse_plan_row "$(printf 'subscription\th1\tfile\tb\rname')"; then
+        echo "a carriage return was accepted" >&2
+        exit 1
+      fi
+
+      repo=$(mktemp -d)
+      cd "$repo"
+      git init -q
+      mkdir -p hosts/h1 secrets/subscription secrets/wifi/h1 secrets/keys
+      printf '{}\n' > flake.nix
+      printf '{ ... }: {}\n' > hosts/h1/configuration.nix
+      printf '{ ... }: {}\n' > hosts/h1/overrides.nix
+      printf 'cipher-v1\n' > secrets/subscription/shared.yaml
+      printf 'age1fake\n' > secrets/keys/h1.pub
+      git add .
+      git -c user.email=t@t -c user.name=t commit -qm baseline
+      printf 'cipher-v2\n' > secrets/subscription/shared.yaml
+      git add .
+      git -c user.email=t@t -c user.name=t commit -qm rotate
+      host_address() { printf '%s\n' 10.0.0.1; }
+      ssh_to() {
+        shift
+        if [ "$*" = "janus version --json" ]; then
+          printf '{"configRevision":"%s"}\n' "$(git rev-parse HEAD~1)"
+        else
+          printf '%s\n' "$*" >> "$PWD/applied.log"
+        fi
+      }
+      nix_fleet() {
+        case "$*" in
+          *.config.janus.proxy.subscriptions*) printf '%s' '{"my sub":{"urlSecret":"sub-a"}}' ;;
+          *.config.janus.network.wifi*) printf '%s' '{}' ;;
+          *sops.secrets*.config*) printf '%s' "{\"sub-a\":\"$PWD/secrets/subscription/shared.yaml\"}" ;;
+          *) return 1 ;;
+        esac
+      }
+      if ! (fleet_apply h1); then
+        echo "fleet_apply failed" >&2
+        exit 1
+      fi
+      grep -q "sops decrypt --extract" applied.log
+      grep -q "proxy.subscriptions.'my sub'.url" applied.log
+      if grep -q 'age -d' applied.log; then
+        echo "fleet apply still decrypts with age" >&2
+        exit 1
+      fi
+      rm -f applied.log
+      git rm -q secrets/subscription/shared.yaml
+      git -c user.email=t@t -c user.name=t commit -qm 'drop cipher'
+      rc=0
+      scratch=''${TMPDIR:-/tmp}
+      err=$scratch/cli-plan-err
+      (fleet_apply h1) >"$scratch/cli-plan-out" 2>"$err" || rc=$?
+      if [ "$rc" -ne 2 ]; then
+        echo "a deleted cipher exited $rc, want 2" >&2
+        cat "$err" >&2
+        exit 1
+      fi
+      grep -q 'outside the hot-override projection' "$err"
+      grep -q 'secrets/subscription/shared.yaml' "$err"
+      if grep -q 'proxy.subscriptions' applied.log 2>/dev/null; then
+        echo "a deleted cipher was applied" >&2
+        exit 1
+      fi
+      weird='secrets/$(touch pwned)'
+      printf 'x\n' > "$weird"
+      git add -- "$weird"
+      git -c user.email=t@t -c user.name=t commit -qm 'odd path'
+      rm -f pwned
+      rc=0
+      (fleet_apply h1) >"$scratch/cli-plan-out" 2>"$err" || rc=$?
+      if [ -e pwned ]; then
+        echo "a diff path was executed" >&2
+        exit 1
+      fi
+      if [ "$rc" -ne 2 ]; then
+        echo "a shell-looking path exited $rc, want 2" >&2
+        cat "$err" >&2
+        exit 1
+      fi
+      echo ok > "$out"
+    '';
 }

@@ -58,6 +58,7 @@
     hostName = "janus";
     timeZone = "Asia/Shanghai"; # CHANGE ME
     # kernelProfile = "compact"; # D-0051. standard, the default, is the NixOS kernel.
+    # kernelProfile = "matched"; # D-0052. compact, then this board and its peripherals.
   };
 
   janus.access.ssh.authorizedKeys = [

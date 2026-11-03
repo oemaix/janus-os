@@ -31,7 +31,7 @@ obligation for that release, not a reason to omit the profile.
 | **NanoPi R4S** | RK3399 · aarch64 | 2× 1 GbE (RTL8211E + RTL8111H/PCIe) | 1 | Reference router board. Mainline U-Boot at raw offset (sector 64); GPT. No Wi-Fi. The SD slot stays at 3.3 V high-speed (§3.4). |
 | **ROCK Pi 4C** (`rockpi-4c`) | RK3399 · aarch64 | 1× 1 GbE (RTL8211E). A second port is a USB peripheral. M.2 is NVMe. Wi-Fi 5 onboard. | 1 | Lab unit is v1.2 (D-0016, D-0053). Mainline U-Boot at sector 64; GPT. SPI NOR is tried first and this image does not program it (§3.5). One `eth0`; the profile does not choose a WAN. The onboard radio is a WPA2 access point when `match.onboard` is set (§4.10). ROCK 4C+ is not this profile. |
 | **Raspberry Pi 4 / CM4** (`rpi4`) | BCM2711 · aarch64 | Pi 4: 1× 1 GbE. CM4: that port on the official IO board. USB 3 NICs are peripherals. | 2 | Tier 2 (D-0016). EEPROM firmware, FAT `config.txt`, hybrid MBR so the bootloader finds the GPT boot partition. One `eth0`; the profile does not choose a WAN. The Pi 400 is not a board: it has no Ethernet jack (D-0032). |
-| **Raspberry Pi 3 / 3+** | BCM2837 · aarch64 | 1× 100 MbE (USB 2 shared) | 2 | Low throughput; fine for tunnel-only use behind another router. FAT `config.txt`, hybrid MBR so the boot ROM finds the GPT boot partition. |
+| **Raspberry Pi 3 / 3+** | BCM2837 · aarch64 | 1× 100 MbE (USB 2 shared) | 2 | Low throughput; fine for tunnel-only use behind another router. FAT `config.txt`, hybrid MBR so the boot ROM finds the GPT boot partition. The SD card is built-in `sdhost`. The boot files are `bcm2837-rpi-3-b.dtb` and `bcm2837-rpi-3-b-plus.dtb`. |
 | **Raspberry Pi Zero 2 W** | BCM2710A1 · aarch64 | Wi-Fi 4 + Bluetooth, no Ethernet | 1 | Owner's lab. 512 MiB RAM. Needs a USB Ethernet peripheral for a wired WAN or LAN. FAT `config.txt`, hybrid MBR. The onboard radio is a 2.4 GHz WPA2 access point (§4.7, D-0043). Bluetooth is present and unused. Later audio output is *13*. Not a 500-node target. INA219 UPS overlay is part of this board's lab setup (FR-HW-008). |
 | **Libre Computer Le Potato (AML-S905X-CC)** | S905X · aarch64 | 1× 100 MbE | 1 | Owner's lab. Mainline U-Boot FIP at sector 1 (`u-boot.gxl.sd.bin`); DOS table plus a backup GPT (§3.6, D-0055). eMMC or SD. Lab peripherals: Fibocom NL668 as USB Ethernet (§4.2), RTL8188CUS as AP (§4.4), CSR Bluetooth. |
 | **StarFive VisionFive 2** | JH7110 · riscv64 | 2× 1 GbE | 3 | Needs recent kernel. U-Boot 2026.04 runs from QSPI (D-0047). One GPT image for SD, eMMC, and NVMe. Boot order is eMMC, then SD, then NVMe. No binary cache. v1.3B clocks both MACs from the Motorcomm PHY. The kernel keeps that receive clock running so the DMA reset can finish with no link. |
@@ -162,7 +162,9 @@ not this profile.
 ### 3.6 Le Potato
 
 The Libre Computer AML-S905X-CC boots the SD card and the eMMC user
-area from the same image (D-0055). The GXL mask ROM reads sector 1 and
+area from the same image (D-0055). SD and eMMC share the built-in
+`meson-gx-mmc` host. The initrd lists `mmc_block` only, so that host
+stays built in, including under `matched`. The GXL mask ROM reads sector 1 and
 expects `@AML` at offset 16 of that sector. `u-boot.gxl.sd.bin` from
 nixpkgs `ubootLibreTechCC` carries that header in its sector 1. The
 image writes it with the two `dd` lines that package documents: the
@@ -209,7 +211,7 @@ without the kernel property. Grow waits for both links before it exits.
 |-------|---------|------------------|
 | `nic` | Additional Ethernet port (USB 3 GbE, USB 2.5 GbE) | kernel drivers (`r8152`, `ax88179`, `aqc111`); udev naming |
 | `wifi` | Access point for a LAN (STA/uplink mode out of scope for 1.0) | `hostapd`, mac80211 drivers; firmware from `linux-firmware` |
-| `wwan` | 4G/5G uplink | `usb_modeswitch`, kernel `cdc_ether`/`cdc_ncm`/`rndis_host`/`qmi_wwan`/`cdc_mbim`; `qmicli` / `mbimcli` for QMI and MBIM (ADR-0015) |
+| `wwan` | 4G/5G uplink | `usb_modeswitch`, kernel `cdc_ether`/`cdc_ncm`/`huawei_cdc_ncm`/`rndis_host`/`qmi_wwan`/`cdc_mbim`; `qmicli` / `mbimcli` for QMI and MBIM (ADR-0015) |
 | `bluetooth` | Allowlisted. No routing feature. Later audio output for Spotify Soloist is *13* (FR-HW-009). BlueZ stays off until then. | BlueZ (optional, off by default) |
 | `hmi` | Small LCD/OLED/e-ink status display, optional buttons | `janus-hmi` daemon (framebuffer/SPI drivers), `gpio-keys` |
 | `power` | Battery voltage, current, power (INA219) | in-tree `ti,ina219` hwmon; a generated device-tree overlay on boards that need one |
@@ -230,6 +232,8 @@ plane (AT over USB serial, QMI, MBIM) is optional and used for status only
 `wwan.mode = "auto"` uses the mode the allowlist records for that USB ID.
 Evaluation fails when the ID is absent or the row records no mode. An
 explicit `ecm`, `ncm`, `rndis`, `qmi`, or `mbim` overrides that row.
+Huawei `12d1:1506` in `ncm` uses `huawei_cdc_ncm`. That driver selects
+`cdc_ncm`. Other `ncm` sticks use `cdc_ncm` alone.
 Janus sends `apn` for `qmi` and `mbim` only. Ethernet modes ignore it;
 the module already has an APN.
 
@@ -277,7 +281,7 @@ are not part of the profile. QMI and MBIM are not how this unit attaches.
 | mcuzone Pi Zero UPS (INA219) | I²C `0x40` | power | supported on Zero 2 W (FR-HW-008) |
 | Waveshare Pi Zero UPS (INA219) | I²C `0x43` | power | Address reserved. No discharge measurement, so no readings and shutdown stays unarmed (FR-HW-008). |
 | Huawei E3372h (HiLink) | `12d1:14dc` / `12d1:1f01` | wwan (ecm/rndis) | supported |
-| Huawei E3372s (stick) | `12d1:1506` | wwan (ncm) + AT | supported |
+| Huawei E3372s (stick) | `12d1:1506` | wwan (ncm) + AT | supported via in-tree `huawei_cdc_ncm` |
 | Quectel EC25 / EM12 (USB) | `2c7c:0125` / `2c7c:0512` | wwan (qmi) + AT | supported |
 | ZTE MF833 | `19d2:1405` | wwan (rndis) | supported |
 | Generic CSR BT 4.0 dongle | `0a12:0001` | bluetooth | supported; confirmed on Le Potato. Allowlisted only. Audio output is after 1.0 (*13*, FR-HW-009). BlueZ stays off. |
@@ -410,9 +414,10 @@ access point uses this radio.
 
 The SDIO host is the Arasan controller (`brcm,bcm2835-sdhci`). The
 generic arm64 defconfig does not build `MMC_SDHCI_IPROC`. An image that
-declares this access point enables that option as a module, and loads
-`brcmfmac`. The SD card stays on `sdhost` (`MMC_BCM2835`), which the
-defconfig already builds in.
+declares this access point enables that option as a module and loads
+`sdhci_iproc` with `brcmfmac`. The initrd does not list `sdhci_iproc`.
+The SD card stays on `sdhost` (`MMC_BCM2835`), which the defconfig
+builds in, and `matched` leaves that host built in.
 
 The boot file is the mainline tree `bcm2837-rpi-zero-2-w.dtb`. Its
 compatible string is `raspberrypi,model-zero-2-w`, which is how the

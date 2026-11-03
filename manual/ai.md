@@ -48,12 +48,15 @@ Read this file before answering a question about using Janus OS.
   On the board, `janus deploy` exits 2 and names `janus-build`. Hot
   overrides cover an existing subscription URL, a static lease on an
   existing LAN, and an existing Wi-Fi passphrase.
-- `janus.system.kernelProfile` is `standard` (default) or `compact` (D-0051).
-  `standard` is the NixOS kernel. `compact` drops sound, desktop and 3D GPUs,
-  cameras, industrial I/O, InfiniBand, and SAN, and keeps NIC drivers, Wi-Fi,
-  USB, WWAN, MMC, NVMe, AHCI, the serial console, and virtio.
-  Raspberry Pi HDMI depends on ALSA and is not in `compact`.
-  `matched` is not a value (D-0052).
+- `janus.system.kernelProfile` is `standard` (default), `compact`, or
+  `matched` (D-0051, D-0052). `standard` is the NixOS kernel. `compact`
+  drops sound, desktop and 3D GPUs, cameras, industrial I/O, InfiniBand,
+  and SAN, and keeps NIC drivers, Wi-Fi, USB, WWAN, MMC, NVMe, AHCI, the
+  serial console, and virtio. Raspberry Pi HDMI depends on ALSA and is
+  not in `compact`. `matched` includes that cut, then keeps a driver only
+  when this board or a declared peripheral uses it. An MMC host the initrd
+  does not list stays built in. Huawei `12d1:1506` in `ncm` keeps
+  `huawei_cdc_ncm`. Sound stays off (D-0057).
 - `janus.system.region` is `cn` (default), `ru`, or `ir`. It selects domestic DNS
   and the `blockQuic` default. That reject follows direct rules; it is
   not a drop of every UDP/443. `janus.proxy.rules` stays empty until
@@ -163,7 +166,9 @@ Read this file before answering a question about using Janus OS.
   `janus.build.strategy` defaults to `cross` for them. `lib.mkRouter`
   takes `buildSystem`. Pure evaluation defaults it to `x86_64-linux`.
   `janus-build` on another machine uses that machine's system and refuses
-  a mismatch. A Raspberry Pi 2 v1.2 uses the `rpi3` profile. `rpi4` is
+  a mismatch. A Raspberry Pi 2 v1.2 uses the `rpi3` profile. The Pi 3 and
+  Pi 3+ SD card is built-in `sdhost`. The boot files are
+  `bcm2837-rpi-3-b.dtb` and `bcm2837-rpi-3-b-plus.dtb`. `rpi4` is
   the Raspberry Pi 4 and the Compute Module 4. The Pi 400 is not a board.
 - ROCK Pi 4C (`rockpi-4c`) is the v1.2 board (D-0053, docs/10 §3.5,
   §4.10). GPT, mainline U-Boot at sector 64, console `ttyS2` at
@@ -202,5 +207,5 @@ Read this file before answering a question about using Janus OS.
   0.5B to 3B parameters. Vision models are not in that plan. The Hailo
   device is the Hailo-10H, not a Hailo-8 (D-0060).
   The Soloist API key is not a secret this image has. BlueZ stays off.
-  `compact` still drops sound and compute accelerators. Do not invent
+  `compact` and `matched` still drop sound and compute accelerators. Do not invent
   a playback option, a pairing route, or an accelerator class.
