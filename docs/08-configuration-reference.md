@@ -52,12 +52,32 @@ learning path: copy, edit values, build.
 | `region` | `cn\|ru\|ir` | `cn` | Reference region. Selects domestic DNS and the `blockQuic` default in *21*. Routing rules stay empty until written. Not a hot override. |
 | `kernelProfile` | `standard\|compact\|matched` | `standard` | `standard` is the NixOS kernel. `compact` is one config for every board and drops sound, desktop and 3D GPUs, compute accelerators, cameras and TV, HDMI-CEC and infrared remotes, industrial I/O and Comedi, InfiniBand, and SAN. NIC drivers, Wi-Fi, USB, WWAN, Bluetooth, MMC, the NVMe host, AHCI, simpledrm, SoC scanout that does not depend on ALSA, f2fs, vfat, and virtio stay. Raspberry Pi HDMI depends on ALSA and is not in `compact`. The board consoles are serial (D-0051). `matched` includes that cut, then keeps a driver only when this board or a declared peripheral uses it (D-0052). An MMC host the initrd does not list stays built in. Huawei NCM (`12d1:1506`) keeps `huawei_cdc_ncm`. Sound and compute accelerators stay off (D-0057). |
 
+## 1a. `janus.soloist`
+
+Off unless `enable` is set. A false setting adds no unit, secret, or
+package, and the assertions below are not evaluated. True installs the
+locked Linux build for `x86_64`, `aarch64`, or `armv7l` and starts it.
+Any other architecture fails evaluation. The three archives are flake
+inputs. `flake.lock` holds the narHash, and `nix flake update` moves it
+(D-0058, T-0010). The repository does not store the archive. Pairing
+over HTTP is not this section (D-0059).
+
+| Option | Type | Default | Contract |
+|---|---|---|---|
+| `enable` | bool | `false` | Connect playback device (FR-SVC-001, D-0056). `true` needs `kernelProfile = "standard"` while D-0057 is open, and a board architecture of `x86_64`, `aarch64`, or `armv7l`. It starts Soloist and system-wide PipeWire. It does not start BlueZ (D-0061). |
+| `apiKeySecret` | null or string | unset | sops name. One line, `value:`, in `sopsFile`. Plaintext only in `/run/secrets`. Required when `enable` is true (FR-SEC-012). |
+| `sopsFile` | null or path | unset | sops document for `apiKeySecret`. The secret is installed only when `enable` is true. |
+| `name` | null or string | the host name | Spotify Connect name. |
+| `playback.output` | `embedded` \| `usb` \| `bluetooth` | `embedded` | Where the sound goes (D-0061). `embedded` is the board's own audio. `usb` is an external USB audio interface. `bluetooth` fails evaluation. A2DP is `hw/bluetooth-pairing`. |
+| `playback.node` | null or string | unset | PipeWire node name or id (`soloist --pipewire-device`). Required for `embedded` and `usb`. A blank value fails evaluation. |
+| `zones` | list of strings | `lan` | Where a Spotify Connect client may find this router. UDP 5353 is accepted there and dropped elsewhere. `wan` fails evaluation. `guest` and `iot` only when the firewall defines them. |
+
 ## 2. `janus.hardware`
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `board` | enum | — (required) | `rpi-zero-2w` `rpi2` `rpi3` `rpi4` `nanopi-r4s` `rockpi-4c` `le-potato` `visionfive2` `yanyu-stx-r19f` `x86_64-test` |
-| `peripherals.<name>.class` | enum | — | `wifi` `nic` `wwan` `bluetooth` `hmi` `power`. Audio on `bluetooth`, Spotify Soloist, and an Ara240 or Hailo-10H class are later work (*13*, D-0056) and are not options in this tree. |
+| `peripherals.<name>.class` | enum | — | `wifi` `nic` `wwan` `bluetooth` `hmi` `power`. A `bluetooth` row does not start BlueZ. Soloist playback is `janus.soloist.playback` (D-0061). An Ara240 or Hailo-10H class is later work (*13*, D-0056) and is not an option in this tree. |
 | `peripherals.<name>.match` | attrs | — | `usbVendorProduct = "0bda:8153"`, or `usbPath`, `pciSlot`, `mac`. `onboard = true` is the radio soldered to the board (*10* §4.7, §4.10). |
 | `peripherals.<name>.wwan.mode` | enum | `auto` | `auto` uses the mode the allowlist records for that USB ID (*10* §4.2). Explicit values: `ecm` `ncm` `rndis` `qmi` `mbim`. |
 | `peripherals.<name>.wwan.modeSwitch` | attrs | `{}` | usb_modeswitch parameters. Empty does not run usb_modeswitch. |
@@ -253,10 +273,13 @@ secrets/wireguard/potato/uplink.yaml
 secrets/subscription/vendor-a.yaml   # proxy subscription URL
 secrets/nodes/manual-a.yaml          # manual proxy-node credential
 secrets/web/potato.yaml              # maintenance page passphrase
+secrets/soloist/potato.yaml          # Soloist API key, only when janus.soloist.enable
 ```
 
-`wifi`, `pppoe`, `tailscale`, `wireguard`, and `web` are encrypted to
-that host only. A proxy subscription file and a manual proxy-node file
+`wifi`, `pppoe`, `tailscale`, `wireguard`, `web`, and `soloist` are encrypted to
+that host only. A Soloist file is installed only when `janus.soloist.enable`
+is true. The module sets `sops.secrets.<apiKeySecret>.sopsFile` from
+`janus.soloist.sopsFile` in that case. A false setting does not. A proxy subscription file and a manual proxy-node file
 are encrypted to every host that references the file. A PPPoE file and a
 manual node file hold the YAML document. The other files hold one value.
 
@@ -265,8 +288,8 @@ recipients of that path. sops-nix decrypts it into `/run/secrets`. A
 one-line credential is the `value` key. A PPPoE file and a manual node
 file are the YAML document. The module sets the key for an option that
 names the secret: `value` for a Wi-Fi passphrase, a page passphrase, a
-Tailscale auth key, and a subscription URL, and the whole document for
-PPPoE. A page `passphraseFile`, a PPPoE `passwordFile`, or a WireGuard
+Tailscale auth key, a subscription URL, and a Soloist API key, and the whole document for
+PPPoE. The Soloist key is set only when `janus.soloist.enable` is true, from `janus.soloist.sopsFile`. A page `passphraseFile`, a PPPoE `passwordFile`, or a WireGuard
 `privateKeyFile` that is `/run/secrets/<name>` is one line, so the module
 sets that secret's `key` to `value`. A node `passwordFile` on that path
 is the YAML document, so the module sets `key` to `""`. Each of those is
@@ -286,6 +309,9 @@ sops.secrets.tailscale-potato.sopsFile = ./secrets/tailscale/potato.yaml;
 janus.remoteAccess.tailscale.authKeySecret = "tailscale-potato";
 sops.secrets.web-potato.sopsFile = ./secrets/web/potato.yaml;
 janus.access.web.passphraseSecret = "web-potato";
+janus.soloist.apiKeySecret = "soloist-potato";
+janus.soloist.sopsFile = ./secrets/soloist/potato.yaml;
+janus.soloist.enable = true;
 ```
 
 `janus-build secret keygen` creates the keypair outside the image build.
@@ -324,3 +350,4 @@ export`. `janus-build fleet pull` writes leases into
   unless IPv6 interception is enabled. `bypass` does not warn.
 * `janus.hardware.board` is set and supports every declared peripheral class.
 * A `wwan` peripheral whose USB ID is not on the allowlist fails evaluation.
+* `janus.soloist.enable` needs the API-key secret and its sops file, `kernelProfile = "standard"`, at least one zone other than `wan`, and a board architecture of `x86_64`, `aarch64`, or `armv7l`. `playback.output = bluetooth` fails evaluation. `embedded` and `usb` need a non-blank `playback.node`. A false setting skips these checks and does not install the secret.

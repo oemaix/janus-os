@@ -18,5 +18,6 @@
     ./region.nix
     ./secrets.nix
     ./deploy.nix
+    ./soloist.nix
   ];
 }

@@ -146,7 +146,9 @@
       then "67"
       else null;
     proto =
-      if sname == "icmp"
+      if svc.protocol != null
+      then svc.protocol
+      else if sname == "icmp"
       then null
       else if sname == "dhcp"
       then "udp"

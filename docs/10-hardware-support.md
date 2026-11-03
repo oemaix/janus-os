@@ -212,7 +212,7 @@ without the kernel property. Grow waits for both links before it exits.
 | `nic` | Additional Ethernet port (USB 3 GbE, USB 2.5 GbE) | kernel drivers (`r8152`, `ax88179`, `aqc111`); udev naming |
 | `wifi` | Access point for a LAN (STA/uplink mode out of scope for 1.0) | `hostapd`, mac80211 drivers; firmware from `linux-firmware` |
 | `wwan` | 4G/5G uplink | `usb_modeswitch`, kernel `cdc_ether`/`cdc_ncm`/`huawei_cdc_ncm`/`rndis_host`/`qmi_wwan`/`cdc_mbim`; `qmicli` / `mbimcli` for QMI and MBIM (ADR-0015) |
-| `bluetooth` | Allowlisted. No routing feature. Later audio output for Spotify Soloist is *13* (FR-HW-009). BlueZ stays off until then. | BlueZ (optional, off by default) |
+| `bluetooth` | Allowlisted. No routing feature. Soloist does not start BlueZ. `janus.soloist.playback.output = bluetooth` fails evaluation (D-0061, FR-HW-009). | BlueZ (off) |
 | `hmi` | Small LCD/OLED/e-ink status display, optional buttons | `janus-hmi` daemon (framebuffer/SPI drivers), `gpio-keys` |
 | `power` | Battery voltage, current, power (INA219) | in-tree `ti,ina219` hwmon; a generated device-tree overlay on boards that need one |
 
@@ -284,7 +284,7 @@ are not part of the profile. QMI and MBIM are not how this unit attaches.
 | Huawei E3372s (stick) | `12d1:1506` | wwan (ncm) + AT | supported via in-tree `huawei_cdc_ncm` |
 | Quectel EC25 / EM12 (USB) | `2c7c:0125` / `2c7c:0512` | wwan (qmi) + AT | supported |
 | ZTE MF833 | `19d2:1405` | wwan (rndis) | supported |
-| Generic CSR BT 4.0 dongle | `0a12:0001` | bluetooth | supported; confirmed on Le Potato. Allowlisted only. Audio output is after 1.0 (*13*, FR-HW-009). BlueZ stays off. |
+| Generic CSR BT 4.0 dongle | `0a12:0001` | bluetooth | supported; confirmed on Le Potato. Allowlisted. Soloist playback to this dongle fails evaluation until A2DP (D-0061, FR-HW-009). BlueZ stays off. |
 | Waveshare 1.3" OLED HAT | 40-pin HAT, SH1106, 4-wire SPI | hmi | supported on Raspberry Pi boards (§4.6) |
 | SSD1306 128×64 I²C OLED | — | hmi | supported |
 | Waveshare 2.13" e-Paper HAT | — | hmi | supported |
@@ -481,7 +481,7 @@ These rows are not support. Evaluation does not accept them (D-0056).
 
 | Item | Bus | Status |
 |------|-----|--------|
-| Bluetooth audio output | onboard HCI or CSR `0a12:0001` | After 1.0. Carries Spotify Soloist playback to a paired speaker (UC-23, FR-HW-009). Pairing is HTTP on `lan` and `mgmt` (FR-ACC-007). BlueZ stays off. `compact` drops sound (D-0057). |
+| Bluetooth audio output | onboard HCI or CSR `0a12:0001` | `janus.soloist.playback.output = bluetooth` fails evaluation. A2DP and pairing HTTP are later (UC-23, FR-HW-009, D-0059, D-0061). Board audio and a USB interface are the outputs this tree starts. Both need `playback.node`. `compact` drops sound (D-0057). |
 | NXP Ara240 DNPU | PCIe or USB | After 1.0. No USB or PCI ID is recorded. No peripheral class. Other devices call an HTTP service for an LLM of 0.5B to 3B parameters (UC-24, FR-HW-010, FR-SVC-002, D-0060). Vision models are out. `compact` drops compute accelerators (D-0057). |
 | Hailo-10H | PCIe, M.2 | After 1.0. No PCI ID is recorded. No peripheral class. Hailo-8 and Hailo-8L are not this row. Other devices call HailoRT GenAI over HTTP for an LLM of 0.5B to 3B parameters (UC-24, FR-HW-011, FR-SVC-003, D-0060). Vision models are out. `compact` drops compute accelerators (D-0057). |
 

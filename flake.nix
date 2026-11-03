@@ -14,6 +14,15 @@
   inputs.sing-geoip.flake = false;
   inputs.iran-sing-box-rules.url = "github:Chocolate4U/Iran-sing-box-rules/rule-set";
   inputs.iran-sing-box-rules.flake = false;
+  # Spotify publishes these three Linux builds and replaces each URL in
+  # place. flake.lock records the narHash. `nix flake update` moves it.
+  # docs/08 §1a, T-0010.
+  inputs.soloist-x86_64.url = "https://soloist-builds.spotifycdn.com/soloist_release_x86_64.tar.gz";
+  inputs.soloist-x86_64.flake = false;
+  inputs.soloist-aarch64.url = "https://soloist-builds.spotifycdn.com/soloist_release_arm64.tar.gz";
+  inputs.soloist-aarch64.flake = false;
+  inputs.soloist-armv7l.url = "https://soloist-builds.spotifycdn.com/soloist_release_arm32.tar.gz";
+  inputs.soloist-armv7l.flake = false;
 
   outputs = {
     self,

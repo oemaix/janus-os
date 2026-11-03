@@ -125,6 +125,11 @@ in {
             default = null;
             description = "Service port.";
           };
+          protocol = mkOption {
+            type = types.nullOr (types.enum ["tcp" "udp"]);
+            default = null;
+            description = "Transport. Unset keeps the service's historical protocol.";
+          };
           confine = mkOption {
             type = types.bool;
             default = false;

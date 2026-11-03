@@ -140,6 +140,7 @@ machine.
 |------|-----------|--------|
 | nixpkgs, Janus, engines | flake inputs, fixed hashes | pure |
 | Geo data | flake inputs `sing-geosite`, `sing-geoip`, and `iran-sing-box-rules`. The URL names the `rule-set` branch. `flake.lock` records the commit and the narHash. A fleet takes that lock with `janus-build update`. The router re-fetches that commit (*07* §8). | pure |
+| Soloist | flake inputs `soloist-x86_64`, `soloist-aarch64`, and `soloist-armv7l`. The URL has no version. `flake.lock` records the narHash. `nix flake update` moves it. An enabled image installs that locked build (T-0010). | pure |
 | Subscription snapshot | impure derivation (`__impure = true` or `--impure` with `builtins.fetchurl`) unless `snapshot.hash` is set (then fixed-output) | impure by default |
 
 DoH and DoT hostnames are not resolved at build time. `janus.dns.bootstrap`

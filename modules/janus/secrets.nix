@@ -37,6 +37,7 @@
     ++ lib.mapAttrsToList (_: sub: sub.urlSecret) (
       lib.filterAttrs (_: sub: sub.urlSecret != null) cfg.proxy.subscriptions
     )
+    ++ lib.optional (cfg.soloist.enable && cfg.soloist.apiKeySecret != null) cfg.soloist.apiKeySecret
     ++ namesOf (
       [cfg.access.web.passphraseFile]
       ++ lib.mapAttrsToList (_: wg: wg.privateKeyFile) cfg.remoteAccess.wireguard

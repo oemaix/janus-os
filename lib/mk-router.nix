@@ -77,6 +77,12 @@
             geoip = janus.inputs.sing-geoip;
             iran = janus.inputs.iran-sing-box-rules;
           };
+          # Locked Soloist archives. The narHash is in flake.lock. T-0010.
+          janusSoloist = {
+            "x86_64-linux" = janus.inputs.soloist-x86_64;
+            "aarch64-linux" = janus.inputs.soloist-aarch64;
+            "armv7l-linux" = janus.inputs.soloist-armv7l;
+          };
         };
         modules =
           [

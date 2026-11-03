@@ -41,6 +41,8 @@
     janus.hardware.board = "x86_64-test";
     janus.access.ssh.authorizedKeys = [key];
   };
+  soloistPkg = os:
+    lib.findFirst (p: (p.pname or "") == "soloist") null os.config.environment.systemPackages;
 in {
   eval-minimal = pass "eval-minimal" [base];
   eval-missing-board = fail "eval-missing-board" [
@@ -4399,6 +4401,302 @@ in {
   eval-web-pass = fail "eval-web-pass" [
     base
     {janus.access.web.enable = true;}
+  ];
+  eval-soloist-off = let
+    os = mk [
+      base
+      {
+        janus.system.kernelProfile = "compact";
+        janus.soloist.enable = false;
+        janus.soloist.apiKeySecret = "soloist-router";
+        janus.soloist.sopsFile = ./fixtures/sops-placeholder;
+        janus.soloist.zones = ["wan"];
+      }
+    ];
+  in
+    pkgs.runCommand "eval-soloist-off" {} ''
+      test ${
+        if os.config.environment.etc ? "janus/soloist.json"
+        then "yes"
+        else "no"
+      } = no
+      test ${
+        if os.config.systemd.services ? soloist
+        then "yes"
+        else "no"
+      } = no
+      test ${
+        if os.config.sops.secrets ? soloist-router
+        then "present"
+        else "absent"
+      } = absent
+      test ${
+        if os.config.services.pipewire.enable
+        then "yes"
+        else "no"
+      } = no
+      test ${
+        if os.config.hardware.bluetooth.enable
+        then "yes"
+        else "no"
+      } = no
+      test ${
+        if soloistPkg os == null
+        then "absent"
+        else "present"
+      } = absent
+      echo ok > "$out"
+    '';
+  eval-soloist-on = let
+    os = mk [
+      base
+      {
+        janus.network.lans.lan = {
+          members = ["lan"];
+          address = "192.168.10.1";
+          prefixLength = 24;
+        };
+        janus.soloist.enable = true;
+        janus.soloist.name = "Living Room";
+        janus.soloist.apiKeySecret = "soloist-router";
+        janus.soloist.sopsFile = ./fixtures/sops-placeholder;
+        janus.soloist.playback.node = "alsa_output.platform-analog";
+        janus.hardware.peripherals.speaker = {
+          class = "bluetooth";
+          match.usbVendorProduct = "0a12:0001";
+        };
+      }
+    ];
+    pkg = soloistPkg os;
+    text = os.config.environment.etc."janus/soloist.json".text;
+    rules = os.config.networking.nftables.tables.janus.content;
+    start = os.config.systemd.services.soloist.serviceConfig.ExecStart;
+    pre = lib.concatStringsSep " " (lib.toList os.config.systemd.services.soloist.serviceConfig.ExecStartPre);
+  in
+    pkgs.runCommand "eval-soloist-on" {
+      nativeBuildInputs = [pkgs.jq];
+    } ''
+      set -eu
+      printf '%s\n' ${lib.escapeShellArg text} > soloist.json
+      jq -e --arg key ${lib.escapeShellArg os.config.sops.secrets.soloist-router.path} '.apiKeyFile == $key' soloist.json >/dev/null
+      jq -e '.zones == ["lan"] and .websocket == "off" and .discovery == "mdns" and .name == "Living Room" and .playback.output == "embedded" and .playback.node == "alsa_output.platform-analog"' soloist.json >/dev/null
+      jq -e --arg bin ${pkg}/bin/soloist '.bin == $bin' soloist.json >/dev/null
+      test ${lib.escapeShellArg os.config.sops.secrets.soloist-router.key} = value
+      test ${
+        if os.config.services.pipewire.systemWide && os.config.services.pipewire.audio.enable && os.config.services.pipewire.pulse.enable
+        then "yes"
+        else "no"
+      } = yes
+      test ${
+        if os.config.hardware.bluetooth.enable
+        then "yes"
+        else "no"
+      } = no
+      test ${lib.escapeShellArg os.config.systemd.services.soloist.environment.SOLOIST_NAME} = "Living Room"
+      test ${lib.escapeShellArg os.config.systemd.services.soloist.environment.SOLOIST_DEVICE} = alsa_output.platform-analog
+      grep -F -- '-d "$SOLOIST_DEVICE"' ${start}
+      test ${toString os.config.janus.firewall.services.soloist.port} = 5353
+      test ${os.config.janus.firewall.services.soloist.protocol} = udp
+      test ${
+        if os.config.janus.firewall.services.soloist.confine
+        then "yes"
+        else "no"
+      } = yes
+      printf '%s\n' ${lib.escapeShellArg rules} | grep -q 'iifname { "br-lan" } udp dport 5353 accept'
+      printf '%s\n' ${lib.escapeShellArg rules} | grep -q 'udp dport 5353 drop'
+      printf '%s\n' ${lib.escapeShellArg pre} | grep -q '/run/soloist/api-key'
+      grep -q 'cat --' ${start}
+      grep -q -- '-n' ${start}
+      grep -q -- '-k' ${start}
+      if grep -q -- '-w' ${start}; then exit 1; fi
+      if grep -q placeholder ${start}; then exit 1; fi
+      test ${lib.escapeShellArg (toString os.config.systemd.services.soloist.serviceConfig.RestartPreventExitStatus)} = 10
+      test ${pkg.passthru.system} = x86_64-linux
+      test -x ${pkg}/bin/soloist
+      ${pkg}/bin/soloist --version
+      echo ok > "$out"
+    '';
+  eval-soloist-secret = fail "eval-soloist-secret" [
+    base
+    {
+      janus.soloist.enable = true;
+      janus.hardware.peripherals.speaker.class = "bluetooth";
+    }
+  ];
+  eval-soloist-sops = fail "eval-soloist-sops" [
+    base
+    {
+      janus.soloist.enable = true;
+      janus.soloist.apiKeySecret = "soloist-router";
+      janus.hardware.peripherals.speaker.class = "bluetooth";
+    }
+  ];
+  eval-soloist-compact = fail "eval-soloist-compact" [
+    base
+    {
+      janus.system.kernelProfile = "compact";
+      janus.soloist.enable = true;
+      janus.soloist.apiKeySecret = "soloist-router";
+      janus.soloist.sopsFile = ./fixtures/sops-placeholder;
+      janus.hardware.peripherals.speaker.class = "bluetooth";
+    }
+  ];
+  eval-soloist-matched = fail "eval-soloist-matched" [
+    base
+    {
+      janus.system.kernelProfile = "matched";
+      janus.soloist.enable = true;
+      janus.soloist.apiKeySecret = "soloist-router";
+      janus.soloist.sopsFile = ./fixtures/sops-placeholder;
+      janus.hardware.peripherals.speaker.class = "bluetooth";
+    }
+  ];
+  eval-soloist-bluetooth = fail "eval-soloist-bluetooth" [
+    base
+    {
+      janus.soloist.enable = true;
+      janus.soloist.apiKeySecret = "soloist-router";
+      janus.soloist.sopsFile = ./fixtures/sops-placeholder;
+      janus.soloist.playback.output = "bluetooth";
+      janus.hardware.peripherals.speaker.class = "bluetooth";
+    }
+  ];
+  eval-soloist-usb = fail "eval-soloist-usb" [
+    base
+    {
+      janus.soloist.enable = true;
+      janus.soloist.apiKeySecret = "soloist-router";
+      janus.soloist.sopsFile = ./fixtures/sops-placeholder;
+      janus.soloist.playback.output = "usb";
+    }
+  ];
+  eval-soloist-blank = fail "eval-soloist-blank" [
+    base
+    {
+      janus.soloist.enable = true;
+      janus.soloist.apiKeySecret = "soloist-router";
+      janus.soloist.sopsFile = ./fixtures/sops-placeholder;
+      janus.soloist.playback.node = "";
+    }
+  ];
+  eval-soloist-blank-usb = fail "eval-soloist-blank-usb" [
+    base
+    {
+      janus.soloist.enable = true;
+      janus.soloist.apiKeySecret = "soloist-router";
+      janus.soloist.sopsFile = ./fixtures/sops-placeholder;
+      janus.soloist.playback = {
+        output = "usb";
+        node = "   ";
+      };
+    }
+  ];
+  eval-soloist-usb-node = let
+    os = mk [
+      base
+      {
+        janus.soloist.enable = true;
+        janus.soloist.apiKeySecret = "soloist-router";
+        janus.soloist.sopsFile = ./fixtures/sops-placeholder;
+        janus.soloist.playback = {
+          output = "usb";
+          node = "alsa_output.usb";
+        };
+      }
+    ];
+    text = os.config.environment.etc."janus/soloist.json".text;
+  in
+    pkgs.runCommand "eval-soloist-usb-node" {
+      nativeBuildInputs = [pkgs.jq];
+    } ''
+      set -eu
+      test ${
+        if os.config.hardware.bluetooth.enable
+        then "yes"
+        else "no"
+      } = no
+      test ${lib.escapeShellArg os.config.systemd.services.soloist.environment.SOLOIST_DEVICE} = alsa_output.usb
+      printf '%s\n' ${lib.escapeShellArg text} > soloist.json
+      jq -e '.playback.output == "usb" and .playback.node == "alsa_output.usb"' soloist.json >/dev/null
+      echo ok > "$out"
+    '';
+  eval-soloist-arch = fail "eval-soloist-arch" [
+    {
+      janus.hardware.board = "visionfive2";
+      janus.access.ssh.authorizedKeys = [key];
+      janus.soloist.enable = true;
+      janus.soloist.apiKeySecret = "soloist-router";
+      janus.soloist.sopsFile = ./fixtures/sops-placeholder;
+      janus.hardware.peripherals.speaker.class = "bluetooth";
+    }
+  ];
+  eval-soloist-arm64 = let
+    os = mk [
+      {
+        janus.hardware.board = "rpi4";
+        janus.access.ssh.authorizedKeys = [key];
+        janus.soloist.enable = true;
+        janus.soloist.apiKeySecret = "soloist-router";
+        janus.soloist.sopsFile = ./fixtures/sops-placeholder;
+        janus.soloist.playback.node = "alsa_output.platform-analog";
+        janus.hardware.peripherals.speaker.class = "bluetooth";
+      }
+    ];
+    pkg = soloistPkg os;
+  in
+    pkgs.runCommand "eval-soloist-arm64" {} ''
+      test ${pkg.passthru.system} = aarch64-linux
+      test -x ${pkg}/bin/soloist
+      echo ok > "$out"
+    '';
+  eval-soloist-arm32 = let
+    os = mk [
+      {
+        janus.hardware.board = "rpi2";
+        janus.access.ssh.authorizedKeys = [key];
+        janus.soloist.enable = true;
+        janus.soloist.apiKeySecret = "soloist-router";
+        janus.soloist.sopsFile = ./fixtures/sops-placeholder;
+        janus.soloist.playback.node = "alsa_output.platform-analog";
+        janus.hardware.peripherals.speaker.class = "bluetooth";
+      }
+    ];
+    pkg = soloistPkg os;
+  in
+    pkgs.runCommand "eval-soloist-arm32" {} ''
+      test ${pkg.passthru.system} = armv7l-linux
+      test -x ${pkg}/bin/soloist
+      echo ok > "$out"
+    '';
+  eval-soloist-zones = fail "eval-soloist-zones" [
+    base
+    {
+      janus.soloist.enable = true;
+      janus.soloist.apiKeySecret = "soloist-router";
+      janus.soloist.sopsFile = ./fixtures/sops-placeholder;
+      janus.soloist.zones = [];
+      janus.hardware.peripherals.speaker.class = "bluetooth";
+    }
+  ];
+  eval-soloist-guest = fail "eval-soloist-guest" [
+    base
+    {
+      janus.soloist.enable = true;
+      janus.soloist.apiKeySecret = "soloist-router";
+      janus.soloist.sopsFile = ./fixtures/sops-placeholder;
+      janus.soloist.zones = ["guest"];
+      janus.hardware.peripherals.speaker.class = "bluetooth";
+    }
+  ];
+  eval-soloist-wan = fail "eval-soloist-wan" [
+    base
+    {
+      janus.soloist.enable = true;
+      janus.soloist.apiKeySecret = "soloist-router";
+      janus.soloist.sopsFile = ./fixtures/sops-placeholder;
+      janus.soloist.zones = ["wan"];
+      janus.hardware.peripherals.speaker.class = "bluetooth";
+    }
   ];
   cli-age-key =
     pkgs.runCommand "cli-age-key" {

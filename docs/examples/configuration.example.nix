@@ -81,6 +81,22 @@
   # janus.access.web.passphraseSecret = "web-janus";
   # sops.secrets.web-janus.sopsFile = ./secrets/web/janus.yaml;
 
+  # Spotify Soloist. Off by default: no unit, secret, or package.
+  # The key is one line in secrets/soloist/<host>.yaml. True installs the
+  # build locked in flake.lock for x86_64, aarch64, or armv7l (D-0058).
+  # Another architecture fails evaluation. Playback needs kernelProfile
+  # standard. playback.output defaults to embedded and does not start Bluetooth.
+  # embedded and usb both need playback.node. A blank node fails evaluation.
+  # bluetooth fails evaluation.
+  # janus.soloist.enable = true;
+  # janus.soloist.name = "Janus";
+  # janus.soloist.apiKeySecret = "soloist-janus";
+  # janus.soloist.sopsFile = ./secrets/soloist/janus.yaml;
+  # janus.soloist.playback.node = "alsa_output.platform-analog";
+  # USB uses the same node field.
+  # janus.soloist.playback.output = "usb";
+  # janus.soloist.playback.node = "alsa_output.usb";
+
   ############################################################################
   # Physical ports
   ############################################################################

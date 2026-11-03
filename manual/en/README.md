@@ -146,6 +146,17 @@ names. An undeclared network device, Wi-Fi radio, cellular modem, or
 Bluetooth dongle is left out, and so are NVMe and virtio on a board
 that does not use them. The test VM keeps virtio. Sound stays out.
 
+Spotify Soloist stays out of the image unless `janus.soloist.enable` is
+set. The API key is one line in `secrets/soloist/<host>.yaml`, encrypted
+to that router. Leaving the switch off adds no unit or secret. Turning
+it on installs the build pinned in `flake.lock` for x86_64, aarch64, or
+armv7, and starts playback. The board's own audio is
+`playback.output = "embedded"`. A USB audio interface is
+`playback.output = "usb"`. Both need `playback.node`, the PipeWire node.
+A blank node fails the check. Choosing Bluetooth fails the check and
+does not start Bluetooth.
+`nix flake update` moves that pin. Any other architecture fails the check.
+
 `janus.system.region` is `cn` (the default), `ru`, or `ir`. It chooses the
 domestic resolver. For `ru`, `janus.proxy.blockQuic` defaults to true
 and rejects QUIC that did not match a direct rule. Set it to false to
