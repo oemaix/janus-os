@@ -55,11 +55,11 @@
       "locked": {
         "narHash": "sha256-gKmo0uNbsUDjKgS2+RoXqEAn65OUYjxEW8QUFAxvOu4=",
         "type": "file",
-        "url": "https://www.modelscope.cn/models/rhasspy/piper-voices/resolve/master/en/en_US/lessac/medium/en_US-lessac-medium.onnx"
+        "url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx"
       },
       "original": {
         "type": "file",
-        "url": "https://www.modelscope.cn/models/rhasspy/piper-voices/resolve/master/en/en_US/lessac/medium/en_US-lessac-medium.onnx"
+        "url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx"
       }
     },
     "piper-en-us-lessac-medium-json": {
@@ -67,11 +67,11 @@
       "locked": {
         "narHash": "sha256-FJ6pRYkf/DFtUqdYQIrM0/sVUX0BSkwCdibQHeTt8lY=",
         "type": "file",
-        "url": "https://www.modelscope.cn/models/rhasspy/piper-voices/resolve/master/en/en_US/lessac/medium/en_US-lessac-medium.onnx.json"
+        "url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx.json"
       },
       "original": {
         "type": "file",
-        "url": "https://www.modelscope.cn/models/rhasspy/piper-voices/resolve/master/en/en_US/lessac/medium/en_US-lessac-medium.onnx.json"
+        "url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx.json"
       }
     },
     "piper-fa-ir-amir-medium": {
@@ -79,11 +79,11 @@
       "locked": {
         "narHash": "sha256-iIA0+XGFQlJVUVIQQnJpjaR89EHsFXtCOUmXdyMeFBI=",
         "type": "file",
-        "url": "https://www.modelscope.cn/models/rhasspy/piper-voices/resolve/master/fa/fa_IR/amir/medium/fa_IR-amir-medium.onnx"
+        "url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/fa/fa_IR/amir/medium/fa_IR-amir-medium.onnx"
       },
       "original": {
         "type": "file",
-        "url": "https://www.modelscope.cn/models/rhasspy/piper-voices/resolve/master/fa/fa_IR/amir/medium/fa_IR-amir-medium.onnx"
+        "url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/fa/fa_IR/amir/medium/fa_IR-amir-medium.onnx"
       }
     },
     "piper-fa-ir-amir-medium-json": {
@@ -91,11 +91,11 @@
       "locked": {
         "narHash": "sha256-Iz+spaTeeGsBiq+MlwRXpUPCk1v81YUFp1vzbiJkvhY=",
         "type": "file",
-        "url": "https://www.modelscope.cn/models/rhasspy/piper-voices/resolve/master/fa/fa_IR/amir/medium/fa_IR-amir-medium.onnx.json"
+        "url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/fa/fa_IR/amir/medium/fa_IR-amir-medium.onnx.json"
       },
       "original": {
         "type": "file",
-        "url": "https://www.modelscope.cn/models/rhasspy/piper-voices/resolve/master/fa/fa_IR/amir/medium/fa_IR-amir-medium.onnx.json"
+        "url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/fa/fa_IR/amir/medium/fa_IR-amir-medium.onnx.json"
       }
     },
     "piper-ru-ru-irina-medium": {
@@ -103,11 +103,11 @@
       "locked": {
         "narHash": "sha256-uV7tEIE82STP8DPGB95jfgqTnCfydX1CJvwl+IyBEIs=",
         "type": "file",
-        "url": "https://www.modelscope.cn/models/rhasspy/piper-voices/resolve/master/ru/ru_RU/irina/medium/ru_RU-irina-medium.onnx"
+        "url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/ru/ru_RU/irina/medium/ru_RU-irina-medium.onnx"
       },
       "original": {
         "type": "file",
-        "url": "https://www.modelscope.cn/models/rhasspy/piper-voices/resolve/master/ru/ru_RU/irina/medium/ru_RU-irina-medium.onnx"
+        "url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/ru/ru_RU/irina/medium/ru_RU-irina-medium.onnx"
       }
     },
     "piper-ru-ru-irina-medium-json": {
@@ -115,11 +115,11 @@
       "locked": {
         "narHash": "sha256-c4jDw3bhYaeFhR4EcN5F0t7AvKq0PhVQRK2eN91WHnY=",
         "type": "file",
-        "url": "https://www.modelscope.cn/models/rhasspy/piper-voices/resolve/master/ru/ru_RU/irina/medium/ru_RU-irina-medium.onnx.json"
+        "url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/ru/ru_RU/irina/medium/ru_RU-irina-medium.onnx.json"
       },
       "original": {
         "type": "file",
-        "url": "https://www.modelscope.cn/models/rhasspy/piper-voices/resolve/master/ru/ru_RU/irina/medium/ru_RU-irina-medium.onnx.json"
+        "url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/ru/ru_RU/irina/medium/ru_RU-irina-medium.onnx.json"
       }
     },
     "piper-zh-cn-huayan-medium": {
@@ -127,11 +127,11 @@
       "locked": {
         "narHash": "sha256-js3yz/AKCbKDT4xsVLXrZtepqQy1VR+I+byrkNCTTLM=",
         "type": "file",
-        "url": "https://www.modelscope.cn/models/rhasspy/piper-voices/resolve/master/zh/zh_CN/huayan/medium/zh_CN-huayan-medium.onnx"
+        "url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/zh/zh_CN/huayan/medium/zh_CN-huayan-medium.onnx"
       },
       "original": {
         "type": "file",
-        "url": "https://www.modelscope.cn/models/rhasspy/piper-voices/resolve/master/zh/zh_CN/huayan/medium/zh_CN-huayan-medium.onnx"
+        "url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/zh/zh_CN/huayan/medium/zh_CN-huayan-medium.onnx"
       }
     },
     "piper-zh-cn-huayan-medium-json": {
@@ -139,11 +139,11 @@
       "locked": {
         "narHash": "sha256-1tyqkKj+NeCTdSINhLvx+E0hJYaJlyhL+p1EYzohc68=",
         "type": "file",
-        "url": "https://www.modelscope.cn/models/rhasspy/piper-voices/resolve/master/zh/zh_CN/huayan/medium/zh_CN-huayan-medium.onnx.json"
+        "url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/zh/zh_CN/huayan/medium/zh_CN-huayan-medium.onnx.json"
       },
       "original": {
         "type": "file",
-        "url": "https://www.modelscope.cn/models/rhasspy/piper-voices/resolve/master/zh/zh_CN/huayan/medium/zh_CN-huayan-medium.onnx.json"
+        "url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/zh/zh_CN/huayan/medium/zh_CN-huayan-medium.onnx.json"
       }
     },
     "root": {
@@ -268,11 +268,11 @@
       "locked": {
         "narHash": "sha256-JXzJcYVcASOxfx04Cf6ZYrc1tVreWH5/cewHQvqRMK0=",
         "type": "file",
-        "url": "https://www.modelscope.cn/models/cjc1887415157/whisper.cpp/resolve/master/ggml-base.bin"
+        "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin"
       },
       "original": {
         "type": "file",
-        "url": "https://www.modelscope.cn/models/cjc1887415157/whisper.cpp/resolve/master/ggml-base.bin"
+        "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin"
       }
     },
     "whisper-cpp": {
