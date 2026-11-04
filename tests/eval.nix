@@ -6602,6 +6602,7 @@ in {
       test ${os.config.janus.firewall.services.http.protocol} = tcp
       test ${os.config.systemd.services.janus-http.serviceConfig.UMask} = 0077
       test ${os.config.systemd.services.janus-http.serviceConfig.MemoryMax} = 128M
+      printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " (lib.toList os.config.systemd.services.janus-http.serviceConfig.ExecStartPre))} | grep -q 'install -d -m 0700 -o janus-http -g janus-http /run/janus-http/lock'
       test ${os.config.systemd.services.janus-http-tls.serviceConfig.MemoryMax} = 128M
       test ${
         if os.config.janus.firewall.services.http.confine

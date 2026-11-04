@@ -234,6 +234,10 @@ in {
         Group = "janus-http";
         RuntimeDirectory = "janus-http";
         RuntimeDirectoryMode = "0750";
+        # Root may create the lock directory first. The service user must own it. T-0024.
+        ExecStartPre = [
+          "+${pkgs.coreutils}/bin/install -d -m 0700 -o janus-http -g janus-http /run/janus-http/lock"
+        ];
         ExecStart = "${httpCmd}/bin/janus-http serve";
         Restart = "on-failure";
         RestartSec = "2s";

@@ -266,6 +266,10 @@
     (net/write conn "READY=1\n")
     (net/close conn)))
 
+# systemd creates the runtime directory before start. A second mkdir throws.
+(defn ensure-runtime [runtime]
+  (try (os/mkdir runtime) ([_] nil)))
+
 (defn serve []
   (def token (load-token))
   (when (= token "")
@@ -274,7 +278,7 @@
   (def doc (load-doc))
   (def runtime (or (os/getenv "JANUS_HTTP_RUNTIME") "/run/janus-http"))
   (def sock (or (get doc "socket") "/run/janus-http/http.sock"))
-  (os/mkdir runtime)
+  (ensure-runtime runtime)
   (try (os/rm sock) ([_] nil))
   (def server (net/listen :unix sock))
   (os/chmod sock 8r660)
@@ -314,6 +318,10 @@
   (def tmp (or (os/getenv "TMPDIR") "/tmp"))
   (def dir (string tmp "/janus-speech-check"))
   (try (os/mkdir dir) ([_] nil))
+  (def probe (string dir "/runtime-probe"))
+  (os/mkdir probe)
+  (ensure-runtime probe)
+  (expect (os/stat probe) "runtime already exists")
   (each stale ["calls" "started" "http.sock"]
     (try (os/rm (string dir "/" stale)) ([_] nil)))
   (def runner (string dir "/run.sh"))

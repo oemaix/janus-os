@@ -39,6 +39,8 @@ hold_lock() {
   name=$1
   fd=$2
   install -d -m 0700 "$lockdir"
+  # A root-owned 0700 directory locks the service user out. T-0024.
+  chown janus-http:janus-http "$lockdir" 2>/dev/null || true
   eval "exec ${fd}>\"\$lockdir/\$name\""
   # Root creates the file. The listener user still has to open it. T-0021.
   chmod 0660 "$lockdir/$name" 2>/dev/null || true
