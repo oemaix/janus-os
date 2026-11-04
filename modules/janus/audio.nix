@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
-# Shared recording and playback. Soloist is the only consumer today.
-# TTS and ASR are not in this tree. See D-0061.
-{ config, lib, ... }:
+# Shared recording and playback. Soloist and speech are the consumers.
+# BlueZ starts here when playback or recording is bluetooth. D-0061.
+{ config, lib, pkgs, ... }:
 let
   inherit (lib) mkOption types;
   cfg = config.janus.audio;
@@ -23,6 +23,27 @@ let
     "x86_64-test"
   ];
   nonBlank = value: value != null && builtins.match "[ \t]*" value == null;
+  bluetooth = cfg.enable && (playback == "bluetooth" || recording == "bluetooth");
+  btAgent = pkgs.runCommandCC "janus-bt-agent" {
+    nativeBuildInputs = [pkgs.pkg-config];
+    buildInputs = [pkgs.dbus];
+  } ''
+    mkdir -p "$out/bin"
+    cc -O2 -Wall -Wextra -o "$out/bin/janus-bt-agent" ${../../pkgs/janus-bt-agent.c} $(pkg-config --cflags --libs dbus-1)
+  '';
+  btCmd = pkgs.writeShellApplication {
+    name = "janus-bluetooth";
+    runtimeInputs = [
+      pkgs.bluez
+      btAgent
+      pkgs.wireplumber
+      pkgs.jq
+      pkgs.coreutils
+      pkgs.gnugrep
+      pkgs.gnused
+    ];
+    text = builtins.readFile ../../pkgs/janus-bluetooth.sh;
+  };
   # PipeWire monitor names encode direction. A number or a custom name does not.
   # alsa_output.*.monitor is a source of that sink.
   monitorSource = name: builtins.match ".*[.]monitor" name != null;
@@ -196,4 +217,59 @@ in {
         '';
       }
     ];
+
+  # recording.input = bluetooth still fails above, so that arm never boots.
+  # The condition stays here so a later profile does not grow a second rule.
+  config.services.pipewire = lib.mkIf bluetooth {
+    enable = true;
+    systemWide = true;
+    audio.enable = true;
+    alsa.enable = true;
+    pulse.enable = true;
+    wireplumber = {
+      enable = true;
+      extraConfig = {
+        "10-janus-bluez" = {
+          "monitor.bluez.properties" = {
+            "bluez5.roles" = ["a2dp_source"];
+            "bluez5.hfphsp-backend" = "none";
+          };
+        };
+      };
+    };
+  };
+
+  config.hardware.bluetooth = lib.mkIf bluetooth {
+    enable = true;
+    powerOnBoot = true;
+    settings = {
+      General = {
+        FastConnectable = "true";
+      };
+      Policy = {
+        AutoEnable = "true";
+        ReconnectAttempts = "7";
+        ReconnectIntervals = "1,2,4,8,16,32,64";
+      };
+    };
+  };
+  config.hardware.enableRedistributableFirmware = lib.mkIf bluetooth true;
+  config.janus.board.configTxt = lib.mkIf (bluetooth && lib.elem board btBoards && board != "rockpi-4c") ''
+    dtparam=krnbt=on
+  '';
+  config.environment.etc."janus/bin/janus-bluetooth" = lib.mkIf bluetooth {
+    source = "${btCmd}/bin/janus-bluetooth";
+  };
+  config.systemd.services.janus-bluetooth-reconnect = lib.mkIf bluetooth {
+    description = "Reconnect the last Bluetooth speaker";
+    wantedBy = ["multi-user.target"];
+    after = ["bluetooth.service" "wireplumber.service"];
+    requires = ["bluetooth.service"];
+    environment.PIPEWIRE_RUNTIME_DIR = "/run";
+    serviceConfig = {
+      ExecStart = "${btCmd}/bin/janus-bluetooth reconnect";
+      Restart = "on-failure";
+      RestartSec = "5s";
+    };
+  };
 }

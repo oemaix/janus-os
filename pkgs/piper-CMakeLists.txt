@@ -1,0 +1,16 @@
+# scikit-build installs this module at the package root. DESTINATION . is that root.
+cmake_minimum_required(VERSION 3.26)
+project(piper LANGUAGES C CXX)
+
+set(UCD_STATIC_LIB "" CACHE FILEPATH "Path to libucd.a if built with system espeak-ng")
+
+find_package(Python COMPONENTS Development.Module Development.SABIModule REQUIRED)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(ESPEAKNG REQUIRED espeak-ng)
+
+add_library(espeakbridge MODULE src/piper/espeakbridge.c)
+target_include_directories(espeakbridge PRIVATE ${ESPEAKNG_INCLUDE_DIRS})
+target_link_directories(espeakbridge PRIVATE ${ESPEAKNG_LIBRARY_DIRS})
+target_link_libraries(espeakbridge PRIVATE Python::SABIModule ${ESPEAKNG_LIBRARIES} ${UCD_STATIC_LIB})
+set_target_properties(espeakbridge PROPERTIES PREFIX "")
+install(TARGETS espeakbridge LIBRARY DESTINATION . RUNTIME DESTINATION .)

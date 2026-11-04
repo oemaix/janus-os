@@ -291,10 +291,33 @@ requirements it drives (see *03 — Requirements*).
   model is not this case. The image uses `standard` until D-0057 is
   decided, because `compact` drops compute accelerators. No USB or PCI
   ID is on the allowlist yet.
-* **Flow:** The later image runs AraRT or HailoRT GenAI on the router
-  and an HTTP service in front of it. The other device sends language
-  work to that service. The router still routes. The service is
-  reachable on `lan` and `mgmt`. It is not on `wan`, and `guest` and
-  `iot` are not accepted unless the later configuration names them.
-  The runtime's own local socket is not published to the LAN.
+* **Flow:** The later image runs AraRT or HailoRT GenAI on the router.
+  The other device sends language work to `janus.edge.api` (D-0062). The
+  router still routes. The listener is reachable on `lan` and `mgmt`.
+  It is not on `wan`, and `guest` and `iot` are not accepted unless
+  the configuration names them. The runtime's own local socket is not
+  published to the LAN. Speech stays on the CPU.
 * **Drives:** FR-HW-010, FR-HW-011, FR-SVC-002, FR-SVC-003, D-0060
+
+### UC-25 Another device uses speech on the router
+
+* **Actor:** Mei
+* **Release:** after 1.0 (D-0056, D-0062)
+* **Precondition:** `janus.edge.api.enable` is true and the token is a sops
+  file for this router. Recognition, synthesis, or both are on. The
+  board can run the program that is on. A microphone or a speaker is
+  optional: a call may bring its own audio and take audio back.
+* **Flow:**
+  1. Mei stores the token with `janus-build secret set`. It is one line
+     in `secrets/edge-api/<host>.yaml`. It is not the maintenance page
+     passphrase.
+  2. Another device on `lan` or `mgmt` calls `POST /speech/recognize`
+     or `POST /speech/synthesize` with `Authorization: Bearer`.
+     Recognition returns text. Synthesis returns WAV, or plays
+     `janus.audio.playback` when the call asks for that and the device
+     is set.
+  3. A board that cannot run the enabled program fails evaluation, so
+     the image is not built. The Zero 2 W cannot run either. The Pi 2,
+     the Pi 3, and Le Potato can run synthesis and cannot run
+     recognition.
+* **Drives:** FR-SVC-004, FR-SEC-013, FR-HW-009, D-0062

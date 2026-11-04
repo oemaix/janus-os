@@ -64,7 +64,7 @@ is `janus bluetooth` and the maintenance page (D-0059).
 
 | Option | Type | Default | Contract |
 |---|---|---|---|
-| `enable` | bool | `false` | Connect playback device (FR-SVC-001, D-0056). `true` needs `janus.audio.enable`, `janus.audio.playback.output`, and a board architecture of `x86_64`, `aarch64`, or `armv7l`. It starts Soloist and system-wide PipeWire. BlueZ starts only when that playback is `bluetooth` (D-0061). |
+| `enable` | bool | `false` | Connect playback device (FR-SVC-001, D-0056). `true` needs `janus.audio.enable`, `janus.audio.playback.output`, and a board architecture of `x86_64`, `aarch64`, or `armv7l`. It starts Soloist and, when playback needs a local device, system-wide PipeWire. BlueZ follows `janus.audio`, not this switch (D-0061). |
 | `apiKeySecret` | null or string | unset | sops name. One line, `value:`, in `sopsFile`. Plaintext only in `/run/secrets`. Required when `enable` is true (FR-SEC-012). |
 | `sopsFile` | null or path | unset | sops document for `apiKeySecret`. The secret is installed only when `enable` is true. |
 | `name` | null or string | the host name | Spotify Connect name. |
@@ -76,7 +76,7 @@ Off unless `enable` is set. Playback and recording are read only when
 `enable` is true. Setting `output`, `input`, or `node` while `enable`
 is false fails evaluation. Both devices stay unset until chosen.
 Declaring a device does not start PipeWire or BlueZ. Soloist is the
-only consumer in this tree. TTS and ASR are not options yet (D-0061).
+only consumer until speech is enabled (D-0061, D-0062).
 
 | Option | Type | Default | Contract |
 |---|---|---|---|
@@ -99,16 +99,117 @@ direction in the string, so that check accepts it.
 device's driver when `enable` is true, and leaves `SOUND` off otherwise.
 Bluetooth playback does not turn kernel sound on. `embedded` is not a
 device on the NanoPi R4S. `janus.soloist.enable` needs `enable` and a
-playback device. Without playback, a later TTS service may still return
-audio on the network. Without recording, a later ASR service may still
-accept network audio. Those services are not in this tree.
+playback device. Without playback, speech synthesis may still return
+audio on the network. Without recording, speech recognition may still
+accept network audio (D-0062).
+
+PipeWire starts when Soloist, recognition, or synthesis needs a local
+device, and when playback or recording is `bluetooth`. BlueZ starts
+when playback or recording is `bluetooth`, without Soloist.
+`recording.input = bluetooth` still fails while HFP and HSP stay off,
+so that arm does not start them (D-0061).
+
+## 1c. `janus.edge.api`
+
+`janus.edge` is a namespace and has no `enable` switch. Audio, Soloist,
+and Bluetooth stay outside it. `janus.edge.llm` is the future
+language-model service and is not an option in this tree (§1e).
+
+Off unless `enable` is set. This is the listener other devices call.
+Speech uses it now. The Ara240 and Hailo-10H language-model faces use
+it when those options exist (D-0062, FR-SVC-002, FR-SVC-003). It is
+not the maintenance page (*20*).
+
+| Option | Type | Default | Contract |
+|---|---|---|---|
+| `enable` | bool | `false` | Shared HTTP listener. `false` adds no unit, certificate, or token. |
+| `port` | int | `8473` | TLS port. Not `janus.access.web.port`. |
+| `zones` | list of strings | `lan`, `mgmt` | Where a client may open the port. `wan` fails evaluation. `guest` and `iot` only when the firewall defines them. An empty list fails evaluation. |
+| `tokenSecret` | null or string | unset | sops name, such as `edge-api-<host>`. One line, `value:`, in `secrets/edge-api/<host>.yaml`. Plaintext only in `/run/secrets`. |
+| `tokenFile` | null or path | unset | File from `janus secrets put`. |
+| `sopsFile` | null or path | unset | `secrets/edge-api/<host>.yaml`. Installed only when `enable` is true. |
+
+When `enable` is true, exactly one of `tokenSecret` and `tokenFile`
+is set. Evaluation fails when neither is set, when both are set, and
+when `tokenSecret` has no `sopsFile`. The token is not the maintenance
+page passphrase (FR-SEC-013).
+
+stunnel terminates TLS on `port` and forwards cleartext HTTP to a
+Janet program on a root-only socket. Nothing accepts plaintext HTTP.
+The certificate is created on first start under
+`/var/lib/janus/http/`, self-signed, the same shape as *20* §2.
+`janus edge api stop` pauses the listener without a rebuild. `janus edge api
+start` exits 2 when the image was built with `enable = false`, and
+exits 1 when the token file is missing or empty.
+
+A call sends `Content-Length`. `Transfer-Encoding: chunked` is refused.
+The bearer token is checked from the headers before the body is read.
+Four calls may be in flight. A fifth is refused with `503` and `busy`.
+
+## 1d. `janus.edge.speech`
+
+Two switches, one listener. Either may be on alone. Both stay off in
+a 1.0 image. The programs run on the CPU (D-0062).
+
+| Option | Type | Default | Contract |
+|---|---|---|---|
+| `asr.enable` | bool | `false` | `whisper.cpp` with the locked multilingual `base` weights. `true` needs `janus.edge.api.enable`. A board that cannot run it fails evaluation. |
+| `asr.language` | null or string | unset | Decode language of that `base` model. Unset detects it. Any other string fails evaluation. |
+| `tts.enable` | bool | `false` | Released Piper. `true` needs `janus.edge.api.enable` and `tts.voice`. A board that cannot run it fails evaluation. |
+| `tts.voice` | null or string | unset | Piper voice id `ll_CC-name-quality`. Required when `tts.enable` is true. The id is a locked voice input, and it is the language. |
+
+`false` adds no package. The sources are flake inputs: a released
+`whisper.cpp`, the released `base` weights, a released Piper from
+<https://github.com/OHF-Voice/piper1-gpl>, and each locked voice.
+`nix flake update` moves the lock. A pin that is not a release fails
+the update (T-0020).
+
+Recognition fails evaluation on the Zero 2 W, the Pi 2, the Pi 3, Le
+Potato, and the VisionFive 2. Synthesis fails evaluation on the Zero
+2 W and the VisionFive 2. The Pi 2, the Pi 3, and Le Potato may enable
+synthesis only. The ROCK Pi 4C, the Pi 4, the NanoPi R4S, the Yanyu,
+and `x86_64-test` may enable either. The Pi 4 and the NanoPi R4S
+profiles do not name a RAM SKU. The fit is the 4 GiB board. The Yanyu
+does not hold conversation pace. `x86_64-test` is the CI image.
+
+A call names a channel. A channel that is not configured is an error
+and the call does not run.
+
+| Channel | Direction | Exists when |
+|---|---|---|
+| `network` | input or output | The call arrived on a zone `janus.edge.api.zones` serves. |
+| `microphone` | input only | `janus.audio.recording` is set. `bluetooth` is not that device while HFP and HSP stay off. |
+| `playback` | output only | `janus.audio.playback` is set. |
+
+| Call | Request | Result |
+|---|---|---|
+| `POST /speech/recognize` | `input` is `network` or `microphone`. `network` carries WAV, or signed 16-bit little-endian PCM. PCM requires `X-Janus-Rate` (8000–48000) and `X-Janus-Channels` (`1` or `2`). The server resamples to 16 kHz mono and refuses more than 30 seconds. `microphone` requires `seconds`, an integer from 1 to 30, and records that many seconds. | `{"text":"…"}` |
+| `POST /speech/synthesize` | `output` is `network` or `playback`. The text is the body field `text`. The voice is `tts.voice`. | WAV, or sound on `playback`. |
+
+Every call sends `Authorization: Bearer` and the `janus.edge.api` token.
+A missing or wrong token is `401` and `rejected`. The token is not a
+query parameter and is not logged. A second call that takes
+`microphone` or `playback` while the first holds it fails. `network`
+may run beside it. Audio and text are not stored.
+
+`microphone` and `playback` on `embedded` or `usb` need
+`kernelProfile` `standard` or `matched` (D-0061). `compact` still
+rejects those devices (D-0057). A call that uses only `network` does
+not need kernel sound.
+
+## 1e. `janus.edge.llm`
+
+Not an option. The name is reserved for a later language-model service
+on `janus.edge.api`. Ara240 and Hailo-10H are two runtimes for that
+role (FR-SVC-002, FR-SVC-003, D-0060). The vendor choice stays under
+`llm`. Vision models stay out. CPU speech stays `janus.edge.speech`.
 
 ## 2. `janus.hardware`
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `board` | enum | — (required) | `rpi-zero-2w` `rpi2` `rpi3` `rpi4` `nanopi-r4s` `rockpi-4c` `le-potato` `visionfive2` `yanyu-stx-r19f` `x86_64-test` |
-| `peripherals.<name>.class` | enum | — | `wifi` `nic` `wwan` `bluetooth` `hmi` `power`. A `bluetooth` row selects the dongle driver. BlueZ starts only when Soloist is enabled and `janus.audio.playback.output` is `bluetooth` (D-0061). An Ara240 or Hailo-10H class is later work (*13*, D-0056) and is not an option in this tree. |
+| `peripherals.<name>.class` | enum | — | `wifi` `nic` `wwan` `bluetooth` `hmi` `power`. A `bluetooth` row selects the dongle driver. BlueZ starts when `janus.audio.playback.output` or `janus.audio.recording.input` is `bluetooth` (D-0061). `recording.input = bluetooth` still fails while HFP and HSP stay off. An Ara240 or Hailo-10H class is later work (*13*, D-0056) and is not an option in this tree. |
 | `peripherals.<name>.match` | attrs | — | `usbVendorProduct = "0bda:8153"`, or `usbPath`, `pciSlot`, `mac`. `onboard = true` is the radio soldered to the board (*10* §4.7, §4.10). |
 | `peripherals.<name>.wwan.mode` | enum | `auto` | `auto` uses the mode the allowlist records for that USB ID (*10* §4.2). Explicit values: `ecm` `ncm` `rndis` `qmi` `mbim`. |
 | `peripherals.<name>.wwan.modeSwitch` | attrs | `{}` | usb_modeswitch parameters. Empty does not run usb_modeswitch. |
@@ -305,12 +406,15 @@ secrets/subscription/vendor-a.yaml   # proxy subscription URL
 secrets/nodes/manual-a.yaml          # manual proxy-node credential
 secrets/web/potato.yaml              # maintenance page passphrase
 secrets/soloist/potato.yaml          # Soloist API key, only when janus.soloist.enable
+secrets/edge-api/potato.yaml         # janus.edge.api token, only when janus.edge.api.enable
 ```
 
-`wifi`, `pppoe`, `tailscale`, `wireguard`, `web`, and `soloist` are encrypted to
+`wifi`, `pppoe`, `tailscale`, `wireguard`, `web`, `soloist`, and `edge-api` are encrypted to
 that host only. A Soloist file is installed only when `janus.soloist.enable`
 is true. The module sets `sops.secrets.<apiKeySecret>.sopsFile` from
-`janus.soloist.sopsFile` in that case. A false setting does not. A proxy subscription file and a manual proxy-node file
+`janus.soloist.sopsFile` in that case. A false setting does not. The edge API
+token is installed only when `janus.edge.api.enable` is true, from
+`janus.edge.api.sopsFile`. A proxy subscription file and a manual proxy-node file
 are encrypted to every host that references the file. A PPPoE file and a
 manual node file hold the YAML document. The other files hold one value.
 
@@ -319,8 +423,9 @@ recipients of that path. sops-nix decrypts it into `/run/secrets`. A
 one-line credential is the `value` key. A PPPoE file and a manual node
 file are the YAML document. The module sets the key for an option that
 names the secret: `value` for a Wi-Fi passphrase, a page passphrase, a
-Tailscale auth key, a subscription URL, and a Soloist API key, and the whole document for
-PPPoE. The Soloist key is set only when `janus.soloist.enable` is true, from `janus.soloist.sopsFile`. A page `passphraseFile`, a PPPoE `passwordFile`, or a WireGuard
+Tailscale auth key, a subscription URL, a Soloist API key, and the
+`janus.edge.api` token, and the whole document for
+PPPoE. The Soloist key is set only when `janus.soloist.enable` is true, from `janus.soloist.sopsFile`. The edge API token is set only when `janus.edge.api.enable` is true, from `janus.edge.api.sopsFile`. A page `passphraseFile`, a PPPoE `passwordFile`, or a WireGuard
 `privateKeyFile` that is `/run/secrets/<name>` is one line, so the module
 sets that secret's `key` to `value`. A node `passwordFile` on that path
 is the YAML document, so the module sets `key` to `""`. Each of those is
@@ -343,6 +448,9 @@ janus.access.web.passphraseSecret = "web-potato";
 janus.soloist.apiKeySecret = "soloist-potato";
 janus.soloist.sopsFile = ./secrets/soloist/potato.yaml;
 janus.soloist.enable = true;
+janus.edge.api.enable = true;
+janus.edge.api.tokenSecret = "edge-api-potato";
+janus.edge.api.sopsFile = ./secrets/edge-api/potato.yaml;
 ```
 
 `janus-build secret keygen` creates the keypair outside the image build.
@@ -382,4 +490,5 @@ export`. `janus-build fleet pull` writes leases into
 * `janus.hardware.board` is set and supports every declared peripheral class.
 * A `wwan` peripheral whose USB ID is not on the allowlist fails evaluation.
 * `janus.audio.enable` defaults to false. Playback and recording are read only then. `embedded` and `usb` need a non-blank node and `kernelProfile` `standard` or `matched`. `compact` rejects them. `recording.input = bluetooth` fails while HFP and HSP stay off. `matched` includes the selected embedded or USB driver only when `enable` is true.
-* `janus.soloist.enable` needs `janus.audio.enable`, a playback device, the API-key secret and its sops file, at least one zone other than `wan`, and a board architecture of `x86_64`, `aarch64`, or `armv7l`. `bluetooth` playback starts BlueZ and needs a Bluetooth peripheral or onboard Bluetooth on the Zero 2 W, the Pi 3, the Pi 4, or the ROCK Pi 4C. A false setting skips these checks and does not install the secret.
+* `janus.soloist.enable` needs `janus.audio.enable`, a playback device, the API-key secret and its sops file, at least one zone other than `wan`, and a board architecture of `x86_64`, `aarch64`, or `armv7l`. A false setting skips these checks and does not install the secret. BlueZ starts from `janus.audio` bluetooth, without Soloist (D-0061).
+* `janus.edge.api.enable` defaults to false. True needs exactly one of `tokenSecret` and `tokenFile`, a non-empty zone list, and no `wan`. `janus.edge.speech.asr.enable` and `janus.edge.speech.tts.enable` fail while it is false. Recognition fails on the Zero 2 W, the Pi 2, the Pi 3, Le Potato, and the VisionFive 2. Synthesis fails on the Zero 2 W and the VisionFive 2. `tts.voice` is a locked Piper id. `asr.language` is unset or a language id of the locked `base` model (D-0062).

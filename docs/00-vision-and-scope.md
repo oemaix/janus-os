@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-11-03 |
+| Last updated | 2026-11-04 |
 
 ## 1. Problem statement
 
@@ -67,11 +67,12 @@ developer's or user's workstation. The device only carries the results.
 * Per-user forks of this repository. Users keep a private config repo that
   consumes Janus OS as a flake input.
 * A general NAS, a general media server, or containers. Users may add plain
-  NixOS options, but Janus does not define or test them. Three named later
+  NixOS options, but Janus does not define or test them. Named later
   services are recorded in *13* and are not part of 1.0: Spotify Soloist
-  playback, Bluetooth audio for that playback, and an HTTP service on an
-  NXP Ara240 or a Hailo-10H so another device can use an edge LLM of
-  0.5B to 3B parameters (D-0056, D-0060).
+  playback, Bluetooth audio for that playback, CPU speech recognition
+  and speech synthesis on a shared HTTP listener, and an HTTP service
+  on an NXP Ara240 or a Hailo-10H so another device can use an edge LLM
+  of 0.5B to 3B parameters (D-0056, D-0060, D-0062).
 * Being a general NixOS distribution. Janus is a *profile* of NixOS with a
   strong opinion; it does not attempt to remain compatible with every NixOS
   module.

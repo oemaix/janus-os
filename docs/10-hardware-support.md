@@ -212,7 +212,7 @@ without the kernel property. Grow waits for both links before it exits.
 | `nic` | Additional Ethernet port (USB 3 GbE, USB 2.5 GbE) | kernel drivers (`r8152`, `ax88179`, `aqc111`); udev naming |
 | `wifi` | Access point for a LAN (STA/uplink mode out of scope for 1.0) | `hostapd`, mac80211 drivers; firmware from `linux-firmware` |
 | `wwan` | 4G/5G uplink | `usb_modeswitch`, kernel `cdc_ether`/`cdc_ncm`/`huawei_cdc_ncm`/`rndis_host`/`qmi_wwan`/`cdc_mbim`; `qmicli` / `mbimcli` for QMI and MBIM (ADR-0015) |
-| `bluetooth` | Allowlisted. No routing feature. BlueZ starts when Soloist is enabled and `janus.audio.playback.output` is `bluetooth` (D-0061, FR-HW-009). | BlueZ |
+| `bluetooth` | Allowlisted. No routing feature. BlueZ starts when `janus.audio.playback.output` or `janus.audio.recording.input` is `bluetooth`, without Soloist (D-0061, FR-HW-009). `recording.input = bluetooth` still fails while HFP and HSP stay off. | BlueZ |
 | `hmi` | Small LCD/OLED/e-ink status display, optional buttons | `janus-hmi` daemon (framebuffer/SPI drivers), `gpio-keys` |
 | `power` | Battery voltage, current, power (INA219) | in-tree `ti,ina219` hwmon; a generated device-tree overlay on boards that need one |
 
@@ -478,13 +478,14 @@ otherwise.
 
 ### 4.11 Planned later, not in 1.0
 
-These rows are not support. Evaluation does not accept them (D-0056).
+These rows are after 1.0 (D-0056). Speech is specified in D-0062 and is not in the image. The accelerator rows have no allowlist id, so declaring that hardware fails evaluation.
 
 | Item | Bus | Status |
 |------|-----|--------|
-| Bluetooth audio output | onboard HCI or CSR `0a12:0001` | `janus.audio.enable` and `playback.output = bluetooth`, with Soloist enabled, start BlueZ as an A2DP source with AVRCP (UC-23, FR-HW-009, D-0059, D-0061). Board audio and a USB interface still need `playback.node`. `compact` drops kernel sound; A2DP does not use it. `matched` includes an embedded or USB driver only when `janus.audio.enable` selects that device (D-0057, D-0061). |
-| NXP Ara240 DNPU | PCIe or USB | After 1.0. No USB or PCI ID is recorded. No peripheral class. Other devices call an HTTP service for an LLM of 0.5B to 3B parameters (UC-24, FR-HW-010, FR-SVC-002, D-0060). Vision models are out. `compact` drops compute accelerators (D-0057). |
-| Hailo-10H | PCIe, M.2 | After 1.0. No PCI ID is recorded. No peripheral class. Hailo-8 and Hailo-8L are not this row. Other devices call HailoRT GenAI over HTTP for an LLM of 0.5B to 3B parameters (UC-24, FR-HW-011, FR-SVC-003, D-0060). Vision models are out. `compact` drops compute accelerators (D-0057). |
+| Bluetooth audio output | onboard HCI or CSR `0a12:0001` | `janus.audio.enable` and `playback.output = bluetooth` start BlueZ as an A2DP source with AVRCP, without Soloist (UC-23, FR-HW-009, D-0059, D-0061). Board audio and a USB interface still need `playback.node`. `compact` drops kernel sound; A2DP does not use it. `matched` includes an embedded or USB driver only when `janus.audio.enable` selects that device (D-0057, D-0061). |
+| CPU speech | host CPU | After 1.0. `janus.edge.speech` switches exist and default off, so a 1.0 image does not start them. Recognition is `whisper.cpp` `base`. Synthesis is Piper. They share `janus.edge.api` (UC-25, FR-SVC-004, D-0062). Recognition fails evaluation on the Zero 2 W, the Pi 2, the Pi 3, Le Potato, and the VisionFive 2. Synthesis fails on the Zero 2 W and the VisionFive 2. The accelerator does not run them. |
+| NXP Ara240 DNPU | PCIe or USB | After 1.0. No USB or PCI ID is recorded. No peripheral class. Other devices call `janus.edge.api` for an LLM of 0.5B to 3B parameters (UC-24, FR-HW-010, FR-SVC-002, D-0060, D-0062). Vision models are out. Speech stays on the CPU. `compact` drops compute accelerators (D-0057). |
+| Hailo-10H | PCIe, M.2 | After 1.0. No PCI ID is recorded. No peripheral class. Hailo-8 and Hailo-8L are not this row. Other devices call HailoRT GenAI on `janus.edge.api` for an LLM of 0.5B to 3B parameters (UC-24, FR-HW-011, FR-SVC-003, D-0060, D-0062). Vision models are out. Speech stays on the CPU. `compact` drops compute accelerators (D-0057). |
 
 ## 5. Performance notes (guidance for NFR-004/005)
 

@@ -23,7 +23,7 @@
   namesOf = paths:
     lib.unique (lib.filter (name: name != null && !lib.hasInfix "/" name) (map secretName paths));
   fileNames = namesOf (
-    [cfg.access.web.passphraseFile]
+    [cfg.access.web.passphraseFile cfg.edge.api.tokenFile]
     ++ lib.mapAttrsToList (_: wg: wg.privateKeyFile) cfg.remoteAccess.wireguard
     ++ lib.mapAttrsToList (_: wan: wan.pppoe.passwordFile) cfg.network.wans
     ++ nodeFiles
@@ -38,8 +38,9 @@
       lib.filterAttrs (_: sub: sub.urlSecret != null) cfg.proxy.subscriptions
     )
     ++ lib.optional (cfg.soloist.enable && cfg.soloist.apiKeySecret != null) cfg.soloist.apiKeySecret
+    ++ lib.optional (cfg.edge.api.enable && cfg.edge.api.tokenSecret != null) cfg.edge.api.tokenSecret
     ++ namesOf (
-      [cfg.access.web.passphraseFile]
+      [cfg.access.web.passphraseFile cfg.edge.api.tokenFile]
       ++ lib.mapAttrsToList (_: wg: wg.privateKeyFile) cfg.remoteAccess.wireguard
       ++ lib.mapAttrsToList (_: wan: wan.pppoe.passwordFile) cfg.network.wans
     );

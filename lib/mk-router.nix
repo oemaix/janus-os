@@ -83,6 +83,30 @@
             "aarch64-linux" = janus.inputs.soloist-aarch64;
             "armv7l-linux" = janus.inputs.soloist-armv7l;
           };
+          # Locked speech sources. The narHash is in flake.lock. D-0062.
+          janusSpeech = {
+            whisperSrc = janus.inputs.whisper-cpp;
+            whisperModel = janus.inputs.whisper-base;
+            piperSrc = janus.inputs.piper;
+            voices = {
+              "en_US-lessac-medium" = {
+                model = janus.inputs.piper-en-us-lessac-medium;
+                config = janus.inputs.piper-en-us-lessac-medium-json;
+              };
+              "ru_RU-irina-medium" = {
+                model = janus.inputs.piper-ru-ru-irina-medium;
+                config = janus.inputs.piper-ru-ru-irina-medium-json;
+              };
+              "fa_IR-amir-medium" = {
+                model = janus.inputs.piper-fa-ir-amir-medium;
+                config = janus.inputs.piper-fa-ir-amir-medium-json;
+              };
+              "zh_CN-huayan-medium" = {
+                model = janus.inputs.piper-zh-cn-huayan-medium;
+                config = janus.inputs.piper-zh-cn-huayan-medium-json;
+              };
+            };
+          };
         };
         modules =
           [

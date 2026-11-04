@@ -96,7 +96,7 @@ the build host does that (*16* §5).
 
 | Command | Effect |
 |---------|--------|
-| `janus secrets install-age-key` | Read this router's age private key on stdin into `/var/lib/janus/secrets/age.key` (mode `0600`). On a terminal, print `Paste the age private key, then press Enter and Ctrl-D.` on stderr before reading. A pipe stays quiet. Input with no `AGE-SECRET-KEY-1` line is refused, and the previous key stays. Restart `sops-install-secrets`, then a failed PPPoE unit, then a failed `janus-wireguard-secret-<name>`. When that restart succeeds, reconfigure `wg-<name>`. If that device is not there yet, reload networkd. Then `janus-wifi-secret-<name>` when that unit exists and `janus-hostapd-<name>` failed, then failed Wi-Fi units, then `janus-tailscale-auth` and `tailscaled` when either failed, then `janus-web-secret` when that unit exists and `janus-web`, `janus-web-tls`, or `janus-web-secret` failed, then `janus-web` and `janus-web-tls`. |
+| `janus secrets install-age-key` | Read this router's age private key on stdin into `/var/lib/janus/secrets/age.key` (mode `0600`). On a terminal, print `Paste the age private key, then press Enter and Ctrl-D.` on stderr before reading. A pipe stays quiet. Input with no `AGE-SECRET-KEY-1` line is refused, and the previous key stays. Restart `sops-install-secrets`, then a failed PPPoE unit, then a failed `janus-wireguard-secret-<name>`. When that restart succeeds, reconfigure `wg-<name>`. If that device is not there yet, reload networkd. Then `janus-wifi-secret-<name>` when that unit exists and `janus-hostapd-<name>` failed, then failed Wi-Fi units, then `janus-tailscale-auth` and `tailscaled` when either failed, then `janus-web-secret` when that unit exists and `janus-web`, `janus-web-tls`, or `janus-web-secret` failed, then `janus-web` and `janus-web-tls`, then `janus-http-secret` when that unit exists and `janus-http`, `janus-http-tls`, or `janus-http-secret` failed, then `janus-http` and `janus-http-tls`. |
 | `janus secrets put <name>` | Read a secret on stdin for a value that will not enter git |
 
 The age key is created on the build host by `janus-build secret keygen <host>` (*16*). This command installs the private key. It does not generate one. The build host does not keep a copy.
@@ -129,8 +129,25 @@ The page is *20*. These commands switch the listener. They do not change
 | `janus web status` | Listening or stopped, port, zones, certificate fingerprint. |
 | `janus web fingerprint` | SHA-256 of the certificate. Exit `2` if the page is not in the image. |
 
-## 8. Stability
+## 8. Edge API and speech
+
+The listener is *08* §1c. Speech is *08* §1d. These commands apply when
+that listener is in the image (D-0062). They do not change
+`janus.edge.api.enable`.
+
+| Command | Effect |
+|---------|--------|
+| `janus edge api start` | Start the listener. Exit `2` if `janus.edge.api.enable` is false. Exit `1` if the token file is missing or empty. When `janus-http-secret` exists, or the token path is under `/run/secrets`, start that install before the file test. |
+| `janus edge api stop` | Stop the listener. Does not remove the configuration flag. |
+| `janus edge api status` | Listening or stopped, port, zones, whether recognition and synthesis are in the image, certificate fingerprint. |
+| `janus edge api fingerprint` | SHA-256 of the certificate. Exit `2` if the listener is not in the image. |
+| `janus edge speech asr` | Read WAV, or signed 16-bit PCM at 16 kHz mono, on stdin and write the transcript on stdout. Exit `2` if recognition is not in the image. A failed engine keeps its exit status. Does not use the bearer token. |
+| `janus edge speech tts [--play]` | Read the text argument and write WAV on stdout. `--play` plays `janus.audio.playback` and exits `2` when that device is unset. Exit `2` if synthesis is not in the image. Does not use the bearer token. |
+
+## 9. Stability
 
 Command names and the allowlist keys in §2–§6 are stable for 1.0. The
-`janus web` commands in §7 apply when the page is in the image. Adding a
-key is a documentation change in this file before the code accepts it.
+`janus web` commands in §7 apply when the page is in the image. The
+`janus edge api` and `janus edge speech` commands in §8 apply when that listener
+is in the image. Adding a key is a documentation change in this file
+before the code accepts it.

@@ -225,8 +225,10 @@ Read this file before answering a question about using Janus OS.
   secret, or package, and its assertions are not evaluated. True needs
   `janus.audio.enable`, a playback device, `apiKeySecret`, `sopsFile`, and
   a board architecture of `x86_64`, `aarch64`, or `armv7l`. True installs
-  the locked build and starts Soloist and system-wide PipeWire. BlueZ
-  starts only when playback is `bluetooth`.
+  the locked build and starts Soloist and system-wide PipeWire when
+  playback needs a local device. D-0061 starts PipeWire and BlueZ when
+  playback or recording is `bluetooth`, without Soloist. The image still
+  starts BlueZ only when Soloist is enabled and playback is `bluetooth`.
   `name` is the Connect name and defaults to the host name. `bluetooth`
   is an A2DP source with AVRCP. HFP and HSP stay off. It needs a
   `bluetooth` peripheral or onboard Bluetooth on the Zero 2 W, the Pi 3,
@@ -248,4 +250,24 @@ Read this file before answering a question about using Janus OS.
   Hailo-10H, not a Hailo-8 (D-0060). `compact` still drops
   kernel sound. Compute accelerators stay off. `matched` sound is only
   the `janus.audio` device (D-0061). Do not invent an accelerator class.
-  TTS and ASR are not options.
+  CPU speech is in the image when its switches are on, and both default
+  off (D-0062, UC-25,
+  FR-SVC-004). `janus.edge.api.enable` defaults to false. `janus.edge.speech.asr.enable`
+  and `janus.edge.speech.tts.enable` are separate and fail evaluation while
+  the listener is off. They share its port `8473` and its sops token.
+  The token file is `secrets/edge-api/<host>.yaml`, one `value` line,
+  encrypted to that host (FR-SEC-013). The sops name is `edge-api-<host>`.
+  The listener is not the maintenance page. A call sends `Content-Length`.
+  Chunked transfer encoding is refused. The token is checked before the
+  body is read. Four calls may be in flight. Network audio is WAV, or
+  signed 16-bit PCM with `X-Janus-Rate` and `X-Janus-Channels`. A
+  microphone call sends `seconds` from 1 to 30. Recognition is a released
+  `whisper.cpp` and the multilingual `base` weights. Synthesis is a
+  released Piper from https://github.com/OHF-Voice/piper1-gpl.
+  `tts.voice` is a locked id `ll_CC-name-quality`. `asr.language` is
+  unset or a language id of that `base` model. Recognition fails on
+  `rpi-zero-2w`, `rpi2`, `rpi3`, `le-potato`, and `visionfive2`.
+  Synthesis fails on `rpi-zero-2w` and `visionfive2`. The accelerator
+  does not run speech. `janus.edge` is a namespace and has no switch.
+  `janus.edge.llm` is not an option yet. Do not invent an option outside
+  *08* §1c, §1d, and §1e.

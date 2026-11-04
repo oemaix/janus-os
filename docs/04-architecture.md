@@ -80,9 +80,13 @@
 | HMI | `janus-hmi` daemon | Renders the pages in *15* from the framebuffer size; control events map onto the capabilities in *15*. |
 | Power | `janus-power` | INA219 readings in `janus status`. Early cutoff while the cell is discharging (*10* §4.5). |
 
-Spotify Soloist, Bluetooth audio output, and the Ara240 and Hailo-10H
-HTTP services are not rows in this table. They are after 1.0 (*13*,
-D-0056). No module directory exists for them.
+Spotify Soloist, Bluetooth audio output, CPU speech, and the Ara240
+and Hailo-10H HTTP services are after 1.0 (*13*, D-0056, D-0062).
+`janus.edge` is the namespace for the shared listener and for CPU speech.
+`janus.edge.llm` is the later language-model name and is not an option
+yet. Speech and that later face share `janus.edge.api`. That listener
+is not the maintenance page. Soloist, audio, and Bluetooth stay outside
+the namespace.
 
 ## 4. Data model (canonical)
 

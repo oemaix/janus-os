@@ -1127,7 +1127,7 @@ case "$cmd" in
           secrets/wifi/*/*|secrets/pppoe/*/*|secrets/wireguard/*/*)
             host=$(echo "$path" | cut -d/ -f3)
             ;;
-          secrets/tailscale/*|secrets/web/*)
+          secrets/tailscale/*|secrets/web/*|secrets/edge-api/*)
             host=$(basename "$path" .yaml)
             ;;
           secrets/subscription/*|secrets/nodes/*)

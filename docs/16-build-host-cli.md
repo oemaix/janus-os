@@ -175,6 +175,7 @@ secrets/wireguard/<host>/<name>.yaml
 secrets/subscription/<vendor>.yaml   # proxy subscription URL
 secrets/nodes/<name>.yaml            # manual proxy-node credential
 secrets/web/<host>.yaml              # maintenance page passphrase, one line
+secrets/edge-api/<host>.yaml         # janus.edge.api token, one line, only when that listener is enabled
 ```
 
 A host path is encrypted to `secrets/keys/<host>.pub`. A proxy

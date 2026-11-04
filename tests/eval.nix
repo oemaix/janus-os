@@ -261,6 +261,9 @@ in {
       test "$jhelp" = "$jjson"
       test "$bhelp" = "$buse"
       printf '%s\n' "$jhelp" | grep -q 'proxy refresh'
+      printf '%s\n' "$jhelp" | grep -q 'edge api start|stop|status|fingerprint'
+      printf '%s\n' "$jhelp" | grep -q 'edge speech asr'
+      printf '%s\n' "$jhelp" | grep -q 'edge speech tts'
       printf '%s\n' "$jhelp" | grep -q 'secrets install-age-key'
       printf '%s\n' "$bhelp" | grep -q 'secret keygen'
       printf '%s\n' "$bhelp" | grep -q 'deploy --age-key'
@@ -268,6 +271,64 @@ in {
       grep -q -- '--help' "$TMPDIR/none-build.err"
       grep -q -- '--help' "$TMPDIR/bad.err"
       grep -q -- '--help' "$TMPDIR/bad-build.err"
+      echo ok > "$out"
+    '';
+  cli-edge = let
+    system = pkgs.stdenv.hostPlatform.system;
+  in
+    pkgs.runCommand "cli-edge" {} ''
+      set +e
+      janus=${self.packages.${system}.janus-cli}/bin/janus
+      "$janus" http start >/dev/null 2>"$TMPDIR/old-http.err"
+      s1=$?
+      "$janus" speech asr >/dev/null 2>"$TMPDIR/old-speech.err"
+      s2=$?
+      "$janus" edge >/dev/null 2>"$TMPDIR/edge.err"
+      s3=$?
+      "$janus" edge nope >/dev/null 2>"$TMPDIR/edge-nope.err"
+      s4=$?
+      "$janus" edge api start >/dev/null 2>"$TMPDIR/api-missing.err"
+      s5=$?
+      "$janus" edge speech tts hi >/dev/null 2>"$TMPDIR/speech-missing.err"
+      s6=$?
+      set -e
+      test "$s1" = 2
+      test "$s2" = 2
+      test "$s3" = 2
+      test "$s4" = 2
+      test "$s5" = 2
+      test "$s6" = 2
+      grep -q -- '--help' "$TMPDIR/old-http.err"
+      grep -q -- '--help' "$TMPDIR/old-speech.err"
+      grep -q -- '--help' "$TMPDIR/edge.err"
+      grep -q -- '--help' "$TMPDIR/edge-nope.err"
+      if grep -q 'not in this image' "$TMPDIR/old-http.err" "$TMPDIR/old-speech.err"; then
+        echo "old command names still reach the listener" >&2
+        exit 1
+      fi
+      grep -q 'janus edge api is not in this image' "$TMPDIR/api-missing.err"
+      grep -q 'janus edge speech is not in this image' "$TMPDIR/speech-missing.err"
+      dir=$TMPDIR/bin
+      mkdir -p "$dir"
+      printf '%s\n' '#!/bin/sh' 'printf "%s\n" "$*" > "$JANUS_EDGE_ARGS"; exit 3' > "$dir/http"
+      printf '%s\n' '#!/bin/sh' 'printf "%s\n" "$*" > "$JANUS_EDGE_ARGS"; exit 4' > "$dir/speech"
+      chmod +x "$dir/http" "$dir/speech"
+      export JANUS_HTTP_BIN=$dir/http
+      export JANUS_SPEECH_BIN=$dir/speech
+      export JANUS_EDGE_ARGS=$dir/api-args
+      set +e
+      "$janus" edge api start >/dev/null 2>"$TMPDIR/api.err"
+      s7=$?
+      export JANUS_EDGE_ARGS=$dir/speech-args
+      "$janus" edge speech tts --play hello >/dev/null 2>"$TMPDIR/speech.err"
+      s8=$?
+      set -e
+      test "$s7" = 3
+      test "$s8" = 4
+      test ! -s "$TMPDIR/api.err"
+      test ! -s "$TMPDIR/speech.err"
+      grep -qx 'start' "$dir/api-args"
+      grep -qx 'tts --play hello' "$dir/speech-args"
       echo ok > "$out"
     '';
   cli-init = let
@@ -346,6 +407,14 @@ in {
       fi
       SOPS_AGE_KEY_FILE="$TMPDIR/age.key" sops -d --extract '["value"]' secrets/web/potato.yaml > "$TMPDIR/web-pass"
       printf '%s' 'page-secret' | cmp - "$TMPDIR/web-pass"
+      printf '%s\n' 'edge-token' | janus-build secret set secrets/edge-api/potato.yaml
+      test -s secrets/edge-api/potato.yaml
+      if grep -q edge-token secrets/edge-api/potato.yaml; then
+        echo "edge api token was stored in plaintext" >&2
+        exit 1
+      fi
+      SOPS_AGE_KEY_FILE="$TMPDIR/age.key" sops -d --extract '["value"]' secrets/edge-api/potato.yaml > "$TMPDIR/edge-token"
+      printf '%s' 'edge-token' | cmp - "$TMPDIR/edge-token"
       printf '%s\n' 'username: alice' 'password: s3cret' | janus-build secret set secrets/pppoe/potato/wan.yaml
       SOPS_AGE_KEY_FILE="$TMPDIR/age.key" sops -d secrets/pppoe/potato/wan.yaml > "$TMPDIR/pppoe"
       printf '%s\n' 'username: alice' 'password: s3cret' | cmp - "$TMPDIR/pppoe"
@@ -6486,6 +6555,370 @@ in {
         cat "$err" >&2
         exit 1
       fi
+      echo ok > "$out"
+    '';
+  eval-http-off = let
+    os = mk [
+      base
+      {
+        janus.edge.api.enable = false;
+        janus.edge.api.zones = ["wan"];
+        janus.edge.speech.asr.language = "nope";
+      }
+    ];
+  in
+    pkgs.runCommand "eval-http-off" {} ''
+      test ${
+        if os.config.systemd.services ? janus-http
+        then "yes"
+        else "no"
+      } = no
+      test ${
+        if os.config.sops.secrets ? edge-api-router
+        then "present"
+        else "absent"
+      } = absent
+      echo ok > "$out"
+    '';
+  eval-http-on = let
+    os = mk [
+      base
+      {
+        janus.network.lans.lan = {
+          members = ["lan"];
+          address = "192.168.10.1";
+          prefixLength = 24;
+        };
+        janus.edge.api.enable = true;
+        janus.edge.api.tokenSecret = "edge-api-router";
+        janus.edge.api.sopsFile = ./fixtures/sops-placeholder;
+      }
+    ];
+    rules = os.config.networking.nftables.tables.janus.content;
+  in
+    pkgs.runCommand "eval-http-on" {} ''
+      test ${lib.escapeShellArg os.config.sops.secrets.edge-api-router.key} = value
+      test ${toString os.config.janus.firewall.services.http.port} = 8473
+      test ${os.config.janus.firewall.services.http.protocol} = tcp
+      test ${os.config.systemd.services.janus-http.serviceConfig.UMask} = 0077
+      test ${os.config.systemd.services.janus-http.serviceConfig.MemoryMax} = 128M
+      printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " (lib.toList os.config.systemd.services.janus-http.serviceConfig.ExecStartPre))} | grep -q 'install -d -m 0700 -o janus-http -g janus-http /run/janus-http/lock'
+      test ${os.config.systemd.services.janus-http-tls.serviceConfig.MemoryMax} = 128M
+      test ${
+        if os.config.janus.firewall.services.http.confine
+        then "yes"
+        else "no"
+      } = yes
+      test ${
+        if os.config.systemd.services ? janus-http-tls
+        then "yes"
+        else "no"
+      } = yes
+      printf '%s\n' ${lib.escapeShellArg rules} | grep -q 'tcp dport 8473 accept'
+      printf '%s\n' ${lib.escapeShellArg rules} | grep -q 'tcp dport 8473 drop'
+      echo ok > "$out"
+    '';
+  eval-http-wan = fail "eval-http-wan" [
+    base
+    {
+      janus.edge.api.enable = true;
+      janus.edge.api.tokenSecret = "edge-api-router";
+      janus.edge.api.sopsFile = ./fixtures/sops-placeholder;
+      janus.edge.api.zones = ["wan"];
+    }
+  ];
+  eval-http-no-token = fail "eval-http-no-token" [
+    base
+    {janus.edge.api.enable = true;}
+  ];
+  eval-http-both-tokens = fail "eval-http-both-tokens" [
+    base
+    {
+      janus.edge.api.enable = true;
+      janus.edge.api.tokenSecret = "edge-api-router";
+      janus.edge.api.sopsFile = ./fixtures/sops-placeholder;
+      janus.edge.api.tokenFile = "/run/secrets/edge-api-router";
+    }
+  ];
+  eval-speech-needs-http = fail "eval-speech-needs-http" [
+    base
+    {janus.edge.speech.asr.enable = true;}
+  ];
+  eval-speech-asr-rpi3 = fail "eval-speech-asr-rpi3" [
+    {
+      janus.hardware.board = "rpi3";
+      janus.access.ssh.authorizedKeys = [key];
+      janus.edge.api.enable = true;
+      janus.edge.api.tokenSecret = "edge-api-router";
+      janus.edge.api.sopsFile = ./fixtures/sops-placeholder;
+      janus.edge.speech.asr.enable = true;
+    }
+  ];
+  eval-speech-tts-zero = fail "eval-speech-tts-zero" [
+    {
+      janus.hardware.board = "rpi-zero-2w";
+      janus.access.ssh.authorizedKeys = [key];
+      janus.edge.api.enable = true;
+      janus.edge.api.tokenSecret = "edge-api-router";
+      janus.edge.api.sopsFile = ./fixtures/sops-placeholder;
+      janus.edge.speech.tts.enable = true;
+      janus.edge.speech.tts.voice = "en_US-lessac-medium";
+    }
+  ];
+  eval-speech-bad-voice = fail "eval-speech-bad-voice" [
+    base
+    {
+      janus.edge.api.enable = true;
+      janus.edge.api.tokenSecret = "edge-api-router";
+      janus.edge.api.sopsFile = ./fixtures/sops-placeholder;
+      janus.edge.speech.tts.enable = true;
+      janus.edge.speech.tts.voice = "en_US-missing-medium";
+    }
+  ];
+  eval-speech-bad-language = fail "eval-speech-bad-language" [
+    base
+    {
+      janus.edge.api.enable = true;
+      janus.edge.api.tokenSecret = "edge-api-router";
+      janus.edge.api.sopsFile = ./fixtures/sops-placeholder;
+      janus.edge.speech.asr.enable = true;
+      janus.edge.speech.asr.language = "english";
+    }
+  ];
+  eval-speech-tts-rpi3 = let
+    os = mk [
+      {
+        janus.hardware.board = "rpi3";
+        janus.access.ssh.authorizedKeys = [key];
+        janus.edge.api.enable = true;
+        janus.edge.api.tokenSecret = "edge-api-router";
+        janus.edge.api.sopsFile = ./fixtures/sops-placeholder;
+        janus.edge.speech.tts.enable = true;
+        janus.edge.speech.tts.voice = "en_US-lessac-medium";
+      }
+    ];
+  in
+    pkgs.runCommand "eval-speech-tts-rpi3" {} ''
+      test ${
+        if os.config.environment.etc ? "janus/speech.json"
+        then "yes"
+        else "no"
+      } = yes
+      test ${
+        if os.config.services.pipewire.enable
+        then "yes"
+        else "no"
+      } = no
+      echo ok > "$out"
+    '';
+  eval-speech-asr-quiet = let
+    os = mk [
+      base
+      {
+        janus.edge.api.enable = true;
+        janus.edge.api.tokenSecret = "edge-api-router";
+        janus.edge.api.sopsFile = ./fixtures/sops-placeholder;
+        janus.edge.speech.asr.enable = true;
+        janus.edge.speech.asr.language = "zh";
+      }
+    ];
+  in
+    pkgs.runCommand "eval-speech-asr-quiet" {} ''
+      test ${
+        if os.config.services.pipewire.enable
+        then "yes"
+        else "no"
+      } = no
+      test ${
+        if os.config.hardware.bluetooth.enable
+        then "yes"
+        else "no"
+      } = no
+      test ${os.config.systemd.services.janus-http.serviceConfig.MemoryMax} = 1536M
+      echo ok > "$out"
+    '';
+  eval-bluetooth-without-soloist = let
+    os = mk [
+      base
+      {
+        janus.audio.enable = true;
+        janus.audio.playback.output = "bluetooth";
+        janus.hardware.peripherals.speaker = {
+          class = "bluetooth";
+          match.usbVendorProduct = "0a12:0001";
+        };
+      }
+    ];
+  in
+    pkgs.runCommand "eval-bluetooth-without-soloist" {} ''
+      test ${
+        if os.config.hardware.bluetooth.enable
+        then "yes"
+        else "no"
+      } = yes
+      test ${
+        if os.config.services.pipewire.enable
+        then "yes"
+        else "no"
+      } = yes
+      test ${
+        if os.config.systemd.services ? soloist
+        then "yes"
+        else "no"
+      } = no
+      test ${
+        if os.config.environment.etc ? "janus/bin/janus-bluetooth"
+        then "yes"
+        else "no"
+      } = yes
+      echo ok > "$out"
+    '';
+  speech-janet =
+    pkgs.runCommand "speech-janet" {
+      nativeBuildInputs = [pkgs.janet];
+    } ''
+      janet ${../janet/speech.janet} check
+      echo ok > "$out"
+    '';
+  speech-run =
+    pkgs.runCommand "speech-run" {
+      nativeBuildInputs = [pkgs.jq pkgs.sox pkgs.util-linux pkgs.bash pkgs.coreutils];
+    } ''
+      set -eu
+      dir=$TMPDIR/speech
+      mkdir -p "$dir/voices" "$dir/bin" "$dir/lock"
+      printf '%s\n' '#!/bin/sh' 'printf hello' > "$dir/bin/whisper"
+      chmod +x "$dir/bin/whisper"
+      printf '%s\n' '#!/bin/sh' 'while [ $# -gt 0 ]; do if [ "$1" = -f ]; then printf RIFF > "$2"; exit 0; fi; shift; done' > "$dir/bin/piper"
+      chmod +x "$dir/bin/piper"
+      jq -n --arg w "$dir/bin/whisper" --arg p "$dir/bin/piper" --arg v "$dir/voices" \
+        '{asr:true,tts:true,language:null,voice:"en_US-lessac-medium",whisper:$w,model:$w,piper:$p,voices:$v,recordBin:$w,playBin:$w,playback:{output:null,node:null},recording:{input:"usb",node:"alsa_input.usb"}}' \
+        > "$dir/speech.json"
+      printf '{}\n' > "$dir/voices/en_US-lessac-medium.onnx"
+      printf '{}\n' > "$dir/voices/en_US-lessac-medium.onnx.json"
+      export JANUS_SPEECH_JSON=$dir/speech.json
+      export JANUS_SPEECH_LOCKDIR=$dir/lock
+      run=${../pkgs/janus-speech-run.sh}
+      sox -n -r 16000 -c 1 -b 16 "$dir/short.wav" trim 0 1
+      bash "$run" recognize --body "$dir/short.wav" --ctype audio/wav --out "$dir/out.json" --meta "$dir/meta"
+      jq -e '.text == "hello"' "$dir/out.json" >/dev/null
+      sox -n -r 16000 -c 1 -b 16 "$dir/long.wav" trim 0 31
+      rc=0
+      bash "$run" recognize --body "$dir/long.wav" --ctype audio/wav --out "$dir/out.json" --meta "$dir/meta" || rc=$?
+      test "$rc" = 4
+      printf '%s\n' '{"text":"hi","output":"network"}' > "$dir/say.json"
+      bash "$run" synthesize --body "$dir/say.json" --ctype application/json --out "$dir/out.wav" --meta "$dir/meta"
+      grep -q RIFF "$dir/out.wav"
+      mkdir -p -m 0750 "$dir/run"
+      export JANUS_SPEECH_LOCKDIR=$dir/run/lock
+      mkdir -p "$dir/run/lock"
+      exec 9>"$dir/run/lock/microphone"
+      flock -n 9
+      printf '%s\n' '{"input":"microphone","seconds":1}' > "$dir/mic.json"
+      rc=0
+      bash "$run" recognize --body "$dir/mic.json" --ctype application/json --out "$dir/out.json" --meta "$dir/meta" || rc=$?
+      test "$rc" = 5
+      test "$(stat -c %a "$dir/run")" = 750
+      test "$(stat -c %a "$dir/run/lock")" = 700
+      printf '%s\n' '{"input":"microphone"}' > "$dir/mic.json"
+      rc=0
+      bash "$run" recognize --body "$dir/mic.json" --ctype application/json --out "$dir/out.json" --meta "$dir/meta" || rc=$?
+      test "$rc" = 4
+      printf '%s\n' '{"input":"microphone","seconds":31}' > "$dir/mic.json"
+      rc=0
+      bash "$run" recognize --body "$dir/mic.json" --ctype application/json --out "$dir/out.json" --meta "$dir/meta" || rc=$?
+      test "$rc" = 4
+      printf '%s\n' '{' > "$dir/bad.json"
+      rc=0
+      bash "$run" synthesize --body "$dir/bad.json" --ctype application/json --out "$dir/out.wav" --meta "$dir/meta" || rc=$?
+      test "$rc" = 4
+      dd if=/dev/zero of="$dir/pcm" bs=2 count=1600 status=none
+      rc=0
+      bash "$run" recognize --body "$dir/pcm" --ctype audio/raw --out "$dir/out.json" --meta "$dir/meta" || rc=$?
+      test "$rc" = 4
+      bash "$run" recognize --body "$dir/pcm" --ctype audio/raw --rate 16000 --channels 1 --out "$dir/out.json" --meta "$dir/meta"
+      jq -e '.text == "hello"' "$dir/out.json" >/dev/null
+      jq '.playback.output = "usb"' "$dir/speech.json" > "$dir/play.json.cfg"
+      export JANUS_SPEECH_JSON=$dir/play.json.cfg
+      exec 8>"$dir/run/lock/playback"
+      flock -n 8
+      printf '%s\n' '{"text":"hi","output":"playback"}' > "$dir/play.json"
+      rc=0
+      bash "$run" synthesize --body "$dir/play.json" --ctype application/json --out "$dir/out.wav" --meta "$dir/meta" || rc=$?
+      test "$rc" = 5
+      echo ok > "$out"
+    '';
+  speech-cli =
+    pkgs.runCommand "speech-cli" {
+      nativeBuildInputs = [pkgs.jq pkgs.bash pkgs.coreutils];
+    } ''
+      set -eu
+      dir=$TMPDIR/cli
+      mkdir -p "$dir"
+      printf '%s\n' '#!/bin/sh' 'printf "%s\n" "$*" > "$JANUS_SPEECH_ARGS"; exit 4' > "$dir/fail"
+      chmod +x "$dir/fail"
+      printf '%s\n' '#!/bin/sh
+args=$*
+printf "%s\n" "$args" > "$JANUS_SPEECH_ARGS"
+out=
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --out) out=$2; shift 2 ;;
+    *) shift ;;
+  esac
+done
+printf hi > "$out"
+exit 0
+' > "$dir/ok"
+      chmod +x "$dir/ok"
+      jq -n '{asr:true,tts:true,playback:{output:null}}' > "$dir/speech.json"
+      export JANUS_SPEECH_JSON=$dir/speech.json
+      export JANUS_SPEECH_ARGS=$dir/args
+      cli=${../pkgs/janus-speech.sh}
+      export JANUS_SPEECH_RUN=$dir/fail
+      rc=0
+      printf 'RIFFxxxx' | bash "$cli" asr || rc=$?
+      test "$rc" = 4
+      rc=0
+      bash "$cli" tts hello || rc=$?
+      test "$rc" = 4
+      export JANUS_SPEECH_RUN=$dir/ok
+      got=$(printf 'RIFFxxxx' | bash "$cli" asr)
+      test "$got" = hi
+      grep -q audio/wav "$dir/args"
+      got=$(printf 'xxxx' | bash "$cli" asr)
+      test "$got" = hi
+      grep -q audio/raw "$dir/args"
+      grep -q -- '--rate 16000' "$dir/args"
+      grep -q -- '--channels 1' "$dir/args"
+      echo ok > "$out"
+    '';
+  speech-bins = let
+    os = mk [
+      base
+      {
+        janus.edge.api.enable = true;
+        janus.edge.api.tokenSecret = "edge-api-router";
+        janus.edge.api.sopsFile = ./fixtures/sops-placeholder;
+        janus.edge.speech.asr.enable = true;
+        janus.edge.speech.tts.enable = true;
+        janus.edge.speech.tts.voice = "en_US-lessac-medium";
+      }
+    ];
+    json = os.config.environment.etc."janus/speech.json".text;
+  in
+    pkgs.runCommand "speech-bins" {
+      nativeBuildInputs = [pkgs.jq];
+    } ''
+      json=${lib.escapeShellArg json}
+      whisper=$(printf '%s\n' "$json" | jq -r .whisper)
+      piper=$(printf '%s\n' "$json" | jq -r .piper)
+      test -n "$whisper"
+      test -n "$piper"
+      test -x "$whisper"
+      test -x "$piper"
+      "$whisper" --help >/dev/null
+      "$piper" --help >/dev/null
       echo ok > "$out"
     '';
 }
