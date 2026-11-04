@@ -5242,12 +5242,25 @@ in {
       }
     ];
     pkg = soloistPkg os;
+    # rpi4 stays emulated, so this builder is aarch64 (docs/09 §4).
+    # autoPatchelf skips an ELF whose architecture is not that builder's.
+    # An x86_64 check that interpolates the store path asks Nix to run
+    # that builder and stops: platform mismatch, required system
+    # aarch64-linux. The eval runner has no binfmt. T-0025.
+    # eval-soloist-on still runs the x86_64 binary.
+    runBinary = pkgs.stdenv.buildPlatform.system == "aarch64-linux";
   in
-    pkgs.runCommand "eval-soloist-arm64" {} ''
-      test ${pkg.passthru.system} = aarch64-linux
-      test -x ${pkg}/bin/soloist
-      echo ok > "$out"
-    '';
+    pkgs.runCommand "eval-soloist-arm64" {} (
+      ''
+        test ${pkg.passthru.system} = aarch64-linux
+      ''
+      + lib.optionalString runBinary ''
+        test -x ${pkg}/bin/soloist
+      ''
+      + ''
+        echo ok > "$out"
+      ''
+    );
   eval-soloist-arm32 = let
     os = mk [
       {
