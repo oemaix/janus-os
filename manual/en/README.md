@@ -159,8 +159,7 @@ is on. The board's own audio is
 `"usb"`. Both need `janus.audio.playback.node`, the PipeWire node.
 A blank node fails the check. Bluetooth is
 `"bluetooth"`. That starts Bluetooth and PipeWire without Soloist,
-plays to a speaker, and does not need `playback.node`. The image
-still starts Bluetooth only when Soloist is on. Discover lists nearby
+plays to a speaker, and does not need `playback.node`. Discover lists nearby
 speakers. Pair, connect, disconnect, and remove one with
 `janus bluetooth`, by address or by a unique name, or on the maintenance
 page when that page is in the image. Enter a code only when the speaker

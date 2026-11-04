@@ -80,7 +80,7 @@ power-cut. Tier 3 ships the profile. The Future list stays after 1.0.
 * Spotify Soloist as a playback device (*02* UC-23, FR-SVC-001). `janus.soloist.enable` defaults to false. False adds no unit, secret, or package, and the checks are not evaluated. True needs `janus.audio.enable`, a playback device, the API key as a sops secret for that router (FR-SEC-012), and a board architecture of `x86_64`, `aarch64`, or `armv7l`. Playback is `janus.audio` (D-0061). The image installs the locked official build and starts Soloist with system-wide PipeWire when playback needs a local device. UDP 5353 is accepted on `janus.soloist.zones` (default `lan`) and dropped elsewhere. The WebSocket stays off. Pairing is `janus bluetooth` and the maintenance page (D-0059). The archives are flake inputs (D-0058, T-0010). A 1.0 image leaves the switch false.
 * Shared audio (`janus.audio`, D-0061). `enable` defaults to false. Playback and recording are read only when it is true. `embedded` and `usb` need a non-blank PipeWire node and `kernelProfile` `standard` or `matched`. `compact` still rejects them (D-0057). `matched` includes that device's driver only when `enable` is true, and leaves `SOUND` off otherwise. `recording.input = bluetooth` fails while HFP and HSP stay off. PipeWire starts for Soloist, for speech on a local device, and for bluetooth playback or recording. BlueZ starts when playback or recording is `bluetooth`, without Soloist.
 * Bluetooth audio output of that playback (*02* UC-23, FR-HW-009). The router is the Spotify Connect device. `janus.audio.enable` and `janus.audio.playback.output = bluetooth` start BlueZ as an A2DP source with AVRCP, without Soloist (D-0061). HFP and HSP stay off. The last connected speaker connects again after boot, and again when it returns, unless it was disconnected during this boot. `janus bluetooth` discovers nearby devices, then lists, pairs, connects, disconnects, and removes them by address or by a unique name. A pairing code is optional. The maintenance page discovers, then pairs, and has the same later actions when that page is in the image (FR-ACC-007, D-0059). The CSR dongle `0a12:0001` stays allowlisted. Onboard Bluetooth on the Zero 2 W, the Pi 3, the Pi 4, and the ROCK Pi 4C is included for `compact` and `matched` when this playback is set. `hci_uart` on the ROCK Pi 4C stays blacklisted until then.
-* Shared HTTP listener and CPU speech (*02* UC-25, FR-SVC-004, D-0062). `janus.http.enable` defaults to false. False adds no listener, certificate, or token. Recognition and synthesis are separate switches and share that listener, its port `8473`, and its sops token. Either fails evaluation while the listener is off. Recognition is released `whisper.cpp` and the multilingual `base` weights. Synthesis is released Piper from <https://github.com/OHF-Voice/piper1-gpl>, with `tts.voice` a locked id `ll_CC-name-quality`. Pins are release tags in `flake.lock` (T-0020). Recognition fails on the Zero 2 W, the Pi 2, the Pi 3, Le Potato, and the VisionFive 2. Synthesis fails on the Zero 2 W and the VisionFive 2. Not in the image yet.
+* Shared HTTP listener and CPU speech (*02* UC-25, FR-SVC-004, D-0062). `janus.http.enable` defaults to false. False adds no listener, certificate, or token. Recognition and synthesis are separate switches and share that listener, its port `8473`, and its sops token. Either fails evaluation while the listener is off. Recognition is released `whisper.cpp` and the multilingual `base` weights. Synthesis is released Piper from <https://github.com/OHF-Voice/piper1-gpl>, with `tts.voice` a locked id `ll_CC-name-quality`. Pins are release tags in `flake.lock` (T-0020). Recognition fails on the Zero 2 W, the Pi 2, the Pi 3, Le Potato, and the VisionFive 2. Synthesis fails on the Zero 2 W and the VisionFive 2. The switches are in the image and default off, so a 1.0 image does not start them.
 * NXP Ara240 runtime (*02* UC-24, FR-HW-010, FR-SVC-002). Another device calls `janus.http` on the router when it needs an edge LLM of 0.5B to 3B parameters (D-0060, D-0062). The HTTP face is the vendor Chat Completions service (eIQ AAF Connector) in front of AraRT. Zones default to `lan` and `mgmt`. `wan` is refused. AraRT's own socket stays on the board. No board and no USB or PCI ID is accepted yet. The published client library name is `libaraclient_aarch64.so`. Other architectures are not assumed (D-0058). Vision models are out. Speech stays on the CPU.
 * Hailo-10H runtime (*02* UC-24, FR-HW-011, FR-SVC-003, D-0060). Same role and the same model size as the Ara240 row. The module is PCIe, M.2, with its own DRAM. HailoRT is the `master` branch. The HTTP face is HailoRT GenAI, compatible with OpenAI and Ollama, on `janus.http` (D-0062). Hailo-8 and Hailo-8L are not this row. No PCI ID is accepted yet. Vision models are out. Speech stays on the CPU. Hailo's published example is about 2B parameters. 3B is the top of this plan and is not that example.
 
@@ -208,6 +208,10 @@ tree does not mean that behavior exists. Stubs are not finished features.
   Login is a per-host sops passphrase (`secrets/web/<host>.yaml`), not the root password. The page calls the
   allowlisted `janus` commands and does not edit the rest of the configuration.
   Some functions and elements are still unusable or only partly worked out. Working those out inside the retro console is Future.
+* `janus.http.enable` is the shared listener on port 8473. Recognition and
+  synthesis are separate switches on that listener (D-0062). Both default
+  off. `janus.audio.playback.output = bluetooth` starts BlueZ and PipeWire
+  without Soloist (D-0061).
 * A mcuzone INA219 at `0x40` reports the cell in `janus status` and powers
   the router off while the cell is discharging, at the thresholds in *10*
   §4.5. The Waveshare address `0x43` stays unarmed.
@@ -262,13 +266,13 @@ tree does not mean that behavior exists. Stubs are not finished features.
   negative current means discharge. The Waveshare `0x43` profile stays
   unarmed.
 * The CSR Bluetooth dongle `0a12:0001` stays on the allowlist. The image
-  still starts BlueZ when Soloist is enabled and
-  `janus.audio.playback.output` is `bluetooth`. D-0061 now starts
-  PipeWire and BlueZ from bluetooth playback or recording, without
-  Soloist. That start rule is not in the image yet. Board audio and a
-  USB interface are the other two playback devices, under `janus.audio`.
-  Speech recognition and synthesis are specified (D-0062) and are not
-  in the image.
+  starts BlueZ and PipeWire when `janus.audio.enable` is true and
+  `janus.audio.playback.output` is `bluetooth`, without Soloist (D-0061).
+  `recording.input = bluetooth` still fails while HFP and HSP stay off.
+  Board audio and a USB interface are the other two playback devices.
+  CPU speech is in the image when `janus.http.enable` and
+  `janus.speech.asr.enable` or `janus.speech.tts.enable` are set. Both
+  speech switches default off (D-0062).
 * `janus.system.kernelProfile` is `standard`, `compact`, or `matched`
   (D-0051, D-0052). `standard` and `compact` are one kernel for every
   board. `standard` is the default and is the NixOS kernel, so aarch64

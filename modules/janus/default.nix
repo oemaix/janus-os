@@ -19,6 +19,8 @@
     ./secrets.nix
     ./deploy.nix
     ./audio.nix
+    ./http.nix
+    ./speech.nix
     ./soloist.nix
   ];
 }

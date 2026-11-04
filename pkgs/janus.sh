@@ -53,6 +53,9 @@ Exit 0 is success. Exit 2 is a usage or validation error. Exit 1 is a runtime fa
   bluetooth disconnect <address-or-name>
   bluetooth remove <address-or-name>
   web start|stop|status|fingerprint
+  http start|stop|status|fingerprint
+  speech asr
+  speech tts [--play] <text>
 
 deploy and fleet are build-host commands. On the board they exit 2 and name janus-build.
 EOF
@@ -321,7 +324,7 @@ case "$cmd" in
     ;;
   bluetooth)
     if [ ! -x /etc/janus/bin/janus-bluetooth ]; then
-      echo "janus bluetooth is not in this image. Set janus.audio.enable, janus.audio.playback.output = bluetooth, and janus.soloist.enable, then rebuild." >&2
+      echo "janus bluetooth is not in this image. Set janus.audio.enable and janus.audio.playback.output = bluetooth, then rebuild." >&2
       exit 2
     fi
     sub=${1:-}
@@ -347,6 +350,20 @@ case "$cmd" in
       exit 2
     fi
     /etc/janus/bin/janus-web "$@"
+    ;;
+  http)
+    if [ ! -x /etc/janus/bin/janus-http ]; then
+      echo "janus http is not in this image. Set janus.http.enable and rebuild." >&2
+      exit 2
+    fi
+    /etc/janus/bin/janus-http "$@"
+    ;;
+  speech)
+    if [ ! -x /etc/janus/bin/janus-speech ]; then
+      echo "janus speech is not in this image. Set janus.http.enable and janus.speech.asr.enable or janus.speech.tts.enable, then rebuild." >&2
+      exit 2
+    fi
+    /etc/janus/bin/janus-speech "$@"
     ;;
   proxy)
     sub=${1:-}
@@ -658,6 +675,15 @@ case "$cmd" in
               fi
               systemctl restart janus-web.service || true
               systemctl restart janus-web-tls.service || true
+              ;;
+          esac
+          case "$failed" in
+            *janus-http-secret.service*|*janus-http.service*|*janus-http-tls.service*)
+              if systemctl cat janus-http-secret.service >/dev/null 2>&1; then
+                systemctl restart janus-http-secret.service || true
+              fi
+              systemctl restart janus-http.service || true
+              systemctl restart janus-http-tls.service || true
               ;;
           esac
         fi

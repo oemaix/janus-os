@@ -23,6 +23,34 @@
   inputs.soloist-aarch64.flake = false;
   inputs.soloist-armv7l.url = "https://soloist-builds.spotifycdn.com/soloist_release_arm32.tar.gz";
   inputs.soloist-armv7l.flake = false;
+  # Released speech programs and weights. A new program release is a tag
+  # change here, then `nix flake update`. The base file is the ggml-base.bin
+  # that whisper.cpp v1.9.5 downloads. Voices are the published Piper ids.
+  # huggingface.co does not answer from this build network, so the same
+  # file names are fetched from ModelScope. flake.lock holds the narHash.
+  # T-0020, D-0062.
+  inputs.whisper-cpp.url = "github:ggml-org/whisper.cpp/v1.9.5";
+  inputs.whisper-cpp.flake = false;
+  inputs.whisper-base.url = "https://www.modelscope.cn/models/cjc1887415157/whisper.cpp/resolve/master/ggml-base.bin";
+  inputs.whisper-base.flake = false;
+  inputs.piper.url = "github:OHF-Voice/piper1-gpl/v1.8.0";
+  inputs.piper.flake = false;
+  inputs.piper-en-us-lessac-medium.url = "https://www.modelscope.cn/models/rhasspy/piper-voices/resolve/master/en/en_US/lessac/medium/en_US-lessac-medium.onnx";
+  inputs.piper-en-us-lessac-medium.flake = false;
+  inputs.piper-en-us-lessac-medium-json.url = "https://www.modelscope.cn/models/rhasspy/piper-voices/resolve/master/en/en_US/lessac/medium/en_US-lessac-medium.onnx.json";
+  inputs.piper-en-us-lessac-medium-json.flake = false;
+  inputs.piper-ru-ru-irina-medium.url = "https://www.modelscope.cn/models/rhasspy/piper-voices/resolve/master/ru/ru_RU/irina/medium/ru_RU-irina-medium.onnx";
+  inputs.piper-ru-ru-irina-medium.flake = false;
+  inputs.piper-ru-ru-irina-medium-json.url = "https://www.modelscope.cn/models/rhasspy/piper-voices/resolve/master/ru/ru_RU/irina/medium/ru_RU-irina-medium.onnx.json";
+  inputs.piper-ru-ru-irina-medium-json.flake = false;
+  inputs.piper-fa-ir-amir-medium.url = "https://www.modelscope.cn/models/rhasspy/piper-voices/resolve/master/fa/fa_IR/amir/medium/fa_IR-amir-medium.onnx";
+  inputs.piper-fa-ir-amir-medium.flake = false;
+  inputs.piper-fa-ir-amir-medium-json.url = "https://www.modelscope.cn/models/rhasspy/piper-voices/resolve/master/fa/fa_IR/amir/medium/fa_IR-amir-medium.onnx.json";
+  inputs.piper-fa-ir-amir-medium-json.flake = false;
+  inputs.piper-zh-cn-huayan-medium.url = "https://www.modelscope.cn/models/rhasspy/piper-voices/resolve/master/zh/zh_CN/huayan/medium/zh_CN-huayan-medium.onnx";
+  inputs.piper-zh-cn-huayan-medium.flake = false;
+  inputs.piper-zh-cn-huayan-medium-json.url = "https://www.modelscope.cn/models/rhasspy/piper-voices/resolve/master/zh/zh_CN/huayan/medium/zh_CN-huayan-medium.onnx.json";
+  inputs.piper-zh-cn-huayan-medium-json.flake = false;
 
   outputs = {
     self,

@@ -250,11 +250,16 @@ Read this file before answering a question about using Janus OS.
   Hailo-10H, not a Hailo-8 (D-0060). `compact` still drops
   kernel sound. Compute accelerators stay off. `matched` sound is only
   the `janus.audio` device (D-0061). Do not invent an accelerator class.
-  CPU speech is specified and is not in the image (D-0062, UC-25,
+  CPU speech is in the image when its switches are on, and both default
+  off (D-0062, UC-25,
   FR-SVC-004). `janus.http.enable` defaults to false. `janus.speech.asr.enable`
   and `janus.speech.tts.enable` are separate and fail evaluation while
   the listener is off. They share its port `8473` and its sops token.
-  The listener is not the maintenance page. Recognition is a released
+  The listener is not the maintenance page. A call sends `Content-Length`.
+  Chunked transfer encoding is refused. The token is checked before the
+  body is read. Four calls may be in flight. Network audio is WAV, or
+  signed 16-bit PCM with `X-Janus-Rate` and `X-Janus-Channels`. A
+  microphone call sends `seconds` from 1 to 30. Recognition is a released
   `whisper.cpp` and the multilingual `base` weights. Synthesis is a
   released Piper from https://github.com/OHF-Voice/piper1-gpl.
   `tts.voice` is a locked id `ll_CC-name-quality`. `asr.language` is

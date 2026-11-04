@@ -138,6 +138,10 @@ The certificate is created on first start under
 start` exits 2 when the image was built with `enable = false`, and
 exits 1 when the token file is missing or empty.
 
+A call sends `Content-Length`. `Transfer-Encoding: chunked` is refused.
+The bearer token is checked from the headers before the body is read.
+Four calls may be in flight. A fifth is refused with `503` and `busy`.
+
 ## 1d. `janus.speech`
 
 Two switches, one listener. Either may be on alone. Both stay off in
@@ -175,7 +179,7 @@ and the call does not run.
 
 | Call | Request | Result |
 |---|---|---|
-| `POST /speech/recognize` | `input` is `network` or `microphone`. `network` carries PCM or WAV. The server resamples to 16 kHz mono and refuses more than 30 seconds. | `{"text":"…"}` |
+| `POST /speech/recognize` | `input` is `network` or `microphone`. `network` carries WAV, or signed 16-bit little-endian PCM. PCM requires `X-Janus-Rate` (8000–48000) and `X-Janus-Channels` (`1` or `2`). The server resamples to 16 kHz mono and refuses more than 30 seconds. `microphone` requires `seconds`, an integer from 1 to 30, and records that many seconds. | `{"text":"…"}` |
 | `POST /speech/synthesize` | `output` is `network` or `playback`. The text is the body field `text`. The voice is `tts.voice`. | WAV, or sound on `playback`. |
 
 Every call sends `Authorization: Bearer` and the `janus.http` token.

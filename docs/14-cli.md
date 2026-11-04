@@ -141,7 +141,7 @@ that listener is in the image (D-0062). They do not change
 | `janus http stop` | Stop the listener. Does not remove the configuration flag. |
 | `janus http status` | Listening or stopped, port, zones, whether recognition and synthesis are in the image, certificate fingerprint. |
 | `janus http fingerprint` | SHA-256 of the certificate. Exit `2` if the listener is not in the image. |
-| `janus speech asr` | Read WAV or PCM on stdin and write the transcript on stdout. Exit `2` if recognition is not in the image. Does not use the bearer token. |
+| `janus speech asr` | Read WAV, or signed 16-bit PCM at 16 kHz mono, on stdin and write the transcript on stdout. Exit `2` if recognition is not in the image. A failed engine keeps its exit status. Does not use the bearer token. |
 | `janus speech tts [--play]` | Read the text argument and write WAV on stdout. `--play` plays `janus.audio.playback` and exits `2` when that device is unset. Exit `2` if synthesis is not in the image. Does not use the bearer token. |
 
 ## 9. Stability

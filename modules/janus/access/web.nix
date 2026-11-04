@@ -128,7 +128,7 @@ in {
       proxy = config.janus.proxy.enable;
       monitoringScope = config.janus.monitoring.scope;
       audit = config.janus.monitoring.audit.enable;
-      bluetooth = config.janus.soloist.enable && config.janus.audio.enable && config.janus.audio.playback.output == "bluetooth";
+      bluetooth = config.janus.audio.enable && config.janus.audio.playback.output == "bluetooth";
     };
 
     # stunnel parses accept as [host:]port. Brackets mark an optional host,

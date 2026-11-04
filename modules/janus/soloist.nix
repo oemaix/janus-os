@@ -31,26 +31,6 @@
   audio = config.janus.audio;
   nodeSet = audio.playback.node != null && builtins.match "[ \t]*" audio.playback.node == null;
   bluetooth = audio.enable && audio.playback.output == "bluetooth";
-  btAgent = pkgs.runCommandCC "janus-bt-agent" {
-    nativeBuildInputs = [pkgs.pkg-config];
-    buildInputs = [pkgs.dbus];
-  } ''
-    mkdir -p "$out/bin"
-    cc -O2 -Wall -Wextra -o "$out/bin/janus-bt-agent" ${../../pkgs/janus-bt-agent.c} $(pkg-config --cflags --libs dbus-1)
-  '';
-  btCmd = pkgs.writeShellApplication {
-    name = "janus-bluetooth";
-    runtimeInputs = [
-      pkgs.bluez
-      btAgent
-      pkgs.wireplumber
-      pkgs.jq
-      pkgs.coreutils
-      pkgs.gnugrep
-      pkgs.gnused
-    ];
-    text = builtins.readFile ../../pkgs/janus-bluetooth.sh;
-  };
   run =
     if pkg == null
     then "${pkgs.coreutils}/bin/false"
@@ -187,44 +167,8 @@ in {
       audio.enable = true;
       alsa.enable = true;
       pulse.enable = true;
-      wireplumber = {
-        enable = true;
-        extraConfig = lib.mkIf bluetooth {
-          # A fragment merges by key. These two keys do not replace the
-          # rest of monitor.bluez.properties.
-          "10-janus-bluez" = {
-            "monitor.bluez.properties" = {
-              # a2dp_source sends audio to a speaker. AVRCP rides with it.
-              # hfp and hsp are phone calls and stay off.
-              "bluez5.roles" = ["a2dp_source"];
-              "bluez5.hfphsp-backend" = "none";
-            };
-          };
-        };
-      };
+      wireplumber.enable = true;
     };
-
-    # A2DP source and AVRCP are selected in WirePlumber, not in main.conf.
-    # BlueZ ignores an Enable= list. HFP and HSP stay off because
-    # bluez5.roles is only a2dp_source. D-0061.
-    hardware.bluetooth = lib.mkIf bluetooth {
-      enable = true;
-      powerOnBoot = true;
-      settings = {
-        General = {
-          FastConnectable = "true";
-        };
-        Policy = {
-          AutoEnable = "true";
-          ReconnectAttempts = "7";
-          ReconnectIntervals = "1,2,4,8,16,32,64";
-        };
-      };
-    };
-    hardware.enableRedistributableFirmware = lib.mkIf bluetooth true;
-    janus.board.configTxt = lib.mkIf (bluetooth && lib.elem config.janus.hardware.board ["rpi-zero-2w" "rpi3" "rpi4"]) ''
-      dtparam=krnbt=on
-    '';
 
     environment.systemPackages = lib.optional (pkg != null) pkg;
 
@@ -271,23 +215,6 @@ in {
         PrivateTmp = true;
         ProtectHome = true;
         ProtectSystem = "strict";
-      };
-    };
-
-    environment.etc."janus/bin/janus-bluetooth" = lib.mkIf bluetooth {
-      source = "${btCmd}/bin/janus-bluetooth";
-    };
-
-    systemd.services.janus-bluetooth-reconnect = lib.mkIf bluetooth {
-      description = "Reconnect the last Bluetooth speaker";
-      wantedBy = ["multi-user.target"];
-      after = ["bluetooth.service" "wireplumber.service"];
-      requires = ["bluetooth.service"];
-      environment.PIPEWIRE_RUNTIME_DIR = "/run";
-      serviceConfig = {
-        ExecStart = "${btCmd}/bin/janus-bluetooth reconnect";
-        Restart = "on-failure";
-        RestartSec = "5s";
       };
     };
 
