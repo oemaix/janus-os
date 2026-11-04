@@ -269,7 +269,7 @@
 (defn serve []
   (def token (load-token))
   (when (= token "")
-    (eprint "janus http token file is missing or empty.")
+    (eprint "janus edge api token file is missing or empty.")
     (os/exit 1))
   (def doc (load-doc))
   (def runtime (or (os/getenv "JANUS_HTTP_RUNTIME") "/run/janus-http"))

@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-11-03 |
+| Last updated | 2026-11-04 |
 
 Terms are listed alphabetically. Where an informal word is easy to confuse
 with the canonical one, the informal word is marked *avoid*.
@@ -48,6 +48,8 @@ Contrast with *Rebuild*.
 
 **Drift** — A hot override whose value differs from the configuration
 embedded in the running image. Drift is expected and must be visible.
+
+**Edge** — The `janus.edge` namespace. It has no `enable` switch. `janus.edge.api` is the listener another device calls. `janus.edge.speech` is CPU recognition and synthesis on that listener. `janus.edge.llm` is reserved for a later language-model service and is not an option yet. An edge LLM remains the 0.5B to 3B model on an Ara240 or a Hailo-10H (D-0060). Soloist, `janus.audio`, and Bluetooth stay outside the namespace.
 
 **Engine** — The proxy core executing tunnels on the Board: `sing-box`
 (default) or `xray`. Exactly one engine is active per system.

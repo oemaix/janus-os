@@ -82,8 +82,11 @@
 
 Spotify Soloist, Bluetooth audio output, CPU speech, and the Ara240
 and Hailo-10H HTTP services are after 1.0 (*13*, D-0056, D-0062).
-Speech and the language-model faces share `janus.http`. That listener
-is not the maintenance page.
+`janus.edge` is the namespace for the shared listener and for CPU speech.
+`janus.edge.llm` is the later language-model name and is not an option
+yet. Speech and that later face share `janus.edge.api`. That listener
+is not the maintenance page. Soloist, audio, and Bluetooth stay outside
+the namespace.
 
 ## 4. Data model (canonical)
 

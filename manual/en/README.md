@@ -167,9 +167,11 @@ asks for one. The last connected speaker
 connects again after a reboot.
 `nix flake update` moves that pin. Any other architecture fails the check.
 
-Speech recognition and speech synthesis are specified and are not in
-this image (D-0062). They are two switches on one HTTP listener,
-`janus.http`, which stays off until it is set. Recognition is
+Speech recognition and speech synthesis are two switches on
+`janus.edge.speech`, on the listener `janus.edge.api`. Both stay off
+until they are set, so a 1.0 image does not start them (D-0062).
+The token is one line in `secrets/edge-api/<host>.yaml`.
+Recognition is
 whisper.cpp with the multilingual base weights. Synthesis is Piper.
 A board that cannot run the program that is switched on fails the
 check. The Zero 2 W, the Pi 2, the Pi 3, Le Potato, and the VisionFive

@@ -292,7 +292,7 @@ requirements it drives (see *03 — Requirements*).
   decided, because `compact` drops compute accelerators. No USB or PCI
   ID is on the allowlist yet.
 * **Flow:** The later image runs AraRT or HailoRT GenAI on the router.
-  The other device sends language work to `janus.http` (D-0062). The
+  The other device sends language work to `janus.edge.api` (D-0062). The
   router still routes. The listener is reachable on `lan` and `mgmt`.
   It is not on `wan`, and `guest` and `iot` are not accepted unless
   the configuration names them. The runtime's own local socket is not
@@ -303,13 +303,13 @@ requirements it drives (see *03 — Requirements*).
 
 * **Actor:** Mei
 * **Release:** after 1.0 (D-0056, D-0062)
-* **Precondition:** `janus.http.enable` is true and the token is a sops
+* **Precondition:** `janus.edge.api.enable` is true and the token is a sops
   file for this router. Recognition, synthesis, or both are on. The
   board can run the program that is on. A microphone or a speaker is
   optional: a call may bring its own audio and take audio back.
 * **Flow:**
   1. Mei stores the token with `janus-build secret set`. It is one line
-     in `secrets/http/<host>.yaml`. It is not the maintenance page
+     in `secrets/edge-api/<host>.yaml`. It is not the maintenance page
      passphrase.
   2. Another device on `lan` or `mgmt` calls `POST /speech/recognize`
      or `POST /speech/synthesize` with `Authorization: Bearer`.

@@ -129,25 +129,25 @@ The page is *20*. These commands switch the listener. They do not change
 | `janus web status` | Listening or stopped, port, zones, certificate fingerprint. |
 | `janus web fingerprint` | SHA-256 of the certificate. Exit `2` if the page is not in the image. |
 
-## 8. Shared HTTP listener and speech
+## 8. Edge API and speech
 
 The listener is *08* §1c. Speech is *08* §1d. These commands apply when
 that listener is in the image (D-0062). They do not change
-`janus.http.enable`.
+`janus.edge.api.enable`.
 
 | Command | Effect |
 |---------|--------|
-| `janus http start` | Start the listener. Exit `2` if `janus.http.enable` is false. Exit `1` if the token file is missing or empty. When `janus-http-secret` exists, or the token path is under `/run/secrets`, start that install before the file test. |
-| `janus http stop` | Stop the listener. Does not remove the configuration flag. |
-| `janus http status` | Listening or stopped, port, zones, whether recognition and synthesis are in the image, certificate fingerprint. |
-| `janus http fingerprint` | SHA-256 of the certificate. Exit `2` if the listener is not in the image. |
-| `janus speech asr` | Read WAV, or signed 16-bit PCM at 16 kHz mono, on stdin and write the transcript on stdout. Exit `2` if recognition is not in the image. A failed engine keeps its exit status. Does not use the bearer token. |
-| `janus speech tts [--play]` | Read the text argument and write WAV on stdout. `--play` plays `janus.audio.playback` and exits `2` when that device is unset. Exit `2` if synthesis is not in the image. Does not use the bearer token. |
+| `janus edge api start` | Start the listener. Exit `2` if `janus.edge.api.enable` is false. Exit `1` if the token file is missing or empty. When `janus-http-secret` exists, or the token path is under `/run/secrets`, start that install before the file test. |
+| `janus edge api stop` | Stop the listener. Does not remove the configuration flag. |
+| `janus edge api status` | Listening or stopped, port, zones, whether recognition and synthesis are in the image, certificate fingerprint. |
+| `janus edge api fingerprint` | SHA-256 of the certificate. Exit `2` if the listener is not in the image. |
+| `janus edge speech asr` | Read WAV, or signed 16-bit PCM at 16 kHz mono, on stdin and write the transcript on stdout. Exit `2` if recognition is not in the image. A failed engine keeps its exit status. Does not use the bearer token. |
+| `janus edge speech tts [--play]` | Read the text argument and write WAV on stdout. `--play` plays `janus.audio.playback` and exits `2` when that device is unset. Exit `2` if synthesis is not in the image. Does not use the bearer token. |
 
 ## 9. Stability
 
 Command names and the allowlist keys in §2–§6 are stable for 1.0. The
 `janus web` commands in §7 apply when the page is in the image. The
-`janus http` and `janus speech` commands in §8 apply when that listener
+`janus edge api` and `janus edge speech` commands in §8 apply when that listener
 is in the image. Adding a key is a documentation change in this file
 before the code accepts it.

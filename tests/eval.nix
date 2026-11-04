@@ -261,6 +261,9 @@ in {
       test "$jhelp" = "$jjson"
       test "$bhelp" = "$buse"
       printf '%s\n' "$jhelp" | grep -q 'proxy refresh'
+      printf '%s\n' "$jhelp" | grep -q 'edge api start|stop|status|fingerprint'
+      printf '%s\n' "$jhelp" | grep -q 'edge speech asr'
+      printf '%s\n' "$jhelp" | grep -q 'edge speech tts'
       printf '%s\n' "$jhelp" | grep -q 'secrets install-age-key'
       printf '%s\n' "$bhelp" | grep -q 'secret keygen'
       printf '%s\n' "$bhelp" | grep -q 'deploy --age-key'
@@ -268,6 +271,64 @@ in {
       grep -q -- '--help' "$TMPDIR/none-build.err"
       grep -q -- '--help' "$TMPDIR/bad.err"
       grep -q -- '--help' "$TMPDIR/bad-build.err"
+      echo ok > "$out"
+    '';
+  cli-edge = let
+    system = pkgs.stdenv.hostPlatform.system;
+  in
+    pkgs.runCommand "cli-edge" {} ''
+      set +e
+      janus=${self.packages.${system}.janus-cli}/bin/janus
+      "$janus" http start >/dev/null 2>"$TMPDIR/old-http.err"
+      s1=$?
+      "$janus" speech asr >/dev/null 2>"$TMPDIR/old-speech.err"
+      s2=$?
+      "$janus" edge >/dev/null 2>"$TMPDIR/edge.err"
+      s3=$?
+      "$janus" edge nope >/dev/null 2>"$TMPDIR/edge-nope.err"
+      s4=$?
+      "$janus" edge api start >/dev/null 2>"$TMPDIR/api-missing.err"
+      s5=$?
+      "$janus" edge speech tts hi >/dev/null 2>"$TMPDIR/speech-missing.err"
+      s6=$?
+      set -e
+      test "$s1" = 2
+      test "$s2" = 2
+      test "$s3" = 2
+      test "$s4" = 2
+      test "$s5" = 2
+      test "$s6" = 2
+      grep -q -- '--help' "$TMPDIR/old-http.err"
+      grep -q -- '--help' "$TMPDIR/old-speech.err"
+      grep -q -- '--help' "$TMPDIR/edge.err"
+      grep -q -- '--help' "$TMPDIR/edge-nope.err"
+      if grep -q 'not in this image' "$TMPDIR/old-http.err" "$TMPDIR/old-speech.err"; then
+        echo "old command names still reach the listener" >&2
+        exit 1
+      fi
+      grep -q 'janus edge api is not in this image' "$TMPDIR/api-missing.err"
+      grep -q 'janus edge speech is not in this image' "$TMPDIR/speech-missing.err"
+      dir=$TMPDIR/bin
+      mkdir -p "$dir"
+      printf '%s\n' '#!/bin/sh' 'printf "%s\n" "$*" > "$JANUS_EDGE_ARGS"; exit 3' > "$dir/http"
+      printf '%s\n' '#!/bin/sh' 'printf "%s\n" "$*" > "$JANUS_EDGE_ARGS"; exit 4' > "$dir/speech"
+      chmod +x "$dir/http" "$dir/speech"
+      export JANUS_HTTP_BIN=$dir/http
+      export JANUS_SPEECH_BIN=$dir/speech
+      export JANUS_EDGE_ARGS=$dir/api-args
+      set +e
+      "$janus" edge api start >/dev/null 2>"$TMPDIR/api.err"
+      s7=$?
+      export JANUS_EDGE_ARGS=$dir/speech-args
+      "$janus" edge speech tts --play hello >/dev/null 2>"$TMPDIR/speech.err"
+      s8=$?
+      set -e
+      test "$s7" = 3
+      test "$s8" = 4
+      test ! -s "$TMPDIR/api.err"
+      test ! -s "$TMPDIR/speech.err"
+      grep -qx 'start' "$dir/api-args"
+      grep -qx 'tts --play hello' "$dir/speech-args"
       echo ok > "$out"
     '';
   cli-init = let
@@ -346,6 +407,14 @@ in {
       fi
       SOPS_AGE_KEY_FILE="$TMPDIR/age.key" sops -d --extract '["value"]' secrets/web/potato.yaml > "$TMPDIR/web-pass"
       printf '%s' 'page-secret' | cmp - "$TMPDIR/web-pass"
+      printf '%s\n' 'edge-token' | janus-build secret set secrets/edge-api/potato.yaml
+      test -s secrets/edge-api/potato.yaml
+      if grep -q edge-token secrets/edge-api/potato.yaml; then
+        echo "edge api token was stored in plaintext" >&2
+        exit 1
+      fi
+      SOPS_AGE_KEY_FILE="$TMPDIR/age.key" sops -d --extract '["value"]' secrets/edge-api/potato.yaml > "$TMPDIR/edge-token"
+      printf '%s' 'edge-token' | cmp - "$TMPDIR/edge-token"
       printf '%s\n' 'username: alice' 'password: s3cret' | janus-build secret set secrets/pppoe/potato/wan.yaml
       SOPS_AGE_KEY_FILE="$TMPDIR/age.key" sops -d secrets/pppoe/potato/wan.yaml > "$TMPDIR/pppoe"
       printf '%s\n' 'username: alice' 'password: s3cret' | cmp - "$TMPDIR/pppoe"
@@ -6492,9 +6561,9 @@ in {
     os = mk [
       base
       {
-        janus.http.enable = false;
-        janus.http.zones = ["wan"];
-        janus.speech.asr.language = "nope";
+        janus.edge.api.enable = false;
+        janus.edge.api.zones = ["wan"];
+        janus.edge.speech.asr.language = "nope";
       }
     ];
   in
@@ -6505,7 +6574,7 @@ in {
         else "no"
       } = no
       test ${
-        if os.config.sops.secrets ? http-router
+        if os.config.sops.secrets ? edge-api-router
         then "present"
         else "absent"
       } = absent
@@ -6520,15 +6589,15 @@ in {
           address = "192.168.10.1";
           prefixLength = 24;
         };
-        janus.http.enable = true;
-        janus.http.tokenSecret = "http-router";
-        janus.http.sopsFile = ./fixtures/sops-placeholder;
+        janus.edge.api.enable = true;
+        janus.edge.api.tokenSecret = "edge-api-router";
+        janus.edge.api.sopsFile = ./fixtures/sops-placeholder;
       }
     ];
     rules = os.config.networking.nftables.tables.janus.content;
   in
     pkgs.runCommand "eval-http-on" {} ''
-      test ${lib.escapeShellArg os.config.sops.secrets.http-router.key} = value
+      test ${lib.escapeShellArg os.config.sops.secrets.edge-api-router.key} = value
       test ${toString os.config.janus.firewall.services.http.port} = 8473
       test ${os.config.janus.firewall.services.http.protocol} = tcp
       test ${os.config.systemd.services.janus-http.serviceConfig.UMask} = 0077
@@ -6551,68 +6620,68 @@ in {
   eval-http-wan = fail "eval-http-wan" [
     base
     {
-      janus.http.enable = true;
-      janus.http.tokenSecret = "http-router";
-      janus.http.sopsFile = ./fixtures/sops-placeholder;
-      janus.http.zones = ["wan"];
+      janus.edge.api.enable = true;
+      janus.edge.api.tokenSecret = "edge-api-router";
+      janus.edge.api.sopsFile = ./fixtures/sops-placeholder;
+      janus.edge.api.zones = ["wan"];
     }
   ];
   eval-http-no-token = fail "eval-http-no-token" [
     base
-    {janus.http.enable = true;}
+    {janus.edge.api.enable = true;}
   ];
   eval-http-both-tokens = fail "eval-http-both-tokens" [
     base
     {
-      janus.http.enable = true;
-      janus.http.tokenSecret = "http-router";
-      janus.http.sopsFile = ./fixtures/sops-placeholder;
-      janus.http.tokenFile = "/run/secrets/http-router";
+      janus.edge.api.enable = true;
+      janus.edge.api.tokenSecret = "edge-api-router";
+      janus.edge.api.sopsFile = ./fixtures/sops-placeholder;
+      janus.edge.api.tokenFile = "/run/secrets/edge-api-router";
     }
   ];
   eval-speech-needs-http = fail "eval-speech-needs-http" [
     base
-    {janus.speech.asr.enable = true;}
+    {janus.edge.speech.asr.enable = true;}
   ];
   eval-speech-asr-rpi3 = fail "eval-speech-asr-rpi3" [
     {
       janus.hardware.board = "rpi3";
       janus.access.ssh.authorizedKeys = [key];
-      janus.http.enable = true;
-      janus.http.tokenSecret = "http-router";
-      janus.http.sopsFile = ./fixtures/sops-placeholder;
-      janus.speech.asr.enable = true;
+      janus.edge.api.enable = true;
+      janus.edge.api.tokenSecret = "edge-api-router";
+      janus.edge.api.sopsFile = ./fixtures/sops-placeholder;
+      janus.edge.speech.asr.enable = true;
     }
   ];
   eval-speech-tts-zero = fail "eval-speech-tts-zero" [
     {
       janus.hardware.board = "rpi-zero-2w";
       janus.access.ssh.authorizedKeys = [key];
-      janus.http.enable = true;
-      janus.http.tokenSecret = "http-router";
-      janus.http.sopsFile = ./fixtures/sops-placeholder;
-      janus.speech.tts.enable = true;
-      janus.speech.tts.voice = "en_US-lessac-medium";
+      janus.edge.api.enable = true;
+      janus.edge.api.tokenSecret = "edge-api-router";
+      janus.edge.api.sopsFile = ./fixtures/sops-placeholder;
+      janus.edge.speech.tts.enable = true;
+      janus.edge.speech.tts.voice = "en_US-lessac-medium";
     }
   ];
   eval-speech-bad-voice = fail "eval-speech-bad-voice" [
     base
     {
-      janus.http.enable = true;
-      janus.http.tokenSecret = "http-router";
-      janus.http.sopsFile = ./fixtures/sops-placeholder;
-      janus.speech.tts.enable = true;
-      janus.speech.tts.voice = "en_US-missing-medium";
+      janus.edge.api.enable = true;
+      janus.edge.api.tokenSecret = "edge-api-router";
+      janus.edge.api.sopsFile = ./fixtures/sops-placeholder;
+      janus.edge.speech.tts.enable = true;
+      janus.edge.speech.tts.voice = "en_US-missing-medium";
     }
   ];
   eval-speech-bad-language = fail "eval-speech-bad-language" [
     base
     {
-      janus.http.enable = true;
-      janus.http.tokenSecret = "http-router";
-      janus.http.sopsFile = ./fixtures/sops-placeholder;
-      janus.speech.asr.enable = true;
-      janus.speech.asr.language = "english";
+      janus.edge.api.enable = true;
+      janus.edge.api.tokenSecret = "edge-api-router";
+      janus.edge.api.sopsFile = ./fixtures/sops-placeholder;
+      janus.edge.speech.asr.enable = true;
+      janus.edge.speech.asr.language = "english";
     }
   ];
   eval-speech-tts-rpi3 = let
@@ -6620,11 +6689,11 @@ in {
       {
         janus.hardware.board = "rpi3";
         janus.access.ssh.authorizedKeys = [key];
-        janus.http.enable = true;
-        janus.http.tokenSecret = "http-router";
-        janus.http.sopsFile = ./fixtures/sops-placeholder;
-        janus.speech.tts.enable = true;
-        janus.speech.tts.voice = "en_US-lessac-medium";
+        janus.edge.api.enable = true;
+        janus.edge.api.tokenSecret = "edge-api-router";
+        janus.edge.api.sopsFile = ./fixtures/sops-placeholder;
+        janus.edge.speech.tts.enable = true;
+        janus.edge.speech.tts.voice = "en_US-lessac-medium";
       }
     ];
   in
@@ -6645,11 +6714,11 @@ in {
     os = mk [
       base
       {
-        janus.http.enable = true;
-        janus.http.tokenSecret = "http-router";
-        janus.http.sopsFile = ./fixtures/sops-placeholder;
-        janus.speech.asr.enable = true;
-        janus.speech.asr.language = "zh";
+        janus.edge.api.enable = true;
+        janus.edge.api.tokenSecret = "edge-api-router";
+        janus.edge.api.sopsFile = ./fixtures/sops-placeholder;
+        janus.edge.speech.asr.enable = true;
+        janus.edge.speech.asr.language = "zh";
       }
     ];
   in
@@ -6827,12 +6896,12 @@ exit 0
     os = mk [
       base
       {
-        janus.http.enable = true;
-        janus.http.tokenSecret = "http-router";
-        janus.http.sopsFile = ./fixtures/sops-placeholder;
-        janus.speech.asr.enable = true;
-        janus.speech.tts.enable = true;
-        janus.speech.tts.voice = "en_US-lessac-medium";
+        janus.edge.api.enable = true;
+        janus.edge.api.tokenSecret = "edge-api-router";
+        janus.edge.api.sopsFile = ./fixtures/sops-placeholder;
+        janus.edge.speech.asr.enable = true;
+        janus.edge.speech.tts.enable = true;
+        janus.edge.speech.tts.voice = "en_US-lessac-medium";
       }
     ];
     json = os.config.environment.etc."janus/speech.json".text;

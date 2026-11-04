@@ -109,21 +109,22 @@
   # janus.soloist.apiKeySecret = "soloist-janus";
   # janus.soloist.sopsFile = ./secrets/soloist/janus.yaml;
 
-  # Shared HTTP listener. Off by default. Speech recognition and
-  # synthesis are two switches on this listener. Either fails evaluation
-  # while enable is false. The token is one line in
-  # secrets/http/<host>.yaml. Recognition is whisper.cpp base.
-  # Synthesis is Piper. tts.voice is a locked id ll_CC-name-quality.
-  # Recognition fails on the Zero 2 W, the Pi 2, the Pi 3, Le Potato,
-  # and the VisionFive 2. Synthesis fails on the Zero 2 W and the
-  # VisionFive 2 (D-0062). Not in the image yet.
-  # janus.http.enable = true;
-  # janus.http.tokenSecret = "http-janus";
-  # janus.http.sopsFile = ./secrets/http/janus.yaml;
-  # janus.speech.asr.enable = true;
-  # janus.speech.asr.language = "zh";
-  # janus.speech.tts.enable = true;
-  # janus.speech.tts.voice = "zh_CN-huayan-medium";
+  # janus.edge is a namespace and has no switch. janus.edge.api is the
+  # shared listener and stays off until it is set. Speech recognition and
+  # synthesis are janus.edge.speech. Either fails evaluation while the
+  # listener is off. The token is one line in secrets/edge-api/<host>.yaml.
+  # Recognition is whisper.cpp base. Synthesis is Piper. tts.voice is a
+  # locked id ll_CC-name-quality. Recognition fails on the Zero 2 W, the
+  # Pi 2, the Pi 3, Le Potato, and the VisionFive 2. Synthesis fails on
+  # the Zero 2 W and the VisionFive 2 (D-0062). A 1.0 image leaves both
+  # switches off. janus.edge.llm is not an option yet.
+  # janus.edge.api.enable = true;
+  # janus.edge.api.tokenSecret = "edge-api-janus";
+  # janus.edge.api.sopsFile = ./secrets/edge-api/janus.yaml;
+  # janus.edge.speech.asr.enable = true;
+  # janus.edge.speech.asr.language = "zh";
+  # janus.edge.speech.tts.enable = true;
+  # janus.edge.speech.tts.voice = "zh_CN-huayan-medium";
 
   ############################################################################
   # Physical ports

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# CPU speech recognition and synthesis on janus.http. D-0062.
+# CPU speech recognition and synthesis on janus.edge.api. D-0062.
 {
   config,
   lib,
@@ -8,7 +8,7 @@
   ...
 }: let
   inherit (lib) mkIf mkOption types;
-  cfg = config.janus.speech;
+  cfg = config.janus.edge.speech;
   board = config.janus.hardware.board;
   audio = config.janus.audio;
   voices = janusSpeech.voices or {};
@@ -99,13 +99,13 @@
     };
   };
 in {
-  options.janus.speech = {
+  options.janus.edge.speech = {
     asr.enable = mkOption {
       type = types.bool;
       default = false;
       description = ''
         whisper.cpp with the locked multilingual base weights.
-        True needs janus.http.enable. A board that cannot run it fails evaluation.
+        True needs janus.edge.api.enable. A board that cannot run it fails evaluation.
       '';
     };
     asr.language = mkOption {
@@ -121,7 +121,7 @@ in {
       type = types.bool;
       default = false;
       description = ''
-        Released Piper. True needs janus.http.enable and tts.voice.
+        Released Piper. True needs janus.edge.api.enable and tts.voice.
         A board that cannot run it fails evaluation.
       '';
     };
@@ -139,54 +139,54 @@ in {
   config = mkIf on {
     assertions = [
       {
-        assertion = config.janus.http.enable;
+        assertion = config.janus.edge.api.enable;
         message = ''
-          janus.speech.asr.enable and janus.speech.tts.enable need janus.http.enable.
+          janus.edge.speech.asr.enable and janus.edge.speech.tts.enable need janus.edge.api.enable.
           The listener is off, so evaluation stops. D-0062.
         '';
       }
       {
         assertion = !cfg.asr.enable || lib.elem board asrBoards;
         message = ''
-          janus.speech.asr.enable cannot run on ${board}.
+          janus.edge.speech.asr.enable cannot run on ${board}.
           Recognition fails on the Zero 2 W, the Pi 2, the Pi 3, Le Potato, and the VisionFive 2.
         '';
       }
       {
         assertion = !cfg.tts.enable || lib.elem board ttsBoards;
         message = ''
-          janus.speech.tts.enable cannot run on ${board}.
+          janus.edge.speech.tts.enable cannot run on ${board}.
           Synthesis fails on the Zero 2 W and the VisionFive 2.
         '';
       }
       {
         assertion = cfg.asr.language == null || lib.elem cfg.asr.language languages;
         message = ''
-          janus.speech.asr.language is not a language id of the locked base model.
+          janus.edge.speech.asr.language is not a language id of the locked base model.
           Leave it unset to detect the language.
         '';
       }
       {
         assertion = !cfg.tts.enable || (cfg.tts.voice != null && voiceForm cfg.tts.voice && lib.elem cfg.tts.voice voiceNames);
         message = ''
-          janus.speech.tts.voice must be a locked Piper id ll_CC-name-quality.
+          janus.edge.speech.tts.voice must be a locked Piper id ll_CC-name-quality.
           Locked voices: ${lib.concatStringsSep ", " voiceNames}.
         '';
       }
       {
         assertion = cfg.tts.voice == null || (voiceForm cfg.tts.voice && lib.elem cfg.tts.voice voiceNames);
         message = ''
-          janus.speech.tts.voice is not a locked Piper id.
+          janus.edge.speech.tts.voice is not a locked Piper id.
           Locked voices: ${lib.concatStringsSep ", " voiceNames}.
         '';
       }
       {
         assertion = !cfg.asr.enable || (whisperPkg != null && janusSpeech ? whisperModel);
-        message = "janus.speech.asr.enable needs the locked whisper.cpp source and the base weights.";
+        message = "janus.edge.speech.asr.enable needs the locked whisper.cpp source and the base weights.";
       }
       {
         assertion = !cfg.tts.enable || (piperPkg != null && voiceDir != null);
-        message = "janus.speech.tts.enable needs the locked Piper source and the locked voices.";
+        message = "janus.edge.speech.tts.enable needs the locked Piper source and the locked voices.";
       }
     ];
 

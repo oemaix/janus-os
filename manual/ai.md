@@ -252,9 +252,11 @@ Read this file before answering a question about using Janus OS.
   the `janus.audio` device (D-0061). Do not invent an accelerator class.
   CPU speech is in the image when its switches are on, and both default
   off (D-0062, UC-25,
-  FR-SVC-004). `janus.http.enable` defaults to false. `janus.speech.asr.enable`
-  and `janus.speech.tts.enable` are separate and fail evaluation while
+  FR-SVC-004). `janus.edge.api.enable` defaults to false. `janus.edge.speech.asr.enable`
+  and `janus.edge.speech.tts.enable` are separate and fail evaluation while
   the listener is off. They share its port `8473` and its sops token.
+  The token file is `secrets/edge-api/<host>.yaml`, one `value` line,
+  encrypted to that host (FR-SEC-013). The sops name is `edge-api-<host>`.
   The listener is not the maintenance page. A call sends `Content-Length`.
   Chunked transfer encoding is refused. The token is checked before the
   body is read. Four calls may be in flight. Network audio is WAV, or
@@ -266,4 +268,6 @@ Read this file before answering a question about using Janus OS.
   unset or a language id of that `base` model. Recognition fails on
   `rpi-zero-2w`, `rpi2`, `rpi3`, `le-potato`, and `visionfive2`.
   Synthesis fails on `rpi-zero-2w` and `visionfive2`. The accelerator
-  does not run speech. Do not invent an option outside *08* §1c and §1d.
+  does not run speech. `janus.edge` is a namespace and has no switch.
+  `janus.edge.llm` is not an option yet. Do not invent an option outside
+  *08* §1c, §1d, and §1e.

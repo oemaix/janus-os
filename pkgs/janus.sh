@@ -53,9 +53,9 @@ Exit 0 is success. Exit 2 is a usage or validation error. Exit 1 is a runtime fa
   bluetooth disconnect <address-or-name>
   bluetooth remove <address-or-name>
   web start|stop|status|fingerprint
-  http start|stop|status|fingerprint
-  speech asr
-  speech tts [--play] <text>
+  edge api start|stop|status|fingerprint
+  edge speech asr
+  edge speech tts [--play] <text>
 
 deploy and fleet are build-host commands. On the board they exit 2 and name janus-build.
 EOF
@@ -351,19 +351,30 @@ case "$cmd" in
     fi
     /etc/janus/bin/janus-web "$@"
     ;;
-  http)
-    if [ ! -x /etc/janus/bin/janus-http ]; then
-      echo "janus http is not in this image. Set janus.http.enable and rebuild." >&2
-      exit 2
-    fi
-    /etc/janus/bin/janus-http "$@"
-    ;;
-  speech)
-    if [ ! -x /etc/janus/bin/janus-speech ]; then
-      echo "janus speech is not in this image. Set janus.http.enable and janus.speech.asr.enable or janus.speech.tts.enable, then rebuild." >&2
-      exit 2
-    fi
-    /etc/janus/bin/janus-speech "$@"
+  edge)
+    kind=${1:-}
+    shift || true
+    case "$kind" in
+      api)
+        http_bin=${JANUS_HTTP_BIN:-/etc/janus/bin/janus-http}
+        if [ ! -x "$http_bin" ]; then
+          echo "janus edge api is not in this image. Set janus.edge.api.enable and rebuild." >&2
+          exit 2
+        fi
+        "$http_bin" "$@"
+        ;;
+      speech)
+        speech_bin=${JANUS_SPEECH_BIN:-/etc/janus/bin/janus-speech}
+        if [ ! -x "$speech_bin" ]; then
+          echo "janus edge speech is not in this image. Set janus.edge.api.enable and janus.edge.speech.asr.enable or janus.edge.speech.tts.enable, then rebuild." >&2
+          exit 2
+        fi
+        "$speech_bin" "$@"
+        ;;
+      *)
+        usage
+        ;;
+    esac
     ;;
   proxy)
     sub=${1:-}

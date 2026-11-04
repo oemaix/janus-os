@@ -1,4 +1,4 @@
-# Speech engines for janus.http and `janus speech`. docs/08 §1d, docs/14 §8.
+# Speech engines for janus.edge.api and `janus edge speech`. docs/08 §1d, docs/14 §8.
 # The bearer token is checked by the Janet listener, not here.
 # Audio and text are not stored and are not written to the log.
 set -eu
@@ -20,7 +20,7 @@ field() {
 
 need() {
   if [ ! -f "$json" ]; then
-    echo "janus speech is not in this image." >&2
+    echo "janus edge speech is not in this image." >&2
     exit 2
   fi
 }
@@ -127,7 +127,7 @@ trap 'rm -rf "$work"' EXIT
 case "$cmd" in
   recognize)
     if [ "$(field '.asr')" != true ]; then
-      echo "janus speech asr is not in this image. Set janus.speech.asr.enable and rebuild." >&2
+      echo "janus edge speech asr is not in this image. Set janus.edge.speech.asr.enable and rebuild." >&2
       exit 2
     fi
     input=network
@@ -184,7 +184,7 @@ case "$cmd" in
     ;;
   synthesize)
     if [ "$(field '.tts')" != true ]; then
-      echo "janus speech tts is not in this image. Set janus.speech.tts.enable and rebuild." >&2
+      echo "janus edge speech tts is not in this image. Set janus.edge.speech.tts.enable and rebuild." >&2
       exit 2
     fi
     output=$(jq -r '.output // empty' "$body" 2>/dev/null) || fail_bad

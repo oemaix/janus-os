@@ -9,7 +9,7 @@
   ...
 }: let
   inherit (lib) mkIf mkOption types;
-  cfg = config.janus.http;
+  cfg = config.janus.edge.api;
   tokenPath =
     if
       cfg.tokenSecret
@@ -24,7 +24,7 @@
     && (options ? sops)
     && lib.any (secret: secret.path == path) (lib.attrValues config.sops.secrets);
   needsSops = cfg.tokenSecret != null || pathIsSops cfg.tokenFile;
-  speech = config.janus.speech;
+  speech = config.janus.edge.speech;
   httpCmd = pkgs.writeShellApplication {
     name = "janus-http";
     runtimeInputs = with pkgs; [jq openssl systemd coreutils janet];
@@ -45,14 +45,15 @@
     ++ map (lan: "IP:${lan.address}") lans;
   zones = config.janus.firewall.zones;
 in {
-  options.janus.http = {
+  options.janus.edge.api = {
     enable = mkOption {
       type = types.bool;
       default = false;
       description = ''
         Shared HTTP listener on port 8473.
         False adds no unit, certificate, or token.
-        Speech uses it. It is not the maintenance page. D-0062.
+        janus.edge is the namespace and has no switch of its own.
+        Speech uses this listener. It is not the maintenance page. D-0062.
       '';
     };
 
@@ -76,7 +77,8 @@ in {
       default = null;
       description = ''
         sops secret name for the bearer token.
-        One line, value:, in sopsFile. Not the maintenance page passphrase.
+        One line, value:, in secrets/edge-api/<host>.yaml.
+        Not the maintenance page passphrase.
       '';
     };
 
@@ -89,7 +91,7 @@ in {
     sopsFile = mkOption {
       type = types.nullOr types.path;
       default = null;
-      description = "sops document for tokenSecret. Installed only when enable is true.";
+      description = "secrets/edge-api/<host>.yaml. Installed only when enable is true.";
     };
   };
 
@@ -99,26 +101,26 @@ in {
         {
           assertion = (cfg.tokenFile != null) != (cfg.tokenSecret != null);
           message = ''
-            janus.http.enable needs exactly one of janus.http.tokenSecret and janus.http.tokenFile.
+            janus.edge.api.enable needs exactly one of janus.edge.api.tokenSecret and janus.edge.api.tokenFile.
             The token is not the maintenance page passphrase. FR-SEC-013.
           '';
         }
         {
           assertion = cfg.tokenSecret == null || cfg.sopsFile != null;
-          message = "janus.http.tokenSecret needs janus.http.sopsFile.";
+          message = "janus.edge.api.tokenSecret needs janus.edge.api.sopsFile.";
         }
         {
           assertion = cfg.zones != [];
-          message = "janus.http.zones needs at least one zone.";
+          message = "janus.edge.api.zones needs at least one zone.";
         }
         {
           assertion = !lib.elem "wan" cfg.zones;
-          message = "janus.http.zones must not include wan.";
+          message = "janus.edge.api.zones must not include wan.";
         }
       ]
       ++ map (zone: {
         assertion = zones ? ${zone};
-        message = "janus.http.zones contains '${zone}', which is not a firewall zone.";
+        message = "janus.edge.api.zones contains '${zone}', which is not a firewall zone.";
       })
       cfg.zones;
 

@@ -6,7 +6,7 @@ run=${JANUS_SPEECH_RUN:-/etc/janus/bin/janus-speech-run}
 
 need() {
   if [ ! -x "$run" ] || [ ! -f "$json" ]; then
-    echo "janus speech is not in this image. Set janus.http.enable and janus.speech.asr.enable or janus.speech.tts.enable, then rebuild." >&2
+    echo "janus edge speech is not in this image. Set janus.edge.api.enable and janus.edge.speech.asr.enable or janus.edge.speech.tts.enable, then rebuild." >&2
     exit 2
   fi
 }
@@ -29,7 +29,7 @@ field() {
 cmd_asr() {
   need
   if [ "$(field '.asr')" != true ]; then
-    echo "janus speech asr is not in this image. Set janus.speech.asr.enable and rebuild." >&2
+    echo "janus edge speech asr is not in this image. Set janus.edge.speech.asr.enable and rebuild." >&2
     exit 2
   fi
   work=$(mktemp -d)
@@ -48,7 +48,7 @@ cmd_asr() {
 cmd_tts() {
   need
   if [ "$(field '.tts')" != true ]; then
-    echo "janus speech tts is not in this image. Set janus.speech.tts.enable and rebuild." >&2
+    echo "janus edge speech tts is not in this image. Set janus.edge.speech.tts.enable and rebuild." >&2
     exit 2
   fi
   play=0
@@ -58,14 +58,14 @@ cmd_tts() {
   fi
   text=${1:-}
   if [ -z "$text" ]; then
-    echo "janus speech tts needs the text." >&2
+    echo "janus edge speech tts needs the text." >&2
     exit 2
   fi
   output=network
   if [ "$play" = 1 ]; then
     device=$(field '.playback.output')
     if [ -z "$device" ] || [ "$device" = null ]; then
-      echo "janus speech tts --play needs janus.audio.playback. Set it and rebuild." >&2
+      echo "janus edge speech tts --play needs janus.audio.playback. Set it and rebuild." >&2
       exit 2
     fi
     output=playback
@@ -83,7 +83,7 @@ case "$cmd" in
   asr) cmd_asr "$@" ;;
   tts) cmd_tts "$@" ;;
   *)
-    echo "janus speech asr | janus speech tts [--play] <text>" >&2
+    echo "janus edge speech asr | janus edge speech tts [--play] <text>" >&2
     exit 2
     ;;
 esac

@@ -6,7 +6,7 @@ systemctl_bin=${JANUS_SYSTEMCTL:-systemctl}
 
 need_image() {
   if [ ! -f "$json" ] || [ "$(jq -r '.enable // false' "$json")" != true ]; then
-    echo "janus http is not in this image. Set janus.http.enable and rebuild." >&2
+    echo "janus edge api is not in this image. Set janus.edge.api.enable and rebuild." >&2
     exit 2
   fi
 }
@@ -65,7 +65,7 @@ ensure_token() {
   token=$1
   if "$systemctl_bin" cat janus-http-secret.service >/dev/null 2>&1; then
     if ! "$systemctl_bin" start janus-http-secret.service; then
-      echo "janus http could not install the token secret." >&2
+      echo "janus edge api could not install the token secret." >&2
       exit 1
     fi
     return 0
@@ -74,7 +74,7 @@ ensure_token() {
     /run/secrets/*)
       if "$systemctl_bin" cat sops-install-secrets.service >/dev/null 2>&1; then
         if ! "$systemctl_bin" start sops-install-secrets.service; then
-          echo "janus http could not install the token secret." >&2
+          echo "janus edge api could not install the token secret." >&2
           exit 1
         fi
       fi
@@ -87,7 +87,7 @@ cmd_start() {
   token=$(token_path)
   ensure_token "$token"
   if [ -z "$token" ] || [ ! -s "$token" ]; then
-    echo "janus http token file is missing or empty." >&2
+    echo "janus edge api token file is missing or empty." >&2
     exit 1
   fi
   paused=$(paused_path)
@@ -106,7 +106,7 @@ cmd_ready() {
   if [ -n "$token" ] && [ -s "$token" ]; then
     exit 0
   fi
-  echo "janus http token file is missing or empty." >&2
+  echo "janus edge api token file is missing or empty." >&2
   exit 1
 }
 
@@ -140,7 +140,7 @@ cmd_status() {
 cmd_fingerprint() {
   need_image
   if ! fp=$(fingerprint_of "$(cert_path)"); then
-    echo "janus http certificate is not on this router yet." >&2
+    echo "janus edge api certificate is not on this router yet." >&2
     exit 1
   fi
   printf '%s\n' "$fp"
