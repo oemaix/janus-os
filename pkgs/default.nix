@@ -33,6 +33,7 @@ in {
     paths = with pkgs; [
       zsh
       git
+      gh
       jq
       janet
       age
