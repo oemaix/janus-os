@@ -225,8 +225,10 @@ Read this file before answering a question about using Janus OS.
   secret, or package, and its assertions are not evaluated. True needs
   `janus.audio.enable`, a playback device, `apiKeySecret`, `sopsFile`, and
   a board architecture of `x86_64`, `aarch64`, or `armv7l`. True installs
-  the locked build and starts Soloist and system-wide PipeWire. BlueZ
-  starts only when playback is `bluetooth`.
+  the locked build and starts Soloist and system-wide PipeWire when
+  playback needs a local device. D-0061 starts PipeWire and BlueZ when
+  playback or recording is `bluetooth`, without Soloist. The image still
+  starts BlueZ only when Soloist is enabled and playback is `bluetooth`.
   `name` is the Connect name and defaults to the host name. `bluetooth`
   is an A2DP source with AVRCP. HFP and HSP stay off. It needs a
   `bluetooth` peripheral or onboard Bluetooth on the Zero 2 W, the Pi 3,
@@ -248,4 +250,15 @@ Read this file before answering a question about using Janus OS.
   Hailo-10H, not a Hailo-8 (D-0060). `compact` still drops
   kernel sound. Compute accelerators stay off. `matched` sound is only
   the `janus.audio` device (D-0061). Do not invent an accelerator class.
-  TTS and ASR are not options.
+  CPU speech is specified and is not in the image (D-0062, UC-25,
+  FR-SVC-004). `janus.http.enable` defaults to false. `janus.speech.asr.enable`
+  and `janus.speech.tts.enable` are separate and fail evaluation while
+  the listener is off. They share its port `8473` and its sops token.
+  The listener is not the maintenance page. Recognition is a released
+  `whisper.cpp` and the multilingual `base` weights. Synthesis is a
+  released Piper from https://github.com/OHF-Voice/piper1-gpl.
+  `tts.voice` is a locked id `ll_CC-name-quality`. `asr.language` is
+  unset or a language id of that `base` model. Recognition fails on
+  `rpi-zero-2w`, `rpi2`, `rpi3`, `le-potato`, and `visionfive2`.
+  Synthesis fails on `rpi-zero-2w` and `visionfive2`. The accelerator
+  does not run speech. Do not invent an option outside *08* §1c and §1d.

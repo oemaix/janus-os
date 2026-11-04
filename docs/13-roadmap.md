@@ -77,11 +77,12 @@ power-cut. Tier 3 ships the profile. The Future list stays after 1.0.
 * A check that a destination refuses the exit because the address is in Iran, China, or Russia, for example Gemini. A country guessed from the node name, and a connect check (ping, TCP, or a handshake), do not show that refusal.
 * One GPIO LED with the `heartbeat` trigger on `rpi2`, `rpi3`, `rpi4`, `rpi-zero-2w`, `rockpi-4c`, and `le-potato`. A dark LED then means the kernel timer has stopped. The GPIO is not chosen. The ROCK Pi 4C blue status LED already uses that trigger in the device tree (*10* §3.5). The Le Potato blue LED does the same in the mainline tree and is not yet recorded in *10*. The Raspberry Pi profiles do not set one.
 * The maintenance page (*20*) is in the image. The retro console in *20* §7 is the design: no radius, no shadow, no gradient. Some functions and elements are still unusable or only partly worked out. Later work keeps that simple console and works out every function and every element so each behaves clearly and fluidly. The shape is in Notes.
-* Spotify Soloist as a playback device (*02* UC-23, FR-SVC-001). `janus.soloist.enable` defaults to false. False adds no unit, secret, or package, and the checks are not evaluated. True needs `janus.audio.enable`, a playback device, the API key as a sops secret for that router (FR-SEC-012), and a board architecture of `x86_64`, `aarch64`, or `armv7l`. Playback is `janus.audio` (D-0061). `bluetooth` starts BlueZ. The image installs the locked official build and starts Soloist with system-wide PipeWire. UDP 5353 is accepted on `janus.soloist.zones` (default `lan`) and dropped elsewhere. The WebSocket stays off. Pairing is `janus bluetooth` and the maintenance page (D-0059). The archives are flake inputs (D-0058, T-0010). A 1.0 image leaves the switch false.
-* Shared audio (`janus.audio`, D-0061). `enable` defaults to false. Playback and recording are read only when it is true. `embedded` and `usb` need a non-blank PipeWire node and `kernelProfile` `standard` or `matched`. `compact` still rejects them (D-0057). `matched` includes that device's driver only when `enable` is true, and leaves `SOUND` off otherwise. `recording.input = bluetooth` fails while HFP and HSP stay off. TTS and ASR are not in this tree.
-* Bluetooth audio output of that playback (*02* UC-23, FR-HW-009). The router is the Spotify Connect device. `janus.audio.enable` and `janus.audio.playback.output = bluetooth`, with Soloist enabled, start BlueZ as an A2DP source with AVRCP (D-0061). HFP and HSP stay off. The last connected speaker connects again after boot, and again when it returns, unless it was disconnected during this boot. `janus bluetooth` discovers nearby devices, then lists, pairs, connects, disconnects, and removes them by address or by a unique name. A pairing code is optional. The maintenance page discovers, then pairs, and has the same later actions when that page is in the image (FR-ACC-007, D-0059). The CSR dongle `0a12:0001` stays allowlisted. Onboard Bluetooth on the Zero 2 W, the Pi 3, the Pi 4, and the ROCK Pi 4C is included for `compact` and `matched` when this playback is set. `hci_uart` on the ROCK Pi 4C stays blacklisted until then.
-* NXP Ara240 runtime (*02* UC-24, FR-HW-010, FR-SVC-002). Another device calls an HTTP service on the router when it needs an edge LLM of 0.5B to 3B parameters (D-0060). The HTTP face is the vendor Chat Completions service (eIQ AAF Connector) in front of AraRT. Listeners default to `lan` and `mgmt`. `wan` is refused. AraRT's own socket stays on the board. No board and no USB or PCI ID is accepted yet. The published client library name is `libaraclient_aarch64.so`. Other architectures are not assumed (D-0058). Vision models are out.
-* Hailo-10H runtime (*02* UC-24, FR-HW-011, FR-SVC-003, D-0060). Same role and the same model size as the Ara240 row. The module is PCIe, M.2, with its own DRAM. HailoRT is the `master` branch. The HTTP face is HailoRT GenAI, compatible with OpenAI and Ollama. Hailo-8 and Hailo-8L are not this row. No PCI ID is accepted yet. Vision models are out. Hailo's published example is about 2B parameters. 3B is the top of this plan and is not that example.
+* Spotify Soloist as a playback device (*02* UC-23, FR-SVC-001). `janus.soloist.enable` defaults to false. False adds no unit, secret, or package, and the checks are not evaluated. True needs `janus.audio.enable`, a playback device, the API key as a sops secret for that router (FR-SEC-012), and a board architecture of `x86_64`, `aarch64`, or `armv7l`. Playback is `janus.audio` (D-0061). The image installs the locked official build and starts Soloist with system-wide PipeWire when playback needs a local device. UDP 5353 is accepted on `janus.soloist.zones` (default `lan`) and dropped elsewhere. The WebSocket stays off. Pairing is `janus bluetooth` and the maintenance page (D-0059). The archives are flake inputs (D-0058, T-0010). A 1.0 image leaves the switch false.
+* Shared audio (`janus.audio`, D-0061). `enable` defaults to false. Playback and recording are read only when it is true. `embedded` and `usb` need a non-blank PipeWire node and `kernelProfile` `standard` or `matched`. `compact` still rejects them (D-0057). `matched` includes that device's driver only when `enable` is true, and leaves `SOUND` off otherwise. `recording.input = bluetooth` fails while HFP and HSP stay off. PipeWire starts for Soloist, for speech on a local device, and for bluetooth playback or recording. BlueZ starts when playback or recording is `bluetooth`, without Soloist.
+* Bluetooth audio output of that playback (*02* UC-23, FR-HW-009). The router is the Spotify Connect device. `janus.audio.enable` and `janus.audio.playback.output = bluetooth` start BlueZ as an A2DP source with AVRCP, without Soloist (D-0061). HFP and HSP stay off. The last connected speaker connects again after boot, and again when it returns, unless it was disconnected during this boot. `janus bluetooth` discovers nearby devices, then lists, pairs, connects, disconnects, and removes them by address or by a unique name. A pairing code is optional. The maintenance page discovers, then pairs, and has the same later actions when that page is in the image (FR-ACC-007, D-0059). The CSR dongle `0a12:0001` stays allowlisted. Onboard Bluetooth on the Zero 2 W, the Pi 3, the Pi 4, and the ROCK Pi 4C is included for `compact` and `matched` when this playback is set. `hci_uart` on the ROCK Pi 4C stays blacklisted until then.
+* Shared HTTP listener and CPU speech (*02* UC-25, FR-SVC-004, D-0062). `janus.http.enable` defaults to false. False adds no listener, certificate, or token. Recognition and synthesis are separate switches and share that listener, its port `8473`, and its sops token. Either fails evaluation while the listener is off. Recognition is released `whisper.cpp` and the multilingual `base` weights. Synthesis is released Piper from <https://github.com/OHF-Voice/piper1-gpl>, with `tts.voice` a locked id `ll_CC-name-quality`. Pins are release tags in `flake.lock` (T-0020). Recognition fails on the Zero 2 W, the Pi 2, the Pi 3, Le Potato, and the VisionFive 2. Synthesis fails on the Zero 2 W and the VisionFive 2. Not in the image yet.
+* NXP Ara240 runtime (*02* UC-24, FR-HW-010, FR-SVC-002). Another device calls `janus.http` on the router when it needs an edge LLM of 0.5B to 3B parameters (D-0060, D-0062). The HTTP face is the vendor Chat Completions service (eIQ AAF Connector) in front of AraRT. Zones default to `lan` and `mgmt`. `wan` is refused. AraRT's own socket stays on the board. No board and no USB or PCI ID is accepted yet. The published client library name is `libaraclient_aarch64.so`. Other architectures are not assumed (D-0058). Vision models are out. Speech stays on the CPU.
+* Hailo-10H runtime (*02* UC-24, FR-HW-011, FR-SVC-003, D-0060). Same role and the same model size as the Ara240 row. The module is PCIe, M.2, with its own DRAM. HailoRT is the `master` branch. The HTTP face is HailoRT GenAI, compatible with OpenAI and Ollama, on `janus.http` (D-0062). Hailo-8 and Hailo-8L are not this row. No PCI ID is accepted yet. Vision models are out. Speech stays on the CPU. Hailo's published example is about 2B parameters. 3B is the top of this plan and is not that example.
 
 ## 2. Progress
 
@@ -260,10 +261,14 @@ tree does not mean that behavior exists. Stubs are not finished features.
 * Battery shutdown arms on the mcuzone `0x40` profile, where a
   negative current means discharge. The Waveshare `0x43` profile stays
   unarmed.
-* The CSR Bluetooth dongle `0a12:0001` stays on the allowlist. BlueZ starts
-  when Soloist is enabled and `janus.audio.playback.output` is `bluetooth`
-  (D-0061, FR-HW-009). Board audio and a USB interface are the other two
-  playback devices, under `janus.audio`.
+* The CSR Bluetooth dongle `0a12:0001` stays on the allowlist. The image
+  still starts BlueZ when Soloist is enabled and
+  `janus.audio.playback.output` is `bluetooth`. D-0061 now starts
+  PipeWire and BlueZ from bluetooth playback or recording, without
+  Soloist. That start rule is not in the image yet. Board audio and a
+  USB interface are the other two playback devices, under `janus.audio`.
+  Speech recognition and synthesis are specified (D-0062) and are not
+  in the image.
 * `janus.system.kernelProfile` is `standard`, `compact`, or `matched`
   (D-0051, D-0052). `standard` and `compact` are one kernel for every
   board. `standard` is the default and is the NixOS kernel, so aarch64
@@ -308,11 +313,13 @@ tree does not mean that behavior exists. Stubs are not finished features.
   Hailo-15. The `hailo8` branch is not this plan. LLM deployment is
   <https://hailo.ai/blog/bringing-generative-ai-to-the-edge-llm-on-hailo-10h/>.
   The planned model on both accelerators is an LLM of 0.5B to 3B
-  parameters. Vision models are not in the plan. Speech recognition is
+  parameters. Vision models are not in the plan.   Speech recognition is
   published for the Hailo-10H (Whisper `base`, `tiny`, and `tiny.en`)
   and Optimum-Ara includes `whisper.py`. Neither is this workload.
-  Speech synthesis is not an accelerator model: Hailo runs Piper on the
-  host CPU, and NXP's VITS TTS is documented for i.MX NPUs.
+  CPU recognition and synthesis are D-0062: released `whisper.cpp`
+  with the multilingual `base` weights, and released Piper. Speech
+  synthesis is not an accelerator model: Hailo runs Piper on the host
+  CPU, and NXP's VITS TTS is documented for i.MX NPUs.
 * The board image must not contain a compiler or `janus-build`. The `nix`
   binary stays for activation and for `nix-store --import` (*05*, *09*
   §8.2). `nix.enable = false`, nixpkgs sources are absent, and `/nix` is

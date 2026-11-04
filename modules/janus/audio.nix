@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
-# Shared recording and playback. Soloist is the only consumer today.
-# TTS and ASR are not in this tree. See D-0061.
+# Shared recording and playback. Soloist is the consumer in this tree.
+# Speech is D-0062 and is not started here.
 { config, lib, ... }:
 let
   inherit (lib) mkOption types;

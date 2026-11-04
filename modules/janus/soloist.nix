@@ -74,8 +74,8 @@ in {
         False adds no unit, secret, or package to the image.
         True needs janus.audio.enable and a playback device.
         It installs the locked Linux build for x86_64, aarch64, or armv7l
-        and starts it with system-wide PipeWire.
-        Bluetooth starts only when janus.audio.playback.output is bluetooth.
+        and starts it with system-wide PipeWire when playback needs a local device.
+        BlueZ follows janus.audio, not this switch.
         docs/08, FR-SVC-001, D-0056, D-0061.
       '';
     };

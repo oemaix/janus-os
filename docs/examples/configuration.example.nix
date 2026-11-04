@@ -84,8 +84,9 @@
   # Shared audio. Off by default. playback and recording are read only
   # when enable is true. embedded and usb need a non-blank PipeWire node
   # and kernelProfile standard or matched. compact rejects them.
-  # bluetooth playback is A2DP and does not use a node. recording.input
-  # bluetooth fails while HFP and HSP stay off (D-0061).
+  # bluetooth playback is A2DP and does not use a node. It starts
+  # PipeWire and BlueZ without Soloist. recording.input bluetooth fails
+  # while HFP and HSP stay off (D-0061).
   # janus.audio.enable = true;
   # janus.audio.playback.output = "embedded";
   # janus.audio.playback.node = "alsa_output.platform-analog";
@@ -99,13 +100,30 @@
   # The key is one line in secrets/soloist/<host>.yaml. True needs
   # janus.audio.enable and a playback device. It installs the build
   # locked in flake.lock for x86_64, aarch64, or armv7l (D-0058).
-  # Another architecture fails evaluation. bluetooth starts BlueZ
-  # (A2DP and AVRCP) and may use compact or matched. It needs a bluetooth
-  # peripheral or onboard Bluetooth.
+  # Another architecture fails evaluation. Bluetooth playback starts
+  # BlueZ (A2DP and AVRCP) from janus.audio, without Soloist, and may
+  # use compact or matched. It needs a bluetooth peripheral or onboard
+  # Bluetooth.
   # janus.soloist.enable = true;
   # janus.soloist.name = "Janus";
   # janus.soloist.apiKeySecret = "soloist-janus";
   # janus.soloist.sopsFile = ./secrets/soloist/janus.yaml;
+
+  # Shared HTTP listener. Off by default. Speech recognition and
+  # synthesis are two switches on this listener. Either fails evaluation
+  # while enable is false. The token is one line in
+  # secrets/http/<host>.yaml. Recognition is whisper.cpp base.
+  # Synthesis is Piper. tts.voice is a locked id ll_CC-name-quality.
+  # Recognition fails on the Zero 2 W, the Pi 2, the Pi 3, Le Potato,
+  # and the VisionFive 2. Synthesis fails on the Zero 2 W and the
+  # VisionFive 2 (D-0062). Not in the image yet.
+  # janus.http.enable = true;
+  # janus.http.tokenSecret = "http-janus";
+  # janus.http.sopsFile = ./secrets/http/janus.yaml;
+  # janus.speech.asr.enable = true;
+  # janus.speech.asr.language = "zh";
+  # janus.speech.tts.enable = true;
+  # janus.speech.tts.voice = "zh_CN-huayan-medium";
 
   ############################################################################
   # Physical ports

@@ -158,14 +158,24 @@ is on. The board's own audio is
 `janus.audio.playback.output = "embedded"`. A USB audio interface is
 `"usb"`. Both need `janus.audio.playback.node`, the PipeWire node.
 A blank node fails the check. Bluetooth is
-`"bluetooth"`. With Soloist on, that starts Bluetooth, plays to a
-speaker, and does not need `playback.node`. Discover lists nearby
+`"bluetooth"`. That starts Bluetooth and PipeWire without Soloist,
+plays to a speaker, and does not need `playback.node`. The image
+still starts Bluetooth only when Soloist is on. Discover lists nearby
 speakers. Pair, connect, disconnect, and remove one with
 `janus bluetooth`, by address or by a unique name, or on the maintenance
 page when that page is in the image. Enter a code only when the speaker
 asks for one. The last connected speaker
 connects again after a reboot.
 `nix flake update` moves that pin. Any other architecture fails the check.
+
+Speech recognition and speech synthesis are specified and are not in
+this image (D-0062). They are two switches on one HTTP listener,
+`janus.http`, which stays off until it is set. Recognition is
+whisper.cpp with the multilingual base weights. Synthesis is Piper.
+A board that cannot run the program that is switched on fails the
+check. The Zero 2 W, the Pi 2, the Pi 3, Le Potato, and the VisionFive
+2 cannot run recognition. The Zero 2 W and the VisionFive 2 cannot run
+synthesis. The Pi 2, the Pi 3, and Le Potato can run synthesis alone.
 
 `janus.system.region` is `cn` (the default), `ru`, or `ir`. It chooses the
 domestic resolver. For `ru`, `janus.proxy.blockQuic` defaults to true
