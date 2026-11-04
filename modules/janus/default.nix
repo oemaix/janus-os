@@ -18,6 +18,7 @@
     ./region.nix
     ./secrets.nix
     ./deploy.nix
+    ./audio.nix
     ./soloist.nix
   ];
 }

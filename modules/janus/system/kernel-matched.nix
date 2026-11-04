@@ -6,6 +6,8 @@
   board,
   peripherals,
   bluetoothPlayback ? false,
+  wantUsbAudio ? false,
+  wantEmbeddedAudio ? false,
 }: let
   allow = import ../hardware/allowlist.nix;
   ps = lib.attrValues peripherals;
@@ -74,8 +76,11 @@
   wantSerial = wwanModes != [];
   wantBt = hasClass "bluetooth";
   # Onboard controllers are UART (Broadcom). A USB dongle stays btusb.
-  # Sound stays off: A2DP is BlueZ, not ALSA. D-0061, T-0011.
+  # A2DP is BlueZ, not ALSA. D-0061, T-0011.
   wantOnboardBt = bluetoothPlayback && lib.elem board ["rpi-zero-2w" "rpi3" "rpi4" "rockpi-4c"];
+  # ALSA follows janus.audio.enable plus an embedded or USB device.
+  # Bluetooth playback does not turn SOUND on. T-0018.
+  wantSound = wantUsbAudio || wantEmbeddedAudio;
   wantNvme = board == "rockpi-4c" || board == "visionfive2";
   wantAhci = board == "yanyu-stx-r19f";
   wantVirtio = board == "x86_64-test";
@@ -285,6 +290,214 @@
     ++ lib.optionals (!wantNvme) ["NVME_AUTH" "NVME_HOST_AUTH"]
     ++ lib.optionals (!wantSerial) ["USB_SERIAL_GENERIC"];
 
+  # Drivers the architecture defconfig turns on once SOUND is no longer n.
+  # Keepers are removed below. A name with no Kconfig symbol is not listed:
+  # SND_SOC_ROCKCHIP is a stale defconfig entry in 6.18. T-0018.
+  soundCatalog = [
+    "SND_ALOOP"
+    "SND_HDA_TEGRA"
+    "SND_HDA_CODEC_HDMI"
+    "SND_HDA_CODEC_HDMI_GENERIC"
+    "SND_HDA_CODEC_HDMI_NVIDIA"
+    "SND_HDA_CODEC_HDMI_TEGRA"
+    "SND_HDA_CODEC_REALTEK"
+    "SND_HDA_CODEC_ALC269"
+    "SND_HDA_GENERIC"
+    "SND_HDA_INTEL"
+    "SND_HDA_HWDEP"
+    "SND_HRTIMER"
+    "SND_SEQUENCER"
+    "SND_SEQ_DUMMY"
+    "SND_USB_AUDIO"
+    "SND_SOC"
+    "SND_BCM2835"
+    "SND_BCM2835_SOC_I2S"
+    "SND_DESIGNWARE_I2S"
+    "SND_SOC_FSL_ASRC"
+    "SND_SOC_FSL_MICFIL"
+    "SND_SOC_FSL_EASRC"
+    "SND_IMX_SOC"
+    "SND_SOC_IMX_SGTL5000"
+    "SND_SOC_FSL_ASOC_CARD"
+    "SND_SOC_IMX_AUDMIX"
+    "SND_SOC_MT8183"
+    "SND_SOC_MT8183_MT6358_TS3A227E_MAX98357A"
+    "SND_SOC_MT8183_DA7219_MAX98357A"
+    "SND_SOC_MT8188"
+    "SND_SOC_MT8188_MT6359"
+    "SND_SOC_MT8192"
+    "SND_SOC_MT8192_MT6359_RT1015_RT5682"
+    "SND_SOC_MT8195"
+    "SND_SOC_MT8195_MT6359"
+    "SND_SOC_MT8365"
+    "SND_SOC_MT8365_MT6357"
+    "SND_MESON_AXG_SOUND_CARD"
+    "SND_MESON_GX_SOUND_CARD"
+    "SND_SOC_QCOM"
+    "SND_SOC_APQ8016_SBC"
+    "SND_SOC_MSM8996"
+    "SND_SOC_SDM845"
+    "SND_SOC_SM8250"
+    "SND_SOC_SC8280XP"
+    "SND_SOC_SC7180"
+    "SND_SOC_SC7280"
+    "SND_SOC_X1E80100"
+    "SND_SOC_ROCKCHIP_I2S_TDM"
+    "SND_SOC_ROCKCHIP_SAI"
+    "SND_SOC_ROCKCHIP_SPDIF"
+    "SND_SOC_ROCKCHIP_MAX98090"
+    "SND_SOC_ROCKCHIP_RT5645"
+    "SND_SOC_RK3399_GRU_SOUND"
+    "SND_SOC_RCAR"
+    "SND_SOC_MSIOF"
+    "SND_SOC_RZ"
+    "SND_SOC_SAMSUNG"
+    "SND_SOC_SAMSUNG_SMDK_WM8994"
+    "SND_SOC_SMDK_WM8994_PCM"
+    "SND_SOC_SNOW"
+    "SND_SOC_ODROID"
+    "SND_SOC_ARNDALE"
+    "SND_SOC_SAMSUNG_MIDAS_WM1811"
+    "SND_SOC_SH4_FSI"
+    "SND_SOC_STI"
+    "SND_SOC_STM32_SAI"
+    "SND_SOC_STM32_I2S"
+    "SND_SOC_STM32_SPDIFRX"
+    "SND_SOC_STM32_DFSDM"
+    "SND_SOC_SOF_TOPLEVEL"
+    "SND_SOC_SOF_OF"
+    "SND_SOC_SOF_MTK_TOPLEVEL"
+    "SND_SOC_SOF_MT8186"
+    "SND_SOC_SOF_MT8195"
+    "SND_SUN4I_CODEC"
+    "SND_SUN8I_CODEC"
+    "SND_SUN8I_CODEC_ANALOG"
+    "SND_SUN50I_CODEC_ANALOG"
+    "SND_SUN4I_I2S"
+    "SND_SUN4I_SPDIF"
+    "SND_SOC_TEGRA"
+    "SND_SOC_TEGRA20_I2S"
+    "SND_SOC_TEGRA20_SPDIF"
+    "SND_SOC_TEGRA30_I2S"
+    "SND_SOC_TEGRA_RT5640"
+    "SND_SOC_TEGRA_WM8753"
+    "SND_SOC_TEGRA_WM8903"
+    "SND_SOC_TEGRA_WM9712"
+    "SND_SOC_TEGRA_TRIMSLICE"
+    "SND_SOC_TEGRA_ALC5632"
+    "SND_SOC_TEGRA_MAX98090"
+    "SND_SOC_TEGRA210_AHUB"
+    "SND_SOC_TEGRA210_DMIC"
+    "SND_SOC_TEGRA210_I2S"
+    "SND_SOC_TEGRA210_OPE"
+    "SND_SOC_TEGRA186_ASRC"
+    "SND_SOC_TEGRA186_DSPK"
+    "SND_SOC_TEGRA210_ADMAIF"
+    "SND_SOC_TEGRA210_MVC"
+    "SND_SOC_TEGRA210_SFC"
+    "SND_SOC_TEGRA210_AMX"
+    "SND_SOC_TEGRA210_ADX"
+    "SND_SOC_TEGRA210_MIXER"
+    "SND_SOC_TEGRA_AUDIO_GRAPH_CARD"
+    "SND_SOC_DAVINCI_MCASP"
+    "SND_SOC_J721E_EVM"
+    "SND_SOC_AK4613"
+    "SND_SOC_AK4619"
+    "SND_SOC_AK4642"
+    "SND_SOC_DA7213"
+    "SND_SOC_ES7134"
+    "SND_SOC_ES7241"
+    "SND_SOC_ES8316"
+    "SND_SOC_ES8328_I2C"
+    "SND_SOC_GTM601"
+    "SND_SOC_MSM8916_WCD_ANALOG"
+    "SND_SOC_MSM8916_WCD_DIGITAL"
+    "SND_SOC_PCM3168A_I2C"
+    "SND_SOC_RK3308"
+    "SND_SOC_RK817"
+    "SND_SOC_RT5640"
+    "SND_SOC_RT5659"
+    "SND_SOC_SIMPLE_AMPLIFIER"
+    "SND_SOC_SIMPLE_MUX"
+    "SND_SOC_TAS2552"
+    "SND_SOC_TAS571X"
+    "SND_SOC_TLV320AIC32X4"
+    "SND_SOC_TLV320AIC32X4_I2C"
+    "SND_SOC_TLV320AIC3X_I2C"
+    "SND_SOC_WCD9335"
+    "SND_SOC_WCD934X"
+    "SND_SOC_WCD939X_SDW"
+    "SND_SOC_WM8524"
+    "SND_SOC_WM8904"
+    "SND_SOC_WM8960"
+    "SND_SOC_WM8962"
+    "SND_SOC_WM8978"
+    "SND_SOC_WSA881X"
+    "SND_SOC_WSA883X"
+    "SND_SOC_WSA884X"
+    "SND_SOC_NAU8822"
+    "SND_SOC_LPASS_WSA_MACRO"
+    "SND_SOC_LPASS_VA_MACRO"
+    "SND_SOC_LPASS_RX_MACRO"
+    "SND_SOC_LPASS_TX_MACRO"
+    "SND_SOC_AC97_CODEC"
+    "SND_SOC_CPCAP"
+    "SND_SOC_CS42L51_I2C"
+    "SND_SOC_SGTL5000"
+    "SND_SOC_STI_SAS"
+    "SND_ATMEL_SOC"
+    "SND_ATMEL_SOC_WM8904"
+    "SND_ATMEL_SOC_PDMIC"
+    "SND_ATMEL_SOC_I2S"
+    "SND_PXA_SOC_SSP"
+    "SND_MMP_SOC_SSPA"
+    "SND_PXA910_SOC"
+    "SND_SIMPLE_CARD"
+    "SND_AUDIO_GRAPH_CARD"
+    "SND_AUDIO_GRAPH_CARD2"
+    "SND_SOC_JH7110_PWMDAC"
+    "SND_SOC_JH7110_TDM"
+    "SND_VIRTIO"
+    "SOUNDWIRE"
+    "SOUNDWIRE_QCOM"
+  ];
+  keepSound = lib.unique (
+    (lib.optional wantUsbAudio "SND_USB_AUDIO")
+    ++ (lib.optional (wantEmbeddedAudio && pi) "SND_BCM2835")
+    ++ (lib.optionals (wantEmbeddedAudio && board == "rockpi-4c") [
+      "SND_SOC"
+      "SND_SOC_ROCKCHIP_I2S"
+      "SND_SOC_ES8316"
+      "SND_AUDIO_GRAPH_CARD"
+      "SND_SOC_ROCKCHIP_SPDIF"
+      "SND_SOC_SPDIF"
+    ])
+    ++ (lib.optionals (wantEmbeddedAudio && board == "le-potato") [
+      "SND_SOC"
+      "SND_MESON_GX_SOUND_CARD"
+      "SND_MESON_AIU"
+      "SND_SOC_MESON_T9015"
+    ])
+    ++ (lib.optionals (wantEmbeddedAudio && board == "visionfive2") [
+      "SND_SOC"
+      "SND_SOC_JH7110_PWMDAC"
+      "SND_SIMPLE_CARD"
+      "SND_SOC_SPDIF"
+    ])
+    ++ (lib.optionals (wantEmbeddedAudio && board == "yanyu-stx-r19f") [
+      "SND_HDA_INTEL"
+      "SND_HDA_GENERIC"
+      "SND_HDA_CODEC_REALTEK"
+      # ALC269 defaults to y once that menu is on. Forcing it n, or forcing
+      # the hidden REALTEK_LIB n, drops the parser the controller selects.
+      "SND_HDA_CODEC_ALC269"
+    ])
+    ++ (lib.optional (wantEmbeddedAudio && board == "x86_64-test") "SND_VIRTIO")
+  );
+  # SND_HDA_HWDEP is a bool. m is not an answer. T-0001.
+  keepSoundYes = lib.optionals (wantEmbeddedAudio && board == "yanyu-stx-r19f") [
+    "SND_HDA_HWDEP"
+  ];
   drop = names: keep: lib.filter (n: !lib.elem n keep) names;
   # optional n: a symbol this arch does not ask is ignored. mkForce still
   # replaces a defconfig y or m when the symbol is asked.
@@ -302,3 +515,18 @@ in
   // lib.optionalAttrs (!wantAhci) {
     SATA_MOBILE_LPM_POLICY = lib.mkForce (lib.kernel.option (lib.kernel.freeform "3"));
   }
+  // lib.optionalAttrs wantSound (
+    off (drop soundCatalog (keepSound ++ keepSoundYes))
+    // asMod keepSound
+    // asYes keepSoundYes
+    // {
+      SOUND = lib.mkForce lib.kernel.module;
+      SND = lib.mkForce lib.kernel.module;
+      # Pi HDMI scanout depends on SND. The consoles stay serial.
+      DRM_VC4 = lib.mkForce (lib.kernel.option lib.kernel.no);
+    }
+    // lib.optionalAttrs (wantEmbeddedAudio && board == "le-potato") {
+      # SND_MESON_CARD_UTILS selects this bool. optional n fights the select.
+      SND_DYNAMIC_MINORS = lib.mkForce lib.kernel.yes;
+    }
+  )

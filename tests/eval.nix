@@ -4456,11 +4456,13 @@ in {
           address = "192.168.10.1";
           prefixLength = 24;
         };
+        janus.audio.enable = true;
+        janus.audio.playback.output = "embedded";
+        janus.audio.playback.node = "alsa_output.platform-analog";
         janus.soloist.enable = true;
         janus.soloist.name = "Living Room";
         janus.soloist.apiKeySecret = "soloist-router";
         janus.soloist.sopsFile = ./fixtures/sops-placeholder;
-        janus.soloist.playback.node = "alsa_output.platform-analog";
         janus.hardware.peripherals.speaker = {
           class = "bluetooth";
           match.usbVendorProduct = "0a12:0001";
@@ -4520,6 +4522,9 @@ in {
   eval-soloist-secret = fail "eval-soloist-secret" [
     base
     {
+      janus.audio.enable = true;
+      janus.audio.playback.output = "embedded";
+      janus.audio.playback.node = "alsa_output.platform-analog";
       janus.soloist.enable = true;
       janus.hardware.peripherals.speaker.class = "bluetooth";
     }
@@ -4527,6 +4532,9 @@ in {
   eval-soloist-sops = fail "eval-soloist-sops" [
     base
     {
+      janus.audio.enable = true;
+      janus.audio.playback.output = "embedded";
+      janus.audio.playback.node = "alsa_output.platform-analog";
       janus.soloist.enable = true;
       janus.soloist.apiKeySecret = "soloist-router";
       janus.hardware.peripherals.speaker.class = "bluetooth";
@@ -4536,6 +4544,9 @@ in {
     base
     {
       janus.system.kernelProfile = "compact";
+      janus.audio.enable = true;
+      janus.audio.playback.output = "embedded";
+      janus.audio.playback.node = "alsa_output.platform-analog";
       janus.soloist.enable = true;
       janus.soloist.apiKeySecret = "soloist-router";
       janus.soloist.sopsFile = ./fixtures/sops-placeholder;
@@ -4552,14 +4563,269 @@ in {
       janus.hardware.peripherals.speaker.class = "bluetooth";
     }
   ];
+  eval-audio-while-off = fail "eval-audio-while-off" [
+    base
+    {
+      janus.audio.enable = false;
+      janus.audio.playback.output = "usb";
+    }
+  ];
+  eval-audio-record-bluetooth = fail "eval-audio-record-bluetooth" [
+    base
+    {
+      janus.audio.enable = true;
+      janus.audio.recording.input = "bluetooth";
+    }
+  ];
+  eval-audio-same-node = fail "eval-audio-same-node" [
+    base
+    {
+      janus.audio.enable = true;
+      janus.audio.playback.output = "embedded";
+      janus.audio.playback.node = "alsa_output.platform-analog";
+      janus.audio.recording.input = "embedded";
+      janus.audio.recording.node = "alsa_output.platform-analog";
+    }
+  ];
+  eval-audio-playback-source = fail "eval-audio-playback-source" [
+    base
+    {
+      janus.audio.enable = true;
+      janus.audio.playback.output = "usb";
+      janus.audio.playback.node = "alsa_input.usb-device";
+    }
+  ];
+  eval-audio-playback-monitor = fail "eval-audio-playback-monitor" [
+    base
+    {
+      janus.audio.enable = true;
+      janus.audio.playback.output = "embedded";
+      janus.audio.playback.node = "alsa_output.platform-analog.monitor";
+    }
+  ];
+  eval-audio-record-sink = fail "eval-audio-record-sink" [
+    base
+    {
+      janus.audio.enable = true;
+      janus.audio.recording.input = "usb";
+      janus.audio.recording.node = "alsa_output.usb-device";
+    }
+  ];
+  eval-audio-nodes = let
+    os = mk [
+      base
+      {
+        janus.audio.enable = true;
+        janus.audio.playback.output = "embedded";
+        janus.audio.playback.node = "room-speaker";
+        janus.audio.recording.input = "usb";
+        janus.audio.recording.node = "alsa_input.usb-device";
+      }
+    ];
+  in
+    pkgs.runCommand "eval-audio-nodes" {} ''
+      test ${lib.escapeShellArg os.config.janus.audio.playback.node} = room-speaker
+      test ${lib.escapeShellArg os.config.janus.audio.recording.node} = alsa_input.usb-device
+      echo ok > "$out"
+    '';
+  eval-audio-matched-yanyu = let
+    os = mk [
+      {
+        janus.hardware.board = "yanyu-stx-r19f";
+        janus.access.ssh.authorizedKeys = [key];
+        janus.system.kernelProfile = "matched";
+        janus.audio.enable = true;
+        janus.audio.playback.output = "embedded";
+        janus.audio.playback.node = "alsa_output.pci-analog";
+      }
+    ];
+    patch = lib.findFirst (p: p.name == "janus-kernel-matched") (throw "missing matched kernel patch") os.config.boot.kernelPatches;
+    tri = v:
+      if v ? content
+      then v.content.tristate or ""
+      else v.tristate or "";
+    sym = name: tri patch.structuredExtraConfig.${name};
+  in
+    pkgs.runCommand "eval-audio-matched-yanyu" {} ''
+      set -eu
+      test ${lib.escapeShellArg (sym "SND_HDA_INTEL")} = m
+      test ${lib.escapeShellArg (sym "SND_HDA_HWDEP")} = y
+      test ${lib.escapeShellArg (sym "SND_HDA_GENERIC")} = m
+      test ${lib.escapeShellArg (sym "SND_HDA_CODEC_REALTEK")} = m
+      test ${lib.escapeShellArg (sym "SND_HDA_CODEC_ALC269")} = m
+      test ${lib.escapeShellArg (sym "SND_USB_AUDIO")} = n
+      echo ok > "$out"
+    '';
+  eval-audio-r4s-embedded = fail "eval-audio-r4s-embedded" [
+    {
+      janus.hardware.board = "nanopi-r4s";
+      janus.access.ssh.authorizedKeys = [key];
+      janus.audio.enable = true;
+      janus.audio.playback.output = "embedded";
+      janus.audio.playback.node = "alsa_output.platform-analog";
+    }
+  ];
+  eval-audio-matched-quiet = let
+    os = mk [
+      base
+      {
+        janus.system.kernelProfile = "matched";
+        janus.audio.enable = true;
+      }
+    ];
+    patch = lib.findFirst (p: p.name == "janus-kernel-matched") (throw "missing matched kernel patch") os.config.boot.kernelPatches;
+    tri = v:
+      if v ? content
+      then v.content.tristate or ""
+      else v.tristate or "";
+  in
+    pkgs.runCommand "eval-audio-matched-quiet" {} ''
+      set -eu
+      test ${lib.escapeShellArg (tri patch.structuredExtraConfig.SOUND)} = n
+      test ${
+        if os.config.services.pipewire.enable
+        then "yes"
+        else "no"
+      } = no
+      test ${
+        if os.config.hardware.bluetooth.enable
+        then "yes"
+        else "no"
+      } = no
+      echo ok > "$out"
+    '';
+  eval-audio-matched-usb = let
+    os = mk [
+      base
+      {
+        janus.system.kernelProfile = "matched";
+        janus.audio.enable = true;
+        janus.audio.playback.output = "usb";
+        janus.audio.playback.node = "alsa_output.usb";
+      }
+    ];
+    patch = lib.findFirst (p: p.name == "janus-kernel-matched") (throw "missing matched kernel patch") os.config.boot.kernelPatches;
+    tri = v:
+      if v ? content
+      then v.content.tristate or ""
+      else v.tristate or "";
+    sym = name: tri patch.structuredExtraConfig.${name};
+  in
+    pkgs.runCommand "eval-audio-matched-usb" {} ''
+      set -eu
+      test ${lib.escapeShellArg (sym "SOUND")} = m
+      test ${lib.escapeShellArg (sym "SND")} = m
+      test ${lib.escapeShellArg (sym "SND_USB_AUDIO")} = m
+      test ${lib.escapeShellArg (sym "SND_HDA_INTEL")} = n
+      test ${lib.escapeShellArg (sym "SND_VIRTIO")} = n
+      test ${lib.escapeShellArg (sym "SND_SOC_MT8183")} = n
+      test ${
+        if os.config.services.pipewire.enable
+        then "yes"
+        else "no"
+      } = no
+      echo ok > "$out"
+    '';
+  eval-audio-matched-pi = let
+    os = mk [
+      {
+        janus.hardware.board = "rpi4";
+        janus.access.ssh.authorizedKeys = [key];
+        janus.system.kernelProfile = "matched";
+        janus.audio.enable = true;
+        janus.audio.playback.output = "embedded";
+        janus.audio.playback.node = "alsa_output.platform-analog";
+      }
+    ];
+    patch = lib.findFirst (p: p.name == "janus-kernel-matched") (throw "missing matched kernel patch") os.config.boot.kernelPatches;
+    tri = v:
+      if v ? content
+      then v.content.tristate or ""
+      else v.tristate or "";
+    sym = name: tri patch.structuredExtraConfig.${name};
+  in
+    pkgs.runCommand "eval-audio-matched-pi" {} ''
+      set -eu
+      test ${lib.escapeShellArg (sym "SOUND")} = m
+      test ${lib.escapeShellArg (sym "SND_BCM2835")} = m
+      test ${lib.escapeShellArg (sym "SND_USB_AUDIO")} = n
+      test ${lib.escapeShellArg (sym "SND_SOC_ES8316")} = n
+      test ${lib.escapeShellArg (sym "DRM_VC4")} = n
+      test ${
+        if os.config.services.pipewire.enable
+        then "yes"
+        else "no"
+      } = no
+      echo ok > "$out"
+    '';
+  eval-audio-matched-potato = let
+    os = mk [
+      {
+        janus.hardware.board = "le-potato";
+        janus.access.ssh.authorizedKeys = [key];
+        janus.system.kernelProfile = "matched";
+        janus.audio.enable = true;
+        janus.audio.recording.input = "embedded";
+        janus.audio.recording.node = "alsa_input.platform-analog";
+      }
+    ];
+    patch = lib.findFirst (p: p.name == "janus-kernel-matched") (throw "missing matched kernel patch") os.config.boot.kernelPatches;
+    tri = v:
+      if v ? content
+      then v.content.tristate or ""
+      else v.tristate or "";
+    sym = name: tri patch.structuredExtraConfig.${name};
+  in
+    pkgs.runCommand "eval-audio-matched-potato" {} ''
+      set -eu
+      test ${lib.escapeShellArg (sym "SOUND")} = m
+      test ${lib.escapeShellArg (sym "SND_MESON_GX_SOUND_CARD")} = m
+      test ${lib.escapeShellArg (sym "SND_MESON_AIU")} = m
+      test ${lib.escapeShellArg (sym "SND_DYNAMIC_MINORS")} = y
+      test ${lib.escapeShellArg (sym "SND_USB_AUDIO")} = n
+      echo ok > "$out"
+    '';
+  eval-audio-matched-rock = let
+    os = mk [
+      {
+        janus.hardware.board = "rockpi-4c";
+        janus.access.ssh.authorizedKeys = [key];
+        janus.system.kernelProfile = "matched";
+        janus.audio.enable = true;
+        janus.audio.playback.output = "embedded";
+        janus.audio.playback.node = "alsa_output.platform-analog";
+        janus.audio.recording.input = "usb";
+        janus.audio.recording.node = "alsa_input.usb";
+      }
+    ];
+    patch = lib.findFirst (p: p.name == "janus-kernel-matched") (throw "missing matched kernel patch") os.config.boot.kernelPatches;
+    tri = v:
+      if v ? content
+      then v.content.tristate or ""
+      else v.tristate or "";
+    sym = name: tri patch.structuredExtraConfig.${name};
+    mods = lib.concatStringsSep " " os.config.boot.blacklistedKernelModules;
+  in
+    pkgs.runCommand "eval-audio-matched-rock" {} ''
+      set -eu
+      test ${lib.escapeShellArg (sym "SOUND")} = m
+      test ${lib.escapeShellArg (sym "SND_USB_AUDIO")} = m
+      test ${lib.escapeShellArg (sym "SND_SOC_ES8316")} = m
+      test ${lib.escapeShellArg (sym "SND_SOC_ROCKCHIP_I2S")} = m
+      test ${lib.escapeShellArg (sym "SND_SOC_MT8183")} = n
+      test ${lib.escapeShellArg (sym "BT_HCIUART")} = n
+      printf '%s\n' ${lib.escapeShellArg mods} | grep -qw hci_uart
+      echo ok > "$out"
+    '';
   eval-soloist-bluetooth = let
     os = mk [
       base
       {
+        janus.audio.enable = true;
+        janus.audio.playback.output = "bluetooth";
         janus.soloist.enable = true;
         janus.soloist.apiKeySecret = "soloist-router";
         janus.soloist.sopsFile = ./fixtures/sops-placeholder;
-        janus.soloist.playback.output = "bluetooth";
         janus.hardware.peripherals.speaker = {
           class = "bluetooth";
           match.usbVendorProduct = "0a12:0001";
@@ -4608,10 +4874,11 @@ in {
       base
       {
         janus.system.kernelProfile = "compact";
+        janus.audio.enable = true;
+        janus.audio.playback.output = "bluetooth";
         janus.soloist.enable = true;
         janus.soloist.apiKeySecret = "soloist-router";
         janus.soloist.sopsFile = ./fixtures/sops-placeholder;
-        janus.soloist.playback.output = "bluetooth";
         janus.hardware.peripherals.speaker = {
           class = "bluetooth";
           match.usbVendorProduct = "0a12:0001";
@@ -4635,10 +4902,11 @@ in {
         janus.hardware.board = "rockpi-4c";
         janus.access.ssh.authorizedKeys = [key];
         janus.system.kernelProfile = "matched";
+        janus.audio.enable = true;
+        janus.audio.playback.output = "bluetooth";
         janus.soloist.enable = true;
         janus.soloist.apiKeySecret = "soloist-router";
         janus.soloist.sopsFile = ./fixtures/sops-placeholder;
-        janus.soloist.playback.output = "bluetooth";
       }
     ];
     patch = lib.findFirst (p: p.name == "janus-kernel-matched") (throw "missing matched kernel patch") os.config.boot.kernelPatches;
@@ -4671,10 +4939,11 @@ in {
   eval-soloist-bluetooth-none = fail "eval-soloist-bluetooth-none" [
     base
     {
+      janus.audio.enable = true;
+      janus.audio.playback.output = "bluetooth";
       janus.soloist.enable = true;
       janus.soloist.apiKeySecret = "soloist-router";
       janus.soloist.sopsFile = ./fixtures/sops-placeholder;
-      janus.soloist.playback.output = "bluetooth";
     }
   ];
   cli-bluetooth =
@@ -4815,44 +5084,49 @@ in {
   eval-soloist-usb = fail "eval-soloist-usb" [
     base
     {
+      janus.audio.enable = true;
+      janus.audio.playback.output = "usb";
       janus.soloist.enable = true;
       janus.soloist.apiKeySecret = "soloist-router";
       janus.soloist.sopsFile = ./fixtures/sops-placeholder;
-      janus.soloist.playback.output = "usb";
     }
   ];
   eval-soloist-blank = fail "eval-soloist-blank" [
     base
     {
+      janus.audio.enable = true;
+      janus.audio.playback.output = "embedded";
+      janus.audio.playback.node = "";
       janus.soloist.enable = true;
       janus.soloist.apiKeySecret = "soloist-router";
       janus.soloist.sopsFile = ./fixtures/sops-placeholder;
-      janus.soloist.playback.node = "";
     }
   ];
   eval-soloist-blank-usb = fail "eval-soloist-blank-usb" [
     base
     {
-      janus.soloist.enable = true;
-      janus.soloist.apiKeySecret = "soloist-router";
-      janus.soloist.sopsFile = ./fixtures/sops-placeholder;
-      janus.soloist.playback = {
+      janus.audio.enable = true;
+      janus.audio.playback = {
         output = "usb";
         node = "   ";
       };
+      janus.soloist.enable = true;
+      janus.soloist.apiKeySecret = "soloist-router";
+      janus.soloist.sopsFile = ./fixtures/sops-placeholder;
     }
   ];
   eval-soloist-usb-node = let
     os = mk [
       base
       {
-        janus.soloist.enable = true;
-        janus.soloist.apiKeySecret = "soloist-router";
-        janus.soloist.sopsFile = ./fixtures/sops-placeholder;
-        janus.soloist.playback = {
+        janus.audio.enable = true;
+        janus.audio.playback = {
           output = "usb";
           node = "alsa_output.usb";
         };
+        janus.soloist.enable = true;
+        janus.soloist.apiKeySecret = "soloist-router";
+        janus.soloist.sopsFile = ./fixtures/sops-placeholder;
       }
     ];
     text = os.config.environment.etc."janus/soloist.json".text;
@@ -4875,6 +5149,9 @@ in {
     {
       janus.hardware.board = "visionfive2";
       janus.access.ssh.authorizedKeys = [key];
+      janus.audio.enable = true;
+      janus.audio.playback.output = "embedded";
+      janus.audio.playback.node = "alsa_output.platform-analog";
       janus.soloist.enable = true;
       janus.soloist.apiKeySecret = "soloist-router";
       janus.soloist.sopsFile = ./fixtures/sops-placeholder;
@@ -4886,10 +5163,12 @@ in {
       {
         janus.hardware.board = "rpi4";
         janus.access.ssh.authorizedKeys = [key];
+        janus.audio.enable = true;
+        janus.audio.playback.output = "embedded";
+        janus.audio.playback.node = "alsa_output.platform-analog";
         janus.soloist.enable = true;
         janus.soloist.apiKeySecret = "soloist-router";
         janus.soloist.sopsFile = ./fixtures/sops-placeholder;
-        janus.soloist.playback.node = "alsa_output.platform-analog";
         janus.hardware.peripherals.speaker.class = "bluetooth";
       }
     ];
@@ -4905,10 +5184,12 @@ in {
       {
         janus.hardware.board = "rpi2";
         janus.access.ssh.authorizedKeys = [key];
+        janus.audio.enable = true;
+        janus.audio.playback.output = "embedded";
+        janus.audio.playback.node = "alsa_output.platform-analog";
         janus.soloist.enable = true;
         janus.soloist.apiKeySecret = "soloist-router";
         janus.soloist.sopsFile = ./fixtures/sops-placeholder;
-        janus.soloist.playback.node = "alsa_output.platform-analog";
         janus.hardware.peripherals.speaker.class = "bluetooth";
       }
     ];
@@ -4922,6 +5203,9 @@ in {
   eval-soloist-zones = fail "eval-soloist-zones" [
     base
     {
+      janus.audio.enable = true;
+      janus.audio.playback.output = "embedded";
+      janus.audio.playback.node = "alsa_output.platform-analog";
       janus.soloist.enable = true;
       janus.soloist.apiKeySecret = "soloist-router";
       janus.soloist.sopsFile = ./fixtures/sops-placeholder;
@@ -4932,6 +5216,9 @@ in {
   eval-soloist-guest = fail "eval-soloist-guest" [
     base
     {
+      janus.audio.enable = true;
+      janus.audio.playback.output = "embedded";
+      janus.audio.playback.node = "alsa_output.platform-analog";
       janus.soloist.enable = true;
       janus.soloist.apiKeySecret = "soloist-router";
       janus.soloist.sopsFile = ./fixtures/sops-placeholder;
@@ -4942,6 +5229,9 @@ in {
   eval-soloist-wan = fail "eval-soloist-wan" [
     base
     {
+      janus.audio.enable = true;
+      janus.audio.playback.output = "embedded";
+      janus.audio.playback.node = "alsa_output.platform-analog";
       janus.soloist.enable = true;
       janus.soloist.apiKeySecret = "soloist-router";
       janus.soloist.sopsFile = ./fixtures/sops-placeholder;

@@ -144,17 +144,21 @@ patch forces a rebuild. `matched` starts from that cut and then keeps
 a driver only for this board and the peripherals the configuration
 names. An undeclared network device, Wi-Fi radio, cellular modem, or
 Bluetooth dongle is left out, and so are NVMe and virtio on a board
-that does not use them. The test VM keeps virtio. Sound stays out.
+that does not use them. The test VM keeps virtio. `compact` leaves
+sound out. `matched` includes a board or USB audio driver only when
+`janus.audio.enable` is true.
 
 Spotify Soloist stays out of the image unless `janus.soloist.enable` is
 set. The API key is one line in `secrets/soloist/<host>.yaml`, encrypted
 to that router. Leaving the switch off adds no unit or secret. Turning
 it on installs the build pinned in `flake.lock` for x86_64, aarch64, or
-armv7, and starts playback. The board's own audio is
-`playback.output = "embedded"`. A USB audio interface is
-`playback.output = "usb"`. Both need `playback.node`, the PipeWire node.
+armv7, and starts playback. The device is `janus.audio`, and that
+switch defaults to off. Playback and recording are read only when it
+is on. The board's own audio is
+`janus.audio.playback.output = "embedded"`. A USB audio interface is
+`"usb"`. Both need `janus.audio.playback.node`, the PipeWire node.
 A blank node fails the check. Bluetooth is
-`playback.output = "bluetooth"`. That starts Bluetooth, plays to a
+`"bluetooth"`. With Soloist on, that starts Bluetooth, plays to a
 speaker, and does not need `playback.node`. Discover lists nearby
 speakers. Pair, connect, disconnect, and remove one with
 `janus bluetooth`, by address or by a unique name, or on the maintenance
@@ -411,7 +415,7 @@ It is the AP6256: 2.4 GHz or 5 GHz, 20 MHz. Add that access point to a
 LAN, the same way as the Zero 2 W radio. The regulatory country follows
 the region (`cn`, `ru`, or `ir`) unless `janus.network.wifiCountry` is
 set. Bluetooth on the board stays unused until
-`janus.soloist.playback.output` is `bluetooth`. A USB Bluetooth dongle still uses `btusb`. The ROCK 4C+ is a
+`janus.audio.enable` is true and `janus.audio.playback.output` is `bluetooth`. A USB Bluetooth dongle still uses `btusb`. The ROCK 4C+ is a
 different board and does not use this profile.
 
 ## Tier 3 boards

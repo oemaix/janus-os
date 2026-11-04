@@ -249,7 +249,19 @@
   matchedSymbols = import ./kernel-matched.nix {inherit lib;} {
     board = config.janus.hardware.board;
     peripherals = config.janus.hardware.peripherals;
-    bluetoothPlayback = config.janus.soloist.enable && config.janus.soloist.playback.output == "bluetooth";
+    bluetoothPlayback = config.janus.audio.enable && config.janus.audio.playback.output == "bluetooth";
+    wantUsbAudio =
+      config.janus.audio.enable
+      && (
+        config.janus.audio.playback.output == "usb"
+        || config.janus.audio.recording.input == "usb"
+      );
+    wantEmbeddedAudio =
+      config.janus.audio.enable
+      && (
+        config.janus.audio.playback.output == "embedded"
+        || config.janus.audio.recording.input == "embedded"
+      );
   };
 in {
   options.janus.system.kernelProfile = mkOption {
@@ -266,7 +278,9 @@ in {
       ALSA and is not in compact. matched starts from that cut and then
       keeps a driver only when this board or a declared peripheral uses
       it (D-0052). An MMC host the initrd does not list stays built in.
-      Sound and compute accelerators stay off (D-0057).
+      Sound stays off unless janus.audio.enable selects an embedded or USB
+      device. compact still drops that sound. Compute accelerators stay
+      off (D-0057, D-0061).
     '';
   };
 

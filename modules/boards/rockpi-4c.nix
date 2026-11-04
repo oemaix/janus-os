@@ -74,9 +74,9 @@ in {
     ];
     # brcmfmac stays unloaded until an access point declares this radio.
     # hci_uart binds the onboard brcm,bcm4345c5 node. It stays blacklisted
-    # until Soloist playback uses Bluetooth (D-0061, T-0012). btusb stays available.
+    # until janus.audio.enable and playback.output is bluetooth (D-0061, T-0012). btusb stays available.
     boot.blacklistedKernelModules =
-      lib.optionals (!(config.janus.soloist.enable && config.janus.soloist.playback.output == "bluetooth")) ["hci_uart"]
+      lib.optionals (!(config.janus.audio.enable && config.janus.audio.playback.output == "bluetooth")) ["hci_uart"]
       ++ lib.optionals (!onboardWifi) ["brcmfmac"];
     hardware.firmware = lib.mkIf onboardWifi [ap6256Firmware];
     # SD is dw_mmc-rockchip, built in. eMMC is sdhci-of-arasan, built in.

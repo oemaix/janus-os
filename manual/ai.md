@@ -56,7 +56,9 @@ Read this file before answering a question about using Janus OS.
   not in `compact`. `matched` includes that cut, then keeps a driver only
   when this board or a declared peripheral uses it. An MMC host the initrd
   does not list stays built in. Huawei `12d1:1506` in `ncm` keeps
-  `huawei_cdc_ncm`. Sound stays off (D-0057).
+  `huawei_cdc_ncm`. Sound stays off unless `janus.audio.enable` selects
+  an embedded or USB device on `matched` (D-0061). `compact` still drops
+  sound. Compute accelerators stay off (D-0057).
 - `janus.system.region` is `cn` (default), `ru`, or `ir`. It selects domestic DNS
   and the `blockQuic` default. That reject follows direct rules; it is
   not a drop of every UDP/443. `janus.proxy.rules` stays empty until
@@ -180,7 +182,8 @@ Read this file before answering a question about using Janus OS.
   `janus.network.wifiCountry` defaults from `janus.system.region`
   (`cn` is `CN`, `ru` is `RU`, `ir` is `IR`, D-0054).
   `brcmfmac` stays blacklisted until then. `hci_uart` stays
-  blacklisted until `janus.soloist.playback.output` is `bluetooth`
+  blacklisted until `janus.audio.enable` is true and
+  `janus.audio.playback.output` is `bluetooth`
   (D-0061, T-0012). ROCK 4C+ is not this profile.
 - A mcuzone UPS at I²C `0x40` shows the cell in `janus status` and powers
   the router off while that cell is discharging, at the thresholds in
@@ -205,19 +208,30 @@ Read this file before answering a question about using Janus OS.
   The NXP Ara240 runtime and the Hailo-10H runtime are future work in
   that file (D-0056). Spotify Soloist and its Bluetooth output are
   implemented as below.
+  `janus.audio.enable` defaults to false. Playback and recording are read
+  only when it is true. Setting them while it is false fails evaluation.
+  `playback.output` and `recording.input` stay unset until chosen:
+  `embedded`, `usb`, or `bluetooth`. `embedded` and `usb` need a non-blank
+  node. The sink and the source are different strings. `alsa_input.` and
+  `bluez_input.` are sources, and so is a `.monitor` name. Other
+  `alsa_output.` and `bluez_output.` names are sinks. A number or a custom
+  name is not classified. `recording.input = bluetooth` fails while HFP
+  and HSP stay off.
+  `embedded` is not a device on the NanoPi R4S. `compact` rejects
+  `embedded` and `usb`. `matched` includes that device's driver only when
+  `enable` is true, and leaves `SOUND` off otherwise. Bluetooth playback
+  does not turn kernel sound on. `janus.soloist.playback` is removed.
   `janus.soloist.enable` exists and defaults to false. False adds no unit,
   secret, or package, and its assertions are not evaluated. True needs
-  `apiKeySecret`, `sopsFile`, and a board architecture of `x86_64`,
-  `aarch64`, or `armv7l`. `embedded` and `usb` also need
-  `kernelProfile = "standard"` and a non-blank `playback.node`. A blank
-  node fails evaluation. True installs the locked build and starts Soloist
-  and system-wide PipeWire. BlueZ starts only when `playback.output` is
-  `bluetooth`.
-  `name` is the Connect name and defaults to the host name. `playback.output`
-  is `embedded` (default), `usb`, or `bluetooth`. `bluetooth` is an A2DP
-  source with AVRCP. HFP and HSP stay off. It needs a `bluetooth` peripheral
-  or onboard Bluetooth on the Zero 2 W, the Pi 3, the Pi 4, or the ROCK Pi
-  4C. `compact` and `matched` may use it. The last connected speaker connects
+  `janus.audio.enable`, a playback device, `apiKeySecret`, `sopsFile`, and
+  a board architecture of `x86_64`, `aarch64`, or `armv7l`. True installs
+  the locked build and starts Soloist and system-wide PipeWire. BlueZ
+  starts only when playback is `bluetooth`.
+  `name` is the Connect name and defaults to the host name. `bluetooth`
+  is an A2DP source with AVRCP. HFP and HSP stay off. It needs a
+  `bluetooth` peripheral or onboard Bluetooth on the Zero 2 W, the Pi 3,
+  the Pi 4, or the ROCK Pi 4C. `compact` and `matched` may use it. The
+  last connected speaker connects
   again after boot. `janus bluetooth discover` lists nearby devices.
   `list`, `pair`, `connect`, `disconnect`, and `remove` take an address
   or a unique name. A pairing code is optional. The maintenance page
@@ -231,5 +245,7 @@ Read this file before answering a question about using Janus OS.
   stays out of the unit file in the store. The accelerator service is not
   an option. The planned accelerator model is an LLM of 0.5B to 3B
   parameters. Vision models are not in that plan. The Hailo device is the
-  Hailo-10H, not a Hailo-8 (D-0060). `compact` and `matched` still drop
-  kernel sound and compute accelerators. Do not invent an accelerator class.
+  Hailo-10H, not a Hailo-8 (D-0060). `compact` still drops
+  kernel sound. Compute accelerators stay off. `matched` sound is only
+  the `janus.audio` device (D-0061). Do not invent an accelerator class.
+  TTS and ASR are not options.

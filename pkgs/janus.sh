@@ -321,7 +321,7 @@ case "$cmd" in
     ;;
   bluetooth)
     if [ ! -x /etc/janus/bin/janus-bluetooth ]; then
-      echo "janus bluetooth is not in this image. Set janus.soloist.playback.output = bluetooth and rebuild." >&2
+      echo "janus bluetooth is not in this image. Set janus.audio.enable, janus.audio.playback.output = bluetooth, and janus.soloist.enable, then rebuild." >&2
       exit 2
     fi
     sub=${1:-}

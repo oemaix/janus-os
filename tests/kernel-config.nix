@@ -23,6 +23,16 @@
       name = "kernel-config";
     };
   configOf = board: (mk board).config.boot.kernelPackages.kernel.configfile;
+  audioEmbedded = {
+    janus.audio.enable = true;
+    janus.audio.playback.output = "embedded";
+    janus.audio.playback.node = "alsa_output.platform-analog";
+  };
+  audioUsb = {
+    janus.audio.enable = true;
+    janus.audio.playback.output = "usb";
+    janus.audio.playback.node = "alsa_output.usb";
+  };
   matched = board: extra:
     (self.lib.mkRouter {
       modules = [
@@ -77,6 +87,14 @@ in
     matchedPi3 = matched "rpi3" {};
     matchedPi4 = matched "rpi4" {};
     matchedVf2 = matched "visionfive2" {};
+    # janus.audio.enable on matched. generate-config.pl, not the attrset. T-0008.
+    matchedPi4Audio = matched "rpi4" audioEmbedded;
+    matchedPi2Audio = matched "rpi2" audioEmbedded;
+    matchedRockAudio = matched "rockpi-4c" audioEmbedded;
+    matchedPotatoAudio = matched "le-potato" audioEmbedded;
+    matchedVf2Audio = matched "visionfive2" audioEmbedded;
+    matchedYanyuAudio = matched "yanyu-stx-r19f" audioEmbedded;
+    matchedX86Usb = matched "x86_64-test" audioUsb;
   } ''
     set -eu
     fail=0
@@ -207,6 +225,36 @@ in
     exact riscv64 MOTORCOMM_PHY m "$matchedVf2"
     off riscv64 REALTEK_PHY "$matchedVf2"
     off riscv64 NET_DSA_REALTEK "$matchedVf2"
+    exact aarch64 SOUND m "$matchedPi4Audio"
+    exact aarch64 SND_BCM2835 m "$matchedPi4Audio"
+    exact aarch64 SND_USB_AUDIO n "$matchedPi4Audio"
+    # Not asked once the parent menu is n, so the line is absent. That is off.
+    off aarch64 DRM_VC4 "$matchedPi4Audio"
+    off aarch64 SND_SOC_MT8183 "$matchedPi4Audio"
+    exact armv7 SOUND m "$matchedPi2Audio"
+    exact armv7 SND_BCM2835 m "$matchedPi2Audio"
+    exact aarch64 SOUND m "$matchedRockAudio"
+    exact aarch64 SND_SOC_ROCKCHIP_I2S m "$matchedRockAudio"
+    exact aarch64 SND_SOC_ES8316 m "$matchedRockAudio"
+    exact aarch64 SND_SOC_SPDIF m "$matchedRockAudio"
+    exact aarch64 SND_USB_AUDIO n "$matchedRockAudio"
+    exact aarch64 SOUND m "$matchedPotatoAudio"
+    exact aarch64 SND_MESON_GX_SOUND_CARD m "$matchedPotatoAudio"
+    exact aarch64 SND_DYNAMIC_MINORS y "$matchedPotatoAudio"
+    exact riscv64 SOUND m "$matchedVf2Audio"
+    exact riscv64 SND_SOC_JH7110_PWMDAC m "$matchedVf2Audio"
+    exact riscv64 SND_SIMPLE_CARD m "$matchedVf2Audio"
+    exact x86_64 SOUND m "$matchedYanyuAudio"
+    exact x86_64 SND_HDA_INTEL m "$matchedYanyuAudio"
+    exact x86_64 SND_HDA_HWDEP y "$matchedYanyuAudio"
+    exact x86_64 SND_HDA_GENERIC m "$matchedYanyuAudio"
+    exact x86_64 SND_HDA_CODEC_REALTEK m "$matchedYanyuAudio"
+    exact x86_64 SND_HDA_CODEC_ALC269 m "$matchedYanyuAudio"
+    exact x86_64 SND_USB_AUDIO n "$matchedYanyuAudio"
+    exact x86_64 SOUND m "$matchedX86Usb"
+    exact x86_64 SND_USB_AUDIO m "$matchedX86Usb"
+    exact x86_64 SND_HDA_INTEL n "$matchedX86Usb"
+    exact x86_64 SND_VIRTIO n "$matchedX86Usb"
     if [ "$fail" -ne 0 ]; then
       exit 1
     fi

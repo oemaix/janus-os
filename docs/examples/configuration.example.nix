@@ -81,23 +81,31 @@
   # janus.access.web.passphraseSecret = "web-janus";
   # sops.secrets.web-janus.sopsFile = ./secrets/web/janus.yaml;
 
+  # Shared audio. Off by default. playback and recording are read only
+  # when enable is true. embedded and usb need a non-blank PipeWire node
+  # and kernelProfile standard or matched. compact rejects them.
+  # bluetooth playback is A2DP and does not use a node. recording.input
+  # bluetooth fails while HFP and HSP stay off (D-0061).
+  # janus.audio.enable = true;
+  # janus.audio.playback.output = "embedded";
+  # janus.audio.playback.node = "alsa_output.platform-analog";
+  # janus.audio.playback.output = "usb";
+  # janus.audio.playback.node = "alsa_output.usb";
+  # janus.audio.playback.output = "bluetooth";
+  # janus.audio.recording.input = "usb";
+  # janus.audio.recording.node = "alsa_input.usb";
+
   # Spotify Soloist. Off by default: no unit, secret, or package.
-  # The key is one line in secrets/soloist/<host>.yaml. True installs the
-  # build locked in flake.lock for x86_64, aarch64, or armv7l (D-0058).
-  # Another architecture fails evaluation. embedded and usb need
-  # kernelProfile standard and playback.node. bluetooth starts BlueZ
+  # The key is one line in secrets/soloist/<host>.yaml. True needs
+  # janus.audio.enable and a playback device. It installs the build
+  # locked in flake.lock for x86_64, aarch64, or armv7l (D-0058).
+  # Another architecture fails evaluation. bluetooth starts BlueZ
   # (A2DP and AVRCP) and may use compact or matched. It needs a bluetooth
-  # peripheral or onboard Bluetooth. A blank node fails evaluation for
-  # embedded and usb.
+  # peripheral or onboard Bluetooth.
   # janus.soloist.enable = true;
   # janus.soloist.name = "Janus";
   # janus.soloist.apiKeySecret = "soloist-janus";
   # janus.soloist.sopsFile = ./secrets/soloist/janus.yaml;
-  # janus.soloist.playback.node = "alsa_output.platform-analog";
-  # USB uses the same node field.
-  # janus.soloist.playback.output = "usb";
-  # janus.soloist.playback.node = "alsa_output.usb";
-  # janus.soloist.playback.output = "bluetooth";
 
   ############################################################################
   # Physical ports

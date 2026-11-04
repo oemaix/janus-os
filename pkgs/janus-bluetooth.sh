@@ -1,5 +1,5 @@
 # janus bluetooth. docs/14. A2DP source and AVRCP. D-0059, D-0061.
-# The image installs this only when janus.soloist.playback.output is bluetooth.
+# The image installs this only when Soloist is enabled and janus.audio.playback.output is bluetooth.
 # Just Works pairing needs --agent NoInputNoOutput. A scan that ends before
 # pair drops the speaker (T-0013). A pairing code starts janus-bt-agent for
 # that address only, after the scan is up, and stops it before connect.

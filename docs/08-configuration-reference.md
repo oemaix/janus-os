@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-11-03 |
+| Last updated | 2026-11-04 |
 
 This document defines the **shape and semantics** of the `janus.*` option
 tree. The final, exhaustive reference (every option with type, default,
@@ -50,7 +50,7 @@ learning path: copy, edit values, build.
 | `reboot.schedule` | null or str | off | Maintenance reboot. `monthly` is 04:00 on the 1st, `yearly` is 04:00 on 1 January, or a five-field cron whose day-of-week is `*`. Further actions on this reboot are sibling options (D-0049). |
 | `reboot.fsck` | bool | `false` | On that reboot, run a full state check and let it finish. The request is removed before the check, so a check that does not finish is not repeated. A normal boot does not. Requires `reboot.schedule`. |
 | `region` | `cn\|ru\|ir` | `cn` | Reference region. Selects domestic DNS and the `blockQuic` default in *21*. Routing rules stay empty until written. Not a hot override. |
-| `kernelProfile` | `standard\|compact\|matched` | `standard` | `standard` is the NixOS kernel. `compact` is one config for every board and drops sound, desktop and 3D GPUs, compute accelerators, cameras and TV, HDMI-CEC and infrared remotes, industrial I/O and Comedi, InfiniBand, and SAN. NIC drivers, Wi-Fi, USB, WWAN, Bluetooth, MMC, the NVMe host, AHCI, simpledrm, SoC scanout that does not depend on ALSA, f2fs, vfat, and virtio stay. Raspberry Pi HDMI depends on ALSA and is not in `compact`. The board consoles are serial (D-0051). `matched` includes that cut, then keeps a driver only when this board or a declared peripheral uses it (D-0052). An MMC host the initrd does not list stays built in. Huawei NCM (`12d1:1506`) keeps `huawei_cdc_ncm`. Sound and compute accelerators stay off (D-0057). |
+| `kernelProfile` | `standard\|compact\|matched` | `standard` | `standard` is the NixOS kernel. `compact` is one config for every board and drops sound, desktop and 3D GPUs, compute accelerators, cameras and TV, HDMI-CEC and infrared remotes, industrial I/O and Comedi, InfiniBand, and SAN. NIC drivers, Wi-Fi, USB, WWAN, Bluetooth, MMC, the NVMe host, AHCI, simpledrm, SoC scanout that does not depend on ALSA, f2fs, vfat, and virtio stay. Raspberry Pi HDMI depends on ALSA and is not in `compact`. The board consoles are serial (D-0051). `matched` includes that cut, then keeps a driver only when this board or a declared peripheral uses it (D-0052). An MMC host the initrd does not list stays built in. Huawei NCM (`12d1:1506`) keeps `huawei_cdc_ncm`. Sound stays off unless `janus.audio.enable` selects an embedded or USB device on `matched` (D-0061). `compact` still drops sound. Compute accelerators stay off (D-0057). |
 
 ## 1a. `janus.soloist`
 
@@ -64,20 +64,51 @@ is `janus bluetooth` and the maintenance page (D-0059).
 
 | Option | Type | Default | Contract |
 |---|---|---|---|
-| `enable` | bool | `false` | Connect playback device (FR-SVC-001, D-0056). `true` needs a board architecture of `x86_64`, `aarch64`, or `armv7l`. `embedded` and `usb` need `kernelProfile = "standard"` while D-0057 is open. `bluetooth` may use `compact` or `matched`. It starts Soloist and system-wide PipeWire. BlueZ starts only when `playback.output` is `bluetooth` (D-0061). |
+| `enable` | bool | `false` | Connect playback device (FR-SVC-001, D-0056). `true` needs `janus.audio.enable`, `janus.audio.playback.output`, and a board architecture of `x86_64`, `aarch64`, or `armv7l`. It starts Soloist and system-wide PipeWire. BlueZ starts only when that playback is `bluetooth` (D-0061). |
 | `apiKeySecret` | null or string | unset | sops name. One line, `value:`, in `sopsFile`. Plaintext only in `/run/secrets`. Required when `enable` is true (FR-SEC-012). |
 | `sopsFile` | null or path | unset | sops document for `apiKeySecret`. The secret is installed only when `enable` is true. |
 | `name` | null or string | the host name | Spotify Connect name. |
-| `playback.output` | `embedded` \| `usb` \| `bluetooth` | `embedded` | Where the sound goes (D-0061). `embedded` is the board's own audio. `usb` is an external USB audio interface. `bluetooth` is an A2DP speaker, with AVRCP. It starts BlueZ. HFP and HSP stay off. It needs a `bluetooth` peripheral or onboard Bluetooth on the Zero 2 W, the Pi 3, the Pi 4, or the ROCK Pi 4C. |
-| `playback.node` | null or string | unset | PipeWire node name or id (`soloist --pipewire-device`). Required for `embedded` and `usb`. A blank value fails evaluation. `bluetooth` uses the connected speaker and does not need this. |
 | `zones` | list of strings | `lan` | Where a Spotify Connect client may find this router. UDP 5353 is accepted there and dropped elsewhere. `wan` fails evaluation. `guest` and `iot` only when the firewall defines them. |
+
+## 1b. `janus.audio`
+
+Off unless `enable` is set. Playback and recording are read only when
+`enable` is true. Setting `output`, `input`, or `node` while `enable`
+is false fails evaluation. Both devices stay unset until chosen.
+Declaring a device does not start PipeWire or BlueZ. Soloist is the
+only consumer in this tree. TTS and ASR are not options yet (D-0061).
+
+| Option | Type | Default | Contract |
+|---|---|---|---|
+| `enable` | bool | `false` | Shared audio devices. `false` adds no kernel sound. |
+| `playback.output` | null or `embedded` \| `usb` \| `bluetooth` | unset | Where shared playback goes. `embedded` is the board's own device. `usb` is a USB audio interface. `bluetooth` is an A2DP speaker, with AVRCP. HFP and HSP stay off. Bluetooth needs a `bluetooth` peripheral or onboard Bluetooth on the Zero 2 W, the Pi 3, the Pi 4, or the ROCK Pi 4C. |
+| `playback.node` | null or string | unset | PipeWire sink for `embedded` and `usb`. A blank value fails evaluation. `bluetooth` does not use it. Soloist passes it as `--pipewire-device`. |
+| `recording.input` | null or `embedded` \| `usb` \| `bluetooth` | unset | Where shared recording comes from. `bluetooth` fails evaluation while HFP and HSP stay off. |
+| `recording.node` | null or string | unset | PipeWire source for `embedded` and `usb`. |
+
+The two node strings must differ. PipeWire's usual names carry the
+direction: `alsa_input.` and `bluez_input.` are sources, and so is an
+`alsa_output.` or `bluez_output.` name that ends in `.monitor`. The
+other `alsa_output.` and `bluez_output.` names are sinks. A playback
+node that names a source fails evaluation, and a recording node that
+names a sink fails evaluation. A number or a custom name has no
+direction in the string, so that check accepts it.
+
+`embedded` and `usb` need `kernelProfile` `standard` or `matched`.
+`compact` still drops kernel sound (D-0057). `matched` includes that
+device's driver when `enable` is true, and leaves `SOUND` off otherwise.
+Bluetooth playback does not turn kernel sound on. `embedded` is not a
+device on the NanoPi R4S. `janus.soloist.enable` needs `enable` and a
+playback device. Without playback, a later TTS service may still return
+audio on the network. Without recording, a later ASR service may still
+accept network audio. Those services are not in this tree.
 
 ## 2. `janus.hardware`
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `board` | enum | — (required) | `rpi-zero-2w` `rpi2` `rpi3` `rpi4` `nanopi-r4s` `rockpi-4c` `le-potato` `visionfive2` `yanyu-stx-r19f` `x86_64-test` |
-| `peripherals.<name>.class` | enum | — | `wifi` `nic` `wwan` `bluetooth` `hmi` `power`. A `bluetooth` row selects the dongle driver. BlueZ starts only when `janus.soloist.playback.output` is `bluetooth` (D-0061). An Ara240 or Hailo-10H class is later work (*13*, D-0056) and is not an option in this tree. |
+| `peripherals.<name>.class` | enum | — | `wifi` `nic` `wwan` `bluetooth` `hmi` `power`. A `bluetooth` row selects the dongle driver. BlueZ starts only when Soloist is enabled and `janus.audio.playback.output` is `bluetooth` (D-0061). An Ara240 or Hailo-10H class is later work (*13*, D-0056) and is not an option in this tree. |
 | `peripherals.<name>.match` | attrs | — | `usbVendorProduct = "0bda:8153"`, or `usbPath`, `pciSlot`, `mac`. `onboard = true` is the radio soldered to the board (*10* §4.7, §4.10). |
 | `peripherals.<name>.wwan.mode` | enum | `auto` | `auto` uses the mode the allowlist records for that USB ID (*10* §4.2). Explicit values: `ecm` `ncm` `rndis` `qmi` `mbim`. |
 | `peripherals.<name>.wwan.modeSwitch` | attrs | `{}` | usb_modeswitch parameters. Empty does not run usb_modeswitch. |
@@ -350,4 +381,5 @@ export`. `janus-build fleet pull` writes leases into
   unless IPv6 interception is enabled. `bypass` does not warn.
 * `janus.hardware.board` is set and supports every declared peripheral class.
 * A `wwan` peripheral whose USB ID is not on the allowlist fails evaluation.
-* `janus.soloist.enable` needs the API-key secret and its sops file, at least one zone other than `wan`, and a board architecture of `x86_64`, `aarch64`, or `armv7l`. `embedded` and `usb` need `kernelProfile = "standard"` and a non-blank `playback.node`. `bluetooth` may use `compact` or `matched`, starts BlueZ, and needs a Bluetooth peripheral or onboard Bluetooth on the Zero 2 W, the Pi 3, the Pi 4, or the ROCK Pi 4C. A false setting skips these checks and does not install the secret.
+* `janus.audio.enable` defaults to false. Playback and recording are read only then. `embedded` and `usb` need a non-blank node and `kernelProfile` `standard` or `matched`. `compact` rejects them. `recording.input = bluetooth` fails while HFP and HSP stay off. `matched` includes the selected embedded or USB driver only when `enable` is true.
+* `janus.soloist.enable` needs `janus.audio.enable`, a playback device, the API-key secret and its sops file, at least one zone other than `wan`, and a board architecture of `x86_64`, `aarch64`, or `armv7l`. `bluetooth` playback starts BlueZ and needs a Bluetooth peripheral or onboard Bluetooth on the Zero 2 W, the Pi 3, the Pi 4, or the ROCK Pi 4C. A false setting skips these checks and does not install the secret.

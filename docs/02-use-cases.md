@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-11-03 |
+| Last updated | 2026-11-04 |
 
 ## 1. Personas
 
@@ -262,8 +262,9 @@ requirements it drives (see *03 — Requirements*).
 * **Precondition:** A Spotify account with Premium, a Soloist API key
   created for that account, and a Bluetooth speaker. The router declares
   a `bluetooth` peripheral, or the board is a Zero 2 W, a Pi 3, a Pi 4,
-  or a ROCK Pi 4C. `playback.output` is `bluetooth`. `compact` and
-  `matched` may be used: A2DP does not need kernel sound (D-0061).
+  or a ROCK Pi 4C. `janus.audio.enable` is true and `playback.output`
+  is `bluetooth`. `compact` and `matched` may be used: A2DP does not
+  need kernel sound (D-0061).
 * **Flow:**
   1. Mei stores the API key with `janus-build secret set`. The key is one
      sops file for that router. It is not written into the OS repository

@@ -28,10 +28,9 @@
     then config.sops.secrets.${secretName}.path
     else null;
   zones = config.janus.firewall.zones;
-  nodeSet = cfg.playback.node != null && builtins.match "[ \t]*" cfg.playback.node == null;
-  bluetooth = cfg.playback.output == "bluetooth";
-  btBoards = ["rpi-zero-2w" "rpi3" "rpi4" "rockpi-4c"];
-  hasBtPeripheral = lib.any (p: p.class == "bluetooth") (lib.attrValues config.janus.hardware.peripherals);
+  audio = config.janus.audio;
+  nodeSet = audio.playback.node != null && builtins.match "[ \t]*" audio.playback.node == null;
+  bluetooth = audio.enable && audio.playback.output == "bluetooth";
   btAgent = pkgs.runCommandCC "janus-bt-agent" {
     nativeBuildInputs = [pkgs.pkg-config];
     buildInputs = [pkgs.dbus];
@@ -73,9 +72,10 @@ in {
       description = ''
         Spotify Soloist as a Connect playback device.
         False adds no unit, secret, or package to the image.
-        True installs the locked Linux build for x86_64, aarch64, or armv7l
+        True needs janus.audio.enable and a playback device.
+        It installs the locked Linux build for x86_64, aarch64, or armv7l
         and starts it with system-wide PipeWire.
-        Bluetooth starts only when playback.output is bluetooth.
+        Bluetooth starts only when janus.audio.playback.output is bluetooth.
         docs/08, FR-SVC-001, D-0056, D-0061.
       '';
     };
@@ -104,36 +104,6 @@ in {
       default = null;
       example = "Janus";
       description = "Spotify Connect name. The host name is used when this is unset.";
-    };
-
-    playback = mkOption {
-      type = types.submodule {
-        options = {
-          output = mkOption {
-            type = types.enum ["embedded" "usb" "bluetooth"];
-            default = "embedded";
-            description = ''
-              Where Soloist plays.
-              embedded is the board's own audio device.
-              usb is an external USB audio interface.
-              Both need node.
-              bluetooth starts BlueZ and plays A2DP to the speaker.
-              It does not need node. D-0061.
-            '';
-          };
-          node = mkOption {
-            type = types.nullOr types.str;
-            default = null;
-            example = "alsa_output.usb-device";
-            description = ''
-              PipeWire node name or id, passed as soloist --pipewire-device.
-              Required for embedded and usb. Blank fails evaluation.
-            '';
-          };
-        };
-      };
-      default = {};
-      description = "Playback device for Soloist. Bluetooth starts only when output is bluetooth. D-0061.";
     };
 
     zones = mkOption {
@@ -167,26 +137,10 @@ in {
         '';
       }
       {
-        assertion = config.janus.system.kernelProfile == "standard" || bluetooth;
+        assertion = audio.enable && audio.playback.output != null;
         message = ''
-          janus.soloist.playback.output = ${cfg.playback.output} needs janus.system.kernelProfile = "standard".
-          compact and matched drop kernel sound while D-0057 is open.
-          bluetooth does not use that sound subsystem and may use compact or matched. D-0061.
-        '';
-      }
-      {
-        assertion = !bluetooth || hasBtPeripheral || lib.elem config.janus.hardware.board btBoards;
-        message = ''
-          janus.soloist.playback.output = bluetooth needs a bluetooth peripheral or onboard Bluetooth.
-          Onboard controllers are the Zero 2 W, the Pi 3, the Pi 4, and the ROCK Pi 4C.
-          A USB dongle is a peripherals entry, class bluetooth. The CSR id is 0a12:0001. D-0061.
-        '';
-      }
-      {
-        assertion = bluetooth || nodeSet;
-        message = ''
-          janus.soloist.playback.output = ${cfg.playback.output} needs playback.node, a non-blank PipeWire node.
-          That node is soloist --pipewire-device. bluetooth uses the connected A2DP sink and does not need node. D-0061.
+          janus.soloist.enable needs janus.audio.enable and janus.audio.playback.output.
+          Playback is shared. Soloist has no playback option of its own. D-0061.
         '';
       }
       {
@@ -300,7 +254,7 @@ in {
           PIPEWIRE_RUNTIME_DIR = "/run";
         }
         // lib.optionalAttrs (nodeSet && !bluetooth) {
-          SOLOIST_DEVICE = cfg.playback.node;
+          SOLOIST_DEVICE = audio.playback.node;
         };
       serviceConfig = {
         User = "soloist";
@@ -341,7 +295,8 @@ in {
       inherit (cfg) zones;
       name = connectName;
       playback = {
-        inherit (cfg.playback) output node;
+        output = audio.playback.output;
+        node = audio.playback.node;
       };
       apiKeyFile = apiKeyFile;
       websocket = "off";
