@@ -647,6 +647,12 @@ in {
         else "no"
       } = yes
       test ${
+        (lib.findFirst (p: p.name == "janus-rpi3-sdhci") (throw "missing rpi3 sdhci pin") rpi.config.boot.kernelPatches)
+        .structuredExtraConfig
+        .MMC_SDHCI_IPROC
+        .tristate
+      } = n
+      test ${
         if rpi.config.system.build.janusImage.hybridFatMbr or false
         then "yes"
         else "no"
@@ -677,6 +683,7 @@ in {
         (lib.findFirst (p: p.name == "janus-rpi4-sdhci") (throw "missing rpi4 sdhci patch") rpi4.config.boot.kernelPatches)
         .structuredExtraConfig
         .MMC_SDHCI_IPROC
+        .content
         .tristate
       } = y
       if echo ${lib.escapeShellArg (lib.concatStringsSep " " rpi4.config.boot.initrd.availableKernelModules)} | grep -q sdhci_iproc; then
@@ -2401,6 +2408,14 @@ in {
     };
     zero = (mk [(radio "rpi-zero-2w")]).config.boot.kernelPackages.kernel;
     rpi3 = (mk [(radio "rpi3")]).config.boot.kernelPackages.kernel;
+    # No access point: the NixOS answer is m, and the profile pins n.
+    rpi3Bare = (mk [
+      {
+        janus.hardware.board = "rpi3";
+        janus.access.ssh.authorizedKeys = [key];
+        janus.build.strategy = "cross";
+      }
+    ]).config.boot.kernelPackages.kernel;
     # No access point: the Pi 4 pins the SD host built in on every image.
     rpi4 = (mk [
       {
@@ -2418,6 +2433,7 @@ in {
       grep -q '^CONFIG_MMC_SDHCI_IPROC=m$' ${rpi3.configfile}
       grep -q '^CONFIG_BRCMFMAC=m$' ${rpi3.configfile}
       grep -q '^CONFIG_BRCMFMAC_SDIO=y$' ${rpi3.configfile}
+      grep -q '^# CONFIG_MMC_SDHCI_IPROC is not set$' ${rpi3Bare.configfile}
       grep -q '^CONFIG_MMC_SDHCI_IPROC=y$' ${rpi4.configfile}
       grep -q '^CONFIG_BRCMFMAC=m$' ${rpi4.configfile}
       grep -q '^CONFIG_BRCMFMAC_SDIO=y$' ${rpi4.configfile}
@@ -2595,6 +2611,13 @@ in {
           test ${lib.escapeShellArg patch.structuredExtraConfig.MMC_SDHCI_IPROC.tristate} = m
           test ${lib.escapeShellArg patch.structuredExtraConfig.BRCMFMAC.tristate} = m
           test ${lib.escapeShellArg patch.structuredExtraConfig.BRCMFMAC_SDIO.tristate} = y
+          ${lib.optionalString (board == "rpi3") ''
+            test ${
+              if (lib.findFirst (p: p.name == "janus-rpi3-sdhci") null os.config.boot.kernelPatches) == null
+              then "yes"
+              else "no"
+            } = yes
+          ''}
         ''
         else if board == "rpi4"
         then ''
@@ -2603,7 +2626,7 @@ in {
             then "yes"
             else "no"
           } = yes
-          test ${lib.escapeShellArg sdPatch.structuredExtraConfig.MMC_SDHCI_IPROC.tristate} = y
+          test ${lib.escapeShellArg sdPatch.structuredExtraConfig.MMC_SDHCI_IPROC.content.tristate} = y
         ''
         else ''
           test ${

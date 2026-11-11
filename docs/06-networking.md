@@ -260,7 +260,8 @@ environment. `hostapd` sets `country_code` and `ieee80211d`. A channel
 the country disallows fails when the access point starts (D-0054).
 
 A peripheral whose profile lists `sta` can instead be a WAN uplink
-(D-0063, FR-NET-018, *10* §4.11):
+(D-0063, FR-NET-018, *10* §4.11). The shape below is that decision.
+This tree has not lowered it (*13*):
 
 ```
 janus.hardware.peripherals.cafe0 = {

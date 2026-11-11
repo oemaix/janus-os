@@ -228,10 +228,10 @@ in {
         (lib.mkIf (onboardNames != [] && lib.elem config.janus.hardware.board ["rpi-zero-2w" "rpi3"]) ["sdhci_iproc"])
         (lib.mkIf (onboardNames != []) ["brcmfmac"])
       ];
-      # arm64 defconfig builds brcmfmac. These radios sit on the Arasan
-      # SDHCI, which that defconfig leaves out. docs/10 §4.7 and §4.12.
-      # The Pi 4 SD card needs this host built in on every image, so the
-      # board profile pins it. The ROCK Pi 4C radio is on dw_mmc.
+      # The NixOS arm64 config answers MMC_SDHCI_IPROC=m. The Pi 3 profile
+      # pins n until this access point. The Pi 4 profile pins y because
+      # that host is also the SD card. docs/10 §4.7 and §4.12, T-0007.
+      # The ROCK Pi 4C radio is on dw_mmc.
       boot.kernelPatches = lib.mkIf (onboardNames != [] && piSdioAp) [
         {
           name = "janus-rpi-onboard-wifi";

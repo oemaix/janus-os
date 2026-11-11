@@ -168,8 +168,11 @@ tree does not mean that behavior exists. Stubs are not finished features.
   images are not boot-tested here.
 * The Raspberry Pi Zero 2 W onboard radio is a 2.4 GHz WPA2 access
   point (D-0043). `match.onboard = true`. `hostapd` uses in-tree
-  `brcmfmac` and `raspberrypiWirelessFirmware`. The image enables
-  `MMC_SDHCI_IPROC`, which the generic arm64 defconfig leaves out.
+  `brcmfmac` and `raspberrypiWirelessFirmware`. The NixOS arm64 config
+  answers `MMC_SDHCI_IPROC=m`. A Zero 2 W or Pi 3 access point keeps
+  that module. The Pi 3 profile pins `n` until `match.onboard` declares
+  the access point. The Pi 4 profile pins `y`, because the initrd does
+  not list `sdhci_iproc`.
   The boot tree is mainline `bcm2837-rpi-zero-2-w.dtb`. The 43436s
   CLM names are copies of the 43436 blob that package already ships.
   The Pi 3 and Pi 4 radios are the same access point (D-0064, *10*

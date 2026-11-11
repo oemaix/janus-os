@@ -38,16 +38,16 @@ in {
       "pcie_brcmstb"
     ];
     boot.blacklistedKernelModules = lib.mkIf (!onboardWifi) ["brcmfmac"];
-    # ARCH_BCM_IPROC is on in the arm64 defconfig, and MMC_SDHCI_IPROC
-    # defaults to that symbol, so the host is built in. Pin it. A module
-    # would leave the card dependent on the initrd. The initrd list does
-    # not name sdhci_iproc: there is no module to copy.
+    # The NixOS arm64 config answers MMC_SDHCI_IPROC=m. ARCH_BCM_IPROC=y
+    # does not leave the host built in. A module would leave the card
+    # dependent on the initrd. The initrd list does not name
+    # sdhci_iproc: there is no module to copy. Pin y. docs/10 §4.12, T-0007.
     boot.kernelPatches = [
       {
         name = "janus-rpi4-sdhci";
         patch = null;
         structuredExtraConfig = {
-          MMC_SDHCI_IPROC = lib.kernel.yes;
+          MMC_SDHCI_IPROC = lib.mkForce lib.kernel.yes;
         };
       }
     ];

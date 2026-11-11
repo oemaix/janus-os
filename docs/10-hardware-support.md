@@ -274,7 +274,7 @@ are not part of the profile. QMI and MBIM are not how this unit attaches.
 | MediaTek MT7921AU | `0e8d:7961` | wifi (AP) | supported (recent kernel) |
 | Realtek RTL8812AU | `0bda:8812` | wifi | unsupported (out-of-tree driver) |
 | Realtek RTL8188CUS | `0bda:8176` | wifi (AP, 2.4 GHz HT20) | supported via in-tree `rtl8192cu` (§4.4) |
-| Realtek RTL8188EUS | `0bda:8179` | wifi (STA, 2.4 GHz HT20) | supported via in-tree `rtl8xxxu` (§4.11) |
+| Realtek RTL8188EUS | `0bda:8179` | wifi (STA, 2.4 GHz HT20) | specified, not lowered (*13*, §4.11, D-0063). No allowlist row. |
 | Raspberry Pi Zero 2 W onboard CYW43430 | board radio, `match.onboard` | wifi (AP, 2.4 GHz HT20, WPA2) | supported via in-tree `brcmfmac` (§4.7) |
 | ROCK Pi 4C onboard AP6256 | board radio, `match.onboard` | wifi (AP, 2.4/5 GHz HT20, WPA2) | supported via in-tree `brcmfmac` (§4.10) |
 | Raspberry Pi 3 / 3+ onboard CYW43430 / CYW43455 | board radio, `match.onboard` | wifi (AP, 2.4 GHz HT20, WPA2) | supported via in-tree `brcmfmac` (§4.12) |
@@ -309,10 +309,10 @@ both true, and they are not the same driver.
 | `rtl8xxxu` | In-tree, and the driver those desktop distributions usually bind for this USB ID. The device appears with no DKMS package. | Not advertised before Linux 6.15. The flag `supports_ap` was merged for this family in February 2025 (`rtw-next`, pull 2025-02-10). The author measured about 4 Mbit/s TX against about 24 Mbit/s on `rtl8192cu`. |
 | Realtek vendor driver plus `hostapd` `rtl871xdrv` | Out of tree. | How people forced AP mode before `rtl8192cu`. Forbidden here (FR-HW-006). |
 
-Janus binds `0bda:8176` to `rtl8192cu` and does not let `rtl8xxxu` claim
-that ID, so the two drivers do not both attach (D-0063). `rtl8xxxu`
-stays loaded: it is the driver for `0bda:8179` (§4.11). A module-wide
-blacklist of `rtl8xxxu` would remove that station. Any board may declare
+D-0063 assigns `0bda:8176` to `rtl8192cu` by USB ID and leaves `rtl8xxxu`
+loaded, so the two drivers do not both attach. `rtl8xxxu` is the driver
+for `0bda:8179` (§4.11). A module-wide blacklist of `rtl8xxxu` removes
+that station. This tree still blacklists the module (*13*). Any board may declare
 this USB id. The Le Potato row in §3 records the lab unit that confirmed
 the stick. Declaring the peripheral copies `rtlwifi/rtl8192cufw.bin`,
 `rtl8192cufw_A.bin`, `rtl8192cufw_B.bin`, and `rtl8192cufw_TMSC.bin` from
@@ -505,7 +505,8 @@ access point (FR-NET-018, D-0063). A build is acceptable when `iw list`
 shows station mode for this phy. The station uplink is a WAN with
 `mode = "wifi"` (*06* §4, §11). `wpa_supplicant` associates, networkd
 takes DHCP, and the interface joins the `wan` zone. The dongle keeps
-its permanent MAC.
+its permanent MAC. This station is specified and not lowered (*13*).
+The allowlist has no `0bda:8179`, and `wans.<name>.mode` has no `wifi`.
 
 The portable Le Potato uses this stick as `role = "backup"` and the
 §4.4 stick as the LAN access point. §4.4 assigns `0bda:8176` to
@@ -554,11 +555,13 @@ and `raspberrypi,3-model-b-plus`. The driver asks for
 `brcmfmac43455-sdio.raspberrypi,3-model-b-plus.*`.
 
 The radio's SDIO host is the Arasan controller (`brcm,bcm2835-sdhci`),
-the same host as §4.7. The SD card stays on `sdhost`. An image that
-declares this access point enables `MMC_SDHCI_IPROC` as a module and
-loads `sdhci_iproc` with `brcmfmac`. The initrd does not list
-`sdhci_iproc`. Until then the host is not built, so a Pi 2 v1.2
-does not request wireless firmware.
+the same host as §4.7. The SD card stays on `sdhost`. The NixOS arm64
+config answers `MMC_SDHCI_IPROC=m`. Left there, udev loads
+`sdhci_iproc` and `brcmfmac` asks for firmware on a Pi 2 v1.2, which
+has no chip. The profile pins `n` until an access point sets
+`match.onboard`. That access point then enables the symbol as a module
+and loads `sdhci_iproc` with `brcmfmac`. The initrd does not list
+`sdhci_iproc`.
 
 The Pi 4 is a CYW43455. A Compute Module 4 that has wireless is a
 CYW43455 or a CYW43456. Both do 2.4 GHz and 5 GHz, HT20, WPA2.
@@ -572,13 +575,12 @@ asks for `brcmfmac43455-sdio.raspberrypi,4-model-b.*`,
 
 On the Pi 4 the SD card is `emmc2` (`brcm,bcm2711-emmc2`). That
 controller and the radio's Arasan host are both `sdhci-iproc`. The
-arm64 defconfig enables `ARCH_BCM_IPROC`, and the Kconfig default of
-`MMC_SDHCI_IPROC` follows that symbol, so the host is built in. The
-image pins `MMC_SDHCI_IPROC=y` on every Pi 4 image. The card does not
-wait for a module, and the initrd does not list `sdhci_iproc`. The
-device tree still enables the radio node, including on a Compute
-Module 4 with no chip. `brcmfmac` stays blacklisted until
-`match.onboard = true`.
+NixOS arm64 config answers `MMC_SDHCI_IPROC=m` even though
+`ARCH_BCM_IPROC=y`. A module would leave the card dependent on the
+initrd, and the initrd does not list `sdhci_iproc`, so every Pi 4
+image pins `MMC_SDHCI_IPROC=y`. The device tree still enables the
+radio node, including on a Compute Module 4 with no chip. `brcmfmac`
+stays blacklisted until `match.onboard = true`.
 
 ### 4.13 Planned later, not in 1.0
 
