@@ -219,7 +219,7 @@ in
     exact aarch64 MMC_BCM2835 y "$matchedPi3"
     exact aarch64 MMC_SDHCI_IPROC n "$matchedPi3"
     exact aarch64 BCMGENET m "$matchedPi4"
-    exact aarch64 MMC_SDHCI_IPROC m "$matchedPi4"
+    exact aarch64 MMC_SDHCI_IPROC y "$matchedPi4"
     exact riscv64 MMC_DW_STARFIVE m "$matchedVf2"
     exact riscv64 BLK_DEV_NVME m "$matchedVf2"
     exact riscv64 MOTORCOMM_PHY m "$matchedVf2"

@@ -100,6 +100,8 @@
     then "ppp-${name}"
     else if wan.mode == "wwan"
     then "wwan-${wan.wwan.peripheral}"
+    else if wan.mode == "wifi"
+    then "wifi-${wan.uplink}"
     else resolve wan.uplink;
 
   keyCap = keys: name: default: keys.${name} or default;

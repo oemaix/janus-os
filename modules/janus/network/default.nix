@@ -58,7 +58,7 @@
 
   known = name: lib.elem name linkNames;
 in {
-  imports = [./lower.nix ./wifi.nix ./wwan.nix ./health.nix];
+  imports = [./lower.nix ./wifi.nix ./station.nix ./wwan.nix ./health.nix];
 
   options.janus.network = {
     ports = mkOption {
@@ -119,8 +119,8 @@ in {
             description = "Port, VLAN, or peripheral this WAN attaches to.";
           };
           mode = mkOption {
-            type = types.enum ["dhcp" "static" "pppoe" "wwan"];
-            description = "Addressing mode.";
+            type = types.enum ["dhcp" "static" "pppoe" "wwan" "wifi"];
+            description = "Addressing mode. wifi is a WPA2 station, then the same DHCP client as dhcp.";
           };
           role = mkOption {
             type = types.enum ["default" "backup" "custom" "iptv"];
@@ -281,6 +281,44 @@ in {
             };
             default = {};
             description = "WWAN uplink. Ethernet modes are DHCP clients. QMI and MBIM connect before networkd.";
+          };
+          wifi = mkOption {
+            type = types.submodule {
+              options.networks = mkOption {
+                type = types.listOf (types.submodule {
+                  options = {
+                    ssid = mkOption {
+                      type = types.str;
+                      description = "SSID. Not a secret.";
+                    };
+                    passphrase = mkOption {
+                      type = types.nullOr types.str;
+                      default = null;
+                      description = "Inline passphrase. Requires janus.security.allowInlineSecrets. Open networks are after 1.0.";
+                    };
+                    passphraseFile = mkOption {
+                      type = types.nullOr types.str;
+                      default = null;
+                      description = "Passphrase file. One line, the passphrase.";
+                    };
+                    passphraseSecret = mkOption {
+                      type = types.nullOr types.str;
+                      default = null;
+                      description = "sops secret name. The decrypted file is one line, the passphrase.";
+                    };
+                    priority = mkOption {
+                      type = types.int;
+                      default = 0;
+                      description = "Higher values are tried first. Unset is 0.";
+                    };
+                  };
+                });
+                default = [];
+                description = "Known WPA2-PSK networks. docs/06 §11.";
+              };
+            };
+            default = {};
+            description = "Station networks for mode = wifi. docs/06 §4 and §11.";
           };
           ipv6.mode = mkOption {
             type = types.enum ["disabled" "slaac" "dhcpv6-pd" "static" "passthrough"];
@@ -639,6 +677,24 @@ in {
   config = let
     wanNames = lib.attrNames cfg.wans;
     lanNames = lib.attrNames cfg.lans;
+    allow = import ../hardware/allowlist.nix;
+    hw = config.janus.hardware.peripherals;
+    # Empty capabilities use the allowlist. A set list is the requested
+    # subset; the hardware module already rejects a capability outside it.
+    profileCaps = p:
+      if p.class != "wifi"
+      then []
+      else if p.match.onboard or false
+      then (allow.onboard.${config.janus.hardware.board} or {}).capabilities or []
+      else if (p.match.usbVendorProduct or null) != null
+      then (allow.usb.${p.match.usbVendorProduct} or {}).capabilities or []
+      else [];
+    effectiveCaps = p:
+      if p.wifi.capabilities != []
+      then p.wifi.capabilities
+      else profileCaps p;
+    staWanNames = lib.filter (n: cfg.wans.${n}.mode == "wifi") wanNames;
+    staPeriphs = map (n: cfg.wans.${n}.uplink) staWanNames;
     defaultWanNames = lib.filter (n: cfg.wans.${n}.role == "default") wanNames;
     nets =
       lib.mapAttrsToList (n: lan: {
@@ -782,7 +838,88 @@ in {
         assertion = ap.passphrase != null || ap.passphraseFile != null || ap.passphraseSecret != null;
         message = "janus.network.wifi.${n} needs a passphrase, passphraseFile, or passphraseSecret.";
       })
-      cfg.wifi;
+      cfg.wifi
+      ++ lib.mapAttrsToList (n: ap: {
+        assertion =
+          !(hw ? ${ap.peripheral})
+          || lib.elem "ap" (effectiveCaps hw.${ap.peripheral});
+        message = "janus.network.wifi.${n}.peripheral '${ap.peripheral}' does not list ap.";
+      })
+      cfg.wifi
+      ++ lib.concatMap (n: let
+        wan = cfg.wans.${n};
+        p = hw.${wan.uplink} or null;
+      in
+        lib.optionals (wan.mode == "wifi") (
+          [
+            {
+              assertion = p != null && p.class == "wifi";
+              message = "janus.network.wans.${n}.mode = wifi needs a wifi peripheral.";
+            }
+            {
+              assertion = p != null && p.class == "wifi" && lib.elem "sta" (effectiveCaps p);
+              message = "janus.network.wans.${n}.uplink '${wan.uplink}' does not list sta.";
+            }
+            {
+              assertion = wan.wifi.networks != [];
+              message = "janus.network.wans.${n}.wifi.networks is empty.";
+            }
+            {
+              assertion = wan.macAddress == null;
+              message = "janus.network.wans.${n} keeps the dongle MAC.";
+            }
+          ]
+          ++ lib.concatLists (lib.imap0 (i: net: [
+              {
+                assertion = net.ssid != "" && lib.stringLength net.ssid <= 32;
+                message = "janus.network.wans.${n}.wifi.networks.${toString i}.ssid must be 1 to 32 characters.";
+              }
+              {
+                assertion = lib.count (x: x != null) [net.passphrase net.passphraseFile net.passphraseSecret] == 1;
+                message = "janus.network.wans.${n}.wifi.networks.${toString i} needs one WPA2 passphrase. An open network is after 1.0.";
+              }
+              {
+                assertion = net.passphrase == null || config.janus.security.allowInlineSecrets;
+                message = "janus.network.wans.${n}.wifi.networks.${toString i}.passphrase is inline. Set janus.security.allowInlineSecrets or passphraseSecret.";
+              }
+              {
+                assertion =
+                  net.passphrase == null
+                  || (lib.stringLength net.passphrase >= 8 && lib.stringLength net.passphrase <= 63);
+                message = "janus.network.wans.${n}.wifi.networks.${toString i}.passphrase must be 8 to 63 characters.";
+              }
+              {
+                assertion =
+                  net.passphraseSecret == null
+                  || (
+                    (options ? sops)
+                    && (config.sops.secrets ? ${net.passphraseSecret})
+                    && (builtins.tryEval config.sops.secrets.${net.passphraseSecret}.sopsFile).success
+                  );
+                message = "janus.network.wans.${n}.wifi.networks.${toString i}.passphraseSecret needs sops.secrets.<name>.sopsFile.";
+              }
+            ])
+            wan.wifi.networks)
+        ))
+      wanNames
+      ++ [
+        {
+          assertion = lib.all (p: !lib.elem p staPeriphs) (map (ap: ap.peripheral) (lib.attrValues cfg.wifi));
+          message = "A Wi-Fi peripheral is an access point and a station. One peripheral has one role.";
+        }
+        {
+          assertion = lib.length staPeriphs == lib.length (lib.unique staPeriphs);
+          message = "Two Wi-Fi WANs use the same peripheral.";
+        }
+        {
+          assertion = let
+            apIfaces = lib.mapAttrsToList (n: _: "wifi-${n}") cfg.wifi;
+            staIfaces = map (n: "wifi-${cfg.wans.${n}.uplink}") staWanNames;
+          in
+            lib.all (iface: !lib.elem iface apIfaces) staIfaces;
+          message = "A station interface name matches an access-point interface.";
+        }
+      ];
 
     warnings =
       lib.optional cfg.igmpProxy.enable "janus.network.igmpProxy is deferred until after 1.0."

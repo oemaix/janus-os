@@ -47,6 +47,8 @@
     then "ppp-${name}"
     else if wan.mode == "wwan"
     then "wwan-${wan.wwan.peripheral}"
+    else if wan.mode == "wifi"
+    then "wifi-${wan.uplink}"
     else resolve wan.uplink;
 
   wanIndex = lib.listToAttrs (lib.imap0 (i: n: {
@@ -174,9 +176,11 @@
     iface =
       if wan.mode == "wwan"
       then "wwan-${wan.wwan.peripheral}"
+      else if wan.mode == "wifi"
+      then "wifi-${wan.uplink}"
       else resolve wan.uplink;
     v6 = wan.ipv6.mode;
-    dhcp = wan.mode == "dhcp" || wan.mode == "wwan";
+    dhcp = wan.mode == "dhcp" || wan.mode == "wwan" || wan.mode == "wifi";
     both = dhcp && v6 != "disabled";
   in
     if wan.mode == "pppoe"

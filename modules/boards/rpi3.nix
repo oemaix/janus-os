@@ -1,9 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
-# Raspberry Pi 3 / 3+. docs/10 §3. Tier 2. One 100 MbE port on the USB bus.
-# Mainline names the trees bcm2837-rpi-3-b.dtb and bcm2837-rpi-3-b-plus.dtb.
+# Raspberry Pi 3 / 3+. docs/10 §3 and §4.12. Tier 2. One 100 MbE port on the USB bus.
+# A Pi 2 v1.2 is a BCM2837 and uses this profile. It has no radio.
 # The GPU firmware on the FAT partition loads the kernel (config.txt).
 # The boot ROM reads an MBR. The image stays GPT and writes a hybrid MBR
 # whose first entry is that FAT filesystem.
+# Mainline names the trees bcm2837-rpi-3-b.dtb and bcm2837-rpi-3-b-plus.dtb.
+# Those trees enable the onboard SDIO radio. The downstream bcm2710 names
+# are not what this kernel installs.
 {
   config,
   lib,
@@ -12,6 +15,13 @@
 }: let
   fw = "${pkgs.raspberrypifw}/share/raspberrypi/boot";
   dtbDir = "${config.boot.kernelPackages.kernel}/dtbs/broadcom";
+  # D-0064: the host is built only when an access point declares the radio.
+  onboardAp = lib.any (
+    ap: let
+      periph = config.janus.hardware.peripherals.${ap.peripheral} or null;
+    in
+      periph != null && (periph.class or null) == "wifi" && (periph.match.onboard or false)
+  ) (lib.attrValues config.janus.network.wifi);
 in {
   config = lib.mkIf (config.janus.hardware.board == "rpi3") {
     janus.storage.firmwareOffsetMiB = lib.mkDefault 0;
@@ -22,8 +32,19 @@ in {
       "console=ttyS0,115200"
       "net.ifnames=0"
     ];
-    # The SD card is the builtin sdhost (MMC_BCM2835). The Arasan host is
-    # the onboard radio and is not a declared peripheral on this profile.
+    # The SD card is builtin sdhost (MMC_BCM2835). The Arasan host is the
+    # radio. The NixOS arm64 config answers MMC_SDHCI_IPROC=m, so udev
+    # would load it and brcmfmac would ask for firmware on a Pi 2 v1.2.
+    # Pin n until an access point sets match.onboard. docs/10 §4.12, T-0007.
+    boot.kernelPatches = lib.mkIf (!onboardAp) [
+      {
+        name = "janus-rpi3-sdhci";
+        patch = null;
+        structuredExtraConfig = {
+          MMC_SDHCI_IPROC = lib.kernel.no;
+        };
+      }
+    ];
     boot.initrd.availableKernelModules = [
       "smsc95xx"
       "lan78xx"

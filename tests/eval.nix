@@ -637,6 +637,21 @@ in {
       echo ${text rpi.config.system.build.janusBoardImage.bootExtra} | grep -q bcm2837-rpi-3-b-plus.dtb
       echo ${text rpi.config.system.build.janusBoardImage.bootExtra} | grep -q '\[pi3\]'
       echo ${text rpi.config.system.build.janusBoardImage.bootExtra} | grep -q '\[pi3+\]'
+      if echo ${text rpi.config.system.build.janusBoardImage.bootExtra} | grep -q bcm2710-rpi-3; then
+        echo "rpi3 profile still names the downstream bcm2710 trees" >&2
+        exit 1
+      fi
+      test ${
+        if (lib.findFirst (p: p.name == "janus-rpi-onboard-wifi") null rpi.config.boot.kernelPatches) == null
+        then "yes"
+        else "no"
+      } = yes
+      test ${
+        (lib.findFirst (p: p.name == "janus-rpi3-sdhci") (throw "missing rpi3 sdhci pin") rpi.config.boot.kernelPatches)
+        .structuredExtraConfig
+        .MMC_SDHCI_IPROC
+        .tristate
+      } = n
       test ${
         if rpi.config.system.build.janusImage.hybridFatMbr or false
         then "yes"
@@ -662,6 +677,27 @@ in {
       echo ${text rpi4.config.system.build.janusBoardImage.bootExtra} | grep -q /dtbs/broadcom/bcm2711-rpi-cm4-io.dtb
       if echo ${text rpi4.config.system.build.janusBoardImage.bootExtra} | grep -q 'bcm2711-rpi-400\|\[pi400\]'; then
         echo "rpi4 profile still names the Pi 400" >&2
+        exit 1
+      fi
+      test ${
+        (lib.findFirst (p: p.name == "janus-rpi4-sdhci") (throw "missing rpi4 sdhci patch") rpi4.config.boot.kernelPatches)
+        .structuredExtraConfig
+        .MMC_SDHCI_IPROC
+        .content
+        .tristate
+      } = y
+      if echo ${lib.escapeShellArg (lib.concatStringsSep " " rpi4.config.boot.initrd.availableKernelModules)} | grep -q sdhci_iproc; then
+        echo "rpi4 asks the initrd for the built-in SD host" >&2
+        exit 1
+      fi
+      rpi4mods=${lib.escapeShellArg (lib.concatStringsSep " " rpi4.config.boot.blacklistedKernelModules)}
+      printf '%s\n' "$rpi4mods" | grep -q brcmfmac
+      if printf '%s\n' "$rpi4mods" | grep -q btusb; then
+        echo "rpi4 blacklists btusb" >&2
+        exit 1
+      fi
+      if printf '%s\n' "$rpi4mods" | grep -q hci_uart; then
+        echo "rpi4 blacklists hci_uart" >&2
         exit 1
       fi
       test ${lib.escapeShellArg rpi2.config.janus.build.strategy} = cross
@@ -1790,9 +1826,199 @@ in {
         echo "hostapd config is still a shell heredoc" >&2
         exit 1
       fi
-      echo ${lib.escapeShellArg (lib.concatStrings os.config.boot.blacklistedKernelModules)} | grep -q rtl8xxxu
+      printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " os.config.boot.blacklistedKernelModules)} > blacklist
+      if grep -q rtl8xxxu blacklist; then
+        echo "0bda:8176 blacklists rtl8xxxu" >&2
+        exit 1
+      fi
+      printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " os.config.boot.kernelModules)} > modules
+      grep -q rtl8192cu modules
+      printf '%s\n' ${lib.escapeShellArg os.config.services.udev.extraRules} > rules
+      grep -q 'ENV{DEVTYPE}=="usb_interface"' rules
+      grep -q 'ATTRS{idProduct}=="8176"' rules
+      test ${
+        if os.config.systemd.services ? janus-rtl8192cu-bind
+        then "yes"
+        else "no"
+      } = yes
       echo ok > "$out"
     '';
+  eval-wifi-sta = let
+    os = mk [
+      base
+      {
+        janus.security.allowInlineSecrets = true;
+        janus.hardware.peripherals.cafe0 = {
+          class = "wifi";
+          match.usbVendorProduct = "0bda:8179";
+        };
+        janus.hardware.peripherals.ap0 = {
+          class = "wifi";
+          match.usbVendorProduct = "0bda:8176";
+        };
+        janus.network.lans.lan = {
+          members = ["lan"];
+          address = "192.168.10.1";
+          prefixLength = 24;
+        };
+        janus.network.wans.cafe = {
+          uplink = "cafe0";
+          mode = "wifi";
+          role = "backup";
+          wifi.networks = [
+            {
+              ssid = "Cafeteria";
+              passphrase = "secret12";
+              priority = 10;
+            }
+          ];
+        };
+      }
+    ];
+    script = os.config.systemd.services.janus-wpa-cafe.serviceConfig.ExecStart;
+    net = os.config.systemd.network.networks."40-wan-cafe";
+    names = lib.concatMapStringsSep " " (p: p.name) (
+      lib.filter (p: lib.isAttrs p && lib.isDerivation p) (
+        lib.flatten os.options.hardware.firmware.definitions
+      )
+    );
+  in
+    pkgs.runCommand "eval-wifi-sta" {} ''
+      test ${lib.escapeShellArg net.matchConfig.Name} = wifi-cafe0
+      test ${lib.escapeShellArg net.networkConfig.DHCP} = ipv4
+      test ${toString net.dhcpV4Config.RouteMetric} = 1100
+      test ${
+        if net.dhcpV4Config.UseRoutes
+        then "yes"
+        else "no"
+      } = yes
+      test ${
+        if net.dhcpV4Config.UseDNS
+        then "yes"
+        else "no"
+      } = no
+      test ${
+        if net.linkConfig ? MACAddress
+        then "yes"
+        else "no"
+      } = no
+      grep -q 'key_mgmt=WPA-PSK' ${script}
+      grep -q 'priority=10' ${script}
+      grep -q 'country=CN' ${script}
+      grep -q ${lib.escapeShellArg "ssid=%s"} ${script}
+      grep -q ${lib.escapeShellArg "'\"Cafeteria\"'"} ${script}
+      if grep -q 'key_mgmt=NONE' ${script} || grep -q 'key_mgmt=WPA-EAP' ${script}; then
+        echo "station config is not WPA2-PSK" >&2
+        exit 1
+      fi
+      printf '%s\n' ${lib.escapeShellArg os.config.networking.nftables.tables.janus.content} > nft
+      grep -q wifi-cafe0 nft
+      printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " os.config.boot.kernelModules)} > modules
+      grep -q rtl8xxxu modules
+      grep -q rtl8192cu modules
+      printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " os.config.boot.blacklistedKernelModules)} > blacklist
+      if grep -q rtl8xxxu blacklist; then
+        echo "station image blacklists rtl8xxxu" >&2
+        exit 1
+      fi
+      printf '%s\n' ${lib.escapeShellArg os.config.services.udev.extraRules} > rules
+      grep -q 'NAME="wifi-cafe0"' rules
+      grep -q 'ENV{DEVTYPE}=="usb_interface"' rules
+      printf '%s\n' ${lib.escapeShellArg names} > names
+      grep -q rtl8188eu-firmware names
+      grep -q rtl8192cu-firmware names
+      echo ok > "$out"
+    '';
+  eval-wifi-sta-ap = fail "eval-wifi-sta-ap" [
+    base
+    {
+      janus.security.allowInlineSecrets = true;
+      janus.hardware.peripherals.cafe0 = {
+        class = "wifi";
+        match.usbVendorProduct = "0bda:8179";
+      };
+      janus.network.lans.lan = {
+        members = ["lan" "room"];
+        address = "192.168.10.1";
+        prefixLength = 24;
+      };
+      janus.network.wifi.room = {
+        peripheral = "cafe0";
+        ssid = "janus";
+        passphrase = "secret12";
+        lan = "lan";
+      };
+    }
+  ];
+  eval-wifi-sta-role = fail "eval-wifi-sta-role" [
+    base
+    {
+      janus.security.allowInlineSecrets = true;
+      janus.hardware.peripherals.stick = {
+        class = "wifi";
+        match.usbVendorProduct = "0bda:8176";
+      };
+      janus.network.lans.lan = {
+        members = ["lan" "room"];
+        address = "192.168.10.1";
+        prefixLength = 24;
+      };
+      janus.network.wifi.room = {
+        peripheral = "stick";
+        ssid = "janus";
+        passphrase = "secret12";
+        lan = "lan";
+      };
+      janus.network.wans.cafe = {
+        uplink = "stick";
+        mode = "wifi";
+        role = "backup";
+        wifi.networks = [
+          {
+            ssid = "Cafeteria";
+            passphrase = "secret12";
+          }
+        ];
+      };
+    }
+  ];
+  eval-wifi-sta-nosta = fail "eval-wifi-sta-nosta" [
+    base
+    {
+      janus.security.allowInlineSecrets = true;
+      janus.hardware.peripherals.stick = {
+        class = "wifi";
+        match.usbVendorProduct = "0bda:8176";
+        wifi.capabilities = ["ap"];
+      };
+      janus.network.wans.cafe = {
+        uplink = "stick";
+        mode = "wifi";
+        wifi.networks = [
+          {
+            ssid = "Cafeteria";
+            passphrase = "secret12";
+          }
+        ];
+      };
+    }
+  ];
+  eval-wifi-sta-open = fail "eval-wifi-sta-open" [
+    base
+    {
+      janus.hardware.peripherals.cafe0 = {
+        class = "wifi";
+        match.usbVendorProduct = "0bda:8179";
+      };
+      janus.network.wans.cafe = {
+        uplink = "cafe0";
+        mode = "wifi";
+        wifi.networks = [
+          {ssid = "Cafeteria";}
+        ];
+      };
+    }
+  ];
   eval-wifi-country = let
     wifi = extra:
       mk [
@@ -2044,6 +2270,7 @@ in {
       test ${lib.escapeShellArg patch.structuredExtraConfig.MMC_SDHCI_IPROC.tristate} = m
       test ${lib.escapeShellArg patch.structuredExtraConfig.BRCMFMAC_SDIO.tristate} = y
       echo ${lib.escapeShellArg firmwareNames} | grep -q raspberrypi-wireless-firmware
+      echo ${lib.escapeShellArg firmwareNames} | grep -q brcmfmac43436s-clm
       grep -q 'ht_capab=\[HT20\]\[SHORT-GI-20\]' ${script}
       grep -q wmm_enabled=1 ${script}
       grep -q 'set type __ap' ${script}
@@ -2200,6 +2427,76 @@ in {
       };
     }
   ];
+  eval-wifi-rpi3-5g = fail "eval-wifi-rpi3-5g" [
+    {
+      janus.hardware.board = "rpi3";
+      janus.access.ssh.authorizedKeys = [key];
+      janus.security.allowInlineSecrets = true;
+      janus.hardware.peripherals.radio = {
+        class = "wifi";
+        match.onboard = true;
+      };
+      janus.network.lans.lan = {
+        members = ["home"];
+        address = "192.168.10.1";
+        prefixLength = 24;
+      };
+      janus.network.wifi.home = {
+        peripheral = "radio";
+        ssid = "janus";
+        passphrase = "secret-pass";
+        lan = "lan";
+        band = "5g";
+      };
+    }
+  ];
+  eval-wifi-rpi3-wpa3 = fail "eval-wifi-rpi3-wpa3" [
+    {
+      janus.hardware.board = "rpi3";
+      janus.access.ssh.authorizedKeys = [key];
+      janus.security.allowInlineSecrets = true;
+      janus.hardware.peripherals.radio = {
+        class = "wifi";
+        match.onboard = true;
+      };
+      janus.network.lans.lan = {
+        members = ["home"];
+        address = "192.168.10.1";
+        prefixLength = 24;
+      };
+      janus.network.wifi.home = {
+        peripheral = "radio";
+        ssid = "janus";
+        passphrase = "secret-pass";
+        lan = "lan";
+        security = "wpa3";
+      };
+    }
+  ];
+  eval-wifi-rpi4-wpa3 = fail "eval-wifi-rpi4-wpa3" [
+    {
+      janus.hardware.board = "rpi4";
+      janus.access.ssh.authorizedKeys = [key];
+      janus.security.allowInlineSecrets = true;
+      janus.hardware.peripherals.radio = {
+        class = "wifi";
+        match.onboard = true;
+      };
+      janus.network.lans.lan = {
+        members = ["home"];
+        address = "192.168.10.1";
+        prefixLength = 24;
+      };
+      janus.network.wifi.home = {
+        peripheral = "radio";
+        ssid = "janus";
+        passphrase = "secret-pass";
+        lan = "lan";
+        band = "5g";
+        security = "wpa3";
+      };
+    }
+  ];
   eval-wifi-onboard-wpa3 = fail "eval-wifi-onboard-wpa3" [
     {
       janus.hardware.board = "rpi-zero-2w";
@@ -2275,45 +2572,75 @@ in {
     }
   ];
   eval-wifi-onboard-kernel = let
-    os = mk [
+    radio = board: {
+      janus.hardware.board = board;
+      janus.access.ssh.authorizedKeys = [key];
+      janus.security.allowInlineSecrets = true;
+      janus.hardware.peripherals.radio = {
+        class = "wifi";
+        match.onboard = true;
+      };
+      janus.network.lans.lan = {
+        members = ["home"];
+        address = "192.168.10.1";
+        prefixLength = 24;
+      };
+      janus.network.wifi.home = {
+        peripheral = "radio";
+        ssid = "janus";
+        passphrase = "secret-pass";
+        lan = "lan";
+      };
+      # Cross keeps linux-config on the build machine. The emulated
+      # aarch64 configfile does not run here. The greps read the
+      # generated .config, after generate-config.pl.
+      janus.build.strategy = "cross";
+    };
+    zero = (mk [(radio "rpi-zero-2w")]).config.boot.kernelPackages.kernel;
+    rpi3 = (mk [(radio "rpi3")]).config.boot.kernelPackages.kernel;
+    # No access point: the NixOS answer is m, and the profile pins n.
+    rpi3Bare = (mk [
       {
-        janus.hardware.board = "rpi-zero-2w";
+        janus.hardware.board = "rpi3";
         janus.access.ssh.authorizedKeys = [key];
-        janus.security.allowInlineSecrets = true;
-        janus.hardware.peripherals.radio = {
-          class = "wifi";
-          match.onboard = true;
-        };
-        janus.network.lans.lan = {
-          members = ["home"];
-          address = "192.168.10.1";
-          prefixLength = 24;
-        };
-        janus.network.wifi.home = {
-          peripheral = "radio";
-          ssid = "janus";
-          passphrase = "secret-pass";
-          lan = "lan";
-        };
-        # Cross keeps linux-config on the build machine. The emulated
-        # aarch64 configfile does not run here. The greps read the
-        # generated .config, after generate-config.pl.
         janus.build.strategy = "cross";
       }
-    ];
-    kernel = os.config.boot.kernelPackages.kernel;
+    ]).config.boot.kernelPackages.kernel;
+    # No access point: the Pi 4 pins the SD host built in on every image.
+    rpi4 = (mk [
+      {
+        janus.hardware.board = "rpi4";
+        janus.access.ssh.authorizedKeys = [key];
+        janus.build.strategy = "cross";
+      }
+    ]).config.boot.kernelPackages.kernel;
   in
     pkgs.runCommand "eval-wifi-onboard-kernel" {} ''
-      grep -q '^CONFIG_MMC_SDHCI_IPROC=m$' ${kernel.configfile}
-      grep -q '^CONFIG_BRCMFMAC=m$' ${kernel.configfile}
-      grep -q '^CONFIG_BRCMFMAC_SDIO=y$' ${kernel.configfile}
-      grep -q '^CONFIG_ARCH_BCM2835=y$' ${kernel.configfile}
-      tar -tJf ${kernel.src} > "$TMPDIR/kernel-files"
+      grep -q '^CONFIG_MMC_SDHCI_IPROC=m$' ${zero.configfile}
+      grep -q '^CONFIG_BRCMFMAC=m$' ${zero.configfile}
+      grep -q '^CONFIG_BRCMFMAC_SDIO=y$' ${zero.configfile}
+      grep -q '^CONFIG_ARCH_BCM2835=y$' ${zero.configfile}
+      grep -q '^CONFIG_MMC_SDHCI_IPROC=m$' ${rpi3.configfile}
+      grep -q '^CONFIG_BRCMFMAC=m$' ${rpi3.configfile}
+      grep -q '^CONFIG_BRCMFMAC_SDIO=y$' ${rpi3.configfile}
+      grep -q '^# CONFIG_MMC_SDHCI_IPROC is not set$' ${rpi3Bare.configfile}
+      grep -q '^CONFIG_MMC_SDHCI_IPROC=y$' ${rpi4.configfile}
+      grep -q '^CONFIG_BRCMFMAC=m$' ${rpi4.configfile}
+      grep -q '^CONFIG_BRCMFMAC_SDIO=y$' ${rpi4.configfile}
+      tar -tJf ${zero.src} > "$TMPDIR/kernel-files"
       dts=$(grep -m1 'arch/arm64/boot/dts/broadcom/bcm2837-rpi-zero-2-w.dts$' "$TMPDIR/kernel-files")
       test -n "$dts"
-      tar -xJf ${kernel.src} -O "''${dts%bcm2837-rpi-zero-2-w.dts}Makefile" > "$TMPDIR/broadcom.mk"
+      tar -xJf ${zero.src} -O "''${dts%bcm2837-rpi-zero-2-w.dts}Makefile" > "$TMPDIR/broadcom.mk"
       grep -q 'dtb-$(CONFIG_ARCH_BCM2835)' "$TMPDIR/broadcom.mk"
       grep -q 'bcm2837-rpi-zero-2-w.dtb' "$TMPDIR/broadcom.mk"
+      grep -q 'bcm2837-rpi-3-b.dtb' "$TMPDIR/broadcom.mk"
+      grep -q 'bcm2837-rpi-3-b-plus.dtb' "$TMPDIR/broadcom.mk"
+      grep -q 'bcm2711-rpi-4-b.dtb' "$TMPDIR/broadcom.mk"
+      grep -q 'bcm2711-rpi-cm4-io.dtb' "$TMPDIR/broadcom.mk"
+      if grep -q 'bcm2710-rpi-3-b.dtb' "$TMPDIR/broadcom.mk"; then
+        echo "kernel Makefile still installs bcm2710-rpi-3-b.dtb" >&2
+        exit 1
+      fi
       echo ok > "$out"
     '';
   eval-wifi-onboard-board = fail "eval-wifi-onboard-board" [
@@ -2338,6 +2665,211 @@ in {
       };
     }
   ];
+  # Every docs/10 onboard radio, and no other board. rpi3 and rpi4 are
+  # in the allowlist. A Pi 2 v1.2 and a CM4 without the chip leave
+  # match.onboard unset. rpi2 has no radio and must fail that flag.
+  eval-wifi-onboard-boards = let
+    allow = import ../modules/janus/hardware/allowlist.nix;
+    allBoards = builtins.attrNames (import ../lib/boards.nix);
+    radioBoards = builtins.attrNames allow.onboard;
+    plainBoards = lib.filter (board: !(lib.elem board radioBoards)) allBoards;
+    # File names the driver asks for. docs/10 §4.7, §4.10, and §4.12.
+    # The 43436s CLM names are copies of the 43436 blob.
+    firmwareFiles = {
+      "rpi-zero-2w" = [
+        "brcm/brcmfmac43430b0-sdio.raspberrypi,model-zero-2-w.bin"
+        "brcm/brcmfmac43430b0-sdio.raspberrypi,model-zero-2-w.txt"
+        "brcm/brcmfmac43430b0-sdio.raspberrypi,model-zero-2-w.clm_blob"
+        "brcm/brcmfmac43436-sdio.raspberrypi,model-zero-2-w.bin"
+        "brcm/brcmfmac43436-sdio.raspberrypi,model-zero-2-w.txt"
+        "brcm/brcmfmac43436-sdio.raspberrypi,model-zero-2-w.clm_blob"
+        "brcm/brcmfmac43436s-sdio.raspberrypi,model-zero-2-w.bin"
+        "brcm/brcmfmac43436s-sdio.raspberrypi,model-zero-2-w.txt"
+        "brcm/brcmfmac43436s-sdio.clm_blob"
+        "brcm/brcmfmac43436s-sdio.raspberrypi,model-zero-2-w.clm_blob"
+      ];
+      "rpi3" = [
+        "brcm/brcmfmac43430-sdio.raspberrypi,3-model-b.bin"
+        "brcm/brcmfmac43430-sdio.raspberrypi,3-model-b.txt"
+        "brcm/brcmfmac43430-sdio.raspberrypi,3-model-b.clm_blob"
+        "brcm/brcmfmac43455-sdio.raspberrypi,3-model-b-plus.bin"
+        "brcm/brcmfmac43455-sdio.raspberrypi,3-model-b-plus.txt"
+        "brcm/brcmfmac43455-sdio.raspberrypi,3-model-b-plus.clm_blob"
+      ];
+      "rpi4" = [
+        "brcm/brcmfmac43455-sdio.raspberrypi,4-model-b.bin"
+        "brcm/brcmfmac43455-sdio.raspberrypi,4-model-b.txt"
+        "brcm/brcmfmac43455-sdio.raspberrypi,4-model-b.clm_blob"
+        "brcm/brcmfmac43455-sdio.raspberrypi,4-compute-module.bin"
+        "brcm/brcmfmac43455-sdio.raspberrypi,4-compute-module.txt"
+        "brcm/brcmfmac43455-sdio.raspberrypi,4-compute-module.clm_blob"
+        "brcm/brcmfmac43456-sdio.raspberrypi,4-compute-module.bin"
+        "brcm/brcmfmac43456-sdio.raspberrypi,4-compute-module.txt"
+        "brcm/brcmfmac43456-sdio.raspberrypi,4-compute-module.clm_blob"
+      ];
+      "rockpi-4c" = [
+        "brcm/brcmfmac43456-sdio.bin"
+        "brcm/brcmfmac43456-sdio.clm_blob"
+        "brcm/brcmfmac43456-sdio.txt"
+        "brcm/brcmfmac43456-sdio.radxa,rockpi4c.txt"
+      ];
+    };
+    missingFiles = lib.subtractLists (builtins.attrNames firmwareFiles) radioBoards;
+    extraFiles = lib.subtractLists radioBoards (builtins.attrNames firmwareFiles);
+    # lib.last would hide a 5 GHz row added in front of 2g, or a 2g row
+    # dropped from rpi4. docs/10 §4.12.
+    expectedBands = {
+      "rpi-zero-2w" = ["2g"];
+      "rpi3" = ["2g"];
+      "rpi4" = ["2g" "5g"];
+      "rockpi-4c" = ["2g" "5g"];
+    };
+    bandMismatch = lib.filter (board: allow.onboard.${board}.bands != expectedBands.${board}) radioBoards;
+    securityMismatch = lib.filter (board: allow.onboard.${board}.security != ["wpa2"]) radioBoards;
+    radioModule = board: band: {
+      janus.hardware.board = board;
+      janus.access.ssh.authorizedKeys = [key];
+      janus.security.allowInlineSecrets = true;
+      janus.hardware.peripherals.radio = {
+        class = "wifi";
+        match.onboard = true;
+      };
+      janus.network.lans.lan = {
+        members = ["home"];
+        address = "192.168.10.1";
+        prefixLength = 24;
+      };
+      janus.network.wifi.home = {
+        peripheral = "radio";
+        ssid = "janus";
+        passphrase = "secret-pass";
+        lan = "lan";
+        inherit band;
+      };
+    };
+    firmwarePkgs = os:
+      lib.filter (
+        p:
+          lib.isAttrs p
+          && lib.isDerivation p
+          && (
+            lib.hasInfix "raspberrypi-wireless-firmware" p.name
+            || lib.hasInfix "ap6256-firmware" p.name
+            || lib.hasInfix "brcmfmac43436s-clm" p.name
+          )
+      ) (lib.flatten os.options.hardware.firmware.definitions);
+    boardScript = board: let
+      row = allow.onboard.${board};
+      band = lib.last row.bands;
+      os = mk [ (radioModule board band) ];
+      # The script derivation is aarch64. Interpolating it builds hostapd
+      # on the runner. T-0025, T-0026.
+      script = hostapdText "hostapd-${board}" os.config.systemd.services.janus-hostapd-home.serviceConfig.ExecStart;
+      member = os.config.systemd.network.networks."30-member-lan-home";
+      link = os.config.systemd.network.links."10-wifi-home";
+      patch = lib.findFirst (p: p.name == "janus-rpi-onboard-wifi") null os.config.boot.kernelPatches;
+      sdPatch = lib.findFirst (p: p.name == "janus-rpi4-sdhci") null os.config.boot.kernelPatches;
+      fw = firmwarePkgs os;
+      hwMode = if band == "5g" then "a" else "g";
+      channel = if band == "5g" then "36" else "6";
+    in ''
+      echo ${lib.escapeShellArg "onboard ${board}"}
+      test ${toString (lib.length fw)} -ge 1
+      test ${lib.escapeShellArg link.linkConfig.Name} = wifi-home
+      test ${lib.escapeShellArg link.matchConfig.Driver} = ${lib.escapeShellArg row.driver}
+      test ${
+        if member.linkConfig.Unmanaged or false
+        then "yes"
+        else "no"
+      } = yes
+      test ${
+        if member.networkConfig ? Bridge
+        then "yes"
+        else "no"
+      } = no
+      echo ${lib.escapeShellArg (lib.concatStringsSep " " os.config.boot.kernelModules)} | grep -q ${lib.escapeShellArg row.driver}
+      if echo ${lib.escapeShellArg (lib.concatStringsSep " " os.config.boot.blacklistedKernelModules)} | grep -q ${lib.escapeShellArg row.driver}; then
+        echo ${lib.escapeShellArg "${board} blacklists ${row.driver} while the access point is declared"} >&2
+        exit 1
+      fi
+      grep -q ${lib.escapeShellArg "hw_mode=${hwMode}"} ${script}
+      grep -q ${lib.escapeShellArg "channel=${channel}"} ${script}
+      grep -q 'country_code=CN' ${script}
+      grep -q 'wmm_enabled=1' ${script}
+      grep -q 'ht_capab=\[HT20\]\[SHORT-GI-20\]' ${script}
+      ${
+        if board == "rpi-zero-2w" || board == "rpi3"
+        then ''
+          test ${lib.escapeShellArg patch.structuredExtraConfig.MMC_SDHCI_IPROC.tristate} = m
+          test ${lib.escapeShellArg patch.structuredExtraConfig.BRCMFMAC.tristate} = m
+          test ${lib.escapeShellArg patch.structuredExtraConfig.BRCMFMAC_SDIO.tristate} = y
+          ${lib.optionalString (board == "rpi3") ''
+            test ${
+              if (lib.findFirst (p: p.name == "janus-rpi3-sdhci") null os.config.boot.kernelPatches) == null
+              then "yes"
+              else "no"
+            } = yes
+          ''}
+        ''
+        else if board == "rpi4"
+        then ''
+          test ${
+            if patch == null
+            then "yes"
+            else "no"
+          } = yes
+          test ${lib.escapeShellArg sdPatch.structuredExtraConfig.MMC_SDHCI_IPROC.content.tristate} = y
+        ''
+        else ''
+          test ${
+            if patch == null
+            then "yes"
+            else "no"
+          } = yes
+        ''
+      }
+      ${lib.concatMapStrings (rel: ''
+          found=0
+          for root in ${lib.concatMapStringsSep " " (p: lib.escapeShellArg p) fw}; do
+            if [ -f "$root/lib/firmware/${rel}" ]; then
+              found=1
+            fi
+          done
+          if [ "$found" != 1 ]; then
+            echo ${lib.escapeShellArg "${board} firmware lacks ${rel}"} >&2
+            exit 1
+          fi
+        '')
+        firmwareFiles.${board}}
+      ${lib.optionalString (board == "rockpi-4c") ''
+        for root in ${lib.concatMapStringsSep " " (p: lib.escapeShellArg p) fw}; do
+          if [ -f "$root/lib/firmware/brcm/brcmfmac43456-sdio.txt" ]; then
+            cmp "$root/lib/firmware/brcm/brcmfmac43456-sdio.txt" \
+              "$root/lib/firmware/brcm/brcmfmac43456-sdio.radxa,rockpi4c.txt"
+          fi
+        done
+      ''}
+    '';
+    rejectScript = board: ''
+      if [ "${
+        if (bad [ (radioModule board "2g") ]).success
+        then "yes"
+        else "no"
+      }" = yes ]; then
+        echo ${lib.escapeShellArg "${board} accepted match.onboard"} >&2
+        exit 1
+      fi
+    '';
+  in
+    if radioBoards == [] || missingFiles != [] || extraFiles != [] || bandMismatch != [] || securityMismatch != []
+    then throw "allow.onboard and the onboard firmware list disagree: missing ${toString missingFiles}, extra ${toString extraFiles}, bands ${toString bandMismatch}, security ${toString securityMismatch}."
+    else
+      pkgs.runCommand "eval-wifi-onboard-boards" {} ''
+        set -eu
+        ${lib.concatMapStrings boardScript radioBoards}
+        ${lib.concatMapStrings rejectScript plainBoards}
+        echo ok > "$out"
+      '';
   eval-wwan-qmi = let
     os = mk [
       base
@@ -6129,6 +6661,22 @@ in {
         match.usbVendorProduct = "0a12:0001";
       };
     };
+    potatoSta = one "le-potato" {
+      cafe0 = {
+        class = "wifi";
+        match.usbVendorProduct = "0bda:8179";
+      };
+    };
+    potatoPair = one "le-potato" {
+      cafe0 = {
+        class = "wifi";
+        match.usbVendorProduct = "0bda:8179";
+      };
+      ap0 = {
+        class = "wifi";
+        match.usbVendorProduct = "0bda:8176";
+      };
+    };
     pi2 = bare "rpi2";
     pi3 = bare "rpi3";
     pi4 = bare "rpi4";
@@ -6209,6 +6757,11 @@ in {
       ${eq potato "BT" "n"}
       ${eq potatoFull "RTL8192CU" "m"}
       ${eq potatoFull "RTL8XXXU" "n"}
+      ${eq potatoSta "RTL8XXXU" "m"}
+      ${eq potatoSta "RTL8192CU" "n"}
+      ${eq potatoSta "WLAN_VENDOR_REALTEK" "y"}
+      ${eq potatoPair "RTL8192CU" "m"}
+      ${eq potatoPair "RTL8XXXU" "m"}
       ${eq potatoFull "USB_NET_QMI_WWAN" "m"}
       ${eq potatoFull "USB_WDM" "m"}
       ${eq potatoFull "USB_NET_CDCETHER" "n"}

@@ -34,6 +34,11 @@
     ++ lib.mapAttrsToList (_: ap: ap.passphraseSecret) (
       lib.filterAttrs (_: ap: ap.passphraseSecret != null) cfg.network.wifi
     )
+    ++ lib.concatLists (lib.mapAttrsToList (_: wan:
+      map (net: net.passphraseSecret) (
+        lib.filter (net: net.passphraseSecret != null) wan.wifi.networks
+      ))
+    cfg.network.wans)
     ++ lib.mapAttrsToList (_: sub: sub.urlSecret) (
       lib.filterAttrs (_: sub: sub.urlSecret != null) cfg.proxy.subscriptions
     )

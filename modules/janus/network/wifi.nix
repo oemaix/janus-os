@@ -167,6 +167,80 @@
       "rtlwifi/rtl8192cufw_TMSC.bin"
     ];
   };
+  # rtl8xxxu requests this name for 0bda:8179. docs/10 §4.11.
+  rtl8188euFirmware = firmwareSlice {
+    pname = "rtl8188eu-firmware";
+    description = "Firmware for RTL8188EUS";
+    paths = ["rtlwifi/rtl8188eufw.bin"];
+  };
+  # 0bda:8176 is also in the rtl8xxxu table. Bind that ID to rtl8192cu
+  # and leave rtl8xxxu loaded for 0bda:8179. Module list order is not
+  # load order (T-0006). docs/10 §4.4, D-0063.
+  rtl8192cuBind = pkgs.writeShellScript "janus-rtl8192cu-bind" ''
+    set -eu
+    bind_one() {
+      devpath=$1
+      kernel=$2
+      case "$devpath" in
+        /sys/*) sys=$devpath ;;
+        *) sys="/sys$devpath" ;;
+      esac
+      [ -e "$sys" ] || return 0
+      drv=""
+      if [ -L "$sys/driver" ]; then
+        drv=$(basename "$(readlink "$sys/driver")")
+      fi
+      if [ "$drv" = rtl8192cu ]; then
+        return 0
+      fi
+      if [ "$drv" = rtl8xxxu ]; then
+        printf '%s\n' "$kernel" > /sys/bus/usb/drivers/rtl8xxxu/unbind
+      fi
+      if [ -e /sys/bus/usb/drivers/rtl8xxxu/remove_id ]; then
+        printf '%s\n' "0bda 8176" > /sys/bus/usb/drivers/rtl8xxxu/remove_id || true
+      fi
+      if [ -e /sys/bus/usb/drivers/rtl8192cu/bind ]; then
+        printf '%s\n' "$kernel" > /sys/bus/usb/drivers/rtl8192cu/bind || true
+      fi
+    }
+    if [ "$#" -eq 2 ]; then
+      bind_one "$1" "$2"
+      exit 0
+    fi
+    if [ -e /sys/bus/usb/drivers/rtl8xxxu/remove_id ]; then
+      printf '%s\n' "0bda 8176" > /sys/bus/usb/drivers/rtl8xxxu/remove_id || true
+    fi
+    for sys in /sys/bus/usb/devices/*:*; do
+      [ -d "$sys" ] || continue
+      parent=$(dirname "$sys")
+      vendor=$(cat "$parent/idVendor" 2>/dev/null || true)
+      product=$(cat "$parent/idProduct" 2>/dev/null || true)
+      if [ "$vendor" = 0bda ] && [ "$product" = 8176 ]; then
+        bind_one "$sys" "$(basename "$sys")"
+      fi
+    done
+  '';
+
+  # The 43436s chip asks for its own CLM name. The Raspberry Pi package
+  # ships that blob only as brcmfmac43436-sdio.clm_blob. docs/10 §4.7.
+  zero2wClm = janusBuildPkgs.runCommand "brcmfmac43436s-clm" {
+    preferLocalBuild = true;
+    meta = {
+      description = "43436 CLM blob under the 43436s names the Zero 2 W requests";
+      license = lib.licenses.unfreeRedistributableFirmware;
+      sourceProvenance = with lib.sourceTypes; [binaryFirmware];
+    };
+  } ''
+    mkdir -p "$out/lib/firmware/brcm"
+    src=${pkgs.raspberrypiWirelessFirmware}/lib/firmware/brcm/brcmfmac43436-sdio.clm_blob
+    cp -L "$src" "$out/lib/firmware/brcm/brcmfmac43436s-sdio.clm_blob"
+    cp -L "$src" "$out/lib/firmware/brcm/brcmfmac43436s-sdio.raspberrypi,model-zero-2-w.clm_blob"
+  '';
+
+  piBoards = ["rpi-zero-2w" "rpi3" "rpi4"];
+  piRadio = lib.elem config.janus.hardware.board piBoards;
+  # Pi 4 enables this host for the SD card in the board profile. docs/10 §4.12.
+  piSdioAp = lib.elem config.janus.hardware.board ["rpi-zero-2w" "rpi3"];
 
   vendor = id: builtins.substring 0 4 id;
   product = id: builtins.substring 5 4 id;
@@ -197,19 +271,41 @@ in {
         (lib.mkIf (lib.elem "0e8d:7612" declaredUsbIds) [mt7612uFirmware])
         (lib.mkIf (lib.elem "0e8d:7961" declaredUsbIds) [mt7921auFirmware])
         (lib.mkIf (lib.elem "0bda:8176" declaredUsbIds) [rtl8188cusFirmware])
+        (lib.mkIf (lib.elem "0bda:8179" declaredUsbIds) [rtl8188euFirmware])
       ];
+      # Declaring the stick loads its driver. An access point is not required.
+      boot.kernelModules = lib.mkMerge [
+        (lib.mkIf (lib.elem "0bda:8176" declaredUsbIds) ["rtl8192cu"])
+        (lib.mkIf (lib.elem "0bda:8179" declaredUsbIds) ["rtl8xxxu"])
+      ];
+      services.udev.extraRules = lib.mkIf (lib.elem "0bda:8176" declaredUsbIds) ''
+        ACTION=="add", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_interface", ATTRS{idVendor}=="0bda", ATTRS{idProduct}=="8176", RUN+="${rtl8192cuBind} %p %k"
+      '';
+      systemd.services = lib.mkIf (lib.elem "0bda:8176" declaredUsbIds) {
+        janus-rtl8192cu-bind = {
+          description = "Bind 0bda:8176 to rtl8192cu";
+          wantedBy = ["multi-user.target"];
+          after = ["systemd-modules-load.service" "systemd-udev-settle.service"];
+          serviceConfig = {
+            Type = "oneshot";
+            RemainAfterExit = true;
+            ExecStart = rtl8192cuBind;
+          };
+        };
+      };
     }
     (lib.mkIf (apNames != []) {
       boot.kernelModules = lib.mkMerge [
-        (lib.mkIf (lib.any (n: usbId n == "0bda:8176") apNames) ["rtl8192cu"])
         # The Arasan host is not in the initrd. Stage 2 loads it with brcmfmac.
-        (lib.mkIf (onboardNames != [] && config.janus.hardware.board == "rpi-zero-2w") ["sdhci_iproc"])
+        # The Pi 4 host is built in, so it is not named here.
+        (lib.mkIf (onboardNames != [] && lib.elem config.janus.hardware.board ["rpi-zero-2w" "rpi3"]) ["sdhci_iproc"])
         (lib.mkIf (onboardNames != []) ["brcmfmac"])
       ];
-      # arm64 defconfig builds brcmfmac. The Zero 2 W radio sits on the
-      # Arasan SDHCI, which that defconfig leaves out. docs/10 §4.7.
-      # The ROCK Pi 4C radio is on dw_mmc, which that defconfig builds in.
-      boot.kernelPatches = lib.mkIf (onboardNames != [] && config.janus.hardware.board == "rpi-zero-2w") [
+      # The NixOS arm64 config answers MMC_SDHCI_IPROC=m. The Pi 3 profile
+      # pins n until this access point. The Pi 4 profile pins y because
+      # that host is also the SD card. docs/10 §4.7 and §4.12, T-0007.
+      # The ROCK Pi 4C radio is on dw_mmc.
+      boot.kernelPatches = lib.mkIf (onboardNames != [] && piSdioAp) [
         {
           name = "janus-rpi-onboard-wifi";
           patch = null;
@@ -220,9 +316,10 @@ in {
           };
         }
       ];
-      hardware.firmware = lib.mkIf (onboardNames != [] && config.janus.hardware.board == "rpi-zero-2w") [pkgs.raspberrypiWirelessFirmware];
-      boot.blacklistedKernelModules = lib.mkIf (lib.any (n: usbId n == "0bda:8176") apNames) ["rtl8xxxu"];
-
+      hardware.firmware = lib.mkIf (onboardNames != [] && piRadio) (
+        [pkgs.raspberrypiWirelessFirmware]
+        ++ lib.optional (config.janus.hardware.board == "rpi-zero-2w") zero2wClm
+      );
       systemd.network.links = lib.listToAttrs (map (name: {
           name = "10-wifi-${name}";
           value = {
@@ -244,11 +341,11 @@ in {
           lib.optionals (onboardAp ap) [
             {
               assertion = row != null && lib.elem ap.band (row.bands or []);
-              message = "janus.network.wifi.${name}.band = ${ap.band} is not a band of the onboard radio. docs/10 §4.7 and §4.10.";
+              message = "janus.network.wifi.${name}.band = ${ap.band} is not a band of the onboard radio. docs/10 §4.7, §4.10, and §4.12.";
             }
             {
               assertion = row != null && lib.elem ap.security (row.security or []);
-              message = "janus.network.wifi.${name}.security = ${ap.security} is not supported on the onboard radio. docs/10 §4.7 and §4.10.";
+              message = "janus.network.wifi.${name}.security = ${ap.security} is not supported on the onboard radio. docs/10 §4.7, §4.10, and §4.12.";
             }
             {
               assertion =
@@ -259,14 +356,14 @@ in {
                   == "auto"
                   || (lib.isInt ap.channel && lib.elem ap.channel (row.channels or []))
                 );
-              message = "janus.network.wifi.${name}.channel is not a channel of the onboard radio. docs/10 §4.7 and §4.10.";
+              message = "janus.network.wifi.${name}.channel is not a channel of the onboard radio. docs/10 §4.7, §4.10, and §4.12.";
             }
           ])
         apNames
         ++ [
           {
             assertion = lib.length onboardNames <= 1;
-            message = "Only one access point can use the onboard radio. docs/10 §4.7.";
+            message = "Only one access point can use the onboard radio. docs/10 §4.7, §4.10, and §4.12.";
           }
         ];
 
