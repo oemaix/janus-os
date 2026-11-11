@@ -2762,7 +2762,9 @@ in {
       row = allow.onboard.${board};
       band = lib.last row.bands;
       os = mk [ (radioModule board band) ];
-      script = os.config.systemd.services.janus-hostapd-home.serviceConfig.ExecStart;
+      # The script derivation is aarch64. Interpolating it builds hostapd
+      # on the runner. T-0025, T-0026.
+      script = hostapdText "hostapd-${board}" os.config.systemd.services.janus-hostapd-home.serviceConfig.ExecStart;
       member = os.config.systemd.network.networks."30-member-lan-home";
       link = os.config.systemd.network.links."10-wifi-home";
       patch = lib.findFirst (p: p.name == "janus-rpi-onboard-wifi") null os.config.boot.kernelPatches;
