@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-11-04 |
+| Last updated | 2026-11-12 |
 
 A tarpit is a failure that looks like progress until a later build or
 boot. The binding choice stays in the cited document. This list is the
@@ -43,3 +43,4 @@ does not undo it.
 | T-0024 | kept | `/run/janus-http/lock` at mode `0700` and owner `root` locks out `janus-http`. Microphone and playback then fail. The directory is created with `install -d -m 0700 -o janus-http -g janus-http`. Do not chmod `/run/janus-http`. See T-0021. |
 | T-0025 | kept | An x86_64 eval check that string-interpolates the aarch64 Soloist package builds that derivation. The board strategy is emulated, so the builder is aarch64 (docs/09 §4). `autoPatchelf` skips an ELF of another architecture, so the package cannot move to the x86_64 stdenv. The GitHub runner has no binfmt and Nix stops: `Required system: 'aarch64-linux'`. Keep that store path out of the check unless the check's builder is aarch64. `eval-soloist-on` still runs the x86_64 binary. |
 | T-0026 | kept | `eval-wifi-onboard-boards` string-interpolated `janus-hostapd-home`'s `ExecStart`. Pi and ROCK boards are emulated, so that script is an aarch64 derivation and pulls aarch64 `hostapd` (docs/09 §4). The GitHub runner has no binfmt and Nix stops: `Required system: 'aarch64-linux'`. Read the script text and drop its store context with `hostapdText`, as `eval-wifi-onboard` already does. See T-0025. |
+| T-0027 | kept | NixOS leaves `boot.initrd.includeDefaultModules` true, so the initrd list gains `ahci`, `ata_piix`, `nvme`, the `sata_*` and `pata_*` drivers, and the USB HID set. `modules-shrunk` stops on the first name that is neither built in nor a `.ko`. `matched` answers `SATA_AHCI` with `n` except on the Yanyu, where the profile lists `ahci` and the symbol is `m`. `BLK_DEV_NVME` is `n` on the Zero 2 W, Le Potato, the Pi 4, and the Yanyu, and the NixOS list still names `nvme`. `ahci` sorts first, so the closure stops there. `boot.initrd.allowMissingModules` stays false (T-0005). The image sets `includeDefaultModules` false. Each board profile lists the modules its initrd loads, and the storage module adds `f2fs`, `vfat`, `nls_cp437`, and `nls_iso8859_1`. See *10* §3. |

@@ -479,6 +479,12 @@ in {
     system.etc.overlay.mutable = false;
     boot.initrd.systemd.enable = true;
     systemd.sysusers.enable = true;
+    # The NixOS default list adds ahci and nvme. matched answers
+    # SATA_AHCI n except on the Yanyu, and BLK_DEV_NVME n on the boards
+    # that do not boot from NVMe. modules-shrunk stops on the first name
+    # that is neither built in nor a .ko. Each board profile lists the
+    # modules this initrd loads. allowMissingModules stays false. T-0005, T-0027.
+    boot.initrd.includeDefaultModules = false;
     boot.initrd.supportedFilesystems = ["f2fs" "vfat"];
     boot.initrd.availableKernelModules = ["f2fs" "vfat" "nls_cp437" "nls_iso8859_1"];
 

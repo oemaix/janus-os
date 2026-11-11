@@ -6695,6 +6695,34 @@ in {
       };
     };
     listed = os: lib.concatStringsSep " " os.config.boot.initrd.availableKernelModules;
+    # Names NixOS appends while includeDefaultModules stays true. T-0027.
+    nixDefaults = [
+      "ahci"
+      "ata_piix"
+      "nvme"
+      "sata_nv"
+      "sata_via"
+      "sata_sis"
+      "sata_uli"
+      "pata_marvell"
+      "usbhid"
+    ];
+    reject = os: names: ''
+      mods=${lib.escapeShellArg (listed os)}
+      for name in ${lib.concatMapStringsSep " " lib.escapeShellArg names}; do
+        if printf '%s\n' "$mods" | grep -qw "$name"; then
+          echo "initrd lists $name" >&2
+          exit 1
+        fi
+      done
+    '';
+    off = os: attr: ''
+      test ${
+        if os.config.boot.initrd.${attr}
+        then "yes"
+        else "no"
+      } = no
+    '';
   in
     pkgs.runCommand "eval-kernel-profile-matched" {} ''
       ${eq vm "VIRTIO_NET" "m"}
@@ -6811,6 +6839,25 @@ in {
       fi
       printf '%s\n' ${lib.escapeShellArg (listed pi2)} | grep -qw bcm2835
       printf '%s\n' ${lib.escapeShellArg (listed pi2)} | grep -qw sdhci_iproc
+      ${off zero "includeDefaultModules"}
+      ${off zero "allowMissingModules"}
+      ${off yanyu "includeDefaultModules"}
+      ${off vf2 "includeDefaultModules"}
+      ${off vm "includeDefaultModules"}
+      ${reject zero nixDefaults}
+      ${reject potato nixDefaults}
+      ${reject pi4 nixDefaults}
+      ${reject vm nixDefaults}
+      ${reject yanyu (lib.remove "ahci" nixDefaults)}
+      ${reject vf2 (lib.remove "nvme" nixDefaults)}
+      printf '%s\n' ${lib.escapeShellArg (listed zero)} | grep -qw mmc_block
+      printf '%s\n' ${lib.escapeShellArg (listed zero)} | grep -qw dwc2
+      printf '%s\n' ${lib.escapeShellArg (listed zero)} | grep -qw f2fs
+      printf '%s\n' ${lib.escapeShellArg (listed zero)} | grep -qw vfat
+      printf '%s\n' ${lib.escapeShellArg (listed potato)} | grep -qw mmc_block
+      printf '%s\n' ${lib.escapeShellArg (listed yanyu)} | grep -qw ahci
+      printf '%s\n' ${lib.escapeShellArg (listed vf2)} | grep -qw nvme
+      printf '%s\n' ${lib.escapeShellArg (listed vm)} | grep -qw virtio_blk
       echo ok > "$out"
     '';
   eval-kernel-profile = let
@@ -6843,6 +6890,20 @@ in {
   in
     pkgs.runCommand "eval-kernel-profile" {} ''
       test ${lib.escapeShellArg standard.config.janus.system.kernelProfile} = standard
+      test ${
+        if standard.config.boot.initrd.includeDefaultModules
+        then "yes"
+        else "no"
+      } = no
+      test ${
+        if compact.config.boot.initrd.includeDefaultModules
+        then "yes"
+        else "no"
+      } = no
+      if printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " standard.config.boot.initrd.availableKernelModules)} | grep -Eq '(^| )(ahci|ata_piix|sata_nv)( |$)'; then
+        echo "standard initrd still lists a NixOS default block module" >&2
+        exit 1
+      fi
       test ${
         if patchOf standard == null
         then "yes"

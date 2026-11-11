@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-11-04 |
+| Last updated | 2026-11-12 |
 
 ## 1. Terminology
 
@@ -50,6 +50,13 @@ Each board profile (`modules/boards/<board>.nix`) provides:
   from SoC serial; RPi USB NIC enumeration order → match by path);
 * thermal/fan hooks if any; onboard status LEDs when the board has them
   (§3.2 for the NanoPi R4S).
+
+The image sets `boot.initrd.includeDefaultModules` to false
+(`modules/janus/storage/default.nix`). The initrd contains the modules
+that board profile lists, plus `f2fs`, `vfat`, `nls_cp437`, and
+`nls_iso8859_1`. It does not add the NixOS default set. The Yanyu
+profile lists `ahci`, and that board builds `SATA_AHCI` as a module.
+`boot.initrd.allowMissingModules` stays false (T-0005, T-0027).
 
 ### 3.1 Yanyu STX-R19F
 
