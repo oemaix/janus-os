@@ -84,6 +84,8 @@ power-cut. Tier 3 ships the profile. The Future list stays after 1.0.
 * NXP Ara240 runtime (*02* UC-24, FR-HW-010, FR-SVC-002). Another device calls `janus.edge.api` on the router when it needs an edge LLM of 0.5B to 3B parameters (D-0060, D-0062). The HTTP face is the vendor Chat Completions service (eIQ AAF Connector) in front of AraRT. Zones default to `lan` and `mgmt`. `wan` is refused. AraRT's own socket stays on the board. No board and no USB or PCI ID is accepted yet. The published client library name is `libaraclient_aarch64.so`. Other architectures are not assumed (D-0058). Vision models are out. Speech stays on the CPU.
 * Hailo-10H runtime (*02* UC-24, FR-HW-011, FR-SVC-003, D-0060). Same role and the same model size as the Ara240 row. The module is PCIe, M.2, with its own DRAM. HailoRT is the `master` branch. The HTTP face is HailoRT GenAI, compatible with OpenAI and Ollama, on `janus.edge.api` (D-0062). Hailo-8 and Hailo-8L are not this row. No PCI ID is accepted yet. Vision models are out. Speech stays on the CPU. Hailo's published example is about 2B parameters. 3B is the top of this plan and is not that example.
 * Open Wi-Fi, WPA-Enterprise, a station network added on the router without a rebuild, and captive-portal completion (*06* §11, FR-NET-018, D-0063).
+* Candidate: when Ethernet, a Wi-Fi station, and WWAN are up together, prefer Ethernet, then the station, then WWAN (D-0065). The order today is role and metric (D-0036). The health check promotes one backup (FR-NET-007). The cable stays `default` and the station stays `backup` (D-0063).
+* Candidate: one Wi-Fi radio as an access point and a station at the same time (D-0066). A profile that lists `ap` and `sta` still means either role, and one peripheral still has one role (D-0063, Q-0057).
 
 ## 2. Progress
 
@@ -179,6 +181,13 @@ tree does not mean that behavior exists. Stubs are not finished features.
   §4.12). Pi 3 is 2.4 GHz. Pi 4 is 2.4 GHz or 5 GHz. A Pi 2 v1.2 leaves
   `match.onboard` unset. The Pi 3 boot trees are mainline
   `bcm2837-rpi-3-b.dtb` and `bcm2837-rpi-3-b-plus.dtb`.
+* A WPA2 station uplink is `janus.network.wans.<name>.mode = "wifi"`
+  (D-0063, FR-NET-018). `0bda:8179` is `sta` on `rtl8xxxu` with
+  `rtlwifi/rtl8188eufw.bin`. `wpa_supplicant` associates and networkd
+  takes DHCP on `wifi-<uplink>` in the wan zone. `0bda:8176` is bound
+  to `rtl8192cu` by USB ID, and `rtl8xxxu` is not blacklisted. Open
+  networks, WPA-Enterprise, a network added without a rebuild, and
+  captive-portal completion stay after 1.0.
 * Image builder: GPT, FAT boot, f2fs root, f2fs store, f2fs state.
   `nix build .#checks.x86_64-linux.vm-x86_64-test` boots that image.
 * Options reference: `nix build .#docs-options`.
@@ -253,6 +262,8 @@ tree does not mean that behavior exists. Stubs are not finished features.
   hot-override allowlist.
   D-0057 stays open for `compact` embedded and USB audio, and for Ara240 and Hailo-10H. `matched` includes the embedded or USB driver when `janus.audio.enable` is true (D-0061). Bluetooth A2DP is D-0061.
   D-0058 records the Soloist download and still asks how Ara240 and Hailo-10H reach an operator image.
+  D-0065 asks whether Ethernet, then a Wi-Fi station, then WWAN, becomes the uplink order. Role and metric stay the order until that row is decided (D-0036).
+  D-0066 asks whether one radio may be an access point and a station together. One peripheral still has one role (D-0063).
 * sing-box renders D-0037 through D-0042: fake-IP for names that LAN
   will proxy, `strip-for-proxied` per name, one policy per LAN, region
   bootstrap addresses, and `janus dns check` once per LAN. xray 26 routes
@@ -337,11 +348,6 @@ tree does not mean that behavior exists. Stubs are not finished features.
   with the multilingual `base` weights, and released Piper. Speech
   synthesis is not an accelerator model: Hailo runs Piper on the host
   CPU, and NXP's VITS TTS is documented for i.MX NPUs.
-* The station uplink (D-0063, FR-NET-018, *10* §4.11) is specified and not
-  lowered. The allowlist has no `0bda:8179`. An access point on
-  `0bda:8176` still blacklists the `rtl8xxxu` module. The definition
-  assigns `rtl8192cu` to that ID only and leaves `rtl8xxxu` loaded for
-  the station stick.
 * The board image must not contain a compiler or `janus-build`. The `nix`
   binary stays for activation and for `nix-store --import` (*05*, *09*
   §8.2). `nix.enable = false`, nixpkgs sources are absent, and `/nix` is

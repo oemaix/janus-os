@@ -274,7 +274,7 @@ are not part of the profile. QMI and MBIM are not how this unit attaches.
 | MediaTek MT7921AU | `0e8d:7961` | wifi (AP) | supported (recent kernel) |
 | Realtek RTL8812AU | `0bda:8812` | wifi | unsupported (out-of-tree driver) |
 | Realtek RTL8188CUS | `0bda:8176` | wifi (AP, 2.4 GHz HT20) | supported via in-tree `rtl8192cu` (§4.4) |
-| Realtek RTL8188EUS | `0bda:8179` | wifi (STA, 2.4 GHz HT20) | specified, not lowered (*13*, §4.11, D-0063). No allowlist row. |
+| Realtek RTL8188EUS | `0bda:8179` | wifi (STA, 2.4 GHz HT20) | supported (§4.11, D-0063) |
 | Raspberry Pi Zero 2 W onboard CYW43430 | board radio, `match.onboard` | wifi (AP, 2.4 GHz HT20, WPA2) | supported via in-tree `brcmfmac` (§4.7) |
 | ROCK Pi 4C onboard AP6256 | board radio, `match.onboard` | wifi (AP, 2.4/5 GHz HT20, WPA2) | supported via in-tree `brcmfmac` (§4.10) |
 | Raspberry Pi 3 / 3+ onboard CYW43430 / CYW43455 | board radio, `match.onboard` | wifi (AP, 2.4 GHz HT20, WPA2) | supported via in-tree `brcmfmac` (§4.12) |
@@ -312,7 +312,8 @@ both true, and they are not the same driver.
 D-0063 assigns `0bda:8176` to `rtl8192cu` by USB ID and leaves `rtl8xxxu`
 loaded, so the two drivers do not both attach. `rtl8xxxu` is the driver
 for `0bda:8179` (§4.11). A module-wide blacklist of `rtl8xxxu` removes
-that station. This tree still blacklists the module (*13*). Any board may declare
+that station. The image binds this USB ID to `rtl8192cu` and does not
+blacklist `rtl8xxxu`. Any board may declare
 this USB id. The Le Potato row in §3 records the lab unit that confirmed
 the stick. Declaring the peripheral copies `rtlwifi/rtl8192cufw.bin`,
 `rtl8192cufw_A.bin`, `rtl8192cufw_B.bin`, and `rtl8192cufw_TMSC.bin` from
@@ -505,8 +506,9 @@ access point (FR-NET-018, D-0063). A build is acceptable when `iw list`
 shows station mode for this phy. The station uplink is a WAN with
 `mode = "wifi"` (*06* §4, §11). `wpa_supplicant` associates, networkd
 takes DHCP, and the interface joins the `wan` zone. The dongle keeps
-its permanent MAC. This station is specified and not lowered (*13*).
-The allowlist has no `0bda:8179`, and `wans.<name>.mode` has no `wifi`.
+its permanent MAC. The interface name is `wifi-<uplink>`. The allowlist
+lists this ID as `sta`. Declaring it copies `rtlwifi/rtl8188eufw.bin`
+and loads `rtl8xxxu`.
 
 The portable Le Potato uses this stick as `role = "backup"` and the
 §4.4 stick as the LAN access point. §4.4 assigns `0bda:8176` to

@@ -1826,9 +1826,199 @@ in {
         echo "hostapd config is still a shell heredoc" >&2
         exit 1
       fi
-      echo ${lib.escapeShellArg (lib.concatStrings os.config.boot.blacklistedKernelModules)} | grep -q rtl8xxxu
+      printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " os.config.boot.blacklistedKernelModules)} > blacklist
+      if grep -q rtl8xxxu blacklist; then
+        echo "0bda:8176 blacklists rtl8xxxu" >&2
+        exit 1
+      fi
+      printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " os.config.boot.kernelModules)} > modules
+      grep -q rtl8192cu modules
+      printf '%s\n' ${lib.escapeShellArg os.config.services.udev.extraRules} > rules
+      grep -q 'ENV{DEVTYPE}=="usb_interface"' rules
+      grep -q 'ATTRS{idProduct}=="8176"' rules
+      test ${
+        if os.config.systemd.services ? janus-rtl8192cu-bind
+        then "yes"
+        else "no"
+      } = yes
       echo ok > "$out"
     '';
+  eval-wifi-sta = let
+    os = mk [
+      base
+      {
+        janus.security.allowInlineSecrets = true;
+        janus.hardware.peripherals.cafe0 = {
+          class = "wifi";
+          match.usbVendorProduct = "0bda:8179";
+        };
+        janus.hardware.peripherals.ap0 = {
+          class = "wifi";
+          match.usbVendorProduct = "0bda:8176";
+        };
+        janus.network.lans.lan = {
+          members = ["lan"];
+          address = "192.168.10.1";
+          prefixLength = 24;
+        };
+        janus.network.wans.cafe = {
+          uplink = "cafe0";
+          mode = "wifi";
+          role = "backup";
+          wifi.networks = [
+            {
+              ssid = "Cafeteria";
+              passphrase = "secret12";
+              priority = 10;
+            }
+          ];
+        };
+      }
+    ];
+    script = os.config.systemd.services.janus-wpa-cafe.serviceConfig.ExecStart;
+    net = os.config.systemd.network.networks."40-wan-cafe";
+    names = lib.concatMapStringsSep " " (p: p.name) (
+      lib.filter (p: lib.isAttrs p && lib.isDerivation p) (
+        lib.flatten os.options.hardware.firmware.definitions
+      )
+    );
+  in
+    pkgs.runCommand "eval-wifi-sta" {} ''
+      test ${lib.escapeShellArg net.matchConfig.Name} = wifi-cafe0
+      test ${lib.escapeShellArg net.networkConfig.DHCP} = ipv4
+      test ${toString net.dhcpV4Config.RouteMetric} = 1100
+      test ${
+        if net.dhcpV4Config.UseRoutes
+        then "yes"
+        else "no"
+      } = yes
+      test ${
+        if net.dhcpV4Config.UseDNS
+        then "yes"
+        else "no"
+      } = no
+      test ${
+        if net.linkConfig ? MACAddress
+        then "yes"
+        else "no"
+      } = no
+      grep -q 'key_mgmt=WPA-PSK' ${script}
+      grep -q 'priority=10' ${script}
+      grep -q 'country=CN' ${script}
+      grep -q ${lib.escapeShellArg "ssid=%s"} ${script}
+      grep -q ${lib.escapeShellArg "'\"Cafeteria\"'"} ${script}
+      if grep -q 'key_mgmt=NONE' ${script} || grep -q 'key_mgmt=WPA-EAP' ${script}; then
+        echo "station config is not WPA2-PSK" >&2
+        exit 1
+      fi
+      printf '%s\n' ${lib.escapeShellArg os.config.networking.nftables.tables.janus.content} > nft
+      grep -q wifi-cafe0 nft
+      printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " os.config.boot.kernelModules)} > modules
+      grep -q rtl8xxxu modules
+      grep -q rtl8192cu modules
+      printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " os.config.boot.blacklistedKernelModules)} > blacklist
+      if grep -q rtl8xxxu blacklist; then
+        echo "station image blacklists rtl8xxxu" >&2
+        exit 1
+      fi
+      printf '%s\n' ${lib.escapeShellArg os.config.services.udev.extraRules} > rules
+      grep -q 'NAME="wifi-cafe0"' rules
+      grep -q 'ENV{DEVTYPE}=="usb_interface"' rules
+      printf '%s\n' ${lib.escapeShellArg names} > names
+      grep -q rtl8188eu-firmware names
+      grep -q rtl8192cu-firmware names
+      echo ok > "$out"
+    '';
+  eval-wifi-sta-ap = fail "eval-wifi-sta-ap" [
+    base
+    {
+      janus.security.allowInlineSecrets = true;
+      janus.hardware.peripherals.cafe0 = {
+        class = "wifi";
+        match.usbVendorProduct = "0bda:8179";
+      };
+      janus.network.lans.lan = {
+        members = ["lan" "room"];
+        address = "192.168.10.1";
+        prefixLength = 24;
+      };
+      janus.network.wifi.room = {
+        peripheral = "cafe0";
+        ssid = "janus";
+        passphrase = "secret12";
+        lan = "lan";
+      };
+    }
+  ];
+  eval-wifi-sta-role = fail "eval-wifi-sta-role" [
+    base
+    {
+      janus.security.allowInlineSecrets = true;
+      janus.hardware.peripherals.stick = {
+        class = "wifi";
+        match.usbVendorProduct = "0bda:8176";
+      };
+      janus.network.lans.lan = {
+        members = ["lan" "room"];
+        address = "192.168.10.1";
+        prefixLength = 24;
+      };
+      janus.network.wifi.room = {
+        peripheral = "stick";
+        ssid = "janus";
+        passphrase = "secret12";
+        lan = "lan";
+      };
+      janus.network.wans.cafe = {
+        uplink = "stick";
+        mode = "wifi";
+        role = "backup";
+        wifi.networks = [
+          {
+            ssid = "Cafeteria";
+            passphrase = "secret12";
+          }
+        ];
+      };
+    }
+  ];
+  eval-wifi-sta-nosta = fail "eval-wifi-sta-nosta" [
+    base
+    {
+      janus.security.allowInlineSecrets = true;
+      janus.hardware.peripherals.stick = {
+        class = "wifi";
+        match.usbVendorProduct = "0bda:8176";
+        wifi.capabilities = ["ap"];
+      };
+      janus.network.wans.cafe = {
+        uplink = "stick";
+        mode = "wifi";
+        wifi.networks = [
+          {
+            ssid = "Cafeteria";
+            passphrase = "secret12";
+          }
+        ];
+      };
+    }
+  ];
+  eval-wifi-sta-open = fail "eval-wifi-sta-open" [
+    base
+    {
+      janus.hardware.peripherals.cafe0 = {
+        class = "wifi";
+        match.usbVendorProduct = "0bda:8179";
+      };
+      janus.network.wans.cafe = {
+        uplink = "cafe0";
+        mode = "wifi";
+        wifi.networks = [
+          {ssid = "Cafeteria";}
+        ];
+      };
+    }
+  ];
   eval-wifi-country = let
     wifi = extra:
       mk [
@@ -6469,6 +6659,22 @@ in {
         match.usbVendorProduct = "0a12:0001";
       };
     };
+    potatoSta = one "le-potato" {
+      cafe0 = {
+        class = "wifi";
+        match.usbVendorProduct = "0bda:8179";
+      };
+    };
+    potatoPair = one "le-potato" {
+      cafe0 = {
+        class = "wifi";
+        match.usbVendorProduct = "0bda:8179";
+      };
+      ap0 = {
+        class = "wifi";
+        match.usbVendorProduct = "0bda:8176";
+      };
+    };
     pi2 = bare "rpi2";
     pi3 = bare "rpi3";
     pi4 = bare "rpi4";
@@ -6549,6 +6755,11 @@ in {
       ${eq potato "BT" "n"}
       ${eq potatoFull "RTL8192CU" "m"}
       ${eq potatoFull "RTL8XXXU" "n"}
+      ${eq potatoSta "RTL8XXXU" "m"}
+      ${eq potatoSta "RTL8192CU" "n"}
+      ${eq potatoSta "WLAN_VENDOR_REALTEK" "y"}
+      ${eq potatoPair "RTL8192CU" "m"}
+      ${eq potatoPair "RTL8XXXU" "m"}
       ${eq potatoFull "USB_NET_QMI_WWAN" "m"}
       ${eq potatoFull "USB_WDM" "m"}
       ${eq potatoFull "USB_NET_CDCETHER" "n"}

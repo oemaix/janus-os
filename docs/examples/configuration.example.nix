@@ -50,6 +50,9 @@
     # wifiCountry follows janus.system.region unless set. docs/06 §11.
     # Add "ap" to the LAN members. docs/10 §4.7, §4.10, and §4.12.
     # radio = { class = "wifi"; match.onboard = true; };
+
+    # RTL8188EUS as a WPA2 station. The passphrase is a sops file.
+    # cafe0 = { class = "wifi"; match.usbVendorProduct = "0bda:8179"; };
   };
 
   ############################################################################
@@ -157,6 +160,16 @@
       };
       ipv6.mode = "passthrough"; # IPv6CP + DHCPv6-PD on the PPPoE link
     };
+
+    # WPA2 station. role = backup keeps a cabled default route (D-0036).
+    # cafe = {
+    #   uplink = "cafe0";
+    #   mode = "wifi";
+    #   role = "backup";
+    #   wifi.networks = [
+    #     { ssid = "Cafeteria"; passphraseSecret = "wifi-cafe"; priority = 10; }
+    #   ];
+    # };
 
     # After 1.0: IPTV on a WAN VLAN, no default route.
     # iptv = {

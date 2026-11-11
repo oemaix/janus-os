@@ -24,6 +24,11 @@
       class = "wifi";
       capabilities = ["ap" "sta"];
     };
+    # RTL8188EUS. Station only. docs/10 §4.11, D-0063.
+    "0bda:8179" = {
+      class = "wifi";
+      capabilities = ["sta"];
+    };
     "05c6:90b6" = {
       class = "wwan";
       modes = ["ecm" "ncm" "rndis"];

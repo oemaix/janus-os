@@ -167,6 +167,59 @@
       "rtlwifi/rtl8192cufw_TMSC.bin"
     ];
   };
+  # rtl8xxxu requests this name for 0bda:8179. docs/10 §4.11.
+  rtl8188euFirmware = firmwareSlice {
+    pname = "rtl8188eu-firmware";
+    description = "Firmware for RTL8188EUS";
+    paths = ["rtlwifi/rtl8188eufw.bin"];
+  };
+  # 0bda:8176 is also in the rtl8xxxu table. Bind that ID to rtl8192cu
+  # and leave rtl8xxxu loaded for 0bda:8179. Module list order is not
+  # load order (T-0006). docs/10 §4.4, D-0063.
+  rtl8192cuBind = pkgs.writeShellScript "janus-rtl8192cu-bind" ''
+    set -eu
+    bind_one() {
+      devpath=$1
+      kernel=$2
+      case "$devpath" in
+        /sys/*) sys=$devpath ;;
+        *) sys="/sys$devpath" ;;
+      esac
+      [ -e "$sys" ] || return 0
+      drv=""
+      if [ -L "$sys/driver" ]; then
+        drv=$(basename "$(readlink "$sys/driver")")
+      fi
+      if [ "$drv" = rtl8192cu ]; then
+        return 0
+      fi
+      if [ "$drv" = rtl8xxxu ]; then
+        printf '%s\n' "$kernel" > /sys/bus/usb/drivers/rtl8xxxu/unbind
+      fi
+      if [ -e /sys/bus/usb/drivers/rtl8xxxu/remove_id ]; then
+        printf '%s\n' "0bda 8176" > /sys/bus/usb/drivers/rtl8xxxu/remove_id || true
+      fi
+      if [ -e /sys/bus/usb/drivers/rtl8192cu/bind ]; then
+        printf '%s\n' "$kernel" > /sys/bus/usb/drivers/rtl8192cu/bind || true
+      fi
+    }
+    if [ "$#" -eq 2 ]; then
+      bind_one "$1" "$2"
+      exit 0
+    fi
+    if [ -e /sys/bus/usb/drivers/rtl8xxxu/remove_id ]; then
+      printf '%s\n' "0bda 8176" > /sys/bus/usb/drivers/rtl8xxxu/remove_id || true
+    fi
+    for sys in /sys/bus/usb/devices/*:*; do
+      [ -d "$sys" ] || continue
+      parent=$(dirname "$sys")
+      vendor=$(cat "$parent/idVendor" 2>/dev/null || true)
+      product=$(cat "$parent/idProduct" 2>/dev/null || true)
+      if [ "$vendor" = 0bda ] && [ "$product" = 8176 ]; then
+        bind_one "$sys" "$(basename "$sys")"
+      fi
+    done
+  '';
 
   # The 43436s chip asks for its own CLM name. The Raspberry Pi package
   # ships that blob only as brcmfmac43436-sdio.clm_blob. docs/10 §4.7.
@@ -218,11 +271,31 @@ in {
         (lib.mkIf (lib.elem "0e8d:7612" declaredUsbIds) [mt7612uFirmware])
         (lib.mkIf (lib.elem "0e8d:7961" declaredUsbIds) [mt7921auFirmware])
         (lib.mkIf (lib.elem "0bda:8176" declaredUsbIds) [rtl8188cusFirmware])
+        (lib.mkIf (lib.elem "0bda:8179" declaredUsbIds) [rtl8188euFirmware])
       ];
+      # Declaring the stick loads its driver. An access point is not required.
+      boot.kernelModules = lib.mkMerge [
+        (lib.mkIf (lib.elem "0bda:8176" declaredUsbIds) ["rtl8192cu"])
+        (lib.mkIf (lib.elem "0bda:8179" declaredUsbIds) ["rtl8xxxu"])
+      ];
+      services.udev.extraRules = lib.mkIf (lib.elem "0bda:8176" declaredUsbIds) ''
+        ACTION=="add", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_interface", ATTRS{idVendor}=="0bda", ATTRS{idProduct}=="8176", RUN+="${rtl8192cuBind} %p %k"
+      '';
+      systemd.services = lib.mkIf (lib.elem "0bda:8176" declaredUsbIds) {
+        janus-rtl8192cu-bind = {
+          description = "Bind 0bda:8176 to rtl8192cu";
+          wantedBy = ["multi-user.target"];
+          after = ["systemd-modules-load.service" "systemd-udev-settle.service"];
+          serviceConfig = {
+            Type = "oneshot";
+            RemainAfterExit = true;
+            ExecStart = rtl8192cuBind;
+          };
+        };
+      };
     }
     (lib.mkIf (apNames != []) {
       boot.kernelModules = lib.mkMerge [
-        (lib.mkIf (lib.any (n: usbId n == "0bda:8176") apNames) ["rtl8192cu"])
         # The Arasan host is not in the initrd. Stage 2 loads it with brcmfmac.
         # The Pi 4 host is built in, so it is not named here.
         (lib.mkIf (onboardNames != [] && lib.elem config.janus.hardware.board ["rpi-zero-2w" "rpi3"]) ["sdhci_iproc"])
@@ -247,8 +320,6 @@ in {
         [pkgs.raspberrypiWirelessFirmware]
         ++ lib.optional (config.janus.hardware.board == "rpi-zero-2w") zero2wClm
       );
-      boot.blacklistedKernelModules = lib.mkIf (lib.any (n: usbId n == "0bda:8176") apNames) ["rtl8xxxu"];
-
       systemd.network.links = lib.listToAttrs (map (name: {
           name = "10-wifi-${name}";
           value = {

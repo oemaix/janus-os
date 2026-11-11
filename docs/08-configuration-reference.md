@@ -217,7 +217,7 @@ role (FR-SVC-002, FR-SVC-003, D-0060). The vendor choice stays under
 | `peripherals.<name>.hmi.profile` | enum | — | `waveshare-1.3-oled-hat` sets the SH1106 panel, SPI pins, and the key map in *10* §4.6. Behaviour is *15*. |
 | `peripherals.<name>.hmi.driver` | enum | from profile | `sh1106` `ssd1306` `st7789` `waveshare-epd-2in13` |
 | `peripherals.<name>.hmi.keys.<name>` | enum | profile default | Replace one key's action: `refresh`, `reboot-hold`, `factory-reset`, `unbound`. The joystick stays navigation. |
-| `peripherals.<name>.wifi.capabilities` | list | from db | `ap` `sta`. Empty uses the allowlist. A capability outside that list fails evaluation. An access point on a station-only ID fails evaluation once that uplink is lowered (D-0063, *13*). |
+| `peripherals.<name>.wifi.capabilities` | list | from db | `ap` `sta`. Empty uses the allowlist. A capability outside that list fails evaluation. An access point on a station-only ID fails evaluation (D-0063). |
 | `peripherals.<name>.power.shutdown.enable` | bool | `true` if the profile knows the discharge sign | Early cutoff while the cell is discharging (*10* §4.5). |
 | `peripherals.<name>.power.shutdown.warnVolts` | float | `3.60` | Must be ≥ the shutdown voltage. |
 | `peripherals.<name>.power.shutdown.volts` | float | `3.50` | Sustained 60 s. MUST NOT be set below 3.50. |
@@ -253,8 +253,15 @@ checked again before reformat (D-0049).
 ### 4.3 `wans.<name>`
 
 See *06 — Networking* §4 for the full shape. Mandatory: `uplink`, `mode`.
-`mode = "wifi"` is specified and not lowered (*13*). It is a WPA2 station on a peripheral whose profile lists
-`sta` (D-0063, FR-NET-018). The enum in this tree is `dhcp`, `static`, `pppoe`, and `wwan`. Defaults: `role = "default"`, `metric = 100 + index` (`1100 + index` when
+`mode = "wifi"` is a WPA2 station on a peripheral whose profile lists
+`sta` (D-0063, FR-NET-018). `wpa_supplicant` associates, then networkd
+takes DHCP the same way as `dhcp`. The interface is `wifi-<uplink>`,
+in the `wan` zone, and it keeps the dongle MAC. `wifi.networks` lists
+`ssid`, one of `passphrase`, `passphraseFile`, or `passphraseSecret`,
+and `priority` (default 0, higher first). Open networks, WPA-Enterprise,
+a network added without a rebuild, and captive-portal completion are
+after 1.0. The other modes are `dhcp`, `static`, `pppoe`, and `wwan`.
+Defaults: `role = "default"`, `metric = 100 + index` (`1100 + index` when
 `role` is `backup`), `ipv6.mode = "disabled"`, `healthCheck.enable =
 (role == "backup" || >1 default WANs)`.
 
@@ -501,4 +508,4 @@ export`. `janus-build fleet pull` writes leases into
 * `janus.audio.enable` defaults to false. Playback and recording are read only then. `embedded` and `usb` need a non-blank node and `kernelProfile` `standard` or `matched`. `compact` rejects them. `recording.input = bluetooth` fails while HFP and HSP stay off. `matched` includes the selected embedded or USB driver only when `enable` is true.
 * `janus.soloist.enable` needs `janus.audio.enable`, a playback device, the API-key secret and its sops file, at least one zone other than `wan`, and a board architecture of `x86_64`, `aarch64`, or `armv7l`. A false setting skips these checks and does not install the secret. BlueZ starts from `janus.audio` bluetooth, without Soloist (D-0061).
 * `janus.edge.api.enable` defaults to false. True needs exactly one of `tokenSecret` and `tokenFile`, a non-empty zone list, and no `wan`. `janus.edge.speech.asr.enable` and `janus.edge.speech.tts.enable` fail while it is false. Recognition fails on the Zero 2 W, the Pi 2, the Pi 3, Le Potato, and the VisionFive 2. Synthesis fails on the Zero 2 W and the VisionFive 2. `tts.voice` is a locked Piper id. `asr.language` is unset or a language id of the locked `base` model (D-0062).
-* A Wi-Fi role outside the peripheral profile fails evaluation (D-0063). Specified, not lowered (*13*): one peripheral is an access point or a station WAN, a `mode = "wifi"` WAN names a profile that lists `sta`, and its networks are WPA2-PSK. This tree has no `wifi` WAN mode, and an access point on `0bda:8176` still blacklists `rtl8xxxu`.
+* A Wi-Fi role outside the peripheral profile fails evaluation (D-0063). One peripheral is an access point or a station WAN. A `mode = "wifi"` WAN names a profile that lists `sta`, and each network has one WPA2 passphrase. `0bda:8176` is bound to `rtl8192cu` by USB ID. `rtl8xxxu` stays loaded.

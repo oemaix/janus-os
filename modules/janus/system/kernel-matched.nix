@@ -58,7 +58,8 @@
   wifiUsb =
     (lib.optional (hasUsb "0e8d:7612") "MT76x2U")
     ++ (lib.optional (hasUsb "0e8d:7961") "MT7921U")
-    ++ (lib.optional (hasUsb "0bda:8176") "RTL8192CU");
+    ++ (lib.optional (hasUsb "0bda:8176") "RTL8192CU")
+    ++ (lib.optional (hasUsb "0bda:8179") "RTL8XXXU");
   wantWifi = onboardWifi || wifiUsb != [];
 
   usbNet =
@@ -249,7 +250,7 @@
     ++ (lib.optional wantWifi "WLAN")
     ++ (lib.optionals onboardWifi ["WLAN_VENDOR_BROADCOM" "BRCMFMAC_SDIO"])
     ++ (lib.optional (hasUsb "0e8d:7612" || hasUsb "0e8d:7961") "WLAN_VENDOR_MEDIATEK")
-    ++ (lib.optional (hasUsb "0bda:8176") "WLAN_VENDOR_REALTEK")
+    ++ (lib.optional (hasUsb "0bda:8176" || hasUsb "0bda:8179") "WLAN_VENDOR_REALTEK")
     ++ (lib.optional (wantBt || wantOnboardBt) "BT")
     ++ (lib.optionals wantOnboardBt ["BT_HCIUART_BCM" "BT_HCIUART_SERDEV"])
     ++ (lib.optional wantNvme "NVME_MULTIPATH");

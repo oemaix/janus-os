@@ -47,6 +47,8 @@
   in
     if wan.mode == "pppoe"
     then "ppp-${name}"
+    else if wan.mode == "wifi"
+    then "wifi-${wan.uplink}"
     else resolve wan.uplink;
 
   q = s: ''"${s}"'';

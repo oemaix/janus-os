@@ -94,9 +94,10 @@ Semantics:
   network. The SSID is configuration. The passphrase is a sops file, the
   same shape as an access-point passphrase (§11). `priority` is an
   integer; a higher value is tried first; an unset value is 0. The
-  station uses the dongle's permanent MAC. Health targets stay the
-  existing option: an upstream that does not route `1.1.1.1` and
-  `9.9.9.9` needs targets it does route. On a portable board the
+  station uses the dongle's permanent MAC. The interface name is
+  `wifi-<uplink>`. Health targets stay the existing option: an upstream
+  that does not route `1.1.1.1` and `9.9.9.9` needs targets it does
+  route. On a portable board the
   Ethernet WAN is `default` and this WAN is `backup`, so a cable with a
   lease keeps the default route (D-0036).
 
@@ -260,8 +261,7 @@ environment. `hostapd` sets `country_code` and `ieee80211d`. A channel
 the country disallows fails when the access point starts (D-0054).
 
 A peripheral whose profile lists `sta` can instead be a WAN uplink
-(D-0063, FR-NET-018, *10* §4.11). The shape below is that decision.
-This tree has not lowered it (*13*):
+(D-0063, FR-NET-018, *10* §4.11). The shape below is that decision:
 
 ```
 janus.hardware.peripherals.cafe0 = {
