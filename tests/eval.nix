@@ -1697,6 +1697,15 @@ in {
               match.domains = ["example.com"];
               target = "direct";
             }
+            {
+              match.port = [123];
+              match.protocol = "udp";
+              target = "direct";
+            }
+            {
+              match.port = [80 443];
+              target = "direct";
+            }
           ];
         };
         janus.security.allowInlineSecrets = true;
@@ -1724,6 +1733,8 @@ in {
       jq -e '.inbounds[] | select(.tag == "api" and .port == 8080)' ${engine} >/dev/null
       jq -e '.outbounds[] | select(.protocol == "dns" and .tag == "dns-out")' ${engine} >/dev/null
       jq -e 'any(.routing.rules[]; ((.domain // []) | index("full:example.com")) and .source == ["192.168.10.0/24"] and .outboundTag == "direct")' ${engine} >/dev/null
+      jq -e 'any(.routing.rules[]; .port == 123 and .network == "udp" and .outboundTag == "direct")' ${engine} >/dev/null
+      jq -e 'any(.routing.rules[]; .port == "80,443" and .outboundTag == "direct")' ${engine} >/dev/null
       jq -e '.dns.queryStrategy == "UseIP"' ${engine} >/dev/null
       jq -e 'any(.dns.servers[]; .address == "fakedns" and .queryStrategy == "UseIPv4")' ${engine} >/dev/null
       jq -e 'any(.inbounds[]; .tag == "dns-lan-lan" and .listen == "192.168.10.1" and .port == 53)' ${engine} >/dev/null
@@ -3633,6 +3644,22 @@ in {
       jq -e '.[0].tls.utls == "chrome"' utls.json >/dev/null
       janet "$script" render --model model.json --nodes utls.json --engine xray --rule-set remote --output xray.json
       jq -e '.outbounds[] | select(.tag == "a") | .streamSettings.tlsSettings.fingerprint == "chrome"' xray.json >/dev/null
+      jq '.rules = [
+        {"match":{"port":[123],"protocol":"udp"},"target":"direct"},
+        {"match":{"port":[80,443]},"target":"direct"},
+        {"match":{"port":["1000-2000"]},"target":"direct"}
+      ]' model.json > port-model.json
+      janet "$script" render --model port-model.json --nodes nodes.json --engine xray --rule-set remote --output port-xray.json
+      jq -e 'any(.routing.rules[]; .port == 123 and .network == "udp")' port-xray.json >/dev/null
+      jq -e 'any(.routing.rules[]; .port == "80,443")' port-xray.json >/dev/null
+      jq -e 'any(.routing.rules[]; .port == "1000-2000")' port-xray.json >/dev/null
+      janet "$script" render --model port-model.json --nodes nodes.json --rule-set remote --output port-sing.json
+      jq -e 'any(.route.rules[]; .port == [123] and .network == "udp")' port-sing.json >/dev/null
+      jq -e 'any(.route.rules[]; .port == [80,443])' port-sing.json >/dev/null
+      jq -e 'any(.route.rules[]; .port == ["1000-2000"])' port-sing.json >/dev/null
+      jq 'del(.rules[] | select(.match.port == ["1000-2000"]))' port-model.json > port-num-model.json
+      janet "$script" render --model port-num-model.json --nodes nodes.json --rule-set remote --output port-num.json
+      sing-box check -c port-num.json
       printf '%s\n' '{"outbounds":[{"type":"vless","tag":"r","server":"203.0.113.8","server_port":443,"uuid":"b831381d-6324-4d53-ad4f-8cda48b30811","tls":{"enabled":true,"server_name":"www.example.com","reality":{"enabled":true,"public_key":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","short_id":"abcd"},"utls":{"enabled":true,"fingerprint":"chrome"}}}]}' > reality.json
       janet "$script" normalize --format sing-box --input reality.json --output reality-nodes.json
       janet "$script" render --model model.json --nodes reality-nodes.json --engine xray --rule-set remote --output reality-xray.json

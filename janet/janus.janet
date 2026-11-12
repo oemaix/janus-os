@@ -1192,6 +1192,17 @@
     "bootstrap" (get policy "bootstrap")
     "nameRules" name-rules})
 
+(defn xray-port [ports]
+  # PortList takes one number, or one string of ports and ranges.
+  # A JSON array fails to load. sing-box keeps the list in one-rule.
+  (cond
+    (number? ports) ports
+    (string? ports) ports
+    (and (indexed? ports) (= (length ports) 1) (number? (get ports 0)))
+    (get ports 0)
+    (indexed? ports) (string/join (map string ports) ",")
+    ports))
+
 (defn xray-rule [model rule]
   (def match (or (get rule "match") rule))
   (def item @{:type "field"})
@@ -1205,7 +1216,8 @@
   (each name (or (get match "geoip") @[]) (array/push ips (string "geoip:" name)))
   (each cidr (or (get match "ipCidr") @[]) (array/push ips cidr))
   (when (not (empty? ips)) (put item :ip ips))
-  (when (not (empty? (or (get match "port") @[]))) (put item :port (get match "port")))
+  (when (not (empty? (or (get match "port") @[])))
+    (put item :port (xray-port (get match "port"))))
   (when (get match "protocol") (put item :network (get match "protocol")))
   (def sources @[])
   (each cidr (or (get match "sourceIp") @[]) (array/push sources cidr))
