@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-30 |
+| Last updated | 2026-11-12 |
 
 ## 1. Scope
 
@@ -502,124 +502,321 @@ Region groups (enabled): `JP`, `US`, `HK`, `SG`, `EU`, `UK`, `IN`, each a
 `url-test`. Usage groups (commented out): `Telegram`, `Gemini`, `Claude`,
 `Netflix`, `YouTube`, `GitHub`, each with a suggested member group and the
 matching rule block, so a user enables a feature by uncommenting two
-stanzas. When §11 lands, those region patterns become `region` labeling
-rules, and a usage block constrains labels instead of naming a group.
+stanzas. When §11 lands, a user label of type `region` may take a `geoip` rule.
+The rule writes the alpha-2 code of the node address. A node the
+database does not classify stays unlabeled. A name pattern may set
+`gb`. `uk` fails evaluation. `eu` is not a country code. A usage block
+constrains labels instead of naming a group. `Gemini` becomes an
+`empty` label set by an HTTP probe through the node.
 
 ## 11. Labels (later)
 
-This section is the operator model in ADR-0027 (FR-PRX-029). It is not
-implemented. §4, §5, and §9 stay in force until the *13* item starts.
-The module must not grow these options before that work. The manual-node
-`tags` list is a string list on the node. It is not a label.
+This section is the operator model in ADR-0027 and ADR-0028 (FR-PRX-029). It is not implemented. §4, §5, and §9 stay in force until the *13* item
+starts. The module must not grow these options before that work. The
+manual-node `tags` list is a string list on the node. It is not a label.
 
 The operator attaches labels to nodes and constrains those labels from a
 routing rule. A group is the outbound set sing-box or xray accepts. Janus
 builds that set. The operator does not name it.
 
-### 11.1 Label
+### 11.1 Key
 
-A label is one key and one value on one node. A key matches
-`[A-Za-z][A-Za-z0-9]*`. A value is either a string token
-(`[A-Za-z0-9-]+`) or a non-negative integer. One key uses one value kind
-on a router. A string constraint on a number key, or a numeric constraint
-on a string key, fails evaluation.
+A label is one key on one node. The word for the name is **key**. The
+operator writes it as a Nix attribute. Every type except `empty` also
+stores a value.
 
-Predefined keys are `vendor`, `region`, and `latency`. The operator may
-add further keys under `janus.proxy.labels.<key>`. A selector that names
-an unknown key fails evaluation.
+A key starts with a Unicode letter or `_`. The rest is Unicode letters,
+digits, `_`, or `-`. The match is case-sensitive. A key that starts
+with a digit, a hyphen, or other punctuation fails evaluation. A space
+fails evaluation. The words `any`, `all`, and `not` are selector
+combinators (§11.7) and fail evaluation as keys. In Nix, `_exit` and
+`exit-region` are identifiers. A key that is not an identifier is a
+quoted attribute. `labels."地区"` stores the key `地区`. The quotes are
+Nix syntax.
 
-Subscription nodes stay immutable (FR-PRX-007). Their labels come from
-the derivations and labeling rules below. A manual node may set
-`nodes.<name>.labels.<key>`. That explicit value replaces a derived value
-for the same key.
+One key has one value type on a router. A constraint of another type
+fails evaluation. A selector that names a key with no declaration fails
+evaluation.
 
-### 11.2 Predefined keys
+### 11.2 Value types
 
-`vendor` is always present.
+The types are `string`, `number`, `bool`, `enum`, `empty`, and `region`.
+
+* `string` is one token: Unicode letters, digits, and hyphen. A space,
+  a newline, or an emoji fails evaluation. A sentence is not a label value.
+* `number` is a number. Janus does not add a second numeric type. A
+  negative number is a value. A fraction is a value.
+* `bool` is `true` or `false`, and both are values. A missing bool is
+  absent. The constraint `false` does not match an absent bool.
+* `enum` is a string token from that key's `values` list. The list is
+  required and must not be empty. A token outside the list fails evaluation.
+* `empty` records that the label is on the node. The value is not a fact.
+  The only Nix value that evaluates is the key written again as a string.
+  `gemini = "gemini"` sets the label and is the presence test. `true`,
+  `false`, and any other value fail evaluation. A rule for an `empty`
+  key has no `value`. A display that reads the label shows the key.
+* `region` is a built-in type, as `number` is. The user decides whether
+  any key uses it. The value is lowercase. Two sets evaluate. The
+  officially assigned ISO 3166-1 alpha-2 codes are the set a `geoip`
+  rule can write. The user-assigned codes are `qm`–`qz`, `xa`–`xz`, and
+  `zz`. The operator may use a user-assigned code for any meaning.
+  `uk` is not in either set. The United Kingdom is `gb`, and `uk` fails
+  evaluation. `eu` fails evaluation. Janus does not copy the assigned
+  list into this document. A later update replaces that list when ISO
+  assigns or withdraws a code. There is no IP type and no duration type.
+
+A key that was not set is **absent**, including an `empty` key that was
+not set. A constraint on an absent key does not match. The presence
+test for `empty` is the key written as its own value. A node without
+that label does not match it. `not` around that test matches the node
+that lacks the label (§11.7).
+
+### 11.3 One definition per key
+
+`janus.proxy.labels.<key>` is one attribute. It declares the type and
+the rules that set the value. Type metadata and rules are not two trees.
+
+```
+janus.proxy.labels.region = {
+  type = "region";
+  rules = [
+    { match = { kind = "geoip"; }; }
+    { match = { kind = "regex"; pattern = "(?i)japan|日本"; }; value = "jp"; }
+  ];
+};
+janus.proxy.labels.gemini = {
+  type = "empty";
+  rules = [
+    { match = { kind = "http"; url = "https://gemini.google.com/";
+                timeout = "5s"; interval = "1h"; }; }
+  ];
+};
+# selector, and a manual node:
+#   gemini = "gemini";
+```
+
+`type` is required for a key the operator adds. `region` in the example
+is that chosen name, not a key the module declares. A manual value and
+a rule value must belong to the key's type. For `enum`, the value must
+be in `values`. For `empty`, the only manual value is the key string.
+
+### 11.4 Predefined keys
+
+The module declares three keys. They are present on every node. The
+operator does not redeclare them. `region` is not one of them. A user
+who wants a country code adds a key of type `region` (§11.2).
+
+`vendor` is `string` and is always present.
 
 * A node from subscription `<name>` has `vendor` = `<name>`.
-* A manual node has the configured value, or `unknown` when unset.
+* A manual node uses `nodes.<name>.labels.vendor`, or `unknown` when that
+  value is unset.
 
-`vendor` is not a pattern rule. Another grouping uses another key.
+`vendor` has no rules. Another grouping uses another key. A selector may
+test this string with an exact token or with `regex`, `glob`, or `peg`
+(§11.7).
 
-`region` is absent until a labeling rule or an explicit manual value sets
-it. The example, when this section lands, ships the §10 name patterns as
-enabled `region` rules (`jp`, `us`, `hk`, `sg`, `eu`, `uk`, `in`). The
-module does not insert them because a region string appeared in a node
-name. An unset rule list leaves `region` unset, in the same way an unset
-`janus.proxy.rules` stays empty.
+`protocol` is `enum` and is always present. The `values` list is the
+union of the outbound protocols either engine supports: `vless`,
+`vmess`, `trojan`, `shadowsocks`, `hysteria2`, `tuic`. Hysteria2 and
+TUIC are sing-box only (§2). The label still carries those tokens. The
+value comes from the normalized subscription node, or from
+`nodes.<name>.protocol` on a manual node. `labels.protocol` fails
+evaluation. `protocol` has no rules.
 
-`latency` is absent until a sample exists. The probe is a TCP connect to
-the node's server and port. The stored value is the handshake time in
-milliseconds. The default timeout is `3s`. The default interval is `5m`.
-A failed probe keeps the previous sample for that node. A node that left
-the subscription drops its sample. Samples live at
-`/var/lib/janus/engine/latency.json` on the state partition. The probe
-runs only when some selector constrains `latency`, including the default
-target. A node with no sample does not satisfy a latency constraint.
+`latency` is `number` and is always present. The probe is a TCP connect
+to the node's server and port. A successful sample stores the handshake
+time in milliseconds, as a number. The default timeout is `3s`. The
+default interval is `5m`. Before the first successful sample the stored
+number is the timeout in milliseconds, so the key exists. A failed probe
+keeps the previous number. A node that left the subscription drops its
+sample.
+Samples live at `/var/lib/janus/engine/latency.json` on the state
+partition. The probe runs only when some selector constrains `latency`,
+including the default target.
 
 ```
 janus.proxy.labels.latency = {
-  as = "number" | "enum";    # default: number
   timeout = "3s";
   interval = "5m";
-  bands = [
-    { below = 150; value = "low"; }
-    { below = 300; value = "mid"; }
-    { value = "high"; }
+};
+```
+
+The type is `number`. The operator does not set `type`, and does not
+store a band name on this key.
+
+An HTTP probe is a labeling rule of kind `http` on a key of type
+`empty`. It is how an operator records that a node can reach a service
+which refuses many exits. Gemini is the example: Google refuses the
+service from many proxy addresses, so a name that contains "gemini" does
+not answer the question. The request is sent through that node. The
+first response status 200–299 sets the label. A redirect is not
+success. Any other outcome, including a timeout, clears the label. A
+block page that itself returns 200–299 sets the label. The operator
+chooses a URL for which that status means the service accepted the
+exit. The engine url-test (§11.9) stays the check among members of a
+selector. It does not set this label.
+
+### 11.5 When a value is set
+
+Subscription nodes stay immutable (FR-PRX-007). Their labels come from
+the predefined keys and from labeling rules. A manual node may set
+`nodes.<name>.labels.<key>` for any declared key except `protocol`.
+
+For one key on one node, the first source that sets a value wins:
+
+1. The explicit manual value.
+2. The first matching labeling rule, in list order. Later rules do not
+   replace it.
+3. Otherwise the key is absent. `vendor`, `protocol`, and `latency` have
+   no third case. `latency` still stores the timeout until a sample
+   replaces it (§11.4).
+
+On type `empty`, the manual value is the key string, for example
+`gemini = "gemini"`. That sets the label and wins over the `http` probe.
+Any other manual value fails evaluation. Omitting the attribute leaves
+the probe in charge.
+
+Rules run in one pass after the node list exists. At image build, that
+is the snapshot. On the router, it is the moment a subscription refresh
+has normalized and validated the new list (§3.3 step 3), before the
+runtime renderer writes the engine config. Rules do not run on each
+connection. The same Janet code runs at build and on refresh.
+
+The latency probe and an `http` probe are the exceptions to that pass.
+Each runs on its interval, and once for a node that a refresh added and
+that has no sample. A new sample replaces that label and the renderer
+runs again. An `http` probe does not run at image build. Until the
+router has probed, that `empty` label is absent. A hostname for `geoip`
+is resolved on the router in the same recompute, not at image build.
+
+A labeling rule of kind `regex`, `glob`, `peg`, `geoip`, or `http` does
+not read other labels. Kind `query` is later work. It is not accepted
+yet. Evaluation fails if a rule uses it. When it is added, it runs once
+after the pass above and does not see its own output. The shape reserved
+for it is a selector against labels already computed, and a `value` for
+the key being set:
+
+```
+janus.proxy.labels.market = {
+  type = "enum";
+  values = [ "eu" ];
+  rules = [
+    { match = { kind = "query";
+                labels = { region = [ "de" "fr" "nl" "it" "es" ]; }; };
+      value = "eu"; }
   ];
 };
 ```
 
-`as = "number"` stores the milliseconds. `bands` is then unused.
-`as = "enum"` stores the string from the first matching band, in list
-order. A trailing band with only `value` matches the rest. `below` on a
-band means the sample is strictly less than that number.
+That is how a set of alpha-2 codes becomes `eu` on another label. The
+country stays on a key of type `region`, which the user declared.
 
-### 11.3 Labeling rules
+### 11.6 Labeling rules
 
-A custom key, and `region`, take an ordered rule list. The first matching
-rule sets the value. Later rules do not replace it. An explicit manual
-value still wins.
+`region`, `latency`'s enum bands, a custom key, and an `empty` key use
+the rule list in §11.3.
 
 ```
 janus.proxy.labels.region.rules = [
+  { match = { kind = "geoip"; }; }
+  { match = { kind = "geoip"; countries = [ "jp" "sg" ]; }; }
   { match = { kind = "regex" | "glob" | "peg"; pattern = "…"; caseInsensitive = true; };
     value = "jp"; }
-  { match = { kind = "geoip"; countries = [ "jp" ]; };
-    value = "jp"; }
 ];
-janus.proxy.labels.streaming.rules = [
-  { match = { kind = "regex"; pattern = "(?i)netflix|nf"; }; value = "video"; }
+janus.proxy.labels.gemini.rules = [
+  { match = { kind = "http"; url = "https://gemini.google.com/";
+              timeout = "5s"; interval = "1h"; }; }
 ];
 ```
 
 `regex`, `glob`, and `peg` are the §4 matcher kinds, applied to the node
-name. `geoip` classifies the node's server address with the GeoIP data
-the router already uses for destination rules. An IP literal is classified
-directly. A hostname is resolved on the router when labels are recomputed,
-not at image build. A failed lookup does not match that rule.
+name. `glob` is the wildcard kind (`*`, `?`, `[…]`, `{a,b}`). There is
+no separate wildcard kind. On type `region`, `value` must be an
+officially assigned code or a user-assigned code (§11.2). `uk` fails
+evaluation. On type `empty`, these kinds take no `value`. A matching
+rule sets the label.
 
-### 11.4 Routing
+`geoip` is legal only on type `region`. It takes no `value`. The output
+is the officially assigned alpha-2 code of the node's server address,
+and that code is the label value. A user-assigned code is not a `geoip`
+result. An IP literal is classified directly. A hostname is resolved on
+the router when labels are recomputed, not at image build. `countries`,
+when set, lists officially assigned codes and limits which of them are
+written. A node with no database row, a failed lookup, a code outside
+`countries`, or a code that is not in the shipped officially assigned
+set does not match this rule. The key stays absent unless a later rule
+sets it. Janus does not invent a code for that node.
 
-Traffic predicates stay §5. The target is `direct`, `block`, or a
-selector. There is no `group:` name.
+`http` is legal only on type `empty`, and that key's rule list is that
+one rule. A name matcher beside it fails evaluation, so a vendor string
+cannot stick and hide a later probe. `url` is required. `timeout`
+defaults to `5s`. `interval` defaults to `1h`. The probe runs only when
+some selector constrains the key. Success and failure are §11.4.
+
+### 11.7 Routing selector
+
+Traffic predicates stay §5. A rule has exactly one of `target`, `labels`,
+or `failover`. `target` is `direct` or `block`. `labels` is one selector.
+`failover` is §11.8. There is no `group:` name.
+
+A selector is a Nix attribute set. It is not a SQL WHERE string and not
+a Janet snippet. The operator edits literals, lists, and attribute sets
+(FR-CFG-003). That grammar is enough for OR and NOT. A set of key
+constraints is AND. `any`, `all`, and `not` are the combinators. A set
+that mixes a combinator with a key constraint fails evaluation. The
+combinators may nest. The tree is finite. There is no function call.
 
 ```
 janus.proxy.rules = [
-  { match = { domainSuffix = [ "netflix.com" "nflxvideo.net" ]; };
+  { match = { domainSuffix = [ "gemini.google.com" ]; };
     labels = {
-      region = [ "jp" "kr" "sg" ];       # any of these
-      latency = { below = 150; };        # milliseconds < 150, when latency is a number
+      all = [
+        { gemini = "gemini"; }
+        { any = [
+            { region = [ "jp" "sg" ]; }
+            { region = { not = [ "us" ]; }; latency = { below = 150; }; }
+          ]; }
+        { not = { vendor = [ "sketchy" ]; }; }
+      ];
     }; }
 ];
 ```
 
-A string key's constraint is a list of tokens. Any one value matches. A
-number key's constraint is `{ below = N; }` or `{ above = N; }`, and not
-both. `below` means strictly less. `above` means strictly greater. Several
-keys on one selector combine with AND. A node that lacks a constrained
-key does not match.
+`any` is the union: a node matches if one branch matches. The rendered
+group contains every matching node. `all` is AND of selectors. `not` is
+true when the inner selector does not match. A node with an absent
+`region` does not match `region = [ "us" ]`, so it does match
+`not = { region = [ "us" ]; }`.
+
+A `not` written on one key is narrower. The label has to be present, and
+the inner test has to fail. `region = { not = [ "us" ]; }` matches a
+node whose code is present and is not `us`. An absent `region` does not
+match that form. The presence test for an `empty` key is the key
+written as its own value: `gemini = "gemini"`. A node the probe has not
+marked does not match. `not = { gemini = "gemini"; }` matches that node.
+
+Operators follow the key's type:
+
+| Type | Constraint | Match |
+|------|------------|-------|
+| `string` | a token, or a list of tokens | any listed token; comparison is exact |
+| `string` | `{ kind = "regex" \| "glob" \| "peg"; pattern = "…"; }` | the §4 matcher against the stored string; `caseInsensitive` follows §4 |
+| `string`, `enum`, `region` | `{ not = [ tokens ]; }` | present, and not any listed token |
+| `string` | `{ not = { kind = "…"; pattern = "…"; }; }` | present, and the matcher fails |
+| `enum`, `region` | a token, or a list of tokens | any listed token; comparison is exact |
+| `number` | `{ below = n; }`, `{ above = n; }`, or `{ equal = n; }` | exactly one of the three |
+| `number` | `{ not = { below = n; }; }` and the same for `above` and `equal` | present, and the inner compare is false |
+| `bool` | `true` or `false` | that stored value; absent matches neither |
+| `empty` | the key, written again as a string | the label is present |
+
+`below` means strictly less. `above` means strictly greater. An enum
+token must be in `values`. A `region` token must be officially assigned
+or user-assigned (§11.2). `uk` fails evaluation. A string matcher uses the same three kinds as a
+labeling rule. Several keys on one selector combine with AND. A node
+that lacks a constrained key does not match. OR of different keys is
+`any`. The same traffic match uses a failover list (§11.8) when the
+operator wants the first non-empty set rather than the union.
 
 The same Nix value may be bound into several rules. That is how two rules
 share a constraint. It does not create a name the operator manages.
@@ -629,20 +826,56 @@ default selector has no label constraint, so every node is eligible.
 That is the current `Auto` set, without the name `Auto`.
 
 An empty match is a warning. The rendered target is `direct`. Evaluation
-does not fail.
+does not fail. The next routing rule is not tried. That rule matches
+different traffic.
 
 A selector is a proxied target for DNS. Fake-IP follows D-0037: a name
 the LAN will proxy includes a selector target and a default target that
 is a selector.
 
-### 11.5 What the renderer emits
+### 11.8 Failover
+
+Inside one selector, failover of a dead member is the engine url-test
+(§11.9). It is not a labeling rule. The operator does not name a
+`fallback` or `load-balance` strategy.
+
+A routing rule matches its traffic predicate first. An empty member set
+does not skip that rule. The following rule was written for other
+traffic. Skipping it would send this flow there.
+
+Same-traffic backup is an ordered `failover` list. Each entry is a
+selector, or the string `direct` or `block`. The renderer uses the first
+selector that has at least one member. `direct` or `block` stops the
+walk. If every selector is empty and the list has no `direct` or
+`block`, the target is `direct` and the same warning as §11.7 is logged.
+Evaluation does not fail. The rule still renders one engine group: the
+selector that won. The operator does not name it. `failover` does not
+union the branches. A node that matches only a later branch is not a
+member while an earlier branch still has a member. The union is `any`
+(§11.7).
+
+`labels` and `failover` on the same rule fail evaluation.
+
+```
+janus.proxy.rules = [
+  { match = { domainSuffix = [ "netflix.com" ]; };
+    failover = [
+      { region = [ "jp" ]; latency = { below = 150; }; }
+      { region = [ "jp" "sg" ]; }
+      "direct"
+    ]; }
+];
+```
+
+### 11.9 What the renderer emits
 
 Janet computes labels at build time for the snapshot, and again on
-subscription refresh and on the latency interval. The same code runs in
-both places.
+subscription refresh, on the latency interval, and on each `http`
+interval. The same code runs in both places (§11.5). An `http` probe
+still waits for the router.
 
-Each distinct selector, including the default selector, becomes one
-engine outbound:
+Each distinct selector that a rule or the default target uses, including
+the selector a failover list chose, becomes one engine outbound:
 
 | Engine | Outbound | Members |
 |--------|----------|---------|

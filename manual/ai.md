@@ -68,7 +68,7 @@ Read this file before answering a question about using Janus OS.
   `exceptions`, and `janus.dns` (D-0042). A set `proxy.rules` replaces
   the inherited list. Nodes, groups, subscriptions, and `failMode` stay
   on the router. One engine matches the LAN by source. Node labels are
-  specified for later (ADR-0027, `docs/07-proxy-and-dns.md` §11,
+  specified for later (ADR-0027, ADR-0028, `docs/07-proxy-and-dns.md` §11,
   `docs/13-roadmap.md`) and are not `janus.*` options. The operator still
   configures groups. When that work lands, a rule constrains labels and
   the renderer still emits one group for sing-box or xray. `bypass` is not
