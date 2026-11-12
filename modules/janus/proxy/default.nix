@@ -10,6 +10,7 @@
   inherit (lib) mkOption types;
   cfg = config.janus.proxy;
   schedule = import ./schedule.nix {inherit lib;};
+  labels = import ./labels.nix {inherit lib;};
 
   secretOk = value: value == null || config.janus.security.allowInlineSecrets;
   dns = config.janus.dns;
@@ -80,54 +81,6 @@
       })
       lans;
 
-  # Auto is a target while the implicit group exists, or the fleet defined groups.Auto.
-  autoGroup = cfg.groupsAuto || cfg.groups ? "Auto";
-
-  targetOk = target: let
-    group =
-      if lib.hasPrefix "group:" target
-      then lib.removePrefix "group:" target
-      else if target == "Auto"
-      then "Auto"
-      else null;
-  in
-    target
-    == "direct"
-    || target == "block"
-    || (group != null && (cfg.groups ? ${group} || (group == "Auto" && cfg.groupsAuto)));
-
-  targetMessage = where: value:
-    "${where} '${value}' is not direct, block, ${
-      if autoGroup
-      then "Auto, or a defined group."
-      else "or a defined group."
-    }";
-
-  refTag = ref:
-    if lib.hasPrefix "node:" ref
-    then lib.removePrefix "node:" ref
-    else if lib.hasPrefix "group:" ref
-    then lib.removePrefix "group:" ref
-    else ref;
-
-  fallbackOk = fb: let
-    name = lib.removePrefix "group:" fb;
-    sub = lib.removePrefix "sub:" name;
-  in
-    fb == "direct"
-    || (
-      lib.hasPrefix "group:" fb
-      && (
-        cfg.groups ? ${name}
-        || (name == "Auto" && cfg.groupsAuto)
-        || (
-          cfg.groupsAuto
-          && lib.hasPrefix "sub:" name
-          && cfg.subscriptions ? ${sub}
-          && cfg.subscriptions.${sub}.enable
-        )
-      )
-    );
 in {
   imports = [./lower.nix];
 
@@ -148,9 +101,9 @@ in {
       description = "Default traffic mode. A LAN inherits this unless it sets proxy.mode.";
     };
     defaultTarget = mkOption {
-      type = types.str;
-      default = "group:Auto";
-      description = "Target when no rule matches.";
+      type = types.either types.str (types.attrsOf types.anything);
+      default = {};
+      description = "Selector, direct, or block when no rule matches. An empty selector matches every node.";
     };
     subscriptions = mkOption {
       type = types.attrsOf (types.submodule {
@@ -238,7 +191,12 @@ in {
           tags = mkOption {
             type = types.listOf types.str;
             default = [];
-            description = "Matchable tags.";
+            description = "String list on the node. Not a label.";
+          };
+          labels = mkOption {
+            type = types.attrsOf types.anything;
+            default = {};
+            description = "Manual label values. protocol fails evaluation. An empty label repeats its key.";
           };
           tls.enable = mkOption {
             type = types.bool;
@@ -395,79 +353,80 @@ in {
       default = {};
       description = "Manual proxy nodes.";
     };
-    groups = mkOption {
+    labels = mkOption {
       type = types.attrsOf (types.submodule {
         options = {
-          fromSubscriptions = mkOption {
+          type = mkOption {
+            type = types.nullOr (types.enum ["string" "number" "bool" "enum" "empty" "region"]);
+            default = null;
+            description = "Value type. Required for a key the operator adds. latency does not set it.";
+          };
+          values = mkOption {
             type = types.listOf types.str;
             default = [];
-            description = "Subscriptions this matcher applies to. Empty means every enabled subscription.";
+            description = "Tokens for type enum.";
           };
-          match.kind = mkOption {
-            type = types.nullOr (types.enum ["regex" "glob" "peg"]);
-            default = null;
-            description = "Matcher kind.";
-          };
-          match.pattern = mkOption {
+          timeout = mkOption {
             type = types.nullOr types.str;
             default = null;
-            description = "Matcher pattern.";
+            description = "Latency probe timeout. The stored number is this many milliseconds until a sample exists.";
           };
-          match.caseInsensitive = mkOption {
-            type = types.bool;
-            default = true;
-            description = "Case-insensitive match.";
+          interval = mkOption {
+            type = types.nullOr types.str;
+            default = null;
+            description = "Latency probe interval.";
           };
-          members = mkOption {
-            type = types.listOf types.str;
+          rules = mkOption {
+            type = types.listOf (types.submodule {
+              options = {
+                match.kind = mkOption {
+                  type = types.enum ["regex" "glob" "peg" "geoip" "http" "query"];
+                  description = "Labeling rule kind. query is not accepted.";
+                };
+                match.pattern = mkOption {
+                  type = types.nullOr types.str;
+                  default = null;
+                  description = "regex, glob, or peg pattern.";
+                };
+                match.caseInsensitive = mkOption {
+                  type = types.bool;
+                  default = true;
+                  description = "Case-insensitive name match.";
+                };
+                match.countries = mkOption {
+                  type = types.listOf types.str;
+                  default = [];
+                  description = "Officially assigned codes a geoip rule may write.";
+                };
+                match.url = mkOption {
+                  type = types.nullOr types.str;
+                  default = null;
+                  description = "HTTP probe URL.";
+                };
+                match.timeout = mkOption {
+                  type = types.nullOr types.str;
+                  default = null;
+                  description = "HTTP probe timeout. Default 5s.";
+                };
+                match.interval = mkOption {
+                  type = types.nullOr types.str;
+                  default = null;
+                  description = "HTTP probe interval. Default 1h.";
+                };
+                value = mkOption {
+                  type = types.nullOr types.anything;
+                  default = null;
+                  description = "Value the matching rule writes. empty and geoip and http take none.";
+                };
+              };
+            });
             default = [];
-            description = "Manual members: node:, group:, or sub: references.";
-          };
-          strategy = mkOption {
-            type = types.enum ["manual" "url-test" "fallback" "load-balance"];
-            default = "url-test";
-            description = "Selection strategy.";
-          };
-          default = mkOption {
-            type = types.nullOr types.str;
-            default = null;
-            description = "Initial node for strategy manual.";
-          };
-          test.url = mkOption {
-            type = types.str;
-            default = "https://www.gstatic.com/generate_204";
-            description = "URL-test target.";
-          };
-          test.interval = mkOption {
-            type = types.str;
-            default = "5m";
-            description = "URL-test interval.";
-          };
-          test.tolerance = mkOption {
-            type = types.int;
-            default = 50;
-            description = "URL-test tolerance in milliseconds.";
-          };
-          emptyFallback = mkOption {
-            type = types.nullOr types.str;
-            default = null;
-            description = "Used when the group has no members. direct or group:<name>.";
+            description = "Labeling rules. The first match wins.";
           };
         };
       });
       default = {};
-      description = "Proxy groups. docs/07 §4. The implicit Auto group exists unless groupsAuto is false or the fleet defines groups.Auto.";
-    };
-    groupsAuto = mkOption {
-      type = types.bool;
-      default = true;
-      description = ''
-        Render the implicit Auto group over every node, and one url-test
-        group per enabled subscription. False omits both. Every default
-        target and every rule, including a LAN override, must then name
-        direct, block, or a group this fleet defined. Tunnel DNS uses that
-        default target. False is sing-box only (ADR-0026).
-      '';
+      description = "Label keys. vendor, protocol, and latency are declared by the module. docs/07 §11.";
     };
     rules = mkOption {
       type = types.listOf (types.submodule {
@@ -518,8 +477,19 @@ in {
             description = "Source addresses.";
           };
           target = mkOption {
-            type = types.str;
-            description = "group:<name>, direct, or block.";
+            type = types.nullOr types.str;
+            default = null;
+            description = "direct or block. Exactly one of target, labels, or failover.";
+          };
+          labels = mkOption {
+            type = types.nullOr (types.attrsOf types.anything);
+            default = null;
+            description = "One selector. A set of key tests is AND. any, all, and not are the combinators.";
+          };
+          failover = mkOption {
+            type = types.nullOr (types.listOf (types.either types.str (types.attrsOf types.anything)));
+            default = null;
+            description = "Ordered selectors, or direct, or block. The first non-empty selector wins.";
           };
         };
       });
@@ -565,25 +535,10 @@ in {
 
   config = {
     assertions =
-      (lib.optional (!targetOk cfg.defaultTarget) {
+      map (message: {
         assertion = false;
-        message = targetMessage "janus.proxy.defaultTarget" cfg.defaultTarget;
-      })
-      ++ lib.imap0 (i: rule: {
-        assertion = targetOk rule.target;
-        message = targetMessage "janus.proxy.rules.${toString i}.target" rule.target;
-      })
-      cfg.rules
-      ++ lib.mapAttrsToList (name: group: {
-        assertion =
-          group.members
-          != []
-          || group.match.kind != null
-          || group.fromSubscriptions != []
-          || group.emptyFallback != null;
-        message = "janus.proxy.groups.${name} has no members and no emptyFallback.";
-      })
-      cfg.groups
+        message = message;
+      }) (labels.check cfg lans)
       ++ lib.mapAttrsToList (name: sub: {
         assertion = (sub.url != null) != (sub.urlSecret != null);
         message = "janus.proxy.subscriptions.${name} must set exactly one of url or urlSecret.";
@@ -619,39 +574,6 @@ in {
           else "janus.proxy.subscriptions.${name}.refresh: ${err}";
       })
       cfg.subscriptions
-      ++ lib.concatLists (lib.mapAttrsToList (name: group:
-        map (sub: {
-          assertion = cfg.subscriptions ? ${sub} && cfg.subscriptions.${sub}.enable;
-          message = "janus.proxy.groups.${name}.fromSubscriptions names '${sub}', which is not an enabled subscription on this router.";
-        })
-        group.fromSubscriptions)
-      cfg.groups)
-      ++ lib.concatLists (lib.mapAttrsToList (name: group:
-        lib.concatMap (member:
-          (lib.optionals (lib.hasPrefix "sub:" member) [
-            {
-              assertion = let
-                sub = lib.removePrefix "sub:" member;
-              in
-                cfg.subscriptions ? ${sub} && cfg.subscriptions.${sub}.enable;
-              message = "janus.proxy.groups.${name}.members names '${member}', which is not an enabled subscription on this router.";
-            }
-            {
-              assertion = cfg.groupsAuto;
-              message = "janus.proxy.groups.${name}.members names '${member}', and groupsAuto = false does not render that group.";
-            }
-          ])
-          ++ (lib.optionals (lib.hasPrefix "group:" member) [
-            {
-              assertion = let
-                groupName = lib.removePrefix "group:" member;
-              in
-                cfg.groups ? ${groupName} || (groupName == "Auto" && cfg.groupsAuto);
-              message = "janus.proxy.groups.${name}.members names '${member}', which is not a group on this router.";
-            }
-          ]))
-        group.members)
-      cfg.groups)
       ++ lib.concatMap (
         name: let
           sub = cfg.subscriptions.${name};
@@ -684,49 +606,6 @@ in {
           }
         ]
       ) (lib.attrNames cfg.nodes)
-      ++ lib.mapAttrsToList (name: group: {
-        assertion = group.emptyFallback == null || fallbackOk group.emptyFallback;
-        message = "janus.proxy.groups.${name}.emptyFallback '${toString group.emptyFallback}' does not name direct or a group that exists.";
-      })
-      cfg.groups
-      ++ lib.mapAttrsToList (name: group: {
-        assertion =
-          group.strategy != "manual"
-          || group.default == null
-          || group.match.kind != null
-          || lib.elem (refTag group.default) (map refTag group.members);
-        message = "janus.proxy.groups.${name}.default '${toString group.default}' is not a member of the group.";
-      })
-      cfg.groups
-      ++ lib.optionals (!cfg.groupsAuto) [
-        {
-          assertion = cfg.engine == "sing-box";
-          message = "janus.proxy.groupsAuto = false is sing-box only. xray keeps the implicit Auto group (ADR-0026).";
-        }
-      ]
-      ++ lib.concatLists (lib.mapAttrsToList (name: lan:
-        (lib.optionals (lan.proxy.defaultTarget != null) [
-          {
-            assertion = targetOk lan.proxy.defaultTarget;
-            message = targetMessage "janus.network.lans.${name}.proxy.defaultTarget" lan.proxy.defaultTarget;
-          }
-        ])
-        ++ (lib.optionals (lan.proxy.rules != null) (lib.imap0 (i: rule: {
-          assertion = targetOk rule.target;
-          message = targetMessage "janus.network.lans.${name}.proxy.rules.${toString i}.target" rule.target;
-        })
-        lan.proxy.rules)))
-      lans)
-      ++ lib.mapAttrsToList (name: group: {
-        assertion = cfg.engine != "sing-box" || !(lib.elem group.strategy ["fallback" "load-balance"]);
-        message = "janus.proxy.groups.${name}.strategy ${group.strategy} is not expressible by sing-box (ADR-0006).";
-      })
-      cfg.groups
-      ++ lib.mapAttrsToList (name: group: {
-        assertion = cfg.engine != "xray" || group.strategy != "fallback";
-        message = "janus.proxy.groups.${name}.strategy fallback is not expressible by xray (ADR-0006).";
-      })
-      cfg.groups
       ++ [
         {
           assertion = cfg.egressWan == null || config.janus.network.wans ? ${cfg.egressWan};

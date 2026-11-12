@@ -167,7 +167,7 @@ button.run { color: var(--yellow); }
   margin-top: 12px;
 }
 #login { margin-top: 0; }
-.hd, pre, #login-form, #lease-form, #url-forms, #wifi-forms, #override-rows, #groups, #status-body {
+.hd, pre, #login-form, #lease-form, #url-forms, #wifi-forms, #override-rows, #nodes, #status-body {
   display: grid;
   grid-template-columns: subgrid;
   grid-column: 1 / -1;
@@ -288,8 +288,9 @@ button:focus, input:focus, select:focus, .tab:focus { outline: 2px solid var(--b
       <div class="actions">
         <button type="button" id="refresh-all" data-i18n="refresh">refresh</button>
         <button type="button" id="refresh-geo" data-i18n="geo">geo</button>
+        <button type="button" id="probe-nodes" data-i18n="probe">probe</button>
       </div>
-      <div id="groups"></div>
+      <div id="nodes"></div>
       <div class="row" id="sub-row"><span class="lab" data-i18n="subscription">subscription</span><select id="sub-name" dir="ltr"></select><button type="button" id="refresh-one" data-i18n="refresh">refresh</button></div>
       <pre class="value text ltr" id="tunnel-out"></pre>
     </section>
@@ -357,7 +358,7 @@ var STR = {
     light: "light", dark: "dark", host: "host", fingerprint: "fingerprint", passphrase: "passphrase",
     enter: "enter", rejected: "rejected", closed: "closed", status: "status", tunnel: "tunnel",
     network: "network", bluetooth: "bluetooth", overrides: "overrides", monitoring: "monitoring", system: "system",
-    refresh: "refresh", geo: "geo", subscription: "subscription", group: "group", node: "node",
+    refresh: "refresh", geo: "geo", probe: "probe", subscription: "subscription", node: "node",
     select: "select", test: "test", show: "show", restart: "restart", leases: "leases", lease: "lease",
     set: "set", unset: "unset", scope: "scope", iface: "iface", traffic: "traffic", daily: "daily",
     monthly: "monthly", top: "top", stats: "stats", check: "check", flush: "flush", name: "name",
@@ -375,7 +376,7 @@ var STR = {
     light: "светлая", dark: "тёмная", host: "хост", fingerprint: "отпечаток", passphrase: "пароль",
     enter: "войти", rejected: "отказано", closed: "закрыто", status: "состояние", tunnel: "туннель",
     network: "сеть", bluetooth: "bluetooth", overrides: "переопределения", monitoring: "мониторинг", system: "система",
-    refresh: "обновить", geo: "гео", subscription: "подписка", group: "группа", node: "узел",
+    refresh: "обновить", geo: "гео", probe: "проба", subscription: "подписка", node: "узел",
     select: "выбрать", test: "тест", show: "показать", restart: "перезапустить", leases: "аренды",
     lease: "аренда", set: "задать", unset: "снять", scope: "охват", iface: "интерфейс",
     traffic: "трафик", daily: "сутки", monthly: "месяц", top: "топ", stats: "статистика",
@@ -394,7 +395,7 @@ var STR = {
     light: "روشن", dark: "تیره", host: "میزبان", fingerprint: "اثرانگشت", passphrase: "گذرواژه",
     enter: "ورود", rejected: "رد شد", closed: "بسته", status: "وضعیت", tunnel: "تونل",
     network: "شبکه", bluetooth: "بلوتوث", overrides: "بازنویسی", monitoring: "پایش", system: "سیستم",
-    refresh: "تازه‌سازی", geo: "ژئو", subscription: "اشتراک", group: "گروه", node: "گره",
+    refresh: "تازه‌سازی", geo: "ژئو", probe: "آزمایش", subscription: "اشتراک", node: "گره",
     select: "انتخاب", test: "آزمون", show: "نمایش", restart: "شروع دوباره", leases: "اجاره‌ها",
     lease: "اجاره", set: "ثبت", unset: "برداشتن", scope: "دامنه", iface: "رابط",
     traffic: "ترافیک", daily: "روزانه", monthly: "ماهانه", top: "برترین", stats: "آمار",
@@ -413,7 +414,7 @@ var STR = {
     light: "浅色", dark: "深色", host: "主机", fingerprint: "指纹", passphrase: "口令",
     enter: "进入", rejected: "拒绝", closed: "锁定", status: "状态", tunnel: "隧道",
     network: "网络", bluetooth: "蓝牙", overrides: "覆盖", monitoring: "监测", system: "系统",
-    refresh: "刷新", geo: "地理", subscription: "订阅", group: "分组", node: "节点",
+    refresh: "刷新", geo: "地理", probe: "探测", subscription: "订阅", node: "节点",
     select: "选择", test: "测试", show: "显示", restart: "重启", leases: "租约",
     lease: "租约", set: "设置", unset: "取消", scope: "范围", iface: "接口",
     traffic: "流量", daily: "每日", monthly: "每月", top: "排行", stats: "统计",
@@ -689,12 +690,15 @@ function renderStatus(el, data) {
     }
     addRow(el, [word("engine")], shown(engineText));
   }
-  if (Array.isArray(data.groups)) {
-    used.groups = true;
-    data.groups.forEach(function (group) {
-      if (!group || typeof group !== "object") return;
-      var value = group.node ? [word("node"), lit(group.node)] : [];
-      addRow(el, spaced([word("group"), lit(group.name || "")]), value);
+  if (Array.isArray(data.nodes)) {
+    used.nodes = true;
+    data.nodes.forEach(function (node) {
+      if (!node || typeof node !== "object") return;
+      var labels = node.labels && typeof node.labels === "object" ? node.labels : {};
+      var text = Object.keys(labels).sort().map(function (key) {
+        return key + "=" + String(labels[key]);
+      }).join(" ");
+      addRow(el, spaced([word("node"), lit((node.picked ? "* " : "") + (node.name || ""))]), shown(text));
     });
   }
   ["refresh", "geo", "drift", "state", "power"].forEach(function (key) {
@@ -818,7 +822,7 @@ function showSection(name) {
   } else {
     stopPoll();
   }
-  if (name === "tunnel") loadGroups(false);
+  if (name === "tunnel") loadNodes(false);
   if (name === "overrides") {
     api("GET", "/api/override").then(function (res) {
       if (res.status === 200) {
@@ -843,10 +847,10 @@ function showSection(name) {
   if (name === "bluetooth") loadBluetooth(false);
 }
 
-function loadGroups(keepOut) {
-  return api("GET", "/api/proxy/groups").then(function (res) {
+function loadNodes(keepOut) {
+  return api("GET", "/api/proxy/nodes").then(function (res) {
     if (res.status === 200) {
-      renderGroups(res.data);
+      renderNodes(res.data);
       if (!keepOut) document.getElementById("tunnel-out").textContent = "";
     } else if (!keepOut) {
       setOut("tunnel-out", res);
@@ -871,63 +875,27 @@ function fillSelect(id, values, placeholder) {
   });
 }
 
-function renderGroups(data) {
-  var el = document.getElementById("groups");
+function renderNodes(data) {
+  var el = document.getElementById("nodes");
   el.textContent = "";
-  var proxies = data && data.proxies;
-  if (!proxies || typeof proxies !== "object" || Array.isArray(proxies)) return;
-  var kinds = {Selector: true, URLTest: true, Fallback: true, LoadBalance: true};
-  Object.keys(proxies).forEach(function (name) {
-    var item = proxies[name];
-    if (!item || !kinds[item.type]) return;
+  var nodes = data && data.nodes;
+  if (!Array.isArray(nodes)) return;
+  nodes.forEach(function (item) {
+    if (!item || typeof item !== "object") return;
     var row = document.createElement("div");
     row.className = "row";
     var label = document.createElement("span");
     label.className = "lab ltr";
-    label.textContent = name;
+    label.textContent = (item.picked ? "* " : "") + (item.name || "");
     var value = document.createElement("span");
-    var typeKey = {Selector: "selector", URLTest: "url-test", Fallback: "fallback", LoadBalance: "load-balance"}[item.type];
-    if (typeKey) {
-      value.className = "value text";
-      value.setAttribute("data-state", typeKey);
-      value.textContent = t(typeKey);
-    } else {
-      value.className = "value text ltr";
-      value.textContent = item.type || "";
-    }
-    var test = document.createElement("button");
-    test.type = "button";
-    test.setAttribute("data-i18n", "test");
-    test.textContent = t("test");
-    test.addEventListener("click", function () {
-      running(test, function () {
-        return api("POST", "/api/proxy/test", {group: name}, true);
-      }).then(function (res) { setOut("tunnel-out", res); });
-    });
+    value.className = "value text ltr";
+    var labels = item.labels && typeof item.labels === "object" ? item.labels : {};
+    value.textContent = Object.keys(labels).sort().map(function (key) {
+      return key + "=" + String(labels[key]);
+    }).join(" ");
     row.appendChild(label);
     row.appendChild(value);
-    row.appendChild(test);
     el.appendChild(row);
-    var nodes = item.all || [];
-    if (!nodes.length) return;
-    var members = document.createElement("div");
-    members.className = "choice";
-    nodes.forEach(function (node) {
-      var button = document.createElement("button");
-      button.type = "button";
-      button.className = node === item.now ? "on mono ltr" : "mono ltr";
-      button.textContent = node;
-      button.addEventListener("click", function () {
-        running(button, function () {
-          return api("POST", "/api/proxy/select", {group: name, node: node}, true);
-        }).then(function (res) {
-          setOut("tunnel-out", res);
-          if (res.status === 200) loadGroups(true);
-        });
-      });
-      members.appendChild(button);
-    });
-    el.appendChild(members);
   });
 }
 
@@ -1199,6 +1167,13 @@ function boot() {
   document.getElementById("refresh-geo").addEventListener("click", function () {
     running(this, function () { return api("POST", "/api/proxy/geodata/refresh", {}, true); })
       .then(function (res) { setOut("tunnel-out", res); });
+  });
+  document.getElementById("probe-nodes").addEventListener("click", function () {
+    running(this, function () { return api("POST", "/api/proxy/probe", {}, true); })
+      .then(function (res) {
+        setOut("tunnel-out", res);
+        if (res.status === 200) loadNodes(true);
+      });
   });
   document.getElementById("wan-show").addEventListener("click", function () {
     var name = document.getElementById("wan-name").value;

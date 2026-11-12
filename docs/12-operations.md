@@ -100,18 +100,16 @@ The tunnel needs its own signals because it fails more often than Ethernet:
 
 | Event | What the operator does | Kind |
 |-------|------------------------|------|
-| A node stops answering | `janus proxy select <group> <other>` (url-test also moves by itself) | maintenance action |
+| A node stops answering | `janus proxy probe`. The engine's url-test or leastPing also moves by itself. | maintenance action |
 | Geo data refresh failed | `janus proxy geodata refresh` | maintenance action |
 | Subscription fetch failed | `janus proxy refresh <name>` | maintenance action |
 | The vendor changed the subscription URL on one router | `janus override set proxy.subscriptions.<name>.url <url>` | hot override |
 | The same URL is shared by several routers | `janus-build secret set` on that subscription file, commit, `janus-build fleet apply` | one ciphertext file, then each reachable host decrypts and applies it (*12* §1.3) |
 
-`janus status` shows the last success, the last error, and the selected
-node for each group. That is the maintenance surface for 1.0. A later
-model shows labels and the node the engine picked, drops the manual
-select, and does not present a group (ADR-0028, *07* §11). `groups` and
-`groupsAuto` are removed then, with no compatibility and no migration.
-This table stays until that work. The
+`janus status` shows the last success and the last error. `janus proxy
+nodes` shows labels and the node the engine picked. The operator does
+not pick a node by hand, and the CLI does not present a group
+(ADR-0028, *07* §11). The
 maintenance page (*20*) calls these commands and the hot-override
 allowlist. It does not replace the CLI and it does not edit
 `configuration.nix`. The image includes it only when
@@ -156,8 +154,8 @@ is sent as `root@[address]`.
 | Overall status | `janus status` (WANs, LANs, DHCP leases count, engine health, selected nodes, last refresh, state partition usage) |
 | Refresh subscriptions now | `janus proxy refresh [name]` |
 | Refresh Geo data now | `janus proxy geodata refresh` |
-| Pick a node manually | `janus proxy select <group> <node>`; `janus proxy groups` lists options |
-| Latency test a group | `janus proxy test <group>` |
+| List node labels | `janus proxy nodes` |
+| Probe latency and HTTP labels | `janus proxy probe` |
 | Restart a WAN | `janus wan restart <name>` |
 | Show WAN details | `janus wan show <name>` (addresses, DNS learned, uptime, health) |
 | DHCP leases | `janus lan leases [lan]` |

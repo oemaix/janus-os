@@ -619,31 +619,11 @@
 
 (defn tag-of [node] (at node :name))
 
-(defn members-of [model nodes group-name]
-  (def groups (or (get model "groups") @{}))
-  (def group (or (get groups group-name) @{}))
-  (def match (or (get group "match") @{}))
-  (def kind (get match "kind"))
-  (def fold
-    (if (nil? (get match "caseInsensitive")) true (get match "caseInsensitive")))
-  (def compiled
-    (when kind
-      (compile-matcher kind (get match "pattern") fold)))
-  (def scope (or (get group "fromSubscriptions") @[]))
-  (def found @[])
-  (when compiled
-    (each node nodes
-      (def tag (tag-of node))
-      (def sub (if tag (first (string/split "/" tag)) ""))
-      (when (and (or (empty? scope) (find |(= sub $) scope)) (matcher-hit? compiled tag))
-        (array/push found tag))))
-  (each ref (or (get group "members") @[])
-    (cond
-      (string/has-prefix? "node:" ref) (array/push found (string/slice ref 5))
-      (string/has-prefix? "group:" ref) (array/push found (string/slice ref 6))
-      (string/has-prefix? "sub:" ref) (array/push found ref)
-      (array/push found ref)))
-  (distinct found))
+(def label-script
+  (let [file (or (dyn :current-file) (get (dyn :args) 0) "")]
+    (def slash (string/find-all "/" file))
+    (string (if (empty? slash) "" (string/slice file 0 (last slash))) "/labels.janet")))
+(dofile label-script :env (curenv))
 
 (defn outbound-for-node [node]
   (def tag (tag-of node))
@@ -679,75 +659,6 @@
       (put base :uuid (at-in node [:tuic :uuid]))
       (put base :password (at-in node [:tuic :password]))))
   base)
-
-(defn strategy-type [strategy]
-  (case strategy
-    "manual" "selector"
-    "url-test" "urltest"
-    (die (string "sing-box cannot express group strategy " strategy))))
-
-(defn groups-auto? [model]
-  (not= (get model "groupsAuto") false))
-
-(defn ref-tag [ref]
-  (cond
-    (nil? ref) nil
-    (= ref "direct") "direct"
-    (= ref "block") nil
-    (string/has-prefix? "group:" ref) (string/slice ref 6)
-    (string/has-prefix? "node:" ref) (string/slice ref 5)
-    ref))
-
-(defn outbound-exists? [model tag]
-  (when tag
-    (or
-      (= tag "direct")
-      (get (or (get model "groups") @{}) tag)
-      (and (= tag "Auto") (groups-auto? model))
-      (and (groups-auto? model)
-           (string/has-prefix? "sub:" tag)
-           (find |(= tag (string "sub:" $)) (or (get model "subscriptionNames") @[]))))))
-
-(defn fallback-tag [model name group]
-  (def fb (or (get group "emptyFallback") "direct"))
-  (def tag (or (ref-tag fb) "direct"))
-  (if (outbound-exists? model tag)
-    tag
-    (do
-      (eprint (string "janus: group " name " fallback " fb " is not an outbound; using direct"))
-      "direct")))
-
-(defn tunnel-tag [model view]
-  # groupsAuto keeps the literal Auto detour. A fleet group named Auto
-  # does not: false follows that view's default target.
-  (if (groups-auto? model)
-    "Auto"
-    (let [target (or (get view "defaultTarget") (get model "defaultTarget") "direct")
-          tag (ref-tag target)]
-      (if (outbound-exists? model tag) tag "direct"))))
-
-(defn group-outbound [model nodes name]
-  (def groups (or (get model "groups") @{}))
-  (def group (or (get groups name) @{}))
-  (def strategy (or (get group "strategy") "url-test"))
-  (var mem (members-of model nodes name))
-  (when (empty? mem)
-    (def tag (fallback-tag model name group))
-    (eprint (string "janus: group " name " is empty; using " tag))
-    (set mem @[tag]))
-  (def ob @{:type (strategy-type strategy) :tag name :outbounds mem})
-  (when (= strategy "manual")
-    (def wanted (or (ref-tag (get group "default")) (first mem)))
-    (def chosen (if (find |(= $ wanted) mem) wanted (first mem)))
-    (when (not= chosen wanted)
-      (eprint (string "janus: group " name " default " (or (get group "default") wanted) " is not a member; using " chosen)))
-    (put ob :default chosen))
-  (def test (or (get group "test") @{}))
-  (when (= strategy "url-test")
-    (put ob :url (or (get test "url") "https://www.gstatic.com/generate_204"))
-    (put ob :interval (or (get test "interval") "5m"))
-    (put ob :tolerance (or (get test "tolerance") 50)))
-  ob)
 
 (defn one-address [kind urls]
   (def list (or urls @[]))
@@ -899,32 +810,15 @@
       "address" nil
       "inbound" nil
       "mode" (or (get model "mode") "rule-based")
-      "defaultTarget" (or (get model "defaultTarget") "group:Auto")
+      "defaultTarget" (get model "defaultTarget")
       "rules" (or (get model "rules") @[])
       "dns" (or (get model "dns") @{})}]
     lans))
 
 (defn render [model nodes rule-set-mode]
+  (def ctx (label-context model nodes))
   (def outbounds @[])
   (each node nodes (array/push outbounds (outbound-for-node node)))
-  (def groups (or (get model "groups") @{}))
-  (each name (keys groups)
-    (array/push outbounds (group-outbound model nodes name)))
-  (def subs (or (get model "subscriptionNames") @[]))
-  (when (groups-auto? model)
-    (each sub subs
-      (def tag (string "sub:" sub))
-      (def mem (filter |(string/has-prefix? (string sub "/") $) (map tag-of nodes)))
-      (array/push outbounds
-        (if (empty? mem)
-          @{:type "selector" :tag tag :outbounds @["direct"] :default "direct"}
-          @{:type "urltest" :tag tag :outbounds mem :url "https://www.gstatic.com/generate_204" :interval "5m" :tolerance 50}))))
-  (when (and (groups-auto? model) (not (get groups "Auto")))
-    (def all (map tag-of nodes))
-    (array/push outbounds
-      (if (empty? all)
-        @{:type "selector" :tag "Auto" :outbounds @["direct"] :default "direct"}
-        @{:type "urltest" :tag "Auto" :outbounds all :url "https://www.gstatic.com/generate_204" :interval "5m" :tolerance 50})))
   (array/push outbounds @{:type "direct" :tag "direct" :routing_mark 74})
   (defn fake-on? [policy mode]
     (if (= mode "bypass")
@@ -934,7 +828,9 @@
         true true
         true)))
   (defn group-target? [target]
-    (and target (string/has-prefix? "group:" target)))
+    (and (string? target) (string/has-prefix? "sel-" target)))
+  (def views (map |(resolve-view ctx $) (policy-views model)))
+  (each ob (ctx :sing) (array/push outbounds ob))
   (defn name-match? [match]
     (and
       (or
@@ -960,7 +856,7 @@
       (string/has-prefix? "*." name)
       @{:domain_suffix @[(string/slice name 2)] :action "route" :server server}
       @{:domain @[name] :action "route" :server server}))
-  (defn views-of [model] (policy-views model))
+  (defn views-of [model] views)
   (def house (or (get model "dns") @{}))
   (def encryption (or (get house "encryption") "prefer"))
   (def cache (or (get house "cache") @{}))
@@ -1021,7 +917,9 @@
         (when remote-url
           (set rem-tag (string "remote-" label "-0"))
           (def item (dns-server rem-tag remote-url boot encryption))
-          (when (= (get remote "via") "tunnel") (put item :detour (tunnel-tag model view)))
+          (when (= (get remote "via") "tunnel")
+            (let [tag (get view "defaultTarget")]
+              (put item :detour (if (group-target? tag) tag "direct"))))
           (array/push servers item))))
     (when (and on (not saw-fake))
       (array/push servers @{
@@ -1095,7 +993,7 @@
                     (push-dns dns-rules (put-names @{:query_type @["A" "AAAA"] :action "route" :server "fakeip"} match) cidr inbound))
                   (when (and (not on) rem-tag)
                     (push-dns dns-rules (put-names @{:action "route" :server rem-tag} match) cidr inbound))))))
-          (def target (or (get view "defaultTarget") "group:Auto"))
+          (def target (or (get view "defaultTarget") "direct"))
           (cond
             (= target "block")
             (push-dns dns-rules @{:action "reject"} cidr inbound)
@@ -1127,16 +1025,16 @@
         (def quic @{:network "udp" :port @[443] :action "reject"})
         (when cidr (put quic :source_ip_cidr @[cidr]))
         (array/push rules quic))
-      (def target (or (get view "defaultTarget") (get model "defaultTarget") "group:Auto"))
+      (def target (or (get view "defaultTarget") "direct"))
       (def catch @{})
       (if (= target "block")
         (put catch :action "reject")
         (do
           (put catch :action "route")
-          (put catch :outbound (or (rule-outbound target) (tunnel-tag model view)))))
+          (put catch :outbound (or (rule-outbound target) "direct"))))
       (when cidr (put catch :source_ip_cidr @[cidr]))
       (array/push rules catch)))
-  (def final-target (or (get model "defaultTarget") "group:Auto"))
+  (def final-target (or (get (first views) "defaultTarget") "direct"))
   (def sets @[])
   (each tag (referenced-sets model)
     (array/push sets
@@ -1146,7 +1044,7 @@
   (def final
     (if (not (empty? (or (get model "lans") @[])))
       "direct"
-      (if (= final-target "block") "direct" (or (rule-outbound final-target) (tunnel-tag model @{})))))
+      (if (= final-target "block") "direct" (or (rule-outbound final-target) "direct"))))
   (def inbounds @[
     @{:type "tun" :tag "tun-in" :interface_name "tun0"
       :address @["172.19.0.1/30" "fdfe:dcba:9876::1/126"]
@@ -1238,26 +1136,12 @@
 (defn node-tag [target]
   (if (and target (string/has-prefix? "node:" target)) (string/slice target 5) (or target "direct")))
 
-(defn xray-balancer-strategy [strategy]
-  (case strategy
-    "load-balance" "roundRobin"
-    "url-test" "leastPing"
-    "manual" "leastPing"
-    "fallback" (die "xray cannot express group strategy fallback")
-    (die (string "xray cannot express group strategy " strategy))))
-
-(defn xray-dispatch [model target]
+(defn xray-dispatch [target]
   (cond
     (= target "direct") ["outbound" "direct"]
     (= target "block") ["outbound" "block"]
-    (string/has-prefix? "group:" target)
-    (let [name (string/slice target 6)
-          group (or (get (or (get model "groups") @{}) name) @{})
-          strategy (or (get group "strategy") "url-test")]
-      (if (= strategy "manual")
-        ["outbound" (node-tag (or (get group "default") "direct"))]
-        ["balancer" name]))
-    ["outbound" (node-tag (or target "direct"))]))
+    (and (string? target) (string/has-prefix? "sel-" target)) ["balancer" target]
+    ["outbound" "direct"]))
 
 (defn xray-name-only? [match]
   (and
@@ -1298,7 +1182,7 @@
         "target" (get rule "target")})))
   @{
     "mode" (or (get view "mode") "rule-based")
-    "defaultTarget" (or (get view "defaultTarget") "group:Auto")
+    "defaultTarget" (or (get view "defaultTarget") "direct")
     "recursive" (get policy "recursive")
     "domestic" (or (get policy "domestic") @{})
     "remote" (or (get policy "remote") @{})
@@ -1326,39 +1210,22 @@
   (def sources @[])
   (each cidr (or (get match "sourceIp") @[]) (array/push sources cidr))
   (when (not (empty? sources)) (put item :source sources))
-  (def where (xray-dispatch model (get rule "target")))
+  (def where (xray-dispatch (get rule "target")))
   (if (= (get where 0) "balancer")
     (put item :balancerTag (get where 1))
     (put item :outboundTag (get where 1)))
   item)
 
 (defn render-xray [model nodes]
+  (def ctx (label-context model nodes))
+  (def views (map |(resolve-view ctx $) (policy-views model)))
   (def outbounds @[])
   (each node nodes (array/push outbounds (xray-outbound node)))
   (array/push outbounds @{:tag "direct" :protocol "freedom" :streamSettings @{:sockopt @{:mark 74}}})
   (array/push outbounds @{:tag "block" :protocol "blackhole"})
   (array/push outbounds @{:tag "dns-out" :protocol "dns"})
-  (def groups (or (get model "groups") @{}))
-  (def balancers @[])
-  (def observed @[])
-  (each name (keys groups)
-    (def group (get groups name))
-    (def strategy (or (get group "strategy") "url-test"))
-    (when (not= strategy "manual")
-      (var mem (members-of model nodes name))
-      (when (empty? mem)
-        # A balancer selector names outbounds. direct is one. A group tag is not.
-        (let [wanted (or (get group "emptyFallback") "direct")]
-          (when (not= wanted "direct")
-            (eprint (string "janus: xray group " name " is empty; " wanted " is not an outbound, using direct"))))
-        (set mem @["direct"]))
-      (array/push balancers @{:tag name :selector mem :strategy @{:type (xray-balancer-strategy strategy)}})
-      (each tag mem (array/push observed tag))))
-  (when (and (groups-auto? model) (not (get groups "Auto")))
-    (def all (map tag-of nodes))
-    (array/push balancers @{:tag "Auto" :selector (if (empty? all) @["direct"] all) :strategy @{:type "leastPing"}})
-    (each tag all (array/push observed tag)))
-  (def views (policy-views model))
+  (def balancers (ctx :xray))
+  (def observed (ctx :observed))
   (def anchor (first views))
   (def anchor-fp (xray-dns-fp anchor))
   (each view views
@@ -1383,7 +1250,7 @@
   (def mode (or (get anchor "mode") "rule-based"))
   (def fake (or (get policy "fakeIp") @{}))
   (def strip (or (get policy "ipv6Answers") "strip-for-proxied"))
-  (def target (or (get anchor "defaultTarget") "group:Auto"))
+  (def target (or (get anchor "defaultTarget") "direct"))
   (def fake-on
     (if (or (= mode "bypass") (= (get policy "recursive") false))
       false
@@ -1457,7 +1324,7 @@
             (cond
               (= want "block") (if (= fallback "block") nil blocked)
               (= want "direct") (if (= fallback "domestic") nil real)
-              (and want (string/has-prefix? "group:" want))
+              (and (string? want) (string/has-prefix? "sel-" want))
               (if (or (= fallback "fake") (= fallback "remote")) nil proxied)
               nil))
           (when bag
@@ -1538,10 +1405,7 @@
   (def rules @[
     @{:type "field" :inboundTag @["api"] :outboundTag "api"}])
   (when (some |(= (get $ :tag) "dns-remote") servers)
-    (def where
-      (if (groups-auto? model)
-        ["balancer" "Auto"]
-        (xray-dispatch model (or (get anchor "defaultTarget") (get model "defaultTarget") "direct"))))
+    (def where (xray-dispatch (or (get anchor "defaultTarget") "direct")))
     (def item @{:type "field" :inboundTag @["dns-remote"]})
     (if (= (get where 0) "balancer")
       (put item :balancerTag (get where 1))
@@ -1555,7 +1419,7 @@
         (array/push rules (source-rule (xray-rule model rule) cidr)))
       (when (get model "blockQuic")
         (array/push rules (source-rule @{:type "field" :network "udp" :port "443" :outboundTag "block"} cidr)))
-      (def where (xray-dispatch model (or (get view "defaultTarget") "group:Auto")))
+      (def where (xray-dispatch (or (get view "defaultTarget") "direct")))
       (def catch @{:type "field" :network "tcp,udp"})
       (if (= (get where 0) "balancer")
         (put catch :balancerTag (get where 1))
@@ -1584,7 +1448,8 @@
     (put cfg :observatory @{
       :subjectSelector (if (empty? observed) @["direct"] (distinct observed))
       :probeUrl "https://www.gstatic.com/generate_204"
-      :probeInterval "10s"}))
+      :probeInterval "10s"})
+    (array/push (get-in cfg [:api :services]) "ObservatoryService"))
   cfg)
 
 (defn arg-value [args flag]
@@ -1601,14 +1466,24 @@
     (put out nk (if (and (table? b) (table? v)) (merge-raw b v) v)))
   out)
 
+(defn use-label-args [args]
+  (setdyn :latency-path (arg-value args "--latency"))
+  (setdyn :probes-path (arg-value args "--probes"))
+  (setdyn :geoip-path (arg-value args "--geoip"))
+  (when (find |(= $ "--resolve") args)
+    (setdyn :label-resolve true)))
+
 (defn main [&]
   (def args (dyn :args))
   (def cmd
     (or (find |(= $ "normalize") args)
         (find |(= $ "render") args)
-        (find |(= $ "match") args)))
+        (find |(= $ "match") args)
+        (find |(= $ "labels") args)
+        (find |(= $ "probe") args)
+        (find |(= $ "label-check") args)))
   (unless cmd
-    (eprint "janus.janet normalize|render|match")
+    (eprint "janus.janet normalize|render|match|labels|probe")
     (os/exit 2))
   (case cmd
     "normalize"
@@ -1628,11 +1503,31 @@
           nodes (json-decode (read-all (or (arg-value args "--nodes") (die "--nodes is required"))))
           mode (or (arg-value args "--rule-set") "remote")
           engine (or (arg-value args "--engine") "sing-box")
-          dst (or (arg-value args "--output") "-")
-          rendered (if (= engine "xray") (render-xray model nodes) (render model nodes mode))
-          raw (or (get model "engineSettings") @{})
-          merged (if (empty? raw) rendered (merge-raw rendered raw))]
-      (write-out dst (json-encode merged)))
+          dst (or (arg-value args "--output") "-")]
+      (use-label-args args)
+      (let [rendered (if (= engine "xray") (render-xray model nodes) (render model nodes mode))
+            raw (or (get model "engineSettings") @{})
+            merged (if (empty? raw) rendered (merge-raw rendered raw))
+            labels-path (arg-value args "--labels")]
+        (when labels-path
+          (def ctx (label-context model nodes))
+          (write-out labels-path (json-encode (label-document ctx))))
+        (write-out dst (json-encode merged))))
+    "labels"
+    (let [model (json-decode (read-all (or (arg-value args "--model") "-")))
+          nodes (json-decode (read-all (or (arg-value args "--nodes") (die "--nodes is required"))))]
+      (use-label-args args)
+      (print (json-encode (label-document (label-context model nodes)))))
+    "probe"
+    (let [model (json-decode (read-all (or (arg-value args "--model") "-")))
+          nodes (json-decode (read-all (or (arg-value args "--nodes") (die "--nodes is required"))))
+          engine (or (arg-value args "--engine") "sing-box")
+          latency (or (arg-value args "--latency") "/var/lib/janus/engine/latency.json")
+          probes (or (arg-value args "--probes") "/var/lib/janus/engine/probes.json")]
+      (run-probes model nodes engine latency probes)
+      (print "ok"))
+    "label-check"
+    (label-self-check)
     "match"
     (let [kind (get args (+ (index-of "match" args) 1))
           pattern (get args (+ (index-of "match" args) 2))

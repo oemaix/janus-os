@@ -222,7 +222,7 @@
        D-0042. These stay commented because the VLANs and the firewall
        policies below are commented too. home inherits janus.proxy.mode
        and janus.dns. A set proxy.rules replaces the inherited list. Bind
-       the same Nix list to reuse it. Nodes and groups stay on janus.proxy.
+       the same Nix list to reuse it. Nodes and labels stay on janus.proxy.
 
        Guest: bypass. Unset dns sends every recursive name to the domestic
        encrypted resolvers, not the carrier and not the tunnel.
@@ -235,7 +235,7 @@
       proxy.mode   = "bypass";
     };
 
-    Agents: proxy-all, same groups as home. Needs agents → wan.
+    Agents: proxy-all, same labels as home. Needs agents → wan.
     ai = {
       members      = [ "lan.40" ];
       address      = "192.168.40.1";
@@ -326,88 +326,64 @@
       */
     };
 
-    # Region groups by name matching. Each is a url-test group over all subscriptions.
-    groups = {
-      JP = {
-        match = {
-          kind = "regex";
-          pattern = "japan|jp|日本|🇯🇵";
-        };
-        strategy = "url-test";
-      };
-      US = {
-        match = {
-          kind = "regex";
-          pattern = "united states|\\bus\\b|usa|美国|🇺🇸";
-        };
-        strategy = "url-test";
-      };
-      HK = {
-        match = {
-          kind = "regex";
-          pattern = "hong ?kong|\\bhk\\b|香港|🇭🇰";
-        };
-        strategy = "url-test";
-      };
-      SG = {
-        match = {
-          kind = "regex";
-          pattern = "singapore|\\bsg\\b|新加坡|🇸🇬";
-        };
-        strategy = "url-test";
-      };
-      UK = {
-        match = {
-          kind = "regex";
-          pattern = "united kingdom|britain|\\buk\\b|英国|🇬🇧";
-        };
-        strategy = "url-test";
-      };
-      EU = {
-        match = {
-          kind = "regex";
-          pattern = "germany|france|netherlands|德国|法国|荷兰|🇩🇪|🇫🇷|🇳🇱";
-        };
-        strategy = "url-test";
-      };
-      IN = {
-        match = {
-          kind = "regex";
-          pattern = "india|\\bin\\b|印度|🇮🇳";
-        };
-        strategy = "url-test";
-      };
-
-      # Glob example: all nodes whose name starts with "Premium".
-      # Premium = { match = { kind = "glob"; pattern = "Premium*"; }; };
-
-      # PEG example (Janet): names containing "JP" but not "x0.5" (discounted bandwidth).
-      # JP-full = { match = { kind = "peg";
-      #   pattern = ''(* (not (any (if-not "x0.5" 1)) "x0.5") (any (if-not "JP" 1)) "JP")''; }; };
-
-      # Usage groups — templates. Uncomment together with the matching rule below.
-      # fallback fails on both engines. load-balance is xray only (docs/07 §2.1).
-      /*
-      Telegram = { members = [ "group:SG" "group:HK" ]; strategy = "fallback"; };
-      */
-      /*
-      Gemini   = { members = [ "group:US" ];            strategy = "url-test"; };
-      */
-      /*
-      Claude   = { members = [ "group:US" "group:JP" ]; strategy = "fallback"; };
-      */
-      /*
-      Netflix  = { members = [ "group:JP" "group:SG" ]; strategy = "manual"; default = "group:JP"; };
-      */
-      /*
-      YouTube = { members = [ "group:US" "group:JP" ]; strategy = "url-test"; };
-      */
-      /*
-      GitHub  = { members = [ "group:US" "group:SG" ]; strategy = "url-test"; };
-      */
+    # One region label. geoip writes the official alpha-2 of the node address.
+    # A later name pattern fills a node the database does not classify.
+    # uk and eu are not region codes. The United Kingdom is gb.
+    labels.region = {
+      type = "region";
+      rules = [
+        {match.kind = "geoip";}
+        {
+          match.kind = "regex";
+          match.pattern = "japan|jp|日本";
+          value = "jp";
+        }
+        {
+          match.kind = "regex";
+          match.pattern = "united states|\\bus\\b|usa|美国";
+          value = "us";
+        }
+        {
+          match.kind = "regex";
+          match.pattern = "hong ?kong|\\bhk\\b|香港";
+          value = "hk";
+        }
+        {
+          match.kind = "regex";
+          match.pattern = "singapore|\\bsg\\b|新加坡";
+          value = "sg";
+        }
+        {
+          match.kind = "regex";
+          match.pattern = "united kingdom|britain|\\buk\\b|英国";
+          value = "gb";
+        }
+        {
+          match.kind = "regex";
+          match.pattern = "germany|德国";
+          value = "de";
+        }
+        {
+          match.kind = "regex";
+          match.pattern = "france|法国";
+          value = "fr";
+        }
+        {
+          match.kind = "regex";
+          match.pattern = "india|\\bin\\b|印度";
+          value = "in";
+        }
+      ];
     };
+    # gemini = {
+    #   type = "empty";
+    #   rules = [{
+    #     match.kind = "http";
+    #     match.url = "https://gemini.google.com/";
+    #   }];
+    # };
 
-    defaultTarget = "group:Auto"; # Auto = url-test over everything
+    defaultTarget = {}; # every node. The engine picks with urltest or leastPing.
 
     # Unset rules stay empty, and traffic follows defaultTarget.
     # This list is the cn template (docs/21 §4). For ru or ir, replace it
@@ -433,13 +409,13 @@
         target = "block";
       }
 
-      # Usage templates. sing-box rejects strategy fallback (ADR-0006).
-      # { match = { geosite = [ "telegram" ]; geoip = [ "telegram" ]; }; target = "group:Telegram"; }
-      # { match = { domainSuffix = [ "gemini.google.com" "generativelanguage.googleapis.com" ]; }; target = "group:Gemini"; }
-      # { match = { domainSuffix = [ "anthropic.com" "claude.ai" ]; };  target = "group:Claude"; }
-      # { match = { geosite = [ "netflix" ]; };                          target = "group:Netflix"; }
-      # { match = { geosite = [ "youtube" ]; };                          target = "group:YouTube"; }
-      # { match = { geosite = [ "github" ]; };                           target = "group:GitHub"; }
+      # Usage templates. failover walks selectors until one has a node.
+      # { match = { geosite = [ "telegram" ]; geoip = [ "telegram" ]; }; failover = [ { region = "sg"; } { region = "hk"; } ]; }
+      # { match = { domainSuffix = [ "gemini.google.com" "generativelanguage.googleapis.com" ]; }; labels.gemini = "gemini"; }
+      # { match = { domainSuffix = [ "anthropic.com" "claude.ai" ]; }; failover = [ { region = "us"; } { region = "jp"; } ]; }
+      # { match = { geosite = [ "netflix" ]; }; failover = [ { region = "jp"; } { region = "sg"; } ]; }
+      # { match = { geosite = [ "youtube" ]; }; labels.region = "us"; }
+      # { match = { geosite = [ "github" ]; }; failover = [ { region = "us"; } { region = "sg"; } ]; }
     ];
 
     # Russia. Replace rules above. Also set janus.system.region = "ru".

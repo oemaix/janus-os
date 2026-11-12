@@ -139,17 +139,16 @@ not change. Where each action sits is §7.5.
 
 | Section | Contents | Actions |
 |---------|----------|---------|
-| `status` | The fields of `janus status`: one row per WAN (name, up or down, address), one row per LAN (name, lease count), engine, one row per group (name, selected node), last subscription refresh, last Geo refresh, drift, state-partition use, power readings when a `power` peripheral exists | none |
-| `tunnel` | Groups, strategy, current node, members, subscription names | `refresh` every subscription, `geo`, `test` on a group, `select` by pressing a member, `refresh` one subscription |
+| `status` | The fields of `janus status`: one row per WAN (name, up or down, address), one row per LAN (name, lease count), engine, one row per node when the status payload has nodes, last subscription refresh, last Geo refresh, drift, state-partition use, power readings when a `power` peripheral exists | none |
+| `tunnel` | Each node's labels and a mark on the node the engine picked, plus subscription names | `refresh` every subscription, `geo`, `probe`, `refresh` one subscription |
 | `network` | One typed WAN name, LAN names from the image | `show` and `restart` that WAN. `leases` for one LAN. |
 | `bluetooth` | Paired speakers when `janus.audio.playback.output` is `bluetooth`, and nearby speakers after `discover` | `discover`. `pair` on a nearby row or on a typed address. Optional `code`. `connect`, `disconnect`, and `remove` on a paired device. Omitted when Bluetooth playback is not configured. The speech routes are not on this page (D-0062). |
 | `overrides` | Allowlist rows in §5 | `set`, `unset` |
 | `monitoring` | `janus traffic`, `janus dns stats`, and one audit line from `janus audit status` when that feature is in the image | `traffic`, `daily`, `monthly`, and `top` when the scope is `per-host`. `stats`, `check`, `flush`. `query` for one name. |
 | `system` | `janus version --components` | `reboot` |
 
-The `status` and `tunnel` sections name groups until ADR-0028. That later
-work shows labels and the node the engine picked, and does not present a
-group. These rows stay until then.
+The `status` and `tunnel` sections show labels and the node the engine
+picked. They do not present a group.
 
 `status` refreshes every 10 seconds while it is the open section and the
 browser tab is visible. Tunnel, bluetooth, overrides, monitoring, and
@@ -213,11 +212,10 @@ before exec; the CLI checks again.
 |---------|---------|
 | `GET /api/meta` | No command. Image facts other than the login fingerprint. |
 | `GET /api/status` | `janus --json status` |
-| `GET /api/proxy/groups` | `janus --json proxy groups` |
+| `GET /api/proxy/nodes` | `janus --json proxy nodes` |
 | `POST /api/proxy/refresh` | `janus --json proxy refresh [name]` |
 | `POST /api/proxy/geodata/refresh` | `janus --json proxy geodata refresh` |
-| `POST /api/proxy/select` | `janus --json proxy select <group> <node>` |
-| `POST /api/proxy/test` | `janus --json proxy test <group>` |
+| `POST /api/proxy/probe` | `janus --json proxy probe` |
 | `POST /api/wan/restart` | `janus --json wan restart <name>` |
 | `GET /api/wan/show` | `janus --json wan show <name>` |
 | `GET /api/lan/leases` | `janus --json lan leases [lan]` |

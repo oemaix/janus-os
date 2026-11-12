@@ -38,12 +38,11 @@ These do not change configuration or hot overrides.
 
 | Command | Effect |
 |---------|--------|
-| `janus status` | WANs, LANs, lease count, engine health, selected node per group, last subscription and Geo refresh (time and error), drift, state-partition use, power-sensor readings when a `power` peripheral exists |
+| `janus status` | WANs, LANs, lease count, engine health, last subscription and Geo refresh (time and error), drift, state-partition use, power-sensor readings when a `power` peripheral exists |
 | `janus proxy refresh [name]` | Fetch subscriptions now. No name means all. |
 | `janus proxy geodata refresh` | Fetch Geo data now. |
-| `janus proxy select <group> <node>` | Temporary node choice. Survives reboot. Cleared when a rebuild changes that group's `default`. |
-| `janus proxy groups` | Groups, strategy, current node, members |
-| `janus proxy test <group>` | Latency test |
+| `janus proxy nodes` | Each node's labels, and a mark on the node the engine picked. |
+| `janus proxy probe` | Sample latency, and an HTTP label when one is configured, then render again. |
 | `janus wan restart <name>` | Restart one WAN |
 | `janus wan show <name>` | Addresses, learned DNS, uptime, health |
 | `janus lan leases [lan]` | DHCP leases |
@@ -65,11 +64,8 @@ These do not change configuration or hot overrides.
 | `janus bluetooth disconnect <address-or-name>` | Disconnect that device. This boot does not connect that address again. Another address is left alone. The next boot connects the last device again. |
 | `janus bluetooth remove <address-or-name>` | Remove the pairing. If it was the last device, nothing is connected after boot. |
 
-Label inspection is not a command in this table. ADR-0027, ADR-0028, and
-*07* §11 specify it for later. `groups`, `select`, and `test` stay until
-that work. When §11 replaces them, those commands are removed. The CLI
-does not present a group. There is no compatibility command and no
-migration.
+`janus proxy nodes` and `janus proxy probe` are the label commands
+(*07* §11). The CLI does not present a group.
 
 ## 3. Hot overrides
 

@@ -5,8 +5,9 @@ meta=/etc/janus/subscriptions.json
 manual=/etc/janus/nodes-manual.json
 built=/etc/janus/nodes-built.json
 cfg=/var/lib/janus/engine/config.json
-sel=/var/lib/janus/engine/selection.json
-defs=/etc/janus/group-defaults.json
+labels=/var/lib/janus/engine/node-labels.json
+latency=/var/lib/janus/engine/latency.json
+probes=/var/lib/janus/engine/probes.json
 policy=/etc/janus/dns-policy.json
 tags=/etc/janus/geodata-tags.json
 sources=/etc/janus/geodata-sources.json
@@ -18,7 +19,7 @@ die() {
 }
 
 usage() {
-  echo "janus-proxy <intercept-up|tun-up|tun-down|render|refresh|geodata-missing|geodata-refresh|groups|select|test|dns-query|dns-flush|dns-stats|dns-check>" >&2
+  echo "janus-proxy <intercept-up|tun-up|tun-down|render|refresh|geodata-missing|geodata-refresh|nodes|probe|dns-query|dns-flush|dns-stats|dns-check>" >&2
   exit 2
 }
 
@@ -66,51 +67,11 @@ intercept_up() {
 }
 
 apply_selection() {
-  [ -f "$sel" ] || return 0
-  [ -f "$defs" ] || return 0
-  while IFS= read -r group; do
-    [ -n "$group" ] || continue
-    image=$(jq -c --arg g "$group" '.[$g]' "$defs")
-    remembered=$(jq -c --arg g "$group" '.[$g].default' "$sel")
-    node=$(jq -r --arg g "$group" '.[$g].node // empty' "$sel")
-    if [ "$image" != "$remembered" ] || [ -z "$node" ]; then
-      continue
-    fi
-    curl -fsS -X PUT -H 'content-type: application/json' \
-      -d "$(jq -nc --arg n "$node" '{name:$n}')" \
-      "${clash}/proxies/${group}" || true
-  done < <(jq -r 'keys[]' "$sel")
+  return 0
 }
 
 xray_pin_balancers() {
-  [ "${JANUS_ENGINE}" = xray ] || return 0
-  [ -f "$sel" ] || return 0
-  [ -f "$model" ] || return 0
-  i=0
-  while [ "$i" -lt 20 ]; do
-    if xray api bi -s 127.0.0.1:8080 >/dev/null 2>&1; then
-      break
-    fi
-    sleep 0.2
-    i=$((i + 1))
-  done
-  while IFS= read -r group; do
-    [ -n "$group" ] || continue
-    strategy=$(jq -r --arg g "$group" '.groups[$g].strategy // "url-test"' "$model")
-    if [ "$strategy" = manual ]; then
-      continue
-    fi
-    image=$(jq -c --arg g "$group" '.[$g]' "$defs")
-    remembered=$(jq -c --arg g "$group" '.[$g].default' "$sel")
-    node=$(jq -r --arg g "$group" '.[$g].node // empty' "$sel")
-    if [ "$image" != "$remembered" ] || [ -z "$node" ]; then
-      continue
-    fi
-    case "$node" in
-      node:*) node=${node#node:} ;;
-    esac
-    xray api bo -s 127.0.0.1:8080 -b "$group" "$node" || true
-  done < <(jq -r 'keys[]' "$sel")
+  return 0
 }
 
 tun_up() {
@@ -279,28 +240,145 @@ apply_passwords() {
 apply_saved_selection() {
   src=$1
   dst=$2
-  if [ "${JANUS_ENGINE}" != xray ] || [ ! -f "$sel" ]; then
-    cp "$src" "$dst"
+  cp "$src" "$dst"
+}
+
+hold_engine_lock() {
+  if [ "${JANUS_ENGINE_LOCK_HELD:-0}" = 1 ]; then
     return 0
   fi
-  jq --slurpfile sel "$sel" '
-    reduce ($sel[0] | to_entries[]) as $e (.;
-      if ((.groups[$e.key].strategy // "url-test") == "manual")
-         and (.groups[$e.key].default == $e.value.default)
-      then .groups[$e.key].default = $e.value.node
-      else . end)
-  ' "$src" > "$dst"
+  mkdir -p /var/lib/janus/engine
+  exec 9>>/var/lib/janus/engine/render.lock
+  flock 9
+  JANUS_ENGINE_LOCK_HELD=1
+}
+
+wait_for_node_dns() {
+  [ -n "${JANUS_DIG:-}" ] || return 0
+  nodes=$(merge_nodes)
+  host=$(jq -r '[.[] | .server // empty | select(test("^[0-9.]+$") | not) | select(contains(":") | not)] | .[0] // empty' "$nodes")
+  rm -f "$nodes"
+  [ -n "$host" ] || return 0
+  i=0
+  while [ "$i" -lt 6 ]; do
+    if "$JANUS_DIG" +time=2 +tries=1 +short "$host" A | grep -Eq '^[0-9]+(\.[0-9]+){3}$'; then
+      return 0
+    fi
+    if "$JANUS_DIG" +time=2 +tries=1 +short "$host" AAAA | grep -q ':'; then
+      return 0
+    fi
+    i=$((i + 1))
+    sleep 5
+  done
+}
+
+# One name and its engine delay per line. sing-box reads the Clash API.
+# xray leastPing is the observatory's lowest alive delay inside each balancer.
+picked_nodes() {
+  out=$1
+  : > "$out"
+  if [ "${JANUS_ENGINE:-}" = xray ]; then
+    ois=$(mktemp)
+    if [ -n "${JANUS_OIS_JSON:-}" ]; then
+      cp "$JANUS_OIS_JSON" "$ois"
+    elif ! xray api ois -s 127.0.0.1:8080 > "$ois" 2>/dev/null; then
+      rm -f "$ois"
+      return 0
+    fi
+    engine_cfg=${JANUS_ENGINE_CONFIG:-$cfg}
+    if ! jq -r --slurpfile ois "$ois" '
+      def rows:
+        if ((.status // null) | type) == "object" then (.status.status // [])
+        elif ((.status // null) | type) == "array" then .status
+        else [] end;
+      ($ois[0] | rows) as $rows
+      | [ .routing.balancers[]?
+          | select(.strategy.type == "leastPing")
+          | . as $bal
+          | [ $rows[]
+              | select(.alive == true)
+              | (.outboundTag // .outbound_tag // "") as $t
+              | select($t != "" and (($bal.selector // []) | index($t)))
+              | {name: $t, delay: (.delay // 0)} ]
+          | sort_by(.delay)
+          | .[0]
+          | select(. != null) ]
+      | group_by(.name)
+      | .[]
+      | "\(.[0].name)\t\([.[].delay] | min)"
+    ' "$engine_cfg" > "$out"; then
+      : > "$out"
+    fi
+    rm -f "$ois"
+    return 0
+  fi
+  api=$(mktemp)
+  if [ -n "${JANUS_PROXIES:-}" ]; then
+    cp "$JANUS_PROXIES" "$api"
+  elif ! curl -fsS --max-time 2 "${clash}/proxies" -o "$api"; then
+    echo '{}' > "$api"
+  fi
+  if ! jq -r '
+    .proxies as $p
+    | [ $p // {} | to_entries[]
+        | select(.key | startswith("sel-"))
+        | .value.now
+        | select(. != null and . != "") ] | unique[]
+    | . as $n
+    | ($p[$n].history[-1].delay // 0) as $d
+    | if ($d | type) == "number" and $d > 0 then "\($n)\t\($d)" else "\($n)\t" end
+  ' "$api" > "$out"; then
+    : > "$out"
+  fi
+  rm -f "$api"
+}
+
+# A node that left the subscription drops its latency sample and HTTP mark.
+# A failed probe still keeps the previous value of a node that is still present.
+prune_label_state() {
+  list=$1
+  names=$(mktemp)
+  jq -c '[.[].name | select(. != null)]' "$list" > "$names"
+  for state in "$latency" "$probes"; do
+    [ -f "$state" ] || continue
+    next=$(mktemp)
+    if [ "$state" = "$latency" ]; then
+      jq --slurpfile names "$names" '
+        ($names[0]) as $names
+        | with_entries(select(.key as $k | $names | index($k)))
+      ' "$state" > "$next"
+    else
+      jq --slurpfile names "$names" '
+        ($names[0]) as $names
+        | with_entries(
+            if (.value | type) == "object"
+            then .value |= with_entries(select(.key as $k | $names | index($k)))
+            else empty
+            end)
+      ' "$state" > "$next"
+    fi
+    mv "$next" "$state"
+    chmod 0600 "$state"
+  done
+  rm -f "$names"
 }
 
 render_config() {
+  hold_engine_lock
   ensure_dirs
   nodes=$(merge_nodes)
+  prune_label_state "$nodes"
   work=$(mktemp)
   selected=$(mktemp)
   out=$(mktemp)
   carrier_model "$model" "$work"
   apply_saved_selection "$work" "$selected"
-  janet "$JANUS_SCRIPT" render --model "$selected" --nodes "$nodes" --rule-set local --engine "${JANUS_ENGINE}" --output "$out"
+  args=(janet "$JANUS_SCRIPT" render --model "$selected" --nodes "$nodes" --rule-set local --engine "${JANUS_ENGINE}" --latency "$latency" --probes "$probes" --labels "$labels")
+  if [ -f /etc/janus/geoip.dat ]; then
+    args+=(--geoip /etc/janus/geoip.dat --resolve)
+  fi
+  args+=(--output "$out")
+  "${args[@]}"
   apply_passwords "$out"
   if [ "${JANUS_ENGINE}" = xray ]; then
     xray run -test -c "$out"
@@ -526,25 +604,74 @@ resolve_name() {
   fi
 }
 
-write_selection() {
-  group=$1
-  node=$2
+show_nodes() {
   ensure_dirs
-  image=$(jq -c --arg g "$group" '.[$g]' "$defs")
-  if [ -f "$sel" ]; then
-    current=$sel
-  else
-    current=$(mktemp)
-    echo '{}' > "$current"
+  picked=$(mktemp)
+  picked_nodes "$picked"
+  src=$labels
+  if [ ! -f "$src" ]; then
+    src=$(mktemp)
+    echo '{}' > "$src"
   fi
-  tmp=$(mktemp)
-  jq --arg g "$group" --arg n "$node" --argjson d "$image" '.[$g] = {node:$n, default:$d}' "$current" > "$tmp"
-  mv "$tmp" "$sel"
-  if grep -q '^janus-engine:' /etc/group 2>/dev/null; then
-    chgrp janus-engine "$sel"
-    chmod 0640 "$sel"
+  if [ "${JANUS_JSON:-0}" = 1 ]; then
+    jq -n --slurpfile labels "$src" --rawfile picked "$picked" '
+      ($picked | split("\n") | map(select(. != "") | split("\t")[0])) as $on
+      | ($labels[0] // {})
+      | to_entries
+      | sort_by(.key)
+      | map({name: .key, picked: (.key as $n | $on | index($n) != null), labels: .value})
+      | {nodes: .}
+    '
   else
-    chmod 0600 "$sel"
+    jq -r --rawfile picked "$picked" '
+      ($picked | split("\n") | map(select(. != "") | split("\t")[0])) as $on
+      | to_entries
+      | sort_by(.key)
+      | .[]
+      | .key as $n
+      | (if ($on | index($n) != null) then "* " else "  " end) as $mark
+      | (.value | to_entries | sort_by(.key) | map("\(.key)=\(.value|tostring)") | join(" ")) as $text
+      | $mark + $n + "  " + $text
+    ' "$src"
+  fi
+  if [ "$src" != "$labels" ]; then
+    rm -f "$src"
+  fi
+  rm -f "$picked"
+}
+
+probe_labels() {
+  hold_engine_lock
+  ensure_dirs
+  nodes=$(merge_nodes)
+  work=$(mktemp)
+  selected=$(mktemp)
+  carrier_model "$model" "$work"
+  cp "$work" "$selected"
+  janet "$JANUS_SCRIPT" probe --model "$selected" --nodes "$nodes" --engine "${JANUS_ENGINE}" --latency "$latency" --probes "$probes"
+  rm -f "$nodes" "$work" "$selected"
+  before=""
+  if [ -f "$cfg" ]; then
+    before=$(sha256sum "$cfg" | awk '{print $1}')
+  fi
+  render_config
+  after=$(sha256sum "$cfg" | awk '{print $1}')
+  if [ "$before" != "$after" ]; then
+    systemctl restart janus-engine.service
+  fi
+}
+
+resolve_labels() {
+  hold_engine_lock
+  wait_for_node_dns
+  before=""
+  if [ -f "$cfg" ]; then
+    before=$(sha256sum "$cfg" | awk '{print $1}')
+  fi
+  render_config
+  after=$(sha256sum "$cfg" | awk '{print $1}')
+  if [ "$before" != "$after" ]; then
+    systemctl restart janus-engine.service
   fi
 }
 
@@ -705,58 +832,15 @@ case "$cmd" in
     ;;
   geodata-missing) geodata_missing ;;
   geodata-refresh) geodata_refresh ;;
-  groups)
-    if [ "${JANUS_ENGINE}" = xray ]; then
-      jq -r '.groups | to_entries[] | "\(.key) \(.value.strategy // "url-test")"' "$model"
-      xray api bi -s 127.0.0.1:8080 || true
-    else
-      curl -fsS "${clash}/proxies"
-    fi
+  nodes) show_nodes ;;
+  picked)
+    picked=$(mktemp)
+    picked_nodes "$picked"
+    cat "$picked"
+    rm -f "$picked"
     ;;
-  select)
-    group=${1:-}
-    node=${2:-}
-    if [ -z "$group" ] || [ -z "$node" ]; then
-      usage
-    fi
-    if [ "${JANUS_ENGINE}" = xray ]; then
-      previous=$(mktemp)
-      if [ -f "$sel" ]; then
-        cp "$sel" "$previous"
-      else
-        echo '{}' > "$previous"
-      fi
-      write_selection "$group" "$node"
-      if ! render_or_fail; then
-        cp "$previous" "$sel"
-        chmod 0600 "$sel"
-        rm -f "$previous"
-        exit 1
-      fi
-      rm -f "$previous"
-      systemctl restart janus-engine.service
-      xray_pin_balancers
-    else
-      curl -fsS -X PUT -H 'content-type: application/json' \
-        -d "$(jq -nc --arg n "$node" '{name:$n}')" \
-        "${clash}/proxies/${group}"
-      write_selection "$group" "$node"
-    fi
-    ;;
-  test)
-    group=${1:-}
-    if [ -z "$group" ]; then
-      usage
-    fi
-    if [ "${JANUS_ENGINE}" = xray ]; then
-      xray api bi -s 127.0.0.1:8080 "$group"
-    else
-      url=$(jq -r --arg g "$group" '.groups[$g].test.url // "https://www.gstatic.com/generate_204"' "$model")
-      curl -fsS -G "${clash}/proxies/${group}/delay" \
-        --data-urlencode "url=${url}" \
-        --data-urlencode "timeout=5000"
-    fi
-    ;;
+  probe) probe_labels ;;
+  resolve-labels) resolve_labels ;;
   dns-query)
     name=${1:-}
     if [ -z "$name" ]; then

@@ -25,7 +25,7 @@
   };
   snapshotPkg = pkgs.writeShellApplication {
     name = "janus-hmi-snapshot";
-    runtimeInputs = with pkgs; [gawk jq iproute2 curl systemd coreutils];
+    runtimeInputs = with pkgs; [gawk jq iproute2 systemd coreutils];
     text = builtins.readFile ../../../pkgs/janus-hmi-snapshot.sh;
   };
   # Mainline trees leave &spi disabled and have no firmware dtparam.
@@ -153,24 +153,6 @@
         }
       ];
 
-  groupNames = lib.attrNames proxy.groups;
-  groupList =
-    if proxy.enable && proxy.groupsAuto && !(lib.elem "Auto" groupNames)
-    then groupNames ++ ["Auto"]
-    else groupNames;
-
-  groupOf = name:
-    if proxy.groups ? ${name}
-    then proxy.groups.${name}
-    else {
-      strategy = "url-test";
-      default = null;
-      members = [];
-    };
-
-  nodeMembers = members:
-    map (lib.removePrefix "node:") (lib.filter (lib.hasPrefix "node:") members);
-
   powerNames = lib.filter (n: hw.peripherals.${n}.class == "power") (lib.attrNames hw.peripherals);
   powerName =
     if powerNames == []
@@ -238,16 +220,6 @@
       ++ map (c: "control\t${c.name}\t${c.cap}\t${toString c.gpio}") (controlsOf p)
       ++ lib.mapAttrsToList (n: _: "wan\t${n}\t${wanIface n}") net.wans
       ++ lib.mapAttrsToList (n: lan: "lan\t${n}\t${lan.address}/${toString lan.prefixLength}") net.lans
-      ++ lib.optionals proxy.enable (lib.concatMap (g: let
-        group = groupOf g;
-        fallback =
-          if group.default == null
-          then "-"
-          else group.default;
-      in
-        ["group\t${g}\t${group.strategy}\t${fallback}"]
-        ++ map (m: "member\t${g}\t${m}") (nodeMembers group.members))
-      groupList)
       ++ lib.optionals (powerName != null) [
         "power\t${discharge}\t${
           if power.power.shutdown.enable

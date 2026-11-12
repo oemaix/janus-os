@@ -130,58 +130,10 @@ service unit prefers the runtime copy when present and valid.
 
 ## 4. Groups
 
-Labels, which replace this section for the operator, are §11. They are
-not implemented. This section stays in force until the roadmap item in
-*13*.
-
-```
-janus.proxy.groups.<name> = {
-  # membership — exactly one of:
-  fromSubscriptions = [ "provA" ];          # scope for matchers (default: every enabled subscription)
-  match  = { kind = "regex" | "glob" | "peg"; pattern = "…"; caseInsensitive = true; };
-  members = [ "node:manual-jp1" "group:JP" "sub:provA" ];   # manual list; may nest
-
-  strategy = "manual" | "url-test" | "fallback" | "load-balance";
-  default  = "node:…";                       # manual: initial selection
-  test     = { url = "https://www.gstatic.com/generate_204"; interval = "5m"; tolerance = 50; };
-  emptyFallback = "direct" | "group:<other>";   # FR-PRX-015
-};
-```
-
-Matcher kinds:
-
-* `regex` — RE2-compatible (no backtracking), evaluated by Janet's PEG-based
-  regex shim or engine-side where supported.
-* `glob` — `*`, `?`, `[…]`, `{a,b}`; translated to a PEG.
-* `peg` — a Janet PEG expression, e.g.
-  `(peg/compile ~(* (any (if-not "JP" 1)) "JP"))` — for users who want
-  structure-aware matching (emoji flags, `|` separated tags, bandwidth
-  multipliers like `x0.5`). PEG syntax is validated at build time.
-
-Groups are computed at build time (for the snapshot) and recomputed at every
-refresh by the same Janet code, guaranteeing identical semantics.
-
-Implicit groups, while `janus.proxy.groupsAuto` is true (the default): every
-enabled subscription is a group `sub:<name>` with strategy `url-test`, and
-`Auto` is a `url-test` over every node unless the fleet defines
-`groups.Auto`. `groupsAuto = false` omits both. Every `defaultTarget` and
-every rule target, including a LAN override, must then name `direct`,
-`block`, or a group the fleet defined. Tunnel DNS uses that default target
-instead of the tag `Auto`. A group the fleet named `Auto` does not put the
-detour back on that tag. False fails evaluation on xray (ADR-0026).
-
-`emptyFallback` must be `direct` or `group:<name>` for a group that exists.
-`Auto` and `sub:<name>` count only while `groupsAuto` is true. On xray an
-empty group renders `direct`: a balancer selector names outbounds, and a
-group tag is not one. A `members` entry `sub:<name>` requires `groupsAuto`.
-`group:<name>` must be a group on this router, or `Auto` while the implicit
-group exists. A `manual`
-group's `default` must be one of its members when the group has no matcher.
-A matcher that matches nothing stays a warning and uses that fallback
-(FR-PRX-015). At render time a `manual` default that is not in the member
-list is a warning, and the first member is used, so the engine still starts.
-
-`fallback` fails evaluation on both engines. `load-balance` is xray only (§2.1).
+Withdrawn. Membership is a label (§11, ADR-0028). `janus.proxy.groups` and
+`janus.proxy.groupsAuto` are not options. Setting either fails evaluation.
+There is no migration. The configuration, the maintenance page, the panel,
+and the CLI do not present a group.
 
 ## 5. Traffic mode and routing rules
 
@@ -201,7 +153,7 @@ janus.proxy.exceptions = [ ... ];   # proxy-all: always direct (private, iptv)
 janus.network.lans.<name>.proxy = {
   mode = "rule-based";              # unset inherits janus.proxy.mode
   rules = [ ... ];                  # unset inherits; a set list replaces
-  defaultTarget = "group:Auto";     # unset inherits
+  defaultTarget = {};                # unset inherits. {} matches every node
   exceptions = [ ... ];             # unset inherits
 };
 ```
@@ -489,11 +441,11 @@ router should keep.
 
 ## 9. Operator interface
 
-`janus status`, `janus proxy groups`, `janus proxy select <group>
-<node>`, `janus proxy test <group>`, `janus proxy refresh [<subscription>]`,
-`janus dns query <name>`, `janus dns flush`. Manual selections persist in
-`/var/lib/janus/engine/selection.json` and survive refresh and reboot; a
-rebuild with a changed `default` for the group resets them.
+`janus status`, `janus proxy nodes`, `janus proxy probe`,
+`janus proxy refresh [<subscription>]`, `janus dns query <name>`,
+`janus dns flush`. `janus proxy nodes` lists each node's labels and marks
+the node the engine picked. `janus proxy probe` samples latency, and an
+HTTP label when one is configured, then renders again.
 
 ## 10. Example templates shipped in the example configuration
 
@@ -509,22 +461,20 @@ database does not classify stays unlabeled. A name pattern may set
 constrains labels instead of naming a group. `Gemini` becomes an
 `empty` label set by an HTTP probe through the node.
 
-## 11. Labels (later)
+## 11. Labels
 
-This section is the operator model in ADR-0027 and ADR-0028 (FR-PRX-029). It is not implemented. §4, §5, and §9 stay in force until the *13* item
-starts. The module must not grow these options before that work. The
+This section is the operator model in ADR-0027 and ADR-0028 (FR-PRX-029). It replaces §4. The
 manual-node `tags` list is a string list on the node. It is not a label.
 
 The operator attaches labels to nodes and constrains those labels from a
 routing rule. sing-box and xray still receive one generated outbound set.
 Janus builds that set (§11.9). The operator does not meet it.
 
-When this section replaces §4, the configuration, the maintenance page
-(*20*), the panel (*15*), and the `janus` CLI (*14*) do not present a
-group. `janus.proxy.groups` and `janus.proxy.groupsAuto` are removed. A
-configuration that sets either fails evaluation. There is no
-compatibility with those options and no migration from them. The
-operator writes labels.
+The configuration, the maintenance page (*20*), the panel (*15*), and the
+`janus` CLI (*14*) do not present a group. `janus.proxy.groups` and
+`janus.proxy.groupsAuto` are not options. A configuration that sets
+either fails evaluation. There is no compatibility with those options and
+no migration from them. The operator writes labels.
 
 ### 11.1 Key
 
