@@ -70,8 +70,11 @@ Read this file before answering a question about using Janus OS.
   on the router. One engine matches the LAN by source. Node labels are
   specified for later (ADR-0027, ADR-0028, `docs/07-proxy-and-dns.md` §11,
   `docs/13-roadmap.md`) and are not `janus.*` options. The operator still
-  configures groups. When that work lands, a rule constrains labels and
-  the renderer still emits one group for sing-box or xray. `bypass` is not
+  configures groups. When that work lands, a rule constrains labels, the
+  renderer still emits one outbound set, and the configuration, the
+  maintenance page, the panel, and the CLI do not present a group.
+  `janus.proxy.groups` and `janus.proxy.groupsAuto` are removed, with no
+  compatibility and no migration. `bypass` is not
   intercepted; unset DNS then sends every recursive name to the domestic
   encrypted resolvers. `rule-based` is split. `proxy-all` fake-IPs names
   it will proxy. `dns.recursive = false` is hosts and leases only. A

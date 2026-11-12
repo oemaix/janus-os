@@ -65,8 +65,12 @@ The binding text is *07* §11. In addition to ADR-0027:
   ordered `failover` list. `failover` uses the first selector that has a
   member and does not union the branches. An empty result warns and
   uses `direct`. It does not try the next routing rule. The renderer
-  still emits one engine group for the selector that won. The operator
-  does not name it.
+  still emits one outbound set for the selector that won.
+* When this model replaces §4, `janus.proxy.groups` and
+  `janus.proxy.groupsAuto` are removed. A configuration that sets either
+  fails evaluation. There is no compatibility and no migration. The
+  configuration, the maintenance page, the panel, and the CLI do not
+  present a group. The generated outbound tag stays inside the renderer.
 
 ## Consequences
 
@@ -99,3 +103,7 @@ That rule was written for other traffic.
 
 Treat `any` as failover — rejected. `any` keeps every matching node.
 Failover keeps the first branch that has a member.
+
+Keep a compatibility read of `groups` or `groupsAuto`, or generate
+labels from them — rejected. The operator would still be maintaining
+groups. The options are removed, and evaluation fails if they are set.

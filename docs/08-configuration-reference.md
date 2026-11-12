@@ -317,8 +317,10 @@ ADR-0027, ADR-0028) are not options. When that item lands,
 `region`. Predefined keys, on every node, are `vendor`, `protocol`, and
 `latency`. A selector is an attribute set, with `any`, `all`, and `not`.
 A `string` test may be `regex`, `glob`, or `peg`.
-`groups` and `groupsAuto` remain the membership options until that
-roadmap item.
+Until that roadmap item, `groups` and `groupsAuto` remain. When it
+lands, both are removed. Setting either fails evaluation. There is no
+compatibility and no migration. The configuration does not present a
+group.
 
 ### 6.1 Node submodule (manual) — common fields
 

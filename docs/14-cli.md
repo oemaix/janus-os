@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-11-04 |
+| Last updated | 2026-11-12 |
 
 This is the contract for the on-router `janus` command. Implementation
 follows this file. The user manual will later show the same commands with
@@ -65,8 +65,11 @@ These do not change configuration or hot overrides.
 | `janus bluetooth disconnect <address-or-name>` | Disconnect that device. This boot does not connect that address again. Another address is left alone. The next boot connects the last device again. |
 | `janus bluetooth remove <address-or-name>` | Remove the pairing. If it was the last device, nothing is connected after boot. |
 
-Label inspection is not a command in this table. ADR-0027 and *07* §11
-specify it for later. `groups`, `select`, and `test` stay until that work.
+Label inspection is not a command in this table. ADR-0027, ADR-0028, and
+*07* §11 specify it for later. `groups`, `select`, and `test` stay until
+that work. When §11 replaces them, those commands are removed. The CLI
+does not present a group. There is no compatibility command and no
+migration.
 
 ## 3. Hot overrides
 

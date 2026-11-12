@@ -86,7 +86,7 @@ power-cut. Tier 3 ships the profile. The Future list stays after 1.0.
 * Open Wi-Fi, WPA-Enterprise, a station network added on the router without a rebuild, and captive-portal completion (*06* §11, FR-NET-018, D-0063).
 * Candidate: when Ethernet, a Wi-Fi station, and WWAN are up together, prefer Ethernet, then the station, then WWAN (D-0065). The order today is role and metric (D-0036). The health check promotes one backup (FR-NET-007). The cable stays `default` and the station stays `backup` (D-0063).
 * Candidate: one Wi-Fi radio as an access point and a station at the same time (D-0066). A profile that lists `ap` and `sta` still means either role, and one peripheral still has one role (D-0063, Q-0057).
-* Operator-facing node labels (ADR-0027, ADR-0028, *07* §11, FR-PRX-029). The operator declares a key and a value type. `region` is a type the user may apply. `empty` is tested by repeating the key. sing-box and xray still receive one generated group per selector that the rule uses. Not started. `groups`, `groupsAuto`, and `janus proxy select` stay until this item.
+* Operator-facing node labels (ADR-0027, ADR-0028, *07* §11, FR-PRX-029). The operator declares a key and a value type. `region` is a type the user may apply. `empty` is tested by repeating the key. sing-box and xray still receive one generated outbound set per selector. Not started. `groups`, `groupsAuto`, and `janus proxy select` stay until this item. When it lands, `janus.proxy.groups` and `janus.proxy.groupsAuto` are removed, with no compatibility and no migration. The configuration, the maintenance page, the panel, and the CLI do not present a group.
 
 ## 2. Progress
 

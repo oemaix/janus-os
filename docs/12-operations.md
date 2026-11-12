@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-30 |
+| Last updated | 2026-11-12 |
 
 ## 1. What maintenance is
 
@@ -108,8 +108,10 @@ The tunnel needs its own signals because it fails more often than Ethernet:
 
 `janus status` shows the last success, the last error, and the selected
 node for each group. That is the maintenance surface for 1.0. A later
-model shows labels and the node the engine picked, and drops the manual
-select (ADR-0027, *07* §11). This table stays until that work. The
+model shows labels and the node the engine picked, drops the manual
+select, and does not present a group (ADR-0028, *07* §11). `groups` and
+`groupsAuto` are removed then, with no compatibility and no migration.
+This table stays until that work. The
 maintenance page (*20*) calls these commands and the hot-override
 allowlist. It does not replace the CLI and it does not edit
 `configuration.nix`. The image includes it only when

@@ -516,8 +516,15 @@ starts. The module must not grow these options before that work. The
 manual-node `tags` list is a string list on the node. It is not a label.
 
 The operator attaches labels to nodes and constrains those labels from a
-routing rule. A group is the outbound set sing-box or xray accepts. Janus
-builds that set. The operator does not name it.
+routing rule. sing-box and xray still receive one generated outbound set.
+Janus builds that set (§11.9). The operator does not meet it.
+
+When this section replaces §4, the configuration, the maintenance page
+(*20*), the panel (*15*), and the `janus` CLI (*14*) do not present a
+group. `janus.proxy.groups` and `janus.proxy.groupsAuto` are removed. A
+configuration that sets either fails evaluation. There is no
+compatibility with those options and no migration from them. The
+operator writes labels.
 
 ### 11.1 Key
 
@@ -883,10 +890,13 @@ the selector a failover list chose, becomes one engine outbound:
 | xray | leastPing balancer | flat node tags |
 
 The tag is `sel-` plus a stable hash of the canonical selector. It is not
-an option and not a name the operator writes. Nested group tags are not
-emitted. xray remote DNS detours through the generated tag of the default
-selector. `groupsAuto` is not an option in this model. ADR-0026 continues
-to bind the group model until this section replaces it.
+an option and not a name the operator writes, and it is not shown on the
+configuration, the maintenance page, the panel, or the CLI. Nested
+outbound tags are not emitted. xray remote DNS detours through the
+generated tag of the default selector. `janus.proxy.groups` and
+`janus.proxy.groupsAuto` are removed with this section. Setting either
+fails evaluation. The module does not translate a group into a selector.
+ADR-0026 binds the group model until this section replaces §4.
 
 `urltest` uses the current test defaults: URL
 `https://www.gstatic.com/generate_204`, interval `5m`, tolerance `50`.
