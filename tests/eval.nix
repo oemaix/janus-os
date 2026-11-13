@@ -1275,8 +1275,9 @@ in {
           and $rules[$r].action == "route"
           and ($rules[$r].outbound | startswith("sel-"))
       ' ${engine} >/dev/null
-      jq -e '[.inbounds[] | select(.type == "tproxy" and .network == "udp" and .listen == "0.0.0.0" and .listen_port == 5353)] | length == 1' ${engine} >/dev/null
-      jq -e '[.inbounds[] | select(.type == "tproxy" and .network == "udp" and .listen == "::" and .listen_port == 5353)] | length == 1' ${engine} >/dev/null
+      jq -e '[.inbounds[] | select(.type == "tproxy" and .network == "udp" and .listen == "0.0.0.0" and .listen_port == 15353)] | length == 1' ${engine} >/dev/null
+      jq -e '[.inbounds[] | select(.type == "tproxy" and .network == "udp" and .listen == "::" and .listen_port == 15353)] | length == 1' ${engine} >/dev/null
+      jq -e '[.inbounds[] | select(.listen_port == 5353)] | length == 0' ${engine} >/dev/null
       jq -e '[.inbounds[] | select(.type == "tproxy" and .network == "tcp")] | length == 0' ${engine} >/dev/null
       grep -q geodata-missing ${preText}
       grep -q network-online ${preAfter}
@@ -1306,12 +1307,16 @@ in {
         echo "DoT and DoH rejects are still on the forward hook" >&2
         exit 1
       fi
-      grep -q 'tproxy to :5353' ${dnsFile}
+      grep -q 'tproxy to :15353' ${dnsFile}
+      grep -q 'mdig @127.0.0.1 -p 15353' ${../pkgs/janus-engine.sh}
+      grep -q 'redirect to :15353' ${../pkgs/janus-engine.sh}
       grep -q 'fib daddr type local return' ${dnsFile}
       grep -q '0x00004a02' ${dnsFile}
       grep -q 'meta mark 0x00004a01 oifname "tun0" accept' ${natFile}
       printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep "\n" os.config.systemd.tmpfiles.rules)} | grep -q 'd /var/lib/janus/engine 3770 root janus-engine'
-      grep -q 'meta l4proto tcp th dport 53 redirect to :5353' ${natFile}
+      grep -q 'meta l4proto tcp th dport 53 redirect to :15353' ${natFile}
+      grep -q 'tcp dport 15353 accept' ${natFile}
+      grep -q 'udp dport 15353 accept' ${natFile}
       if grep -q 'l4proto udp th dport 53 redirect' ${natFile}; then
         echo "UDP/53 is still NAT-redirected" >&2
         exit 1
@@ -1433,8 +1438,8 @@ in {
         echo "bypass guest is marked into table 2022" >&2
         exit 1
       fi
-      grep 'redirect to :5353' ${natFile} | grep -q 'br-guest'
-      grep 'redirect to :5353' ${natFile} | grep -q 'br-iot'
+      grep 'redirect to :15353' ${natFile} | grep -q 'br-guest'
+      grep 'redirect to :15353' ${natFile} | grep -q 'br-iot'
       echo ${lib.escapeShellArg dnsOpts} | grep -q 'tag:janus-home,option:dns-server,192.168.10.1'
       if echo ${lib.escapeShellArg dnsOpts} | grep -q 192.168.20.1; then
         echo "guest is told to use the router" >&2
@@ -1740,9 +1745,10 @@ in {
     } ''
       xray run -test -c ${engine}
       jq -e '.inbounds[] | select(.protocol == "dokodemo-door" and .port == 12345)' ${engine} >/dev/null
-      jq -e '.inbounds[] | select(.tag == "dns-udp4" and .listen == "0.0.0.0" and .port == 5353 and .streamSettings.sockopt.tproxy == "tproxy")' ${engine} >/dev/null
-      jq -e '.inbounds[] | select(.tag == "dns-udp6" and .listen == "::" and .port == 5353 and .streamSettings.sockopt.tproxy == "tproxy" and .streamSettings.sockopt.v6only == true)' ${engine} >/dev/null
-      jq -e '.inbounds[] | select(.tag == "dns-tcp" and .listen == "::" and .port == 5353 and .settings.network == "tcp")' ${engine} >/dev/null
+      jq -e '.inbounds[] | select(.tag == "dns-udp4" and .listen == "0.0.0.0" and .port == 15353 and .streamSettings.sockopt.tproxy == "tproxy")' ${engine} >/dev/null
+      jq -e '.inbounds[] | select(.tag == "dns-udp6" and .listen == "::" and .port == 15353 and .streamSettings.sockopt.tproxy == "tproxy" and .streamSettings.sockopt.v6only == true)' ${engine} >/dev/null
+      jq -e '.inbounds[] | select(.tag == "dns-tcp" and .listen == "::" and .port == 15353 and .settings.network == "tcp")' ${engine} >/dev/null
+      jq -e '[.inbounds[] | select(.port == 5353)] | length == 0' ${engine} >/dev/null
       jq -e 'any(.routing.rules[]; (["dns-tcp","dns-udp4","dns-udp6"] - (.inboundTag // [])) == [])' ${engine} >/dev/null
       jq -e '.inbounds[] | select(.tag == "api" and .port == 8080)' ${engine} >/dev/null
       jq -e '.inbounds[] | select(.tag == "refresh" and .protocol == "socks" and .listen == "127.0.0.1" and .port == 2080 and .settings.auth == "noauth")' ${engine} >/dev/null

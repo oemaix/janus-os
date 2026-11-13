@@ -40,7 +40,7 @@
           script = ''
             systemctl is-active dnsmasq > /dev/console 2>&1 || true
             systemctl is-active janus-engine > /dev/console 2>&1 || true
-            # 5353 is 0x14E9. A direct query to that port is not tproxied,
+            # 15353 is 0x3BF9. A direct query to that port is not tproxied,
             # so the sockets and the engine API are checked separately.
             v4=0
             v6=0
@@ -48,8 +48,8 @@
             i=0
             while [ "$i" -lt 20 ]; do
               i=$((i + 1))
-              if grep -qi '00000000:14E9' /proc/net/udp; then v4=1; fi
-              if grep -qi '00000000000000000000000000000000:14E9' /proc/net/udp6; then v6=1; fi
+              if grep -qi '00000000:3BF9' /proc/net/udp; then v4=1; fi
+              if grep -qi '00000000000000000000000000000000:3BF9' /proc/net/udp6; then v6=1; fi
               body=$(${pkgs.curl}/bin/curl -fsS -G 'http://127.0.0.1:9090/dns/query' \
                 --data-urlencode 'name=vm.test' --data-urlencode 'type=A' 2>/dev/console || true)
               if [ "$v4" = 1 ] && [ "$v6" = 1 ] && printf '%s\n' "$body" | grep -q 192.0.2.53; then

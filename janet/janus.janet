@@ -825,6 +825,10 @@
       "dns" (or (get model "dns") @{})}]
     lans))
 
+# 5353 is mDNS. Soloist and Spotify Connect clients bind it. The DNS
+# catcher is 15353, for sing-box and for xray (T-0035).
+(def dns-catcher-port 15353)
+
 (defn render [model nodes rule-set-mode]
   (def ctx (label-context model nodes))
   (def outbounds @[])
@@ -1069,10 +1073,10 @@
       # The system stack does not (ADR-0025).
       :stack "gvisor"
       :auto_route false :strict_route false}
-    @{:type "redirect" :tag "dns-tcp" :listen "::" :listen_port 5353}
+    @{:type "redirect" :tag "dns-tcp" :listen "::" :listen_port dns-catcher-port}
     # TProxy delivers a packet only to a socket of the same family.
-    @{:type "tproxy" :tag "dns-udp4" :listen "0.0.0.0" :listen_port 5353 :network "udp"}
-    @{:type "tproxy" :tag "dns-udp6" :listen "::" :listen_port 5353 :network "udp"}])
+    @{:type "tproxy" :tag "dns-udp4" :listen "0.0.0.0" :listen_port dns-catcher-port :network "udp"}
+    @{:type "tproxy" :tag "dns-udp6" :listen "::" :listen_port dns-catcher-port :network "udp"}])
   (each view (views-of model)
     (def address (get view "address"))
     (def inbound (get view "inbound"))
@@ -1412,12 +1416,12 @@
                     (if (some fakedns-server? servers) @["fakedns" "http" "tls"] @["http" "tls"])
                     (if (get model "blockQuic") @["quic"] @[]))}
       :streamSettings @{:sockopt @{:tproxy "tproxy"}}}
-    @{:tag "dns-tcp" :listen "::" :port 5353 :protocol "dokodemo-door"
+    @{:tag "dns-tcp" :listen "::" :port dns-catcher-port :protocol "dokodemo-door"
       :settings @{:address "1.1.1.1" :port 53 :network "tcp"}}
-    @{:tag "dns-udp4" :listen "0.0.0.0" :port 5353 :protocol "dokodemo-door"
+    @{:tag "dns-udp4" :listen "0.0.0.0" :port dns-catcher-port :protocol "dokodemo-door"
       :settings @{:address "1.1.1.1" :port 53 :network "udp"}
       :streamSettings @{:sockopt @{:tproxy "tproxy"}}}
-    @{:tag "dns-udp6" :listen "::" :port 5353 :protocol "dokodemo-door"
+    @{:tag "dns-udp6" :listen "::" :port dns-catcher-port :protocol "dokodemo-door"
       :settings @{:address "1.1.1.1" :port 53 :network "udp"}
       :streamSettings @{:sockopt @{:tproxy "tproxy" :v6only true}}}])
   (each view views

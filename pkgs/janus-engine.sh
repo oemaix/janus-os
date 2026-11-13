@@ -637,7 +637,7 @@ resolve_name() {
   name=$1
   qtype=$2
   if [ "${JANUS_ENGINE}" = xray ]; then
-    mdig @127.0.0.1 -p 5353 +short "$name" -t "$qtype" +timeout=2 +tries=1 || true
+    mdig @127.0.0.1 -p 15353 +short "$name" -t "$qtype" +timeout=2 +tries=1 || true
   else
     curl -fsS -G "${clash}/dns/query" --data-urlencode "name=${name}" --data-urlencode "type=${qtype}" || true
   fi
@@ -822,7 +822,7 @@ check_one_lan() {
 dns_check() {
   check_fail=0
   if jq -e '.interceptPlaintext' "$policy" >/dev/null; then
-    if nft list table inet janus | grep -q 'redirect to :5353'; then
+    if nft list table inet janus | grep -q 'redirect to :15353'; then
       report pass "plaintext DNS is redirected to the engine"
     else
       report fail "plaintext DNS is not redirected to the engine"

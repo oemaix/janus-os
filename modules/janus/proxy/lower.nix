@@ -20,6 +20,8 @@
   net = config.janus.network;
   janetRoot = ../../../janet;
   janetScript = "${janetRoot}/janus.janet";
+  # 5353 is mDNS. The catcher stays off that port (T-0035).
+  dnsCatcherPort = 15353;
 
   ipv4ToInt = addr: let
     p = lib.splitString "." addr;
@@ -877,11 +879,11 @@ in {
         iifname { ${bridgeSet} } meta mark 0x00004a01 oifname "tun0" accept
       '';
       preroutingRaw = lib.optionalString (dns.interceptPlaintext && dnsBridges != []) ''
-        iifname { ${dnsBridgeSet} } meta l4proto tcp th dport 53 redirect to :5353
+        iifname { ${dnsBridgeSet} } meta l4proto tcp th dport 53 redirect to :${toString dnsCatcherPort}
       '';
       inputExtra = lib.optionalString (dns.interceptPlaintext && dnsBridges != []) ''
-        tcp dport 5353 accept
-        udp dport 5353 accept
+        tcp dport ${toString dnsCatcherPort} accept
+        udp dport ${toString dnsCatcherPort} accept
       '';
     };
 
@@ -928,7 +930,7 @@ in {
           # A query to the router itself must reach the per-LAN inbound.
           # TProxy of a local-target UDP packet does not return it.
           fib daddr type local return
-          iifname { ${dnsBridgeSet} } meta l4proto udp th dport 53 meta mark set 0x00004a02 tproxy to :5353
+          iifname { ${dnsBridgeSet} } meta l4proto udp th dport 53 meta mark set 0x00004a02 tproxy to :${toString dnsCatcherPort}
         }
       '';
     };
