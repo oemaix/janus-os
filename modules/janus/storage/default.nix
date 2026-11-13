@@ -84,8 +84,9 @@
   # 512-byte sectors, the same unit sgdisk uses for the 1 MiB backup gap.
   stateMaxSectors = sizeMiB cfg.state.maximumSize * 2048;
 
-  # Set only around fsck. A missing device clears it, so the bench shell
-  # does not open for a node that never appeared (T-0028).
+  # Set before the probe and fsck. A missing device clears it, so the
+  # bench shell does not open for a node that never appeared. Resize
+  # clears it only after it returns (T-0028).
   stateCheckMark = ''
     mark_check() {
       mkdir -p /run/janus
@@ -751,6 +752,7 @@ in {
         esac
         mount_status=1
         probe_once() {
+          mark_check
           mount_status=1
           mounted=0
           set +e
@@ -797,8 +799,8 @@ in {
           fi
           ${corruptState}
         fi
-        clear_check
         resize.f2fs "$dev"
+        clear_check
       '';
     };
 
@@ -838,6 +840,7 @@ in {
           exit 1
         }
         probe_rw() {
+          mark_check
           mount_status=1
           mounted=0
           set +e

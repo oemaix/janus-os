@@ -652,8 +652,8 @@ in {
         "janus/closed-fail-log.nft".text = ''
           table inet janus_closed_log {
             chain log {
-              type filter hook prerouting priority -190; policy accept;
-              iifname { ${bridgeSet} } meta l4proto { tcp, udp } th dport 12345 limit rate 4/second log prefix "janus closed-fail "
+              type filter hook prerouting priority -100; policy accept;
+              meta l4proto { tcp, udp } meta mark 0x00004a02 th dport != 53 limit rate 4/second log prefix "janus closed-fail "
             }
           }
         '';

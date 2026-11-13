@@ -51,12 +51,14 @@ blackhole() {
   ip -6 route replace blackhole default table 2022
 }
 
-# xray's closed path is tproxy to :12345. The log table exists only while
-# that process is down, so a live session is not logged (D-0069).
+# xray's closed path is tproxy. That does not rewrite the destination
+# port, so the log matches mark 0x4a02 after the mangle hook (D-0069,
+# T-0029). The table exists only while the process is down.
 closed_log_install() {
   [ "${JANUS_CLOSED_LOG:-0}" = 1 ] || return 0
   [ -n "${JANUS_CLOSED_LOG_NFT:-}" ] || return 0
   [ -f "${JANUS_CLOSED_LOG_NFT}" ] || return 0
+  nft delete table inet janus_closed_log 2>/dev/null || true
   nft -f "${JANUS_CLOSED_LOG_NFT}"
 }
 
@@ -71,7 +73,9 @@ intercept_up() {
   fi
   [ "${JANUS_INTERCEPT}" = 1 ] || return 0
   if [ "${JANUS_ENGINE}" = xray ]; then
-    if [ "${JANUS_FAIL_MODE}" = closed ]; then
+    # A restart of this oneshot must not log a live session. tun-up
+    # removes the table once the process is active (T-0029).
+    if [ "${JANUS_FAIL_MODE}" = closed ] && ! systemctl is-active --quiet janus-engine; then
       closed_log_install
     fi
     return 0

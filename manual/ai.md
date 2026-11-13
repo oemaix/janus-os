@@ -76,8 +76,9 @@ Read this file before answering a question about using Janus OS.
   `engineLog` sets the engine log to debug. sing-box uses `log.level`.
   xray uses `log.loglevel`. The runtime render reads `logLevel` from
   the model. `closedFailLog` logs the sing-box blackhole in table 2022
-  and, while xray is down, port 12345. It does not replace that route
-  or that tproxy (Q-0061). Evaluation warns when a switch is on. Turn
+  and, while xray is down, mark `0x4a02` after the mangle hook. It
+  skips port 53. It does not replace that route or that tproxy
+  (Q-0061, T-0029). Evaluation warns when a switch is on. Turn
   the set off before an image leaves the bench.
   `janus.system.journal.persistent` stays where it is (ADR-0013). Do
   not invent `janus.debug.firewallTrace`, `janus.engineLog`, or

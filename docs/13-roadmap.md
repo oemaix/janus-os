@@ -105,7 +105,7 @@ tree does not mean that behavior exists. Stubs are not finished features.
   failed state check (`fsck.f2fs` on its path; a missing device does not
   open it), a kernel console loglevel, `tcpdump`/`ethtool`/`iw`/
   `conntrack`/`strace`, engine debug logs, and a closed-fail log for the
-  sing-box blackhole and for xray port 12345 while that process is down.
+  sing-box blackhole and for the xray mark `0x4a02` while that process is down.
   `janus.system.journal.persistent` stays the capped journal (ADR-0013).
   The full state check stops after 30 minutes (D-0049).
 * Apache-2.0 license at the repository root.

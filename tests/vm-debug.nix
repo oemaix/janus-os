@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # Boot the x86_64-test image. The serial console logs in as root.
 # A failed state check starts the initrd shell and can see fsck.f2fs.
-# A missing state device stops the boot without that shell.
+# A recover that exits before the stamp does not reach multi-user.
+# A failed grow still reaches recover and multi-user.
 # docs/08 §13, D-0067, D-0068.
 {
   pkgs,
@@ -65,6 +66,11 @@
   shellExec = {
     boot.initrd.systemd.services.janus-debug-shell.serviceConfig.ExecStart = pkgs.lib.mkForce "${initrdMarker}/bin/janus-initrd-marker";
   };
+  # The real recover script marks, runs fsck, and exits 1 on 126/127
+  # with the stamp still set. The shell's /bin keeps the real fsck.f2fs.
+  fakeFsck = pkgs.writeShellScriptBin "fsck.f2fs" ''
+    exit 126
+  '';
   router = modules:
     self.lib.mkRouter {
       name = "vm-debug";
@@ -75,22 +81,32 @@
   loginOs = router [common bootStamp];
   checkOs = router [
     common
+    bootStamp
+    shellExec
+    {
+      boot.initrd.systemd.services.janus-state-recover.path = pkgs.lib.mkBefore [fakeFsck];
+    }
+  ];
+  # Exits before the stamp, which is what a device that never appears does.
+  missOs = router [
+    common
+    bootStamp
     shellExec
     {
       boot.initrd.systemd.services.janus-state-recover.script = pkgs.lib.mkForce ''
         set -eu
-        mkdir -p /run/janus
-        : > /run/janus/state-check-failed
         exit 1
       '';
     }
   ];
-  missOs = router [
+  growOs = router [
     common
+    bootStamp
     shellExec
     {
-      boot.initrd.systemd.services.janus-state-recover.script = pkgs.lib.mkForce ''
+      boot.initrd.systemd.services.janus-grow-state.script = pkgs.lib.mkForce ''
         set -eu
+        echo "<3>janus: grow failed on purpose" > /dev/kmsg
         exit 1
       '';
     }
@@ -137,24 +153,35 @@ in
       exit 1
     fi
 
-    boot ${checkOs.config.system.build.toplevel} ${checkOs.config.system.build.janusImage}/janus-vm-debug.img "" serial-check.log 180
+    boot ${checkOs.config.system.build.toplevel} ${checkOs.config.system.build.janusImage}/janus-vm-debug.img "" serial-check.log 300
     if ! grep -a -q JANUS_INITRD_SHELL serial-check.log \
       || ! grep -a -q JANUS_INITRD_FSCK serial-check.log \
       || grep -a -q JANUS_INITRD_FSCK_MISSING serial-check.log \
+      || grep -a -q JANUS_SERIAL_ROOT serial-check.log \
       || grep -a -q JANUS_BOOT_OK serial-check.log; then
       echo "a failed state check did not open the initrd shell" >&2
       show serial-check.log
       exit 1
     fi
 
-    boot ${missOs.config.system.build.toplevel} ${missOs.config.system.build.janusImage}/janus-vm-debug.img "" serial-miss.log 120
+    boot ${missOs.config.system.build.toplevel} ${missOs.config.system.build.janusImage}/janus-vm-debug.img "" serial-miss.log 300
     if grep -a -q JANUS_INITRD_SHELL serial-miss.log \
+      || grep -a -q JANUS_SERIAL_ROOT serial-miss.log \
       || grep -a -q JANUS_BOOT_OK serial-miss.log; then
-      echo "a missing state device opened the initrd shell" >&2
+      echo "a missing state device reached a shell" >&2
       show serial-miss.log
       exit 1
     fi
 
+    boot ${growOs.config.system.build.toplevel} ${growOs.config.system.build.janusImage}/janus-vm-debug.img "" serial-grow.log 600
+    if grep -a -q JANUS_INITRD_SHELL serial-grow.log \
+      || ! grep -a -q JANUS_SERIAL_ROOT serial-grow.log \
+      || ! grep -a -q JANUS_BOOT_OK serial-grow.log; then
+      echo "a failed grow did not reach multi-user" >&2
+      show serial-grow.log
+      exit 1
+    fi
+
     mkdir -p "$out"
-    cp serial-login.log serial-check.log serial-miss.log "$out/"
+    cp serial-login.log serial-check.log serial-miss.log serial-grow.log "$out/"
   ''

@@ -7713,6 +7713,24 @@ exit 0
       check_stamp <<'EOF'
       ${on.config.boot.initrd.systemd.services.janus-state-fsck-full.script}
       EOF
+      awk '
+        /clear_check\(\)/ { next }
+        /(^|[[:space:]])clear_check$/ { if (prev == "resize") ok = 1; prev = "clear"; next }
+        /resize\.f2fs/ { if (prev == "clear") bad = 1; prev = "resize"; next }
+        { prev = "" }
+        END { if (bad || !ok) exit 1 }
+      ' <<'EOF'
+      ${on.config.boot.initrd.systemd.services.janus-state-recover.script}
+      EOF
+      awk '
+        /probe_rw\(\)/ { fn = 1 }
+        fn && /mark_check\(\)/ { next }
+        fn && /(^|[[:space:]])mark_check$/ { marked = 1 }
+        fn && /stayed mounted/ { if (!marked) bad = 1; seen = 1 }
+        END { if (bad || !seen) exit 1 }
+      ' <<'EOF'
+      ${on.config.boot.initrd.systemd.services.janus-state-fsck-full.script}
+      EOF
       jq -e '.logLevel == "debug"' ${on.config.environment.etc."janus/proxy-model.json".source} >/dev/null
       jq -e '.log.level == "debug"' ${on.config.system.build.janusEngineConfig} >/dev/null
       printf '%s\n' '[]' > nodes.json
@@ -7772,13 +7790,17 @@ exit 0
         exit 1
       fi
       grep -q 'blackhole default table 2022' ${../pkgs/janus-engine.sh}
+      grep -q 'nft delete table inet janus_closed_log' ${../pkgs/janus-engine.sh}
+      grep -q 'systemctl is-active --quiet janus-engine' ${../pkgs/janus-engine.sh}
       grep -q 'JANUS_CLOSED_LOG=1' ${on.config.environment.etc."janus/bin/janus-proxy".source}
       grep -q 'JANUS_CLOSED_LOG=0' ${off.config.environment.etc."janus/bin/janus-proxy".source}
       printf '%s\n' ${lib.escapeShellArg xray.config.environment.etc."janus/closed-fail-log.nft".text} > xray.txt
-      grep -q 'th dport 12345' xray.txt
+      grep -q 'priority -100' xray.txt
+      grep -q 'meta mark 0x00004a02' xray.txt
+      grep -q 'th dport != 53' xray.txt
       grep -q 'log prefix "janus closed-fail "' xray.txt
-      if grep -q tproxy xray.txt; then
-        echo "the xray log rule also tproxies" >&2
+      if grep -q 'dport 12345' xray.txt || grep -q tproxy xray.txt; then
+        echo "the xray log rule matches the tproxy port" >&2
         exit 1
       fi
       echo ${lib.escapeShellArg (lib.concatStringsSep "\n" on.config.warnings)} | grep -q 'janus.debug.closedFailLog is on'

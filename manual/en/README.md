@@ -344,7 +344,7 @@ and `strace`.
 
 `janus.debug.closedFailLog` names packets the closed path drops. With
 sing-box that path is the blackhole default in table 2022. With xray
-it is port 12345 while the process is down. The packets are still
+it is mark `0x4a02` while the process is down. The packets are still
 dropped.
 
 A journal that survives reboot stays `janus.system.journal.persistent`.

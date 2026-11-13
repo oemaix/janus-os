@@ -51,8 +51,9 @@ in {
       type = types.bool;
       default = false;
       description = ''
-        Open a root shell on the console when the state check fails.
-        A missing state device still stops the boot without that shell.
+        Open a root shell on the console when the state check or the
+        resize fails. A missing state device still stops the boot
+        without that shell.
         fsck.f2fs is on the shell's path. A failed grow still continues
         into the check. Default is off (D-0068).
       '';
@@ -88,7 +89,7 @@ in {
       default = false;
       description = ''
         Log packets the closed-fail path drops. sing-box logs the
-        blackhole default in table 2022. xray logs port 12345 while
+        blackhole default in table 2022. xray logs mark 0x4a02 while
         the process is down. Default is off (D-0069).
       '';
     };
