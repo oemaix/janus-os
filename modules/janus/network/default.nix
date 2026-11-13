@@ -459,9 +459,9 @@ in {
             description = "Routing rules for this LAN. Null inherits janus.proxy.rules. A list replaces that list.";
           };
           proxy.defaultTarget = mkOption {
-            type = types.nullOr types.str;
+            type = types.nullOr (types.either types.str (types.attrsOf types.anything));
             default = null;
-            description = "Target when no rule matches. Null inherits janus.proxy.defaultTarget.";
+            description = "Selector, direct, or block when no rule matches. Null inherits janus.proxy.defaultTarget.";
           };
           proxy.exceptions = mkOption {
             type = types.nullOr (types.listOf types.str);

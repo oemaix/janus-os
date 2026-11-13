@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-09-27 |
+| Last updated | 2026-11-12 |
 
 The panel is a status and maintenance surface. It does not edit
 `configuration.nix`, hot overrides, or secrets. Anything it can change is
@@ -38,17 +38,15 @@ Pages are a fixed ring. A page is omitted when its subject is absent (no
 | Overview | Host name. Uptime. One alarm line, or `ok`. |
 | WAN | One row per WAN: name, `up` or `down`, IPv4 address or `-`. |
 | LAN | One row per LAN: name, lease count. |
-| Tunnel | Traffic mode. One row per group: group name, selected node. |
+| Tunnel | Traffic mode. One row per node: a mark when the engine picked it, then the node's labels. |
 | Battery | Voltage, current direction (`charge`, `discharge`, `idle`), shutdown armed or not. |
 
 A row that does not fit the visible body scrolls. The focused row stays on
 screen. Text that does not fit the column is cut at the end. `medium` and
 `wide` use the extra columns for the cut text before they add any new field.
 
-The tunnel page can push one screen, the node list for the focused group.
-That screen is not a page in the ring. It is a list of node names. Confirm
-runs `janus proxy select` for the focused node and returns to the tunnel
-page. There is no other pushed screen.
+The tunnel page lists nodes. Confirm does not choose a node. The page
+does not present a group.
 
 ## 3. Input capabilities
 

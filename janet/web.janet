@@ -478,8 +478,8 @@
     {:status 200 :ctype "application/json" :body (json-encode (private-doc st))}
     (and (= method "GET") (= path "/api/status"))
     (cli-call st "status" [] nil)
-    (and (= method "GET") (= path "/api/proxy/groups"))
-    (cli-call st "proxy-groups" [] nil)
+    (and (= method "GET") (= path "/api/proxy/nodes"))
+    (cli-call st "proxy-nodes" [] nil)
     (and (= method "POST") (= path "/api/proxy/refresh"))
     (let [name (get obj "name")]
       (if (or (nil? name) (= name ""))
@@ -489,17 +489,8 @@
           (bad "rejected"))))
     (and (= method "POST") (= path "/api/proxy/geodata/refresh"))
     (cli-call st "proxy-geodata-refresh" [] nil)
-    (and (= method "POST") (= path "/api/proxy/select"))
-    (let [group (need (get obj "group"))
-          node (need (get obj "node"))]
-      (if (and group node)
-        (cli-call st "proxy-select" [group node] nil)
-        (bad "rejected")))
-    (and (= method "POST") (= path "/api/proxy/test"))
-    (let [group (need (get obj "group"))]
-      (if group
-        (cli-call st "proxy-test" [group] nil)
-        (bad "rejected")))
+    (and (= method "POST") (= path "/api/proxy/probe"))
+    (cli-call st "proxy-probe" [] nil)
     (and (= method "POST") (= path "/api/wan/restart"))
     (let [name (need (get obj "name"))]
       (if name (cli-call st "wan-restart" [name] nil) (bad "rejected")))

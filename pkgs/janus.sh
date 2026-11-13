@@ -18,9 +18,8 @@ Exit 0 is success. Exit 2 is a usage or validation error. Exit 1 is a runtime fa
   status
   proxy refresh [name]
   proxy geodata refresh
-  proxy select <group> <node>
-  proxy groups
-  proxy test <group>
+  proxy nodes
+  proxy probe
   wan restart <name>
   wan show <name>
   lan leases [lan]
@@ -88,7 +87,7 @@ proxy_bin() {
     echo "janus $1 needs janus.proxy.enable. See docs/13-roadmap.md." >&2
     exit 2
   fi
-  /etc/janus/bin/janus-proxy "$@"
+  JANUS_JSON=${json:-0} /etc/janus/bin/janus-proxy "$@"
 }
 
 overrides_file=/var/lib/janus/overrides.json
@@ -387,9 +386,8 @@ case "$cmd" in
         fi
         proxy_bin geodata-refresh
         ;;
-      select) proxy_bin select "${1:-}" "${2:-}" ;;
-      groups) proxy_bin groups ;;
-      test) proxy_bin test "${1:-}" ;;
+      nodes) proxy_bin nodes ;;
+      probe) proxy_bin probe ;;
       *) usage ;;
     esac
     ;;

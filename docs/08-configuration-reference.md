@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-11-04 |
+| Last updated | 2026-11-12 |
 
 This document defines the **shape and semantics** of the `janus.*` option
 tree. The final, exhaustive reference (every option with type, default,
@@ -294,11 +294,10 @@ See *06* §7–8: `zones`, `policies`, `rules`, `services`, `portForwards`,
 | `failMode` | `closed\|open` | `closed` | When the engine is down, `closed` drops proxied LAN traffic and `open` sends it out the WAN (ADR-0016). |
 | `engine` | `sing-box\|xray` | `sing-box` | Keep sing-box when LANs need different DNS. The other reasons to switch are *07* §2.1. |
 | `mode` | `bypass\|rule-based\|proxy-all` | `rule-based` | Default traffic mode. A LAN inherits it (*07* §5, D-0042). |
-| `defaultTarget` | target | `"group:Auto"` | |
+| `defaultTarget` | selector, `direct`, or `block` | `{}` | `{}` matches every node. *07* §11 |
 | `subscriptions.<name>` | submodule | | *07* §3.2 |
-| `nodes.<name>` | submodule | | Manual nodes; protocol-specific submodules `vless`, `trojan`, `shadowsocks`, `hysteria2`, `tuic` |
-| `groups.<name>` | submodule | | *07* §4 |
-| `groupsAuto` | bool | `true` | Implicit `Auto` and `sub:<name>` groups. `false` is sing-box only and keeps the groups the fleet names (ADR-0026). |
+| `nodes.<name>` | submodule | | Manual nodes; protocol-specific submodules `vless`, `trojan`, `shadowsocks`, `hysteria2`, `tuic`. `labels.<key>` sets a manual value. |
+| `labels.<key>` | submodule | | One declaration per key: `type`, labeling `rules`, and for `enum` a `values` list. *07* §11 |
 | `rules` | list | `[]` | Inherited by a LAN that does not set `proxy.rules`. A set LAN list replaces this one. *07* §5, *21*. Empty until written. The example has the `cn`, `ru`, and `ir` lists. |
 | `exceptions` | list | private, iptv | `proxy-all` exceptions. A LAN inherits this list. |
 | `egressWan` | str/null | `null` | Pin engine egress to a WAN |
@@ -308,9 +307,15 @@ See *06* §7–8: `zones`, `policies`, `rules`, `services`, `portForwards`,
 | `geodata.hashes` | attrs of sha256 | `{}` | Overrides the built-in pins. A referenced tag with no pin is left for the router |
 | `engineSettings` | attrs | `{}` | Raw engine config merged last (escape hatch; unsupported) |
 
-Built-in group `Auto`: `url-test` over every node, unless the fleet defines
-`groups.Auto` or sets `groupsAuto = false`. Each enabled subscription is
-`sub:<name>` on the same condition (ADR-0026).
+`vendor`, `protocol`, and `latency` are present on every node. The
+operator does not declare `vendor` or `protocol`. `latency` accepts only
+`timeout` and `interval`. An unset `defaultTarget` is `{}`, so every node
+is eligible. sing-box renders one `urltest` per distinct selector. xray
+renders one `leastPing` balancer. The tag stays inside the renderer.
+Until that roadmap item, `groups` and `groupsAuto` remain. When it
+lands, both are removed. Setting either fails evaluation. There is no
+compatibility and no migration. The configuration does not present a
+group.
 
 ### 6.1 Node submodule (manual) — common fields
 

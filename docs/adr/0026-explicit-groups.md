@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | Accepted |
+| Status | Superseded by ADR-0028 |
 | Date | 2026-10-28 |
 | Affects | 03 FR-PRX-010; 07 §4; refines ADR-0006 |
 

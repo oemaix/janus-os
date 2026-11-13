@@ -2,7 +2,6 @@
 # collect writes /var/lib/janus/monitoring/textfile/janus.prom.
 # render writes the same text to stdout from the files named by the environment.
 out_dir=${JANUS_METRICS_DIR:-/var/lib/janus/monitoring/textfile}
-selection=${JANUS_SELECTION:-/var/lib/janus/engine/selection.json}
 sub_dir=${JANUS_SUBSCRIPTION_DIR:-/var/lib/janus/subscriptions}
 geo_stamp=${JANUS_GEODATA_STAMP:-/var/lib/janus/geodata/refresh.stamp}
 geo_error=${JANUS_GEODATA_ERROR:-/var/lib/janus/geodata/refresh.error}
@@ -23,7 +22,8 @@ stamp_seconds() {
 render() {
   local up=${JANUS_ENGINE_UP:-0}
   local proxies=${JANUS_PROXIES:-}
-  local sec err name group node delay
+  local picked=${JANUS_PICKED:-}
+  local sec err name node delay
   case "$up" in
     0 | 1) ;;
     *) up=0 ;;
@@ -78,74 +78,76 @@ render() {
   fi
   printf 'janus_geodata_refresh_error %s\n' "$err"
 
-  declare -A chosen=()
-  if [ -n "$proxies" ] && [ -f "$proxies" ]; then
-    while IFS= read -r row; do
-      group=$(printf '%s' "$row" | jq -r '.g')
-      node=$(printf '%s' "$row" | jq -r '.n')
-      [ -n "$group" ] && [ -n "$node" ] || continue
-      chosen["$group"]=$node
-    done < <(jq -c '.proxies // {} | to_entries[] | select(.value.now != null and .value.now != "") | {g:.key,n:.value.now}' "$proxies")
-  fi
-  if [ -f "$selection" ]; then
-    while IFS= read -r row; do
-      group=$(printf '%s' "$row" | jq -r '.g')
-      node=$(printf '%s' "$row" | jq -r '.n')
-      [ -n "$group" ] && [ -n "$node" ] || continue
-      if [ -z "${chosen[$group]+x}" ]; then
-        chosen["$group"]=$node
-      fi
-    done < <(jq -c 'to_entries[] | select(.value.node != null and .value.node != "") | {g:.key,n:.value.node}' "$selection")
-  fi
-
   printf '%s\n' \
-    '# HELP janus_proxy_selected 1 for the node selected in a group.' \
+    '# HELP janus_proxy_selected 1 for a node the engine picked.' \
     '# TYPE janus_proxy_selected gauge'
-  if [ "${#chosen[@]}" -gt 0 ]; then
-    for group in "${!chosen[@]}"; do
-      printf 'janus_proxy_selected{group=%s,node=%s} 1\n' "$(quote "$group")" "$(quote "${chosen[$group]}")"
-    done
+  if [ -n "$picked" ] && [ -s "$picked" ]; then
+    while IFS=$'\t' read -r node delay; do
+      [ -n "$node" ] || continue
+      printf 'janus_proxy_selected{node=%s} 1\n' "$(quote "$node")"
+    done < "$picked"
+  elif [ -n "$proxies" ] && [ -f "$proxies" ]; then
+    while IFS= read -r node; do
+      [ -n "$node" ] || continue
+      printf 'janus_proxy_selected{node=%s} 1\n' "$(quote "$node")"
+    done < <(jq -r '
+      .proxies // {}
+      | to_entries[]
+      | select(.key | startswith("sel-"))
+      | .value.now
+      | select(. != null and . != "")
+    ' "$proxies" | sort -u)
   fi
 
   printf '%s\n' \
-    '# HELP janus_proxy_group_latency_milliseconds Last delay recorded for the node selected in a group.' \
-    '# TYPE janus_proxy_group_latency_milliseconds gauge'
-  if [ -n "$proxies" ] && [ -f "$proxies" ]; then
+    '# HELP janus_proxy_latency_milliseconds Last delay recorded for a node the engine picked.' \
+    '# TYPE janus_proxy_latency_milliseconds gauge'
+  if [ -n "$picked" ] && [ -s "$picked" ]; then
+    while IFS=$'\t' read -r node delay; do
+      [ -n "$node" ] || continue
+      case "$delay" in
+        ''|*[!0-9]*) continue ;;
+      esac
+      [ "$delay" -gt 0 ] || continue
+      printf 'janus_proxy_latency_milliseconds{node=%s} %s\n' "$(quote "$node")" "$delay"
+    done < "$picked"
+  elif [ -n "$proxies" ] && [ -f "$proxies" ]; then
     while IFS= read -r row; do
-      group=$(printf '%s' "$row" | jq -r '.g')
       node=$(printf '%s' "$row" | jq -r '.n')
       delay=$(printf '%s' "$row" | jq -r '.d')
-      [ -n "$group" ] && [ -n "$node" ] && [ -n "$delay" ] || continue
-      printf 'janus_proxy_group_latency_milliseconds{group=%s,node=%s} %s\n' "$(quote "$group")" "$(quote "$node")" "$delay"
+      [ -n "$node" ] && [ -n "$delay" ] || continue
+      printf 'janus_proxy_latency_milliseconds{node=%s} %s\n' "$(quote "$node")" "$delay"
     done < <(jq -c '
       .proxies as $p
-      | ($p // {})
-      | to_entries[]
-      | select(.value.now != null and .value.now != "")
-      | .key as $g
-      | .value.now as $n
+      | [ $p // {} | to_entries[] | select(.key | startswith("sel-")) | .value.now | select(. != null and . != "") ] | unique[]
+      | . as $n
       | ($p[$n].history[-1].delay // null) as $d
       | select($d != null and $d > 0)
-      | {g:$g,n:$n,d:$d}
+      | {n:$n,d:$d}
     ' "$proxies")
   fi
 }
 
 collect() {
-  local up=0 tmp=""
+  local up=0 tmp="" picked=""
   mkdir -p "$out_dir"
   up=0
   if systemctl is-active --quiet janus-engine.service; then
     up=1
   fi
   tmp=$(mktemp)
+  picked=$(mktemp)
+  : > "$picked"
   if ! curl -fsS --max-time 2 http://127.0.0.1:9090/proxies -o "$tmp"; then
     rm -f "$tmp"
     tmp=""
+    if [ -x /etc/janus/bin/janus-proxy ]; then
+      /etc/janus/bin/janus-proxy picked > "$picked" || : > "$picked"
+    fi
   fi
-  JANUS_ENGINE_UP=$up JANUS_PROXIES=$tmp render > "$out_dir/janus.prom.new"
+  JANUS_ENGINE_UP=$up JANUS_PROXIES=$tmp JANUS_PICKED=$picked render > "$out_dir/janus.prom.new"
   mv "$out_dir/janus.prom.new" "$out_dir/janus.prom"
-  rm -f "$tmp"
+  rm -f "$tmp" "$picked"
 }
 
 cmd=${1:-collect}

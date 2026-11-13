@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-11-04 |
+| Last updated | 2026-11-12 |
 
 Terms are listed alphabetically. Where an informal word is easy to confuse
 with the canonical one, the informal word is marked *avoid*.
@@ -65,7 +65,9 @@ over node names) or by a *manual list*. A group has a *selection strategy*.
 only. `fallback` fails evaluation on both (FR-PRX-013). `groupsAuto`
 (default true) adds `Auto` and one `sub:<name>` group per enabled
 subscription. `false` is sing-box only and leaves the groups the fleet
-names (ADR-0026).
+names (ADR-0026). A later operator model uses a Label and does not ask
+the operator to name a group (ADR-0027, *07* §11). Until that work in
+*13*, a group remains the routing target.
 
 **Hailo-10H** — A Hailo M.2 accelerator with its own DRAM. After 1.0 the
 router may run HailoRT GenAI so another device can use an edge LLM of
@@ -84,6 +86,19 @@ partitions, boot firmware, populated file systems. The unit of deployment.
 Janus uses Janet for the PEG matcher and for build-time helper scripts where
 a full language is warranted.
 
+**Label** — A key on a proxy node, and a value unless the type is
+`empty`. The value types are `string`, `number`, `bool`, `enum`,
+`empty`, and `region`. `empty` is set and tested by writing the key
+again (`gemini = "gemini"`). `region` is a built-in type. A value
+evaluates when it is an officially assigned ISO 3166-1 alpha-2 code, or
+a user-assigned code in `qm`–`qz`, `xa`–`xz`, or `zz`. `uk` fails
+evaluation. The United Kingdom is `gb`. A missing label is absent.
+Predefined keys, present on every node, are `vendor` (`string`),
+`protocol` (`enum`), and `latency` (`number`). The operator may add keys. A routing rule
+constrains keys. sing-box and xray still receive a generated group. Not
+implemented; the current routing target remains a Group (ADR-0027, ADR-0028, *07* §11, *13*). *Avoid:* calling the
+current group a label. *Avoid:* "symbol", "keyword".
+
 **LAN** — A downstream network segment served by the router (DHCP server,
 NAT source, firewall zone). Janus supports multiple LANs, each with its own
 bridge, subnet and policy.
@@ -98,6 +113,8 @@ is not a configuration editor.
 
 **Matcher** — A predicate over a proxy node's name (and optionally other
 attributes) that assigns it to a Group. Kinds: `regex`, `glob`, `peg`.
+The later labeling rules use the same kinds, plus GeoIP of the node
+server, to set a Label (*07* §11, ADR-0028).
 
 **Mode (traffic mode)** — How one LAN's traffic is handled by the proxy
 layer: `bypass` (nothing tunneled), `rule-based` (routing rules decide),
@@ -122,7 +139,8 @@ runtime, not user-editable) or from a manual definition in
 
 **Proxy subscription** — A URL that yields a list of proxy nodes in a known
 format (Clash YAML, a base64 share-link list, sing-box JSON). It has a
-name, an update schedule, and yields an implicit Group. The option is
+name, an update schedule, and yields an implicit Group. Later, that
+name is the node's `vendor` label (ADR-0027). The option is
 `janus.proxy.subscriptions`. *Avoid:* "relay subscription". The relay is
 the proxy node. The subscription is the list.
 
@@ -137,7 +155,8 @@ would need to compile or download on the Board is an error.
 
 **Routing rule** — An ordered predicate → target mapping (domain set, IP set,
 GeoSite/GeoIP category, port, source LAN, protocol → Group, `direct`,
-`block`) evaluated by the Engine in `rule-based` mode.
+`block`) evaluated by the Engine in `rule-based` mode. A later target
+may be a label selector instead of a Group (ADR-0027, *07* §11).
 
 **Spotify Soloist** — A later playback program that makes the router a
 Spotify Connect device. The API key is a sops secret. The program binary

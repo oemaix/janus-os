@@ -90,8 +90,8 @@ case "$op" in
   status)
     exec "$janus_bin" --json status
     ;;
-  proxy-groups)
-    exec "$janus_bin" --json proxy groups
+  proxy-nodes)
+    exec "$janus_bin" --json proxy nodes
     ;;
   proxy-refresh)
     if [ -n "${1:-}" ]; then
@@ -103,14 +103,8 @@ case "$op" in
   proxy-geodata-refresh)
     exec "$janus_bin" --json proxy geodata refresh
     ;;
-  proxy-select)
-    plain_arg "${1:-}"
-    plain_arg "${2:-}"
-    exec "$janus_bin" --json proxy select "$1" "$2"
-    ;;
-  proxy-test)
-    plain_arg "${1:-}"
-    exec "$janus_bin" --json proxy test "$1"
+  proxy-probe)
+    exec "$janus_bin" --json proxy probe
     ;;
   wan-restart)
     plain_arg "${1:-}"

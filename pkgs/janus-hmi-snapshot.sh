@@ -13,24 +13,6 @@ wan_names=()
 wan_ifaces=()
 lan_names=()
 lan_subnets=()
-group_names=()
-group_strategy=()
-group_default=()
-group_members=()
-
-remember_group() {
-  local name=$1 strategy=$2 fallback=$3
-  local i
-  for i in "${!group_names[@]}"; do
-    if [ "${group_names[$i]}" = "$name" ]; then
-      return
-    fi
-  done
-  group_names+=("$name")
-  group_strategy+=("$strategy")
-  group_default+=("$fallback")
-  group_members+=("")
-}
 
 while IFS=$'\t' read -r key a b c || [ -n "${key:-}" ]; do
   case "$key" in
@@ -45,20 +27,6 @@ while IFS=$'\t' read -r key a b c || [ -n "${key:-}" ]; do
     lan)
       lan_names+=("$a")
       lan_subnets+=("$b")
-      ;;
-    group) remember_group "$a" "$b" "$c" ;;
-    member)
-      i=0
-      while [ "$i" -lt "${#group_names[@]}" ]; do
-        if [ "${group_names[$i]}" = "$a" ]; then
-          if [ -n "${group_members[i]}" ]; then
-            group_members[i]=${group_members[i]}$'\x1f'$b
-          else
-            group_members[i]=$b
-          fi
-        fi
-        i=$((i + 1))
-      done
       ;;
     power)
       have_power=1
@@ -164,76 +132,27 @@ fi
 printf 'tunnel-error\t%s\n' "$tunnel"
 printf 'refresh-error\t%s\n' "$refresh"
 
-api=$(mktemp)
-trap 'rm -f "$api"' EXIT
-have_api=0
-if [ "$proxy" = 1 ] && curl -fsS --max-time 2 http://127.0.0.1:9090/proxies -o "$api" 2>/dev/null; then
-  have_api=1
-else
-  echo '{}' > "$api"
+picked=$(mktemp)
+trap 'rm -f "$picked"' EXIT
+: > "$picked"
+if [ -n "${JANUS_PICKED:-}" ]; then
+  cp "$JANUS_PICKED" "$picked"
+elif [ "$proxy" = 1 ] && [ -x /etc/janus/bin/janus-proxy ]; then
+  /etc/janus/bin/janus-proxy picked > "$picked" || : > "$picked"
 fi
 
-all_nodes() {
-  if [ -f /etc/janus/nodes-built.json ]; then
-    jq -r '.[].name // empty' /etc/janus/nodes-built.json 2>/dev/null || true
-  fi
-  for f in /var/lib/janus/subscriptions/*.json; do
-    if [ -f "$f" ]; then
-      jq -r '.[].name // empty' "$f" 2>/dev/null || true
-    fi
-  done
-}
-
-i=0
-while [ "$i" -lt "${#group_names[@]}" ]; do
-  name=${group_names[$i]}
-  strategy=${group_strategy[$i]}
-  selected=${group_default[$i]}
-  [ -n "$selected" ] || selected=-
-  if [ -f /var/lib/janus/engine/selection.json ]; then
-    chosen=$(jq -r --arg g "$name" '.[$g].node // empty' /var/lib/janus/engine/selection.json 2>/dev/null || true)
-    if [ -n "$chosen" ]; then
-      selected=$chosen
-    fi
-  fi
-  nodes=${group_members[$i]}
-  if [ "$have_api" = 1 ]; then
-    now=$(jq -r --arg g "$name" '.proxies[$g].now // empty' "$api" 2>/dev/null || true)
-    if [ -n "$now" ]; then
-      selected=$now
-    fi
-    listed=$(jq -r --arg g "$name" '.proxies[$g].all // [] | .[]' "$api" 2>/dev/null || true)
-    if [ -n "$listed" ]; then
-      nodes=""
-      while IFS= read -r node; do
-        [ -n "$node" ] || continue
-        case "$node" in
-          DIRECT | REJECT | GLOBAL | "$name") continue ;;
-        esac
-        node=${node//$'\t'/ }
-        if [ -z "$nodes" ]; then
-          nodes=$node
-        else
-          nodes=$nodes$'\x1f'$node
-        fi
-      done <<< "$listed"
-    fi
-  elif [ -z "$nodes" ]; then
-    nodes=""
-    while IFS= read -r node; do
-      [ -n "$node" ] || continue
-      node=${node//$'\t'/ }
-      if [ -z "$nodes" ]; then
-        nodes=$node
-      else
-        nodes=$nodes$'\x1f'$node
-      fi
-    done < <(all_nodes | awk '!seen[$0]++')
-  fi
-  [ -n "$selected" ] || selected=-
-  printf 'group\t%s\t%s\t%s\t%s\n' "$name" "$selected" "$strategy" "$nodes"
-  i=$((i + 1))
-done
+if [ "$proxy" = 1 ] && [ -f /var/lib/janus/engine/node-labels.json ]; then
+  jq -r --rawfile picked "$picked" '
+    ($picked | split("\n") | map(select(. != "") | split("\t")[0])) as $on
+    | to_entries
+    | sort_by(.key)
+    | .[]
+    | .key as $n
+    | (if ($on | index($n) != null) then "1" else "0" end) as $mark
+    | (.value | to_entries | sort_by(.key) | map("\(.key)=\(.value|tostring)") | join(" ")) as $text
+    | "node\t\($n)\t\($mark)\t\($text)"
+  ' /var/lib/janus/engine/node-labels.json
+fi
 
 if [ "$have_power" = 1 ]; then
   mv=""

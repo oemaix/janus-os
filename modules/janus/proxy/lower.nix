@@ -10,9 +10,16 @@
   ...
 }: let
   cfg = config.janus.proxy;
+  labelLib = import ./labels.nix {inherit lib;};
+  wantsGeoip = lib.any (spec:
+    lib.any (rule: (rule.match.kind or null) == "geoip") (spec.rules or []))
+  (lib.attrValues cfg.labels);
+  geoipDat = "${pkgs.v2ray-geoip}/share/v2ray/geoip.dat";
+  labelProbe = labelLib.probeOf cfg net.lans;
   dns = config.janus.dns;
   net = config.janus.network;
-  janetScript = ../../../janet/janus.janet;
+  janetRoot = ../../../janet;
+  janetScript = "${janetRoot}/janus.janet";
 
   ipv4ToInt = addr: let
     p = lib.splitString "." addr;
@@ -60,7 +67,9 @@
 
   normRule = rule: {
     match = normMatch (rule.match or {});
-    target = rule.target;
+    target = rule.target or null;
+    labels = rule.labels or null;
+    failover = rule.failover or null;
   };
 
   leaseHosts = lanName: lan:
@@ -145,18 +154,12 @@
     mode = cfg.mode;
     defaultTarget = cfg.defaultTarget;
     blockQuic = cfg.blockQuic;
-    groupsAuto = cfg.groupsAuto;
-    groups =
-      lib.mapAttrs (_: g: {
-        fromSubscriptions = g.fromSubscriptions;
-        match = g.match;
-        members = g.members;
-        strategy = g.strategy;
-        default = g.default;
-        test = g.test;
-        emptyFallback = g.emptyFallback;
-      })
-      cfg.groups;
+    labels = labelLib.modelLabels cfg;
+    officialRegions = labelLib.official;
+    nodeGeoip =
+      if wantsGeoip
+      then "/etc/janus/geoip.dat"
+      else null;
     rules = map expandRule cfg.rules;
     lans = lanViews;
     subscriptionNames = lib.attrNames enabledSubscriptions;
@@ -189,6 +192,7 @@
     server = n.server;
     port = n.port;
     tags = n.tags;
+    labels = n.labels;
     tls = n.tls;
     transport = n.transport;
     vmess = n.vmess;
@@ -285,6 +289,7 @@
       --nodes ${builtNodes} \
       --rule-set remote \
       --engine ${cfg.engine} \
+      ${lib.optionalString wantsGeoip "--geoip ${geoipDat}"} \
       --output "$out"
     ${
       if cfg.engine == "xray"
@@ -440,7 +445,7 @@
   helper = pkgs.writeShellApplication {
     name = "janus-proxy";
     runtimeInputs = with pkgs;
-      [janet curl jq iproute2 coreutils nftables systemd gawk]
+      [janet curl jq iproute2 coreutils nftables systemd gawk bash util-linux]
       ++ (
         if cfg.engine == "xray"
         then [xray bind]
@@ -595,7 +600,6 @@ in {
         "janus/nodes-built.json".source = builtNodes;
         "janus/engine.json".source = engineConfig;
         "janus/subscriptions.json".text = builtins.toJSON subMeta;
-        "janus/group-defaults.json".text = builtins.toJSON (lib.mapAttrs (_: g: g.default) cfg.groups);
         "janus/geodata-tags.json".text = builtins.toJSON geoTags;
         "janus/geodata-sources.json".text = builtins.toJSON sources;
         "janus/dns-policy.json".text = builtins.toJSON {
@@ -624,6 +628,9 @@ in {
         };
         "janus/bin/janus-proxy".source = "${helper}/bin/janus-proxy";
         "janus/password-files.json".text = builtins.toJSON passwordFiles;
+      }
+      // lib.optionalAttrs wantsGeoip {
+        "janus/geoip.dat".source = geoipDat;
       }
       // lib.optionalAttrs (geodataFiles != {}) {
         "janus/geodata".source = geodataDir;
@@ -694,9 +701,11 @@ in {
     systemd.services.janus-engine-prepare = {
       description = "Render the proxy engine configuration";
       wantedBy = ["multi-user.target"];
+      wants = ["network-online.target"];
       before = ["janus-engine.service"];
+      # network-pre is before DNS. Region labels resolve hostnames here.
       after =
-        ["network-pre.target" "janus-subscription-urls.service"]
+        ["network-online.target" "janus-subscription-urls.service"]
         ++ lib.optional passwordFromSops "sops-install-secrets.service";
       requires = lib.optional passwordFromSops "sops-install-secrets.service";
       serviceConfig = {
@@ -712,6 +721,36 @@ in {
           "${helper}/bin/janus-proxy geodata-missing"
           "${helper}/bin/janus-proxy render"
         ];
+      };
+    };
+
+    systemd.services.janus-label-resolve = lib.mkIf wantsGeoip {
+      description = "Resolve node addresses for region labels";
+      wantedBy = ["multi-user.target"];
+      after = ["network-online.target" "janus-engine.service"];
+      wants = ["network-online.target"];
+      serviceConfig = {
+        Type = "oneshot";
+        ProtectSystem = "strict";
+        ProtectHome = true;
+        PrivateTmp = true;
+        NoNewPrivileges = true;
+        ReadWritePaths = "/var/lib/janus";
+        ExecStart = "${helper}/bin/janus-proxy resolve-labels";
+      };
+    };
+
+    systemd.services.janus-label-probe = lib.mkIf labelProbe.enable {
+      description = "Refresh latency and HTTP labels";
+      after = ["janus-engine.service"];
+      serviceConfig = {
+        Type = "oneshot";
+        ProtectSystem = "strict";
+        ProtectHome = true;
+        PrivateTmp = true;
+        NoNewPrivileges = true;
+        ReadWritePaths = "/var/lib/janus";
+        ExecStart = "${helper}/bin/janus-proxy probe";
       };
     };
 
@@ -786,6 +825,15 @@ in {
             Persistent = true;
             RandomizedDelaySec = "10min";
             Unit = "janus-geodata-refresh.service";
+          };
+        };
+      }
+      // lib.optionalAttrs labelProbe.enable {
+        janus-label-probe = {
+          wantedBy = ["timers.target"];
+          timerConfig = {
+            OnBootSec = "2min";
+            OnUnitActiveSec = labelProbe.interval;
           };
         };
       };

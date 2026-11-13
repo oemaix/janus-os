@@ -66,8 +66,13 @@ Read this file before answering a question about using Janus OS.
   `janus.dns.domestic.resolvers`. The region is not a hot override.
 - Each LAN inherits `janus.proxy.mode`, `rules`, `defaultTarget`,
   `exceptions`, and `janus.dns` (D-0042). A set `proxy.rules` replaces
-  the inherited list. Nodes, groups, subscriptions, and `failMode` stay
-  on the router. One engine matches the LAN by source. `bypass` is not
+  the inherited list. Nodes, labels, subscriptions, and `failMode` stay
+  on the router. One engine matches the LAN by source. A rule constrains
+  labels (`docs/07-proxy-and-dns.md` §11, ADR-0027, ADR-0028). The
+  renderer emits one outbound set per selector. The configuration, the
+  maintenance page, the panel, and the CLI do not present a group.
+  `janus.proxy.groups` and `janus.proxy.groupsAuto` are not options.
+  `bypass` is not
   intercepted; unset DNS then sends every recursive name to the domestic
   encrypted resolvers. `rule-based` is split. `proxy-all` fake-IPs names
   it will proxy. `dns.recursive = false` is hosts and leases only. A

@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-11-04 |
+| Last updated | 2026-11-12 |
 
 This file is the implementation plan, the progress of the code, and the
 notes for work that is specified but not started. Choices are *18*.
@@ -86,6 +86,7 @@ power-cut. Tier 3 ships the profile. The Future list stays after 1.0.
 * Open Wi-Fi, WPA-Enterprise, a station network added on the router without a rebuild, and captive-portal completion (*06* §11, FR-NET-018, D-0063).
 * Candidate: when Ethernet, a Wi-Fi station, and WWAN are up together, prefer Ethernet, then the station, then WWAN (D-0065). The order today is role and metric (D-0036). The health check promotes one backup (FR-NET-007). The cable stays `default` and the station stays `backup` (D-0063).
 * Candidate: one Wi-Fi radio as an access point and a station at the same time (D-0066). A profile that lists `ap` and `sta` still means either role, and one peripheral still has one role (D-0063, Q-0057).
+* Operator-facing node labels (ADR-0027, ADR-0028, *07* §11, FR-PRX-029). Implemented; see Progress.
 
 ## 2. Progress
 
@@ -94,6 +95,7 @@ tree does not mean that behavior exists. Stubs are not finished features.
 
 ### Done
 
+* Operator-facing node labels (ADR-0027, ADR-0028, *07* §11, FR-PRX-029). A key has a type. `region` is opt-in. `empty` is the key written again. `vendor`, `protocol`, and `latency` are on every node. A routing rule uses one selector, `direct`, `block`, or an ordered `failover`. `janus.proxy.groups` and `janus.proxy.groupsAuto` are not options. The configuration, the maintenance page, the panel, and the CLI do not present a group.
 * `janus.system.kernelProfile` is `standard` (default, the NixOS kernel),
   `compact`, or `matched` (D-0051, D-0052). `compact` is one config for
   every board. `matched` includes that cut, then keeps a driver only
@@ -256,6 +258,7 @@ tree does not mean that behavior exists. Stubs are not finished features.
 ## 3. Notes for later implementation
 
 * Accepted ADRs bind. They are listed in `docs/adr/` and are not restated here.
+* ADR-0027 and ADR-0028 are accepted and do not replace the group model yet. Implement labels from *07* §11 when the Future item starts. Do not add `janus.proxy.labels` before then.
 * Undecided choices, if any, are *18* §2. Do not invent an answer for one.
   D-0045 asks whether the board-local secret path goes away.
   D-0048 asks whether an existing PPPoE username and password join the
