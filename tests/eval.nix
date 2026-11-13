@@ -3539,7 +3539,7 @@ in {
     '';
   eval-subscription-cache =
     pkgs.runCommand "eval-subscription-cache" {
-      nativeBuildInputs = [pkgs.bash pkgs.jq pkgs.coreutils];
+      nativeBuildInputs = [pkgs.bash pkgs.jq pkgs.coreutils pkgs.util-linux];
     } ''
       set -eu
       root=$TMPDIR/root
@@ -3872,7 +3872,7 @@ in {
   ];
   eval-refresh-error =
     pkgs.runCommand "eval-refresh-error" {
-      nativeBuildInputs = [pkgs.jq];
+      nativeBuildInputs = [pkgs.jq pkgs.util-linux];
     } ''
       set -eu
       root=$TMPDIR/root
