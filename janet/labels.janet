@@ -353,8 +353,18 @@
       (and (nil? v6) (ipv6-bytes ip)) (set v6 ip)))
   (or v4 v6))
 
+# os/execute accepts a file or a stream. :pipe is only valid for os/spawn,
+# and the refresh render dies on that keyword (T-0036).
+(defn command-out [argv]
+  (def err (file/open "/dev/null" :w))
+  (def proc (os/spawn argv :p {:out :pipe :err err}))
+  (def buf (:read (proc :out) :all))
+  (:close (proc :out))
+  (:close err)
+  @{:exit (os/proc-wait proc) :out (if buf (string buf) "")})
+
 (defn dig-out [dig host qtype]
-  (def res (os/execute [dig "+short" "+time=2" "+tries=1" host qtype] :p {:out :pipe :err :pipe}))
+  (def res (command-out [dig "+short" "+time=2" "+tries=1" host qtype]))
   (when (= (res :exit) 0)
     (first-ip (or (res :out) ""))))
 
@@ -363,7 +373,7 @@
     (def dig (os/getenv "JANUS_DIG"))
     (if dig
       (or (dig-out dig host "A") (dig-out dig host "AAAA"))
-      (let [res (os/execute ["getent" "hosts" host] :p {:out :pipe :err :pipe})]
+      (let [res (command-out ["getent" "hosts" host])]
         (when (= (res :exit) 0)
           (first-ip (or (res :out) "")))))))
 
@@ -744,7 +754,7 @@
   (def argv (tcp-argv host port timeout-ms))
   (when argv
     (def start (os/clock))
-    (def res (os/execute argv :p {:out :pipe :err :pipe}))
+    (def res (command-out argv))
     (when (= (res :exit) 0)
       (math/floor (* 1000 (- (os/clock) start))))))
 
@@ -777,7 +787,7 @@
   dir)
 
 (defn port-open? [port]
-  (def res (os/execute ["timeout" "1" "bash" "-c" "echo >/dev/tcp/127.0.0.1/\"$1\"" "_" (string port)] :p {:out :pipe :err :pipe}))
+  (def res (command-out ["timeout" "1" "bash" "-c" "echo >/dev/tcp/127.0.0.1/\"$1\"" "_" (string port)]))
   (= (res :exit) 0))
 
 (defn proc-running? [proc]
@@ -811,14 +821,16 @@
     (spit path (json-encode (probe-config engine node port user pass)))
     (os/chmod path 8r600)
     (def args (if (= engine "xray") @["xray" "run" "-c" path] @["sing-box" "run" "-c" path]))
-    (def proc (os/spawn args :p {:out :pipe :err :pipe}))
-    (defer (stop-proc proc)
-      (when (wait-port port proc)
-        (def sec (string (max 1 (div (+ timeout-ms 999) 1000))))
-        (def res (os/execute ["curl" "-sS" "-o" "/dev/null" "-w" "%{http_code}" "--max-time" sec
-                              "-x" (string "socks5h://" user ":" pass "@127.0.0.1:" port) url]
-                             :p {:out :pipe :err :pipe}))
-        (scan-number (string/trim (string (or (res :out) ""))))))))
+    # Unread :pipe fills and the probe blocks (T-0037). The sample is the curl status.
+    (def sink (file/open "/dev/null" :w))
+    (defer (:close sink)
+      (def proc (os/spawn args :p {:out sink :err sink}))
+      (defer (stop-proc proc)
+        (when (wait-port port proc)
+          (def sec (string (max 1 (div (+ timeout-ms 999) 1000))))
+          (def res (command-out ["curl" "-sS" "-o" "/dev/null" "-w" "%{http_code}" "--max-time" sec
+                                 "-x" (string "socks5h://" user ":" pass "@127.0.0.1:" port) url]))
+          (scan-number (string/trim (string (or (res :out) "")))))))))
 
 (defn constrained-keys [value into]
   (cond

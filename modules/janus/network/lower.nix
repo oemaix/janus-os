@@ -503,6 +503,9 @@ in {
     (lib.mkIf (cfg.wans != {} || cfg.lans != {}) {
       networking.useNetworkd = true;
       networking.useDHCP = false;
+      # networkd enables systemd-resolved. Its mDNS socket is UDP 5353,
+      # the same port Xray binds for the DNS catcher (T-0035).
+      services.resolved.settings.Resolve.MulticastDNS = false;
       boot.kernel.sysctl = {
         "net.ipv4.ip_forward" = lib.mkDefault 1;
         "net.ipv6.conf.all.forwarding" = lib.mkDefault 1;

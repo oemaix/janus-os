@@ -169,6 +169,11 @@ in {
       echo ${lib.escapeShellArg range} | grep -q 'set:janus-lan,'
       echo ${lib.escapeShellArg dnsOpt} | grep -q 'tag:janus-lan,option:dns-server,192.168.10.1'
       test ${lib.escapeShellArg raDns} = _link_local
+      mdns=${lib.escapeShellArg (builtins.toJSON os.config.services.resolved.settings.Resolve.MulticastDNS)}
+      if [ "$mdns" != false ]; then
+        echo "MulticastDNS is $mdns" >&2
+        exit 1
+      fi
       printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " os.config.systemd.services.dnsmasq.wants)} | grep -F -q 'sys-subsystem-net-devices-br\x2dlan.device'
       if printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " os.config.systemd.services.dnsmasq.wants)} | grep -F -q network-online.target; then
         echo "dnsmasq still waits for the WAN" >&2
@@ -4032,6 +4037,29 @@ EOF
       janet "$script" render --model merge-model.json --nodes nodes.json --rule-set remote --output merged.json
       jq -e '.log.level == "debug" and any(.inbounds[]; .type == "tun" and .stack == "gvisor")' merged.json >/dev/null
       sing-box check -c merged.json
+      mkdir -p "$TMPDIR/fake-bin"
+      printf '%s\n' '#!/bin/sh' 'printf "%s\n" "$*" >> "$JANUS_GETENT_LOG"' 'printf "%s\n" "203.0.113.50 example.test"' > "$TMPDIR/fake-bin/getent"
+      chmod +x "$TMPDIR/fake-bin/getent"
+      # v2ray geoip: country us, CIDR 203.0.113.50/32. An unread address leaves region unset.
+      printf '\012\016\012\002us\022\010\012\004\313\000\161\062\020\040' > geo.dat
+      jq '. + {officialRegions: ["us"], labels: {region: {type: "region", rules: [{match: {kind: "geoip"}}]}}}' model.json > geo-model.json
+      jq '[.[0] | .name = "cnix/a" | .server = "example.test"]' nodes.json > geo-nodes.json
+      resolve_env=(env -u JANUS_DIG JANUS_GETENT_LOG="$TMPDIR/getent.log" PATH="$TMPDIR/fake-bin:$PATH")
+      if "''${resolve_env[@]}" janet "$script" labels --model geo-model.json --nodes geo-nodes.json --resolve --geoip geo.dat > geo-labels.json; then
+        :
+      else
+        echo "geoip resolve still passes :pipe to os/execute" >&2
+        exit 1
+      fi
+      grep -F -q 'hosts example.test' "$TMPDIR/getent.log"
+      jq -e '.["cnix/a"].region == "us"' geo-labels.json >/dev/null
+      : > "$TMPDIR/getent.log"
+      "''${resolve_env[@]}" janet "$script" render --model geo-model.json --nodes geo-nodes.json --engine sing-box --rule-set remote --resolve --geoip geo.dat --labels sing-labels.json --output sing-geo.json
+      sing-box check -c sing-geo.json
+      jq -e '.["cnix/a"].region == "us"' sing-labels.json >/dev/null
+      "''${resolve_env[@]}" janet "$script" render --model geo-model.json --nodes geo-nodes.json --engine xray --rule-set remote --resolve --geoip geo.dat --labels xray-labels.json --output xray-geo.json
+      jq -e '.["cnix/a"].region == "us"' xray-labels.json >/dev/null
+      jq -e 'any(.outbounds[]; .protocol == "vmess")' xray-geo.json >/dev/null
       echo ok > "$out"
     '';
   eval-boot-install =
