@@ -238,21 +238,18 @@ Stay on sing-box when:
 
 Use xray when:
 
-- You want the group strategy `load-balance`. sing-box cannot express
-  that group.
 - Your nodes are written for xray, and every LAN can share one DNS
   policy.
 
-The group strategy `fallback` fails on both engines. `url-test` and
-`manual` work on both. On xray, `janus proxy select` rewrites the
-configuration. On sing-box it uses the API of the running process. A
-second resolver address is not a failover on either engine. `carrierResolvers
-= "fallback-only"` does not add one.
+sing-box picks a node with urltest. xray picks with leastPing. The
+operator does not choose a node by hand. A second resolver address is
+not a failover on either engine. `carrierResolvers = "fallback-only"`
+does not add one.
 
 ## Day to day
 
 `janus status` on the board reports the running system. Subscription
-refresh, node selection, and DNS checks are `janus proxy` and `janus dns`.
+refresh, node labels, and DNS checks are `janus proxy` and `janus dns`.
 
 These changes do not need a new image:
 

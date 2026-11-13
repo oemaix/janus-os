@@ -1232,10 +1232,6 @@ in {
             tls.serverName = "www.example.com";
             tls.insecure = true;
           };
-          groups.Demo = {
-            members = ["node:demo"];
-            strategy = "url-test";
-          };
         };
       }
     ];
@@ -1246,6 +1242,9 @@ in {
     geo = os.config.environment.etc."janus/geodata".source;
     proxyBin = os.config.environment.etc."janus/bin/janus-proxy".source;
     pre = os.config.systemd.services.janus-engine-prepare.serviceConfig.ExecStart;
+    preAfter = pkgs.writeText "prepare-after" (
+      lib.concatStringsSep "\n" (os.config.systemd.services.janus-engine-prepare.after or [])
+    );
     preText = pkgs.writeText "exec-start-pre" (
       if builtins.isList pre
       then lib.concatStringsSep "\n" pre
@@ -1261,11 +1260,12 @@ in {
       sing-box check -c ${engine}
       jq -e '.inbounds[] | select(.type == "tun" and .auto_route == false and .stack == "gvisor")' ${engine} >/dev/null
       jq -e '.outbounds[] | select(.tag == "direct" and .routing_mark == 74)' ${engine} >/dev/null
-      jq -e 'any(.outbounds[]; .tag == "Auto")' ${engine} >/dev/null
+      jq -e 'any(.outbounds[]; .type == "urltest" and (.tag | startswith("sel-")))' ${engine} >/dev/null
       jq -e '[.inbounds[] | select(.type == "tproxy" and .network == "udp" and .listen == "0.0.0.0" and .listen_port == 5353)] | length == 1' ${engine} >/dev/null
       jq -e '[.inbounds[] | select(.type == "tproxy" and .network == "udp" and .listen == "::" and .listen_port == 5353)] | length == 1' ${engine} >/dev/null
       jq -e '[.inbounds[] | select(.type == "tproxy" and .network == "tcp")] | length == 0' ${engine} >/dev/null
       grep -q geodata-missing ${preText}
+      grep -q network-online ${preAfter}
       grep -q '0x00004a01' ${markFile}
       grep -q 'dport 53 return' ${markFile}
       grep -q 'ip6 daddr != fc00::/18' ${markFile}
@@ -1366,7 +1366,7 @@ in {
             }
             {
               match.domains = ["proxy.example"];
-              target = "group:Auto";
+              labels = {};
             }
           ];
         };
@@ -1604,11 +1604,6 @@ in {
             shadowsocks.method = "aes-256-gcm";
             shadowsocks.password = "janus-local-proxy-test";
           };
-          groups.Local = {
-            members = ["node:local"];
-            strategy = "manual";
-            default = "local";
-          };
         };
       }
     ];
@@ -1697,13 +1692,18 @@ in {
             port = 443;
             trojan.password = "janus-build-check";
           };
-          groups.Wave = {
-            members = ["node:demo"];
-            strategy = "load-balance";
-          };
           rules = [
             {
               match.domains = ["example.com"];
+              target = "direct";
+            }
+            {
+              match.port = [123];
+              match.protocol = "udp";
+              target = "direct";
+            }
+            {
+              match.port = [80 443];
               target = "direct";
             }
           ];
@@ -1733,12 +1733,15 @@ in {
       jq -e '.inbounds[] | select(.tag == "api" and .port == 8080)' ${engine} >/dev/null
       jq -e '.outbounds[] | select(.protocol == "dns" and .tag == "dns-out")' ${engine} >/dev/null
       jq -e 'any(.routing.rules[]; ((.domain // []) | index("full:example.com")) and .source == ["192.168.10.0/24"] and .outboundTag == "direct")' ${engine} >/dev/null
+      jq -e 'any(.routing.rules[]; .port == 123 and .network == "udp" and .outboundTag == "direct")' ${engine} >/dev/null
+      jq -e 'any(.routing.rules[]; .port == "80,443" and .outboundTag == "direct")' ${engine} >/dev/null
       jq -e '.dns.queryStrategy == "UseIP"' ${engine} >/dev/null
       jq -e 'any(.dns.servers[]; .address == "fakedns" and .queryStrategy == "UseIPv4")' ${engine} >/dev/null
       jq -e 'any(.inbounds[]; .tag == "dns-lan-lan" and .listen == "192.168.10.1" and .port == 53)' ${engine} >/dev/null
       jq -e 'all(.dns.servers[]; .clientIp == null)' ${engine} >/dev/null
       jq -e '.dns.disableCache != true' ${engine} >/dev/null
-      jq -e '.routing.balancers[] | select(.tag == "Wave") | .strategy.type == "roundRobin"' ${engine} >/dev/null
+      jq -e '.routing.balancers[] | select(.tag | startswith("sel-")) | .strategy.type == "leastPing"' ${engine} >/dev/null
+      jq -e '.api.services | index("ObservatoryService")' ${engine} >/dev/null
       jq -e '[.inbounds[] | select(.protocol == "tun" or .type == "tun")] | length == 0' ${engine} >/dev/null
       echo ${lib.escapeShellArg start} | grep -q 'xray run'
       grep -q 'export XRAY_LOCATION_ASSET=' ${proxyBin}
@@ -1784,10 +1787,7 @@ in {
           port = 443;
           trojan.password = "janus-build-check";
         };
-        groups.A = {
-          members = ["node:demo"];
-          strategy = "fallback";
-        };
+        labels.vendor.type = "string";
       };
     }
   ];
@@ -3158,18 +3158,14 @@ in {
       {
         janus.proxy = {
           enable = true;
-          groupsAuto = false;
-          defaultTarget = "group:Work";
+          defaultTarget = {
+            protocol = "vless";
+          };
           nodes.demo = {
             protocol = "vless";
             server = "203.0.113.10";
             port = 443;
             vless.uuid = "b831381d-6324-4d53-ad4f-8cda48b30811";
-          };
-          groups.Work = {
-            members = ["node:demo"];
-            strategy = "manual";
-            default = "node:demo";
           };
           subscriptions.vendor = {
             urlSecret = "subscription/vendor";
@@ -3180,11 +3176,13 @@ in {
           members = ["lan"];
           address = "192.168.10.1";
           prefixLength = 24;
-          proxy.defaultTarget = "group:Work";
+          proxy.defaultTarget = {
+            protocol = "vless";
+          };
           proxy.rules = [
             {
               match.domains = ["example.com"];
-              target = "group:Work";
+              labels.protocol = "vless";
             }
           ];
         };
@@ -3197,14 +3195,14 @@ in {
       nativeBuildInputs = [pkgs.sing-box pkgs.jq];
     } ''
       sing-box check -c ${engine}
-      jq -e '.groupsAuto == false' ${model} >/dev/null
+      jq -e 'has("groups") | not' ${model} >/dev/null
       jq -e '.subscriptionNames == ["vendor"]' ${model} >/dev/null
       if jq -e 'any(.outbounds[]; .tag == "Auto" or (.tag | startswith("sub:")))' ${engine} >/dev/null; then
-        echo "groupsAuto = false still rendered an implicit group" >&2
+        echo "a selector still rendered a group tag" >&2
         exit 1
       fi
-      jq -e 'any(.dns.servers[]; .detour == "Work")' ${engine} >/dev/null
-      jq -e 'any(.outbounds[]; .tag == "Work" and .type == "selector" and .default == "demo")' ${engine} >/dev/null
+      jq -e 'any(.dns.servers[]; .detour != null and (.detour | startswith("sel-")))' ${engine} >/dev/null
+      jq -e 'any(.outbounds[]; .type == "urltest" and (.tag | startswith("sel-")) and (.outbounds | index("demo")))' ${engine} >/dev/null
       echo ok > "$out"
     '';
   eval-groups-named-auto = let
@@ -3213,23 +3211,11 @@ in {
       {
         janus.proxy = {
           enable = true;
-          groupsAuto = false;
-          defaultTarget = "group:Work";
           nodes.demo = {
             protocol = "vless";
             server = "203.0.113.10";
             port = 443;
             vless.uuid = "b831381d-6324-4d53-ad4f-8cda48b30811";
-          };
-          groups.Auto = {
-            members = ["node:demo"];
-            strategy = "manual";
-            default = "node:demo";
-          };
-          groups.Work = {
-            members = ["node:demo"];
-            strategy = "manual";
-            default = "node:demo";
           };
         };
       }
@@ -3240,12 +3226,11 @@ in {
       nativeBuildInputs = [pkgs.sing-box pkgs.jq];
     } ''
       sing-box check -c ${engine}
-      jq -e 'any(.outbounds[]; .tag == "Auto")' ${engine} >/dev/null
-      if jq -e 'any(.dns.servers[]; .detour == "Auto")' ${engine} >/dev/null; then
-        echo "a fleet group named Auto captured tunnel DNS" >&2
+      if jq -e 'any(.outbounds[]; .tag == "Auto")' ${engine} >/dev/null; then
+        echo "the default selector is still named Auto" >&2
         exit 1
       fi
-      jq -e 'any(.dns.servers[]; .detour == "Work")' ${engine} >/dev/null
+      jq -e 'any(.outbounds[]; .type == "urltest" and (.tag | startswith("sel-")))' ${engine} >/dev/null
       echo ok > "$out"
     '';
   eval-groups-xray-empty = let
@@ -3262,15 +3247,14 @@ in {
             port = 443;
             trojan.password = "janus-build-check";
           };
-          groups.Backup = {
-            members = ["node:demo"];
-            strategy = "manual";
-            default = "node:demo";
-          };
-          groups.Empty = {
-            emptyFallback = "group:Backup";
-            strategy = "url-test";
-          };
+          labels.region.type = "region";
+          defaultTarget = "direct";
+          rules = [
+            {
+              match.domains = ["empty.example"];
+              labels.region = "zz";
+            }
+          ];
         };
       }
     ];
@@ -3280,36 +3264,47 @@ in {
       nativeBuildInputs = [pkgs.jq pkgs.xray];
     } ''
       xray run -test -c ${engine}
-      jq -e '.routing.balancers[] | select(.tag == "Empty") | .selector == ["direct"]' ${engine} >/dev/null
+      jq -e 'any(.routing.rules[]; ((.domain // []) | index("full:empty.example")) and .outboundTag == "direct")' ${engine} >/dev/null
+      if jq -e 'any(.routing.balancers[]; .selector == ["direct"])' ${engine} >/dev/null; then
+        echo "an empty selector became a balancer" >&2
+        exit 1
+      fi
       echo ok > "$out"
     '';
   eval-groups-member-sub = fail "eval-groups-member-sub" [
     base
     {
-      janus.proxy = {
-        groupsAuto = false;
-        defaultTarget = "direct";
-        subscriptions.vendor.urlSecret = "subscription/vendor";
-        groups.Work.members = ["sub:vendor"];
+      janus.proxy.labels.tier = {
+        type = "string";
+        rules = [
+          {
+            match.kind = "query";
+            match.pattern = ".";
+            value = "x";
+          }
+        ];
       };
-      sops.secrets."subscription/vendor".sopsFile = ./fixtures/sops-placeholder;
     }
   ];
   eval-groups-member-auto = fail "eval-groups-member-auto" [
     base
     {
-      janus.proxy = {
-        groupsAuto = false;
-        defaultTarget = "direct";
-        groups.Work.members = ["group:Auto"];
-      };
+      janus.proxy.rules = [
+        {
+          labels.missing = "x";
+        }
+      ];
     }
   ];
   eval-groups-member-group = pass "eval-groups-member-group" [
     base
     {
-      janus.proxy.groups.Other.members = ["node:demo"];
-      janus.proxy.groups.Work.members = ["group:Other"];
+      janus.proxy.labels.region.type = "region";
+      janus.proxy.rules = [
+        {
+          labels.region = "qm";
+        }
+      ];
     }
   ];
   eval-groups-auto-off = fail "eval-groups-auto-off" [
@@ -3330,11 +3325,7 @@ in {
   eval-groups-auto-lan = fail "eval-groups-auto-lan" [
     base
     {
-      janus.proxy = {
-        enable = true;
-        groupsAuto = false;
-        defaultTarget = "direct";
-      };
+      janus.proxy.labels.region.type = "region";
       janus.network.lans.home = {
         members = ["lan"];
         address = "192.168.10.1";
@@ -3342,7 +3333,7 @@ in {
         proxy.rules = [
           {
             match.domains = ["example.com"];
-            target = "group:Auto";
+            labels.region = "uk";
           }
         ];
       };
@@ -3351,40 +3342,53 @@ in {
   eval-groups-empty-fallback = fail "eval-groups-empty-fallback" [
     base
     {
-      janus.proxy.groups.A = {
-        members = ["node:demo"];
-        emptyFallback = "group:Nope";
+      janus.proxy.labels.gemini.type = "empty";
+      janus.proxy.nodes.demo = {
+        protocol = "vless";
+        server = "203.0.113.10";
+        port = 443;
+        vless.uuid = "b831381d-6324-4d53-ad4f-8cda48b30811";
+        labels.gemini = "yes";
       };
     }
   ];
   eval-groups-manual-default = fail "eval-groups-manual-default" [
     base
     {
-      janus.proxy.groups.A = {
-        strategy = "manual";
-        members = ["node:demo"];
-        default = "node:other";
+      janus.proxy.labels.gemini = {
+        type = "empty";
+        rules = [
+          {
+            match.kind = "regex";
+            match.pattern = ".";
+          }
+          {
+            match.kind = "http";
+            match.url = "https://example.com";
+          }
+        ];
       };
     }
   ];
   eval-groups-manual-match = pass "eval-groups-manual-match" [
     base
     {
-      janus.proxy.groups.A = {
-        strategy = "manual";
-        default = "node:later";
-        match.kind = "glob";
-        match.pattern = "*";
+      janus.proxy.labels.tier = {
+        type = "string";
+        rules = [
+          {
+            match.kind = "glob";
+            match.pattern = "*";
+            value = "all";
+          }
+        ];
       };
     }
   ];
   eval-proxy-fallback = fail "eval-proxy-fallback" [
     base
     {
-      janus.proxy.groups.A = {
-        members = ["group:Auto"];
-        strategy = "fallback";
-      };
+      janus.proxy.labels.protocol.type = "enum";
     }
   ];
   eval-refresh-dow = let
@@ -3475,17 +3479,13 @@ in {
       {
         janus.proxy = {
           enable = true;
-          subscriptions.b = {
-            urlSecret = "subscription/b";
-            enable = false;
-          };
-          groups.UseB = {
-            fromSubscriptions = ["b"];
-            match.kind = "regex";
-            match.pattern = ".";
-          };
+          labels.region.type = "region";
+          rules = [
+            {
+              labels.region = "uk";
+            }
+          ];
         };
-        sops.secrets."subscription/b".sopsFile = ./fixtures/sops-placeholder;
       }
     ];
     messages = lib.concatMapStringsSep "\n" (a: a.message) (
@@ -3493,7 +3493,7 @@ in {
     );
   in
     pkgs.runCommand "eval-subscription-dropped-group" {} ''
-      echo ${lib.escapeShellArg messages} | grep -F -q "janus.proxy.groups.UseB.fromSubscriptions names 'b', which is not an enabled subscription on this router."
+      echo ${lib.escapeShellArg messages} | grep -F -q "uk is not a region code. The United Kingdom is gb."
       if [ "${
         if (bad modules).success
         then "yes"
@@ -3510,15 +3510,15 @@ in {
       {
         janus.proxy = {
           enable = true;
-          subscriptions.b = {
-            urlSecret = "subscription/b";
-            enable = false;
-          };
-          groups.UseB = {
-            members = ["sub:b"];
+          labels.gemini.type = "empty";
+          nodes.demo = {
+            protocol = "vless";
+            server = "203.0.113.10";
+            port = 443;
+            vless.uuid = "b831381d-6324-4d53-ad4f-8cda48b30811";
+            labels.gemini = "yes";
           };
         };
-        sops.secrets."subscription/b".sopsFile = ./fixtures/sops-placeholder;
       }
     ];
     messages = lib.concatMapStringsSep "\n" (a: a.message) (
@@ -3526,7 +3526,7 @@ in {
     );
   in
     pkgs.runCommand "eval-subscription-dropped-member" {} ''
-      echo ${lib.escapeShellArg messages} | grep -F -q "janus.proxy.groups.UseB.members names 'sub:b', which is not an enabled subscription on this router."
+      echo ${lib.escapeShellArg messages} | grep -F -q "must be the key written again."
       if [ "${
         if (bad modules).success
         then "yes"
@@ -3539,7 +3539,7 @@ in {
     '';
   eval-subscription-cache =
     pkgs.runCommand "eval-subscription-cache" {
-      nativeBuildInputs = [pkgs.bash pkgs.jq pkgs.coreutils];
+      nativeBuildInputs = [pkgs.bash pkgs.jq pkgs.coreutils pkgs.util-linux];
     } ''
       set -eu
       root=$TMPDIR/root
@@ -3609,11 +3609,12 @@ in {
       nativeBuildInputs = [pkgs.janet pkgs.sing-box pkgs.jq pkgs.coreutils];
     } ''
       set -eu
-      script=${../janet/janus.janet}
+      script=${../janet}/janus.janet
       test "$(janet "$script" match regex 'japan|jp' 'Tokyo JP')" = yes
       test "$(janet "$script" match regex 'japan|jp' 'London')" = no
       test "$(janet "$script" match glob 'Premium*' 'Premium-HK')" = yes
       test "$(janet "$script" match peg '(some "a")' aaa)" = yes
+      test "$(janet "$script" label-check)" = ok
       json='{"v":"2","ps":"Tokyo JP 1","add":"203.0.113.10","port":"443","id":"b831381d-6324-4d53-ad4f-8cda48b30811","aid":"0","scy":"auto","net":"tcp","tls":"tls","sni":"www.example.com"}'
       {
         printf 'vmess://'
@@ -3626,9 +3627,10 @@ in {
       janet "$script" normalize --format clash --prefix clash --input clash.txt --output clash.json
       jq -e '.[0].protocol == "vmess" and .[0].server == "203.0.113.11"' clash.json >/dev/null
       cat > model.json <<'EOF'
-      {"mode":"rule-based","defaultTarget":"group:Auto","blockQuic":false,"groups":{"Demo":{"members":["node:provider/Tokyo JP 1"],"strategy":"url-test","match":{},"fromSubscriptions":[],"test":{"url":"https://www.gstatic.com/generate_204","interval":"5m","tolerance":50}}},"rules":[],"subscriptionNames":["provider"],"dns":{"domestic":{"resolvers":["https://dns.alidns.com/dns-query"],"domains":[]},"remote":{"resolvers":["https://1.1.1.1/dns-query"],"via":"direct"},"fakeIp":{"enable":false,"exclude":[]},"hosts":{},"forwarders":{},"ipv6Answers":"keep"}}
+      {"mode":"rule-based","defaultTarget":{},"blockQuic":false,"rules":[],"subscriptionNames":["provider"],"dns":{"domestic":{"resolvers":["https://dns.alidns.com/dns-query"],"domains":[]},"remote":{"resolvers":["https://1.1.1.1/dns-query"],"via":"direct"},"fakeIp":{"enable":false,"exclude":[]},"hosts":{},"forwarders":{},"ipv6Answers":"keep"}}
       EOF
       janet "$script" render --model model.json --nodes nodes.json --rule-set remote --output engine.json
+      jq -e 'any(.outbounds[]; .type == "urltest" and (.tag | startswith("sel-")))' engine.json >/dev/null
       sing-box check -c engine.json
       cat > block.json <<'EOF'
       {"mode":"rule-based","defaultTarget":"block","blockQuic":false,"groups":{},"rules":[],"subscriptionNames":[],"dns":{"domestic":{"resolvers":[],"domains":[]},"remote":{"resolvers":[],"via":"direct"},"fakeIp":{"enable":false,"exclude":[]},"hosts":{},"forwarders":{},"ipv6Answers":"keep"}}
@@ -3642,6 +3644,22 @@ in {
       jq -e '.[0].tls.utls == "chrome"' utls.json >/dev/null
       janet "$script" render --model model.json --nodes utls.json --engine xray --rule-set remote --output xray.json
       jq -e '.outbounds[] | select(.tag == "a") | .streamSettings.tlsSettings.fingerprint == "chrome"' xray.json >/dev/null
+      jq '.rules = [
+        {"match":{"port":[123],"protocol":"udp"},"target":"direct"},
+        {"match":{"port":[80,443]},"target":"direct"},
+        {"match":{"port":["1000-2000"]},"target":"direct"}
+      ]' model.json > port-model.json
+      janet "$script" render --model port-model.json --nodes nodes.json --engine xray --rule-set remote --output port-xray.json
+      jq -e 'any(.routing.rules[]; .port == 123 and .network == "udp")' port-xray.json >/dev/null
+      jq -e 'any(.routing.rules[]; .port == "80,443")' port-xray.json >/dev/null
+      jq -e 'any(.routing.rules[]; .port == "1000-2000")' port-xray.json >/dev/null
+      janet "$script" render --model port-model.json --nodes nodes.json --rule-set remote --output port-sing.json
+      jq -e 'any(.route.rules[]; .port == [123] and .network == "udp")' port-sing.json >/dev/null
+      jq -e 'any(.route.rules[]; .port == [80,443])' port-sing.json >/dev/null
+      jq -e 'any(.route.rules[]; .port == ["1000-2000"])' port-sing.json >/dev/null
+      jq 'del(.rules[] | select(.match.port == ["1000-2000"]))' port-model.json > port-num-model.json
+      janet "$script" render --model port-num-model.json --nodes nodes.json --rule-set remote --output port-num.json
+      sing-box check -c port-num.json
       printf '%s\n' '{"outbounds":[{"type":"vless","tag":"r","server":"203.0.113.8","server_port":443,"uuid":"b831381d-6324-4d53-ad4f-8cda48b30811","tls":{"enabled":true,"server_name":"www.example.com","reality":{"enabled":true,"public_key":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","short_id":"abcd"},"utls":{"enabled":true,"fingerprint":"chrome"}}}]}' > reality.json
       janet "$script" normalize --format sing-box --input reality.json --output reality-nodes.json
       janet "$script" render --model model.json --nodes reality-nodes.json --engine xray --rule-set remote --output reality-xray.json
@@ -3807,7 +3825,7 @@ in {
       printf '%s\n' 'fetch failed' > "$dir/subs/main.error"
       printf '%s\n' '2026-01-03T00:00:00Z' > "$dir/geo.stamp"
       printf '%s\n' '{"proxy":{"node":"fallback","default":"fallback"}}' > "$dir/selection.json"
-      jq -n '{proxies:{proxy:{now:"chosen",history:[]},chosen:{history:[{delay:42}]}}}' > "$dir/proxies.json"
+      jq -n '{proxies:{"sel-abc":{now:"chosen",history:[]},chosen:{history:[{delay:42}]}}}' > "$dir/proxies.json"
       JANUS_ENGINE_UP=1 \
         JANUS_SUBSCRIPTION_DIR=$dir/subs \
         JANUS_GEODATA_STAMP=$dir/geo.stamp \
@@ -3820,12 +3838,23 @@ in {
       grep -q "janus_subscription_refresh_timestamp_seconds{subscription=\"main\"} $(date -u -d 2026-01-02T03:04:05Z +%s)" "$dir/metrics.prom"
       grep -q "janus_geodata_refresh_timestamp_seconds $(date -u -d 2026-01-03T00:00:00Z +%s)" "$dir/metrics.prom"
       grep -q '^janus_geodata_refresh_error 0$' "$dir/metrics.prom"
-      grep -q 'janus_proxy_selected{group="proxy",node="chosen"} 1' "$dir/metrics.prom"
-      grep -q 'janus_proxy_group_latency_milliseconds{group="proxy",node="chosen"} 42' "$dir/metrics.prom"
+      grep -q 'janus_proxy_selected{node="chosen"} 1' "$dir/metrics.prom"
+      grep -q 'janus_proxy_latency_milliseconds{node="chosen"} 42' "$dir/metrics.prom"
       if grep -q fallback "$dir/metrics.prom"; then
         echo "selection.json overrode the live engine choice" >&2
         exit 1
       fi
+      printf 'chosen\t42\nother\t7\n' > "$dir/picked"
+      JANUS_ENGINE_UP=1 \
+        JANUS_SUBSCRIPTION_DIR=$dir/subs \
+        JANUS_GEODATA_STAMP=$dir/geo.stamp \
+        JANUS_GEODATA_ERROR=$dir/no-such-error \
+        JANUS_PICKED=$dir/picked \
+        ${metrics} render > "$dir/xray.prom"
+      grep -q 'janus_proxy_selected{node="chosen"} 1' "$dir/xray.prom"
+      grep -q 'janus_proxy_selected{node="other"} 1' "$dir/xray.prom"
+      grep -q 'janus_proxy_latency_milliseconds{node="chosen"} 42' "$dir/xray.prom"
+      grep -q 'janus_proxy_latency_milliseconds{node="other"} 7' "$dir/xray.prom"
       echo ok > "$out"
     '';
   eval-monitoring-collector = fail "eval-monitoring-collector" [
@@ -3843,7 +3872,7 @@ in {
   ];
   eval-refresh-error =
     pkgs.runCommand "eval-refresh-error" {
-      nativeBuildInputs = [pkgs.jq];
+      nativeBuildInputs = [pkgs.jq pkgs.util-linux];
     } ''
       set -eu
       root=$TMPDIR/root

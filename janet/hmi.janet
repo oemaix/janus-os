@@ -126,14 +126,12 @@
       :tunnel
       (do
         (def rows @[{:text (or (snap "mode") "-") :focusable false :kind :mode}])
-        (each g (or (snap "groups") @[])
+        (each n (or (snap "nodes") @[])
           (array/push rows
-            {:text (string (g "name") " " (or (g "node") "-"))
+            {:text (string (if (n "picked") "* " "") (n "name"))
              :focusable true
-             :kind :group
-             :group (g "name")
-             :nodes (or (g "nodes") @[])
-             :detail @[(or (g "node") "-") (or (g "strategy") "-")]}))
+             :kind :node
+             :detail @[(or (n "labels") "-")]}))
         rows)
       :battery
       (do
@@ -418,7 +416,6 @@
     :refresh @[janus "proxy" "refresh"]
     :reboot @[janus "reboot"]
     :factory-reset @[janus "reset" "--state" "--yes"]
-    :select @[janus "proxy" "select" (action :group) (action :node)]
     @[]))
 
 (defn field [line]
@@ -461,7 +458,7 @@
     "mode" "-"
     "wans" @[]
     "lans" @[]
-    "groups" @[]
+    "nodes" @[]
     "tunnelError" false
     "refreshError" false
     "battery" @{"voltage" "-" "direction" "idle" "armed" false "warning" false}})
@@ -485,14 +482,10 @@
               @{"name" (get p 1)
                 "leases" (or (scan-number (get p 2)) 0)
                 "subnet" (or (get p 3) "-")})
-      "group" (do
-                (def nodes @[])
-                (def raw (or (get p 4) ""))
-                (when (not= raw "")
-                  (each n (string/split "\x1f" raw)
-                    (when (not= n "") (array/push nodes n))))
-                (array/push (snap "groups")
-                  @{"name" (get p 1) "node" (get p 2) "strategy" (get p 3) "nodes" nodes}))
+      "node" (array/push (snap "nodes")
+               @{"name" (or (get p 1) "")
+                 "picked" (= (get p 2) "1")
+                 "labels" (or (get p 3) "")})
       "battery" (put snap "battery"
                   @{"voltage" (get p 1)
                     "direction" (get p 2)
@@ -557,7 +550,8 @@
     "mode" "rule-based"
     "wans" @[@{"name" "main" "up" false "ipv4" "-" "ipv6" "-" "uptime" "5m"}]
     "lans" @[@{"name" "lan" "leases" 2 "subnet" "192.168.10.0/24"}]
-    "groups" @[@{"name" "Auto" "node" "hk" "strategy" "url-test" "nodes" @["hk" "us"]}]
+    "nodes" @[@{"name" "hk" "picked" true "labels" "vendor=paid protocol=vless"}
+             @{"name" "us" "picked" false "labels" "vendor=paid protocol=vmess"}]
     "battery" @{"voltage" "3.40" "direction" "discharge" "armed" true "warning" true}
     "tunnelError" false
     "refreshError" false})
@@ -589,19 +583,10 @@
   (def [p2 _] (press p1 snap :page-next 21))
   (def [p3 _] (press p2 snap :page-next 22))
   (expect "tunnel-page" (= (current-page p3) :tunnel))
-  (def [nodes action] (press p3 snap :confirm 30))
-  (expect "pushed" (= (nodes :screen) :nodes))
-  (expect "confirm-not-reboot" (nil? action))
-  (def node-frame (render nodes snap))
-  (expect "node-header" (string/has-prefix? "Auto" (get node-frame 0)))
-  (expect "node-focus" (string/has-prefix? ">hk" (get node-frame 1)))
-  (def [back-page back-action] (press nodes snap :page-prev 40))
-  (expect "page-prev-back" (and (= (back-page :screen) :page) (nil? back-action)))
-  (def [nodes2 _] (press p3 snap :confirm 50))
-  (def [chosen select-action] (press nodes2 snap :confirm 60))
-  (expect "select" (and (= (select-action :action) :select) (= (select-action :group) "Auto") (= (select-action :node) "hk")))
-  (expect "returned" (= (chosen :screen) :page))
-  (expect "argv" (deep= (action-argv "/bin/janus" select-action) @["/bin/janus" "proxy" "select" "Auto" "hk"]))
+  (def tunnel-frame (render p3 snap))
+  (expect "tunnel-node" (string/find "* hk" (string/join tunnel-frame "\n")))
+  (def [stayed action] (press p3 snap :confirm 30))
+  (expect "no-select" (and (= (stayed :screen) :page) (nil? action)))
   (expect "reset-argv" (deep= (action-argv "/bin/janus" {:action :factory-reset}) @["/bin/janus" "reset" "--state" "--yes"]))
 
   (def [held _] (press state snap :reboot-hold 0))
@@ -683,10 +668,10 @@
   (expect "wide-age" (string/find "9m" wide-text))
   (def [wide-tunnel _] (press wide-wan wide-snap :page-next 3))
   (def [wide-tunnel2 _] (press wide-tunnel wide-snap :page-next 4))
-  (def [wide-nodes _] (press wide-tunnel2 wide-snap :confirm 5))
-  (def node-wide (string/join (render wide-nodes wide-snap) "\n"))
+  (def node-wide (string/join (render wide-tunnel2 wide-snap) "\n"))
   (expect "wide-node" (string/find "hk" node-wide))
-  (expect "wide-node-only" (nil? (string/find "url-test" (string/slice (get (render wide-nodes wide-snap) 1) 26))))
+  (expect "wide-labels" (string/find "vendor=paid" node-wide))
+  (expect "wide-node-only" (nil? (string/find "url-test" node-wide)))
 
   (def menu (make-state 128 64 (caps-of ["item-next" "confirm" "back"]) {:wan true :lan false :proxy false :power false}))
   (expect "menu" (= (menu :screen) :menu))
@@ -722,10 +707,11 @@
   (def [tapped _] (release tap snap :reboot-hold 400))
   (expect "one-next" (= (current-page tapped) :wan))
 
-  (def parsed (parse-snapshot "host\trouter\nuptime\t2m\nmode\trule-based\ntunnel-error\t1\nwan\tmain\t0\t-\t-\t-\ngroup\tAuto\thk\turl-test\thk\x1fus\nbattery\t4.10\tdischarge\t1\t0\n"))
+  (def parsed (parse-snapshot "host\trouter\nuptime\t2m\nmode\trule-based\ntunnel-error\t1\nwan\tmain\t0\t-\t-\t-\nnode\thk\t1\tvendor=paid\nnode\tus\t0\tvendor=paid\nbattery\t4.10\tdischarge\t1\t0\n"))
   (expect "parsed-host" (= (parsed "host") "router"))
   (expect "parsed-tunnel" (parsed "tunnelError"))
-  (expect "parsed-nodes" (= (length (get (get (parsed "groups") 0) "nodes")) 2))
+  (expect "parsed-nodes" (= (length (parsed "nodes")) 2))
+  (expect "parsed-picked" (get (get (parsed "nodes") 0) "picked"))
   (expect "parsed-volts" (= (get (parsed "battery") "voltage") "4.10"))
 
   (def panel-dead @[false 1])
@@ -829,7 +815,7 @@
   (each c bound (put by-name (c :name) (c :cap)))
   (var snap @{
     "host" (conf :host) "uptime" "-" "mode" (conf :mode)
-    "wans" @[] "lans" @[] "groups" @[]
+    "wans" @[] "lans" @[] "nodes" @[]
     "tunnelError" false "refreshError" false
     "battery" @{"voltage" "-" "direction" "idle" "armed" false "warning" false}})
   (def refresh-bad @[false])
