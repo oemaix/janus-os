@@ -345,7 +345,10 @@ when the stick starts. The rest of that collection stays out of the image.
 that kernel shows `AP` for this phy. Expected use is a small 2.4 GHz
 network, not a fast AP. `rtl8xxxu` on Linux 6.15 or newer is the fallback
 if `rtl8192cu` cannot be made stable, and its TX rate is the reason it is
-not the default.
+not the default. A later image may remove this id from `rtl8xxxu` instead
+of the bind (D-0070). The bind stays until that row is decided. Two sticks
+of one USB id, one access point and one station, are a later match
+(D-0071).
 
 ### 4.5 Battery shutdown
 
@@ -541,7 +544,8 @@ Ethernet WAN, that WAN keeps the default route (D-0036).
 
 A profile that lists `ap` and `sta` allows either role. One peripheral
 still has one role. These two drivers do not advertise a concurrent
-access point and station on one radio.
+access point and station on one radio. When a later driver does, that
+peripheral may take both roles (D-0066).
 
 Known networks are WPA2-PSK. The SSID is configuration. The passphrase
 is one sops file, the same shape as an access-point passphrase
