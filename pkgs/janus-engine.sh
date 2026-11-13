@@ -2,7 +2,7 @@
 # The Nix module sets JANUS_SCRIPT, JANUS_FAIL_MODE, JANUS_INTERCEPT, and JANUS_EGRESS_TABLE.
 model=/etc/janus/proxy-model.json
 meta=/etc/janus/subscriptions.json
-manual=/etc/janus/nodes-manual.json
+# nodes-manual.json is already inside nodes-built.json.
 built=/etc/janus/nodes-built.json
 cfg=/var/lib/janus/engine/config.json
 labels=/var/lib/janus/engine/node-labels.json
@@ -154,10 +154,13 @@ merge_nodes() {
   # subscriptions.json lists the enabled subscriptions in this image.
   # A cache left on the state partition for a subscription this router
   # dropped is not a node source (D-0044).
-  if [ -f "$meta" ] && compgen -G '/var/lib/janus/subscriptions/*.json' >/dev/null; then
+  # bashNonInteractive has no compgen. A missing match leaves the literal
+  # glob, and [ -f ] skips it (T-0031).
+  if [ -f "$meta" ]; then
     picked=$(mktemp -d)
     count=0
     for file in /var/lib/janus/subscriptions/*.json; do
+      [ -f "$file" ] || continue
       name=${file##*/}
       name=${name%.json}
       if jq -e --arg name "$name" 'has($name)' "$meta" >/dev/null; then
@@ -170,14 +173,16 @@ merge_nodes() {
     fi
     rm -rf "$picked"
   fi
+  # nodes-built.json already contains the manual nodes. Adding that file
+  # again duplicates every tag, and xray rejects the config.
   jq -s '
-    (.[0] + .[1]) as $base
-    | (.[2] | map(select(.name | contains("/")) | .name | split("/")[0]) | unique) as $replaced
+    (.[0]) as $base
+    | (.[1] | map(select(.name | contains("/")) | .name | split("/")[0]) | unique) as $replaced
     | ($base | map(select(
         ((.name | contains("/")) | not)
         or (((.name | split("/")[0]) as $p | $replaced | index($p)) | not)
-      ))) + .[2]
-  ' "$manual" "$built" "$runtime" > "$out"
+      ))) + .[1]
+  ' "$built" "$runtime" > "$out"
   rm -f "$runtime"
   printf '%s\n' "$out"
 }
@@ -195,7 +200,15 @@ carrier_model() {
     return 0
   fi
   ips=$(mktemp)
-  if compgen -G '/run/janus/wan/*/dns' >/dev/null; then
+  # Same missing compgen as merge_nodes (T-0031).
+  found=0
+  for file in /run/janus/wan/*/dns; do
+    if [ -f "$file" ]; then
+      found=1
+      break
+    fi
+  done
+  if [ "$found" = 1 ]; then
     grep -h . /run/janus/wan/*/dns | awk 'NF && !seen[$0]++' > "$ips" || true
   else
     : > "$ips"
@@ -394,7 +407,9 @@ render_config() {
   prune_label_state "$nodes"
   work=$(mktemp)
   selected=$(mktemp)
-  out=$(mktemp)
+  # Xray reads the format from the suffix. A bare mktemp name fails the
+  # test and the config is never installed (T-0030).
+  out=$(mktemp --suffix=.json)
   carrier_model "$model" "$work"
   apply_saved_selection "$work" "$selected"
   args=(janet "$JANUS_SCRIPT" render --model "$selected" --nodes "$nodes" --rule-set local --engine "${JANUS_ENGINE}" --latency "$latency" --probes "$probes" --labels "$labels")

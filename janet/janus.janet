@@ -801,6 +801,16 @@
   (def raw (get policy "bootstrap"))
   (if (nil? raw) @["1.1.1.1"] raw))
 
+(defn refresh-target [views]
+  # LAN names are sorted, so guest is ahead of home. A direct guest must
+  # not take the fetch from a later proxied LAN (T-0032).
+  (def proxied (filter |(not= (or (get $ "mode") "rule-based") "bypass") views))
+  (def pool (if (empty? proxied) views proxied))
+  (def chosen
+    (find |(and (string? (get $ "defaultTarget")) (string/has-prefix? "sel-" (get $ "defaultTarget"))) pool))
+  (def view (or chosen (first pool) @{}))
+  (or (get view "defaultTarget") "direct"))
+
 (defn policy-views [model]
   (def lans (or (get model "lans") @[]))
   (if (empty? lans)
@@ -1010,6 +1020,13 @@
   (def rules @[
     @{:action "sniff"}
     @{:port @[53] :action "hijack-dns"}])
+  # Ahead of the LAN CIDR rules. route.final is direct when a LAN exists,
+  # and 127.0.0.1 matches none of those rules (T-0032).
+  (def refresh-out (refresh-target views))
+  (array/push rules
+    (if (= refresh-out "block")
+      @{:inbound @["refresh"] :action "reject"}
+      @{:inbound @["refresh"] :action "route" :outbound (or (rule-outbound refresh-out) "direct")}))
   (each view (views-of model)
     (def mode (or (get view "mode") "rule-based"))
     (when (not= mode "bypass")
@@ -1415,6 +1432,9 @@
       (array/push inbounds @{
         :tag (string inbound "-tcp") :listen address :port 53 :protocol "dokodemo-door"
         :settings @{:address "1.1.1.1" :port 53 :network "tcp"}})))
+  (array/push inbounds @{
+    :tag "refresh" :listen "127.0.0.1" :port 2080 :protocol "socks"
+    :settings @{:auth "noauth" :udp false}})
   (def rules @[
     @{:type "field" :inboundTag @["api"] :outboundTag "api"}])
   (when (some |(= (get $ :tag) "dns-remote") servers)
@@ -1425,6 +1445,14 @@
       (put item :outboundTag (get where 1)))
     (array/push rules item))
   (array/push rules @{:type "field" :inboundTag dns-tags :outboundTag "dns-out"})
+  # Ahead of the LAN source rules and the final direct rule. 127.0.0.1
+  # matches neither, so the fetch would leave on the WAN (T-0032).
+  (let [where (xray-dispatch (refresh-target views))
+        item @{:type "field" :inboundTag @["refresh"]}]
+    (if (= (get where 0) "balancer")
+      (put item :balancerTag (get where 1))
+      (put item :outboundTag (get where 1)))
+    (array/push rules item))
   (each view views
     (when (not= (or (get view "mode") "rule-based") "bypass")
       (def cidr (get view "cidr"))

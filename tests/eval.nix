@@ -1261,6 +1261,15 @@ in {
       jq -e '.inbounds[] | select(.type == "tun" and .auto_route == false and .stack == "gvisor")' ${engine} >/dev/null
       jq -e '.outbounds[] | select(.tag == "direct" and .routing_mark == 74)' ${engine} >/dev/null
       jq -e 'any(.outbounds[]; .type == "urltest" and (.tag | startswith("sel-")))' ${engine} >/dev/null
+      jq -e 'any(.inbounds[]; .tag == "refresh" and .type == "socks" and .listen == "127.0.0.1" and .listen_port == 2080)' ${engine} >/dev/null
+      jq -e '
+        .route.rules as $rules
+        | ($rules | to_entries | map(select(.value.inbound == ["refresh"])) | .[0].key) as $r
+        | ($rules | to_entries | map(select(.value.source_ip_cidr == ["192.168.10.0/24"])) | .[0].key) as $lan
+        | $r != null and $lan != null and ($r < $lan)
+          and $rules[$r].action == "route"
+          and ($rules[$r].outbound | startswith("sel-"))
+      ' ${engine} >/dev/null
       jq -e '[.inbounds[] | select(.type == "tproxy" and .network == "udp" and .listen == "0.0.0.0" and .listen_port == 5353)] | length == 1' ${engine} >/dev/null
       jq -e '[.inbounds[] | select(.type == "tproxy" and .network == "udp" and .listen == "::" and .listen_port == 5353)] | length == 1' ${engine} >/dev/null
       jq -e '[.inbounds[] | select(.type == "tproxy" and .network == "tcp")] | length == 0' ${engine} >/dev/null
@@ -1722,7 +1731,7 @@ in {
     start = os.config.systemd.services.janus-engine.serviceConfig.ExecStart;
   in
     pkgs.runCommand "eval-proxy-xray" {
-      nativeBuildInputs = [pkgs.jq pkgs.xray pkgs.nftables];
+      nativeBuildInputs = [pkgs.jq pkgs.xray pkgs.nftables pkgs.janet pkgs.util-linux pkgs.gawk];
     } ''
       xray run -test -c ${engine}
       jq -e '.inbounds[] | select(.protocol == "dokodemo-door" and .port == 12345)' ${engine} >/dev/null
@@ -1731,6 +1740,15 @@ in {
       jq -e '.inbounds[] | select(.tag == "dns-tcp" and .listen == "::" and .port == 5353 and .settings.network == "tcp")' ${engine} >/dev/null
       jq -e 'any(.routing.rules[]; (["dns-tcp","dns-udp4","dns-udp6"] - (.inboundTag // [])) == [])' ${engine} >/dev/null
       jq -e '.inbounds[] | select(.tag == "api" and .port == 8080)' ${engine} >/dev/null
+      jq -e '.inbounds[] | select(.tag == "refresh" and .protocol == "socks" and .listen == "127.0.0.1" and .port == 2080 and .settings.auth == "noauth")' ${engine} >/dev/null
+      jq -e '
+        .routing.rules as $rules
+        | ($rules | to_entries | map(select(.value.inboundTag == ["refresh"])) | .[0].key) as $r
+        | ($rules | to_entries | map(select(.value.network == "tcp,udp" and .value.outboundTag == "direct" and .value.source == null)) | .[0].key) as $final
+        | ($rules | to_entries | map(select(.value.source == ["192.168.10.0/24"])) | .[0].key) as $lan
+        | $r != null and $final != null and $lan != null and ($r < $lan) and ($r < $final)
+          and ($rules[$r].balancerTag | startswith("sel-"))
+      ' ${engine} >/dev/null
       jq -e '.outbounds[] | select(.protocol == "dns" and .tag == "dns-out")' ${engine} >/dev/null
       jq -e 'any(.routing.rules[]; ((.domain // []) | index("full:example.com")) and .source == ["192.168.10.0/24"] and .outboundTag == "direct")' ${engine} >/dev/null
       jq -e 'any(.routing.rules[]; .port == 123 and .network == "udp" and .outboundTag == "direct")' ${engine} >/dev/null
@@ -1754,6 +1772,90 @@ in {
         echo "xray still marks 0x4a01" >&2
         exit 1
       fi
+      root=$TMPDIR/root
+      mkdir -p "$root/etc/janus" "$root/var/lib/janus/subscriptions" "$root/var/lib/janus/engine"
+      cp ${os.config.environment.etc."janus/proxy-model.json".source} "$root/etc/janus/proxy-model.json"
+      cp ${os.config.environment.etc."janus/nodes-built.json".source} "$root/etc/janus/nodes-built.json"
+      printf '%s\n' '{"cnix":{"format":"auto","via":"tunnel","minimumNodes":1,"urlSecret":"subscription-cnix"}}' > "$root/etc/janus/subscriptions.json"
+      printf '%s\n' '[{"name":"cnix/a","protocol":"trojan","server":"203.0.113.20","port":443,"trojan":{"password":"secret"}}]' > "$root/var/lib/janus/subscriptions/cnix.json"
+      {
+        printf '%s\n' 'set -euo pipefail' 'JANUS_ENGINE=xray' 'JANUS_FAIL_MODE=closed' 'JANUS_INTERCEPT=0' 'JANUS_DNS_TPROXY=0' 'JANUS_EGRESS_TABLE=' 'JANUS_CLOSED_LOG=0'
+        printf 'JANUS_SCRIPT=%s\n' "$(sed -n 's/^JANUS_SCRIPT=//p' ${proxyBin})"
+        sed -e "s|/var/lib/janus|$root/var/lib/janus|g" -e "s|/etc/janus|$root/etc/janus|g" ${../pkgs/janus-engine.sh}
+      } > "$root/run.sh"
+      ${pkgs.bashNonInteractive}/bin/bash "$root/run.sh" render
+      jq -e 'any(.inbounds[]; .tag == "refresh" and .port == 2080)' "$root/var/lib/janus/engine/config.json" >/dev/null
+      jq -e 'any(.outbounds[]; .tag == "cnix/a" and .protocol == "trojan")' "$root/var/lib/janus/engine/config.json" >/dev/null
+      jq -e '[.outbounds[] | select(.tag == "demo")] | length == 1' "$root/var/lib/janus/engine/config.json" >/dev/null
+      printf '%s\n' '[]' > "$root/empty.json"
+      mkdir -p "$root/janet"
+      cp ${../janet}/janus.janet ${../janet}/labels.janet "$root/janet/"
+      janet "$root/janet/janus.janet" render \
+        --model "$root/etc/janus/proxy-model.json" \
+        --nodes "$root/empty.json" \
+        --engine xray \
+        --rule-set remote \
+        --output "$root/empty-xray.json"
+      jq -e '.routing.rules[] | select(.inboundTag == ["refresh"]) | .outboundTag == "direct"' "$root/empty-xray.json" >/dev/null
+      xray run -test -c "$root/empty-xray.json"
+      echo ok > "$out"
+    '';
+  eval-proxy-refresh-lan = let
+    os = mk [
+      base
+      {
+        janus.security.allowInlineSecrets = true;
+        janus.network.vlans.guest-vlan = {
+          port = "lan";
+          id = 20;
+        };
+        janus.network.lans.guest = {
+          members = ["lan.20"];
+          address = "192.168.20.1";
+          prefixLength = 24;
+          proxy.defaultTarget = "direct";
+        };
+        janus.network.lans.home = {
+          members = ["lan"];
+          address = "192.168.10.1";
+          prefixLength = 24;
+        };
+        janus.proxy = {
+          enable = true;
+          nodes.demo = {
+            protocol = "trojan";
+            server = "203.0.113.10";
+            port = 443;
+            trojan.password = "janus-build-check";
+          };
+        };
+      }
+    ];
+    engine = os.config.system.build.janusEngineConfig;
+    model = os.config.environment.etc."janus/proxy-model.json".source;
+  in
+    pkgs.runCommand "eval-proxy-refresh-lan" {
+      nativeBuildInputs = [pkgs.jq pkgs.sing-box pkgs.janet];
+    } ''
+      sing-box check -c ${engine}
+      jq -e '
+        .route.rules as $rules
+        | ($rules | to_entries | map(select(.value.inbound == ["refresh"])) | .[0].key) as $r
+        | ($rules | to_entries | map(select(.value.source_ip_cidr == ["192.168.20.0/24"] and .value.outbound == "direct")) | .[0].key) as $guest
+        | $r != null and $guest != null and ($r < $guest)
+          and ($rules[$r].outbound | startswith("sel-"))
+      ' ${engine} >/dev/null
+      printf '%s\n' '[]' > empty.json
+      mkdir -p janet
+      cp ${../janet}/janus.janet ${../janet}/labels.janet janet/
+      janet janet/janus.janet render \
+        --model ${model} \
+        --nodes empty.json \
+        --engine sing-box \
+        --rule-set remote \
+        --output empty.json.out
+      jq -e '.route.rules[] | select(.inbound == ["refresh"]) | .outbound == "direct"' empty.json.out >/dev/null
+      sing-box check -c empty.json.out
       echo ok > "$out"
     '';
   eval-proxy-xray-insecure = fail "eval-proxy-xray-insecure" [
