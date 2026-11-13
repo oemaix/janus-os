@@ -1968,6 +1968,12 @@ in {
         /NAME="wifi-home"/ && /janus-hostapd-home.service/ { found = 1 }
         END { if (!found) exit 1 }
       ' rules
+      if printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " (os.config.systemd.services.janus-hostapd-home.bindsTo or []))} | grep -q wifi; then
+        echo "0bda:8176 hostapd binds to the netdev unit" >&2
+        exit 1
+      fi
+      grep -q 'is not on rtl8192cu' ${script}
+      grep -q 'hostapd exited' ${script}
       echo ok > "$out"
     '';
   eval-wifi-rtl8192cu-bind = let
@@ -2014,6 +2020,7 @@ in {
       }
     ];
     bind = os.config.systemd.services.janus-rtl8192cu-bind.serviceConfig.ExecStart;
+    script = os.config.systemd.services.janus-hostapd-home.serviceConfig.ExecStart;
   in
     pkgs.runCommand "eval-wifi-rtl8192cu-bind" {} ''
       set -eu
@@ -2022,6 +2029,7 @@ in {
         echo "another USB access point requests hostapd from udev" >&2
         exit 1
       fi
+      printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " (other.config.systemd.services.janus-hostapd-home.bindsTo or []))} | grep -q 'wifi\\x2dhome[.]device'
 
       retry=$TMPDIR/retry
       mkdir -p "$retry/sys/bus/usb/devices/1-2/1-2:1.0"
@@ -2040,6 +2048,7 @@ in {
         read -r _ < "$retry/sys/bus/usb/drivers/rtl8xxxu/unbind"
         rm -f "$retry/sys/bus/usb/devices/1-2/1-2:1.0/driver"
         ln -s "$retry/sys/bus/usb/drivers/rtl8192cu" "$retry/sys/bus/usb/devices/1-2/1-2:1.0/driver"
+        mkdir -p "$retry/sys/bus/usb/devices/1-2/1-2:1.0/net/wifi-home"
         read -r _ < "$retry/sys/bus/usb/drivers/rtl8192cu/bind"
       ) &
       if ! timeout 20 env JANUS_SYS="$retry/sys" bash "$retry/bind.sh"; then
@@ -2059,6 +2068,7 @@ in {
         printf '%s\n' 8176 > "$late/sys/bus/usb/devices/1-2/idProduct"
         ln -s "$late/sys/bus/usb/drivers/rtl8192cu" "$late/sys/bus/usb/devices/1-2/1-2:1.0/driver"
         touch "$late/sys/bus/usb/devices/1-2/1-2:1.0/driver_override"
+        mkdir -p "$late/sys/bus/usb/devices/1-2/1-2:1.0/net/wifi-home"
         touch "$late/ready"
       ) &
       if ! timeout 20 env JANUS_SYS="$late/sys" bash "$late/bind.sh"; then
@@ -2066,6 +2076,135 @@ in {
         exit 1
       fi
       test -f "$late/ready"
+
+      early=$TMPDIR/early
+      mkdir -p "$early/sys/bus/usb/devices/1-2/1-2:1.0/net/wlan0"
+      mkdir -p "$early/sys/bus/usb/drivers/rtl8192cu"
+      ln -s 1-2/1-2:1.0 "$early/sys/bus/usb/devices/1-2:1.0"
+      printf '%s\n' 0bda > "$early/sys/bus/usb/devices/1-2/idVendor"
+      printf '%s\n' 8176 > "$early/sys/bus/usb/devices/1-2/idProduct"
+      ln -s "$early/sys/bus/usb/drivers/rtl8192cu" "$early/sys/bus/usb/devices/1-2/1-2:1.0/driver"
+      touch "$early/sys/bus/usb/devices/1-2/1-2:1.0/driver_override"
+      cp ${bind} "$early/bind.sh"
+      timeout 20 env JANUS_SYS="$early/sys" bash "$early/bind.sh" &
+      pid=$!
+      sleep 1
+      if ! kill -0 "$pid" 2>/dev/null; then
+        echo "bind returned before the netdev was renamed" >&2
+        wait "$pid" || true
+        exit 1
+      fi
+      mv "$early/sys/bus/usb/devices/1-2/1-2:1.0/net/wlan0" "$early/sys/bus/usb/devices/1-2/1-2:1.0/net/wifi-home"
+      if ! wait "$pid"; then
+        echo "bind did not finish after the rename" >&2
+        exit 1
+      fi
+
+      gap=$TMPDIR/gap
+      mkdir -p "$gap/sys/bus/usb/devices/1-2/1-2:1.0" "$gap/sys/bus/usb/drivers/rtl8192cu"
+      ln -s 1-2/1-2:1.0 "$gap/sys/bus/usb/devices/1-2:1.0"
+      printf '%s\n' 0bda > "$gap/sys/bus/usb/devices/1-2/idVendor"
+      printf '%s\n' 8176 > "$gap/sys/bus/usb/devices/1-2/idProduct"
+      ln -s "$gap/sys/bus/usb/drivers/rtl8192cu" "$gap/sys/bus/usb/devices/1-2/1-2:1.0/driver"
+      printf '%s\n' rtl8192cu > "$gap/sys/bus/usb/devices/1-2/1-2:1.0/driver_override"
+      cp ${bind} "$gap/bind.sh"
+      timeout 20 env JANUS_SYS="$gap/sys" bash "$gap/bind.sh" &
+      pid=$!
+      sleep 1
+      if ! kill -0 "$pid" 2>/dev/null; then
+        echo "bind returned before the netdev existed" >&2
+        wait "$pid" || true
+        exit 1
+      fi
+      mkdir -p "$gap/sys/bus/usb/devices/1-2/1-2:1.0/net/wifi-home"
+      if ! wait "$pid"; then
+        echo "bind did not finish after the netdev appeared" >&2
+        exit 1
+      fi
+
+      bad=$TMPDIR/bad
+      mkdir -p "$bad/sys/bus/usb/devices/1-2/1-2:1.0/driver_override" "$bad/sys/bus/usb/drivers/rtl8xxxu"
+      ln -s 1-2/1-2:1.0 "$bad/sys/bus/usb/devices/1-2:1.0"
+      printf '%s\n' 0bda > "$bad/sys/bus/usb/devices/1-2/idVendor"
+      printf '%s\n' 8176 > "$bad/sys/bus/usb/devices/1-2/idProduct"
+      ln -s "$bad/sys/bus/usb/drivers/rtl8xxxu" "$bad/sys/bus/usb/devices/1-2/1-2:1.0/driver"
+      mkfifo "$bad/sys/bus/usb/drivers/rtl8xxxu/unbind"
+      cp ${bind} "$bad/bind.sh"
+      timeout 8 env JANUS_SYS="$bad/sys" bash "$bad/bind.sh" &
+      pid=$!
+      if timeout 1 cat "$bad/sys/bus/usb/drivers/rtl8xxxu/unbind" >/dev/null; then
+        echo "unbind ran without a stored rtl8192cu override" >&2
+        kill "$pid" 2>/dev/null || true
+        wait "$pid" || true
+        exit 1
+      fi
+      kill "$pid" 2>/dev/null || true
+      wait "$pid" || true
+
+      sup=$TMPDIR/sup
+      mkdir -p "$sup/sys/class/net" "$sup/bin" "$sup/run" "$sup/state"
+      printf '%s\n' secret-pass > "$sup/phrase"
+      cat > "$sup/bin/hostapd" << EOF
+#!/bin/sh
+n=0
+if [ -f "$sup/state/count" ]; then
+  n=\$(cat "$sup/state/count")
+fi
+printf '%s\n' \$((n + 1)) > "$sup/state/count"
+printf '%s\n' \$\$ > "$sup/state/pid"
+sleep 60
+EOF
+      chmod +x "$sup/bin/hostapd"
+      sed "s|${pkgs.hostapd}/bin/hostapd|$sup/bin/hostapd|g" ${script} > "$sup/hostapd.sh"
+      chmod +x "$sup/hostapd.sh"
+      timeout 20 env JANUS_SYS="$sup/sys" JANUS_WIFI_RUN="$sup/run" JANUS_WIFI_PASS="$sup/phrase" bash "$sup/hostapd.sh" &
+      spid=$!
+      sleep 0.5
+      if [ -f "$sup/state/count" ]; then
+        echo "hostapd started before rtl8192cu" >&2
+        kill "$spid" 2>/dev/null || true
+        wait "$spid" || true
+        exit 1
+      fi
+      mkdir -p "$sup/sys/class/net/wifi-home/device"
+      ln -s rtl8192cu "$sup/sys/class/net/wifi-home/device/driver"
+      i=0
+      while [ "$i" -lt 25 ]; do
+        if [ -f "$sup/state/pid" ] && [ "$(cat "$sup/state/count")" = 1 ]; then
+          break
+        fi
+        i=$((i + 1))
+        sleep 0.2
+      done
+      test "$(cat "$sup/state/count")" = 1
+      child=$(cat "$sup/state/pid")
+      rm -f "$sup/sys/class/net/wifi-home/device/driver"
+      i=0
+      while [ "$i" -lt 40 ]; do
+        if ! kill -0 "$child" 2>/dev/null; then
+          break
+        fi
+        i=$((i + 1))
+        sleep 0.2
+      done
+      if kill -0 "$child" 2>/dev/null; then
+        echo "hostapd kept running after wifi-home left rtl8192cu" >&2
+        kill "$spid" 2>/dev/null || true
+        wait "$spid" || true
+        exit 1
+      fi
+      ln -s rtl8192cu "$sup/sys/class/net/wifi-home/device/driver"
+      i=0
+      while [ "$i" -lt 25 ]; do
+        if [ "$(cat "$sup/state/count" 2>/dev/null || true)" = 2 ]; then
+          break
+        fi
+        i=$((i + 1))
+        sleep 0.2
+      done
+      test "$(cat "$sup/state/count")" = 2
+      kill "$spid" 2>/dev/null || true
+      wait "$spid" || true
       echo ok > "$out"
     '';
   eval-wifi-sta = let

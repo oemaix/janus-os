@@ -59,10 +59,67 @@
       else "/var/lib/janus/wifi/${name}.passphrase";
     onboard = onboardAp ap;
     isolate = onboard && builtins.hasAttr ap.lan cfg.lans && cfg.lans.${ap.lan}.isolation;
-    launch =
-      if isolate
-      then ''
-        ${pkgs.hostapd}/bin/hostapd /run/janus/wifi/${name}.conf &
+  launch =
+    if usbId name == "0bda:8176"
+    then ''
+      # The shell stays up. A recreated wifi-* does not start this unit
+      # again while it is active, and a zero exit does not trigger
+      # Restart= (T-0034).
+      sysroot=''${JANUS_SYS:-/sys}
+      rtl_ready() {
+        local link
+        [ -L "$sysroot/class/net/${dev}/device/driver" ] || return 1
+        link=$(readlink "$sysroot/class/net/${dev}/device/driver") || return 1
+        [ "$(basename "$link")" = rtl8192cu ]
+      }
+      fails=0
+      while true; do
+        i=0
+        while ! rtl_ready; do
+          if [ "$i" -ge 150 ]; then
+            echo "janus: ${dev} is not on rtl8192cu" >&2
+            exit 1
+          fi
+          i=$((i + 1))
+          sleep 0.2
+        done
+        ${pkgs.hostapd}/bin/hostapd "$run/${name}.conf" &
+        pid=$!
+        miss=0
+        while kill -0 "$pid" 2>/dev/null; do
+          if rtl_ready; then
+            miss=0
+          else
+            miss=$((miss + 1))
+            if [ "$miss" -ge 2 ]; then
+              kill "$pid" 2>/dev/null || true
+              k=0
+              while kill -0 "$pid" 2>/dev/null && [ "$k" -lt 10 ]; do
+                k=$((k + 1))
+                sleep 0.2
+              done
+              kill -9 "$pid" 2>/dev/null || true
+              break
+            fi
+          fi
+          sleep 1
+        done
+        wait "$pid" || true
+        if rtl_ready; then
+          fails=$((fails + 1))
+          if [ "$fails" -ge 5 ]; then
+            echo "janus: ${dev} hostapd exited" >&2
+            exit 1
+          fi
+          sleep 3
+        else
+          fails=0
+        fi
+      done
+    ''
+    else if isolate
+    then ''
+        ${pkgs.hostapd}/bin/hostapd "$run/${name}.conf" &
         pid=$!
         i=0
         joined=0
@@ -95,12 +152,13 @@
         wait "$pid"
       ''
       else ''
-        exec ${pkgs.hostapd}/bin/hostapd /run/janus/wifi/${name}.conf
+        exec ${pkgs.hostapd}/bin/hostapd "$run/${name}.conf"
       '';
   in
     pkgs.writeShellScript "hostapd-${name}" ''
       set -euo pipefail
-      install -d -m 0755 /run/janus/wifi
+      run=''${JANUS_WIFI_RUN:-/run/janus/wifi}
+      install -d -m 0755 "$run"
       # The hot override is a board file. It wins over the sops passphrase.
       over=''${JANUS_WIFI_PASS:-/var/lib/janus/secrets/wifi-${name}}
       if [ -s "$over" ]; then
@@ -123,7 +181,7 @@
         ${lib.optionalString onboard ''printf '%s\n' "wmm_enabled=1" "ht_capab=[HT20][SHORT-GI-20]"''}
         ${lib.optionalString (ap.security != "wpa2") ''printf '%s\n' "ieee80211w=1"''}
         ${lib.optionalString ap.hidden ''printf '%s\n' "ignore_broadcast_ssid=1"''}
-      } > /run/janus/wifi/${name}.conf
+      } > "$run/${name}.conf"
       ${lib.optionalString onboard ''
         ${pkgs.iproute2}/bin/ip link set dev ${dev} nomaster || true
         ${pkgs.iproute2}/bin/ip link set dev ${dev} down
@@ -200,24 +258,47 @@
     }
     # driver_override is set before the unbind. remove_id leaves the
     # static id, so rtl8xxxu would take the stick back (T-0033).
+    override_is() {
+      local cur
+      [ -f "$1/driver_override" ] || return 1
+      cur=$(cat "$1/driver_override" 2>/dev/null || true)
+      [ "$cur" = rtl8192cu ]
+    }
     bind_one() {
       local sys kernel drv
       sys=$(iface_sys "$1")
       kernel=$2
       [ -e "$sys" ] || return 0
-      if [ -e "$sys/driver_override" ]; then
-        printf '%s\n' rtl8192cu > "$sys/driver_override"
+      if [ -f "$sys/driver_override" ]; then
+        printf '%s\n' rtl8192cu > "$sys/driver_override" || true
       fi
       drv=$(driver_of "$sys" || true)
       if [ "$drv" = rtl8192cu ]; then
         return 0
       fi
       if [ "$drv" = rtl8xxxu ]; then
+        override_is "$sys" || return 0
         printf '%s\n' "$kernel" > "$sysroot/bus/usb/drivers/rtl8xxxu/unbind" || true
       fi
       if [ -e "$sysroot/bus/usb/drivers/rtl8192cu/bind" ]; then
         printf '%s\n' "$kernel" > "$sysroot/bus/usb/drivers/rtl8192cu/bind" || true
       fi
+    }
+    # The USB driver link flips to rtl8192cu before the netdev is
+    # registered and renamed off wlanN (T-0034).
+    iface_ready() {
+      local sys ent base
+      sys=$(readlink -f "$(iface_sys "$1")")
+      [ "$(driver_of "$sys" || true)" = rtl8192cu ] || return 1
+      for ent in "$sys"/net/*; do
+        [ -e "$ent" ] || return 1
+        base=$(basename "$ent")
+        case "$base" in
+          wlan[0-9]*) return 1 ;;
+        esac
+        return 0
+      done
+      return 1
     }
     # A bind write while the probe is running can restart it, so retry
     # about once a second instead of on every poll (T-0033).
@@ -227,15 +308,13 @@
       kernel=$2
       i=0
       while [ "$i" -lt 60 ]; do
-        drv=$(driver_of "$sys" || true)
-        if [ "$drv" = rtl8192cu ]; then
+        if iface_ready "$sys"; then
           return 0
         fi
         bind_one "$sys" "$kernel"
         j=0
         while [ "$j" -lt 5 ]; do
-          drv=$(driver_of "$sys" || true)
-          if [ "$drv" = rtl8192cu ]; then
+          if iface_ready "$sys"; then
             return 0
           fi
           j=$((j + 1))
@@ -243,6 +322,7 @@
         done
         i=$((i + 1))
       done
+      drv=$(driver_of "$(iface_sys "$sys")" || true)
       echo "janus: 0bda:8176 stayed on ''${drv:-unbound}" >&2
       return 1
     }
@@ -459,14 +539,16 @@ in {
                 ["systemd-networkd.service" (deviceUnit name) (bridgeUnit cfg.wifi.${name}.lan)]
                 ++ lib.optional (cfg.wifi.${name}.passphraseSecret != null) "janus-wifi-secret-${name}.service"
                 ++ lib.optional (usbId name == "0bda:8176") "janus-rtl8192cu-bind.service";
-              # The rebind destroys wifi-* and BindsTo stops hostapd. Want the
-              # bind oneshot. Requiring it would stop hostapd when that
-              # oneshot exits, because it does not stay active (T-0033).
+              # The rebind destroys wifi-*. Want the bind oneshot. Requiring
+              # it would stop hostapd when that oneshot exits, because it
+              # does not stay active (T-0033). 0bda:8176 does not bind to
+              # the netdev unit. The shell stays up and starts hostapd
+              # again when wifi-* returns (T-0034).
               wants =
                 [(bridgeUnit cfg.wifi.${name}.lan)]
                 ++ lib.optional (usbId name == "0bda:8176") "janus-rtl8192cu-bind.service";
               requires = lib.optional (cfg.wifi.${name}.passphraseSecret != null) "janus-wifi-secret-${name}.service";
-              bindsTo = [(deviceUnit name)];
+              bindsTo = lib.optionals (usbId name != "0bda:8176") [(deviceUnit name)];
               serviceConfig = {
                 Type = "simple";
                 ExecStart = start name cfg.wifi.${name};
