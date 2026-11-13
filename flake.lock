@@ -172,11 +172,11 @@
     "sing-geoip": {
       "flake": false,
       "locked": {
-        "lastModified": 1791826193,
-        "narHash": "sha256-+4W7LCRLn5vtPHLbBarK5tv4F5O818Vw4xAiOIp5BVU=",
+        "lastModified": 1794501517,
+        "narHash": "sha256-zxpoBbejOpKnTJ1gJVkXrzbJcbuoEk/2+zpnc3t8KNU=",
         "owner": "SagerNet",
         "repo": "sing-geoip",
-        "rev": "eb32cd6ed4a16fcb3bf9a36ccebf28e45716ae84",
+        "rev": "66c864fcfe1535549e0658569cb514dbd35756ba",
         "type": "github"
       },
       "original": {
@@ -189,11 +189,11 @@
     "sing-geosite": {
       "flake": false,
       "locked": {
-        "lastModified": 1794292962,
-        "narHash": "sha256-7z+vYoRcpghvt44UJd4ZFUnR+4lkIzQzx+uPwydNpio=",
+        "lastModified": 1794549074,
+        "narHash": "sha256-CrUkcgyfO23C3YdNHhVsiAjgfLGywuFUIvJTxcvBatc=",
         "owner": "SagerNet",
         "repo": "sing-geosite",
-        "rev": "23066e3b0833d1484916637dde2b5bae80178045",
+        "rev": "26c0cb522fec8baeb3cd48497ebec30866512ad2",
         "type": "github"
       },
       "original": {
