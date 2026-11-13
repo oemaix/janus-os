@@ -1916,6 +1916,10 @@ in {
       }
     ];
     script = os.config.systemd.services.janus-hostapd-home.serviceConfig.ExecStart;
+    bind = os.config.systemd.services.janus-rtl8192cu-bind.serviceConfig.ExecStart;
+    requires = os.config.systemd.services.janus-hostapd-home.requires or [];
+    wants = os.config.systemd.services.janus-hostapd-home.wants or [];
+    after = os.config.systemd.services.janus-hostapd-home.after or [];
   in
     pkgs.runCommand "eval-wifi" {} ''
       test ${lib.escapeShellArg os.config.systemd.network.networks."30-member-lan-home".networkConfig.Bridge} = br-lan
@@ -1943,6 +1947,125 @@ in {
         then "yes"
         else "no"
       } = yes
+      grep -q driver_override ${bind}
+      grep -q 'stayed on' ${bind}
+      printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " wants)} | grep -q janus-rtl8192cu-bind.service
+      printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " after)} | grep -q janus-rtl8192cu-bind.service
+      if printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " requires)} | grep -q janus-rtl8192cu-bind.service; then
+        echo "hostapd requires the bind oneshot" >&2
+        exit 1
+      fi
+      test ${
+        if os.config.systemd.services.janus-rtl8192cu-bind.serviceConfig.RemainAfterExit
+        then "yes"
+        else "no"
+      } = no
+      awk '
+        /usb_interface/ && /janus-rtl8192cu-bind.service/ { found = 1 }
+        END { if (!found) exit 1 }
+      ' rules
+      awk '
+        /NAME="wifi-home"/ && /janus-hostapd-home.service/ { found = 1 }
+        END { if (!found) exit 1 }
+      ' rules
+      echo ok > "$out"
+    '';
+  eval-wifi-rtl8192cu-bind = let
+    os = mk [
+      base
+      {
+        janus.security.allowInlineSecrets = true;
+        janus.hardware.peripherals.stick = {
+          class = "wifi";
+          match.usbVendorProduct = "0bda:8176";
+        };
+        janus.network.lans.lan = {
+          members = ["lan" "home"];
+          address = "192.168.10.1";
+          prefixLength = 24;
+        };
+        janus.network.wifi.home = {
+          peripheral = "stick";
+          ssid = "janus";
+          passphrase = "secret-pass";
+          lan = "lan";
+        };
+      }
+    ];
+    other = mk [
+      base
+      {
+        janus.security.allowInlineSecrets = true;
+        janus.hardware.peripherals.stick = {
+          class = "wifi";
+          match.usbVendorProduct = "0e8d:7612";
+        };
+        janus.network.lans.lan = {
+          members = ["lan" "home"];
+          address = "192.168.10.1";
+          prefixLength = 24;
+        };
+        janus.network.wifi.home = {
+          peripheral = "stick";
+          ssid = "janus";
+          passphrase = "secret-pass";
+          lan = "lan";
+        };
+      }
+    ];
+    bind = os.config.systemd.services.janus-rtl8192cu-bind.serviceConfig.ExecStart;
+  in
+    pkgs.runCommand "eval-wifi-rtl8192cu-bind" {} ''
+      set -eu
+      printf '%s\n' ${lib.escapeShellArg other.config.services.udev.extraRules} > other-rules
+      if grep -q janus-hostapd-home.service other-rules; then
+        echo "another USB access point requests hostapd from udev" >&2
+        exit 1
+      fi
+
+      retry=$TMPDIR/retry
+      mkdir -p "$retry/sys/bus/usb/devices/1-2/1-2:1.0"
+      mkdir -p "$retry/sys/bus/usb/drivers/rtl8xxxu" "$retry/sys/bus/usb/drivers/rtl8192cu"
+      ln -s 1-2/1-2:1.0 "$retry/sys/bus/usb/devices/1-2:1.0"
+      printf '%s\n' 0bda > "$retry/sys/bus/usb/devices/1-2/idVendor"
+      printf '%s\n' 8176 > "$retry/sys/bus/usb/devices/1-2/idProduct"
+      ln -s "$retry/sys/bus/usb/drivers/rtl8xxxu" "$retry/sys/bus/usb/devices/1-2/1-2:1.0/driver"
+      touch "$retry/sys/bus/usb/devices/1-2/1-2:1.0/driver_override"
+      mkfifo "$retry/sys/bus/usb/drivers/rtl8xxxu/unbind"
+      mkfifo "$retry/sys/bus/usb/drivers/rtl8192cu/bind"
+      cp ${bind} "$retry/bind.sh"
+      (
+        read -r _ < "$retry/sys/bus/usb/drivers/rtl8xxxu/unbind"
+        read -r _ < "$retry/sys/bus/usb/drivers/rtl8192cu/bind"
+        read -r _ < "$retry/sys/bus/usb/drivers/rtl8xxxu/unbind"
+        rm -f "$retry/sys/bus/usb/devices/1-2/1-2:1.0/driver"
+        ln -s "$retry/sys/bus/usb/drivers/rtl8192cu" "$retry/sys/bus/usb/devices/1-2/1-2:1.0/driver"
+        read -r _ < "$retry/sys/bus/usb/drivers/rtl8192cu/bind"
+      ) &
+      if ! timeout 20 env JANUS_SYS="$retry/sys" bash "$retry/bind.sh"; then
+        echo "bind did not retry onto rtl8192cu" >&2
+        exit 1
+      fi
+      test "$(basename "$(readlink "$retry/sys/bus/usb/devices/1-2/1-2:1.0/driver")")" = rtl8192cu
+
+      late=$TMPDIR/late
+      mkdir -p "$late/sys/bus/usb/drivers/rtl8192cu"
+      cp ${bind} "$late/bind.sh"
+      (
+        sleep 1
+        mkdir -p "$late/sys/bus/usb/devices/1-2/1-2:1.0"
+        ln -s 1-2/1-2:1.0 "$late/sys/bus/usb/devices/1-2:1.0"
+        printf '%s\n' 0bda > "$late/sys/bus/usb/devices/1-2/idVendor"
+        printf '%s\n' 8176 > "$late/sys/bus/usb/devices/1-2/idProduct"
+        ln -s "$late/sys/bus/usb/drivers/rtl8192cu" "$late/sys/bus/usb/devices/1-2/1-2:1.0/driver"
+        touch "$late/sys/bus/usb/devices/1-2/1-2:1.0/driver_override"
+        touch "$late/ready"
+      ) &
+      if ! timeout 20 env JANUS_SYS="$late/sys" bash "$late/bind.sh"; then
+        echo "bind gave up before the stick appeared" >&2
+        exit 1
+      fi
+      test -f "$late/ready"
       echo ok > "$out"
     '';
   eval-wifi-sta = let

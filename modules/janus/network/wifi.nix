@@ -174,50 +174,116 @@
     paths = ["rtlwifi/rtl8188eufw.bin"];
   };
   # 0bda:8176 is also in the rtl8xxxu table. Bind that ID to rtl8192cu
-  # and leave rtl8xxxu loaded for 0bda:8179. Module list order is not
-  # load order (T-0006). docs/10 §4.4, D-0063.
+  # and leave rtl8xxxu loaded for 0bda:8179. remove_id does not drop a
+  # static id, so driver_override is set before the unbind (T-0033).
+  # docs/10 §4.4, D-0063.
   rtl8192cuBind = pkgs.writeShellScript "janus-rtl8192cu-bind" ''
     set -eu
-    bind_one() {
-      devpath=$1
-      kernel=$2
-      case "$devpath" in
-        /sys/*) sys=$devpath ;;
-        *) sys="/sys$devpath" ;;
+    # JANUS_SYS is the sysfs root. The image leaves it unset.
+    sysroot=''${JANUS_SYS:-/sys}
+    iface_sys() {
+      case "$1" in
+        "$sysroot"/*) printf '%s\n' "$1" ;;
+        /*) printf '%s\n' "$sysroot$1" ;;
+        *) printf '%s\n' "$sysroot/$1" ;;
       esac
-      [ -e "$sys" ] || return 0
-      drv=""
-      if [ -L "$sys/driver" ]; then
-        drv=$(basename "$(readlink "$sys/driver")")
+    }
+    driver_of() {
+      if [ -L "$1/driver" ]; then
+        basename "$(readlink "$1/driver")"
       fi
+    }
+    # devices/1-2:1.0 is a symlink into 1-2/1-2:1.0. dirname of the bus
+    # path is devices/, which has no idVendor (T-0033).
+    usb_device_dir() {
+      dirname "$(readlink -f "$1")"
+    }
+    # driver_override is set before the unbind. remove_id leaves the
+    # static id, so rtl8xxxu would take the stick back (T-0033).
+    bind_one() {
+      local sys kernel drv
+      sys=$(iface_sys "$1")
+      kernel=$2
+      [ -e "$sys" ] || return 0
+      if [ -e "$sys/driver_override" ]; then
+        printf '%s\n' rtl8192cu > "$sys/driver_override"
+      fi
+      drv=$(driver_of "$sys" || true)
       if [ "$drv" = rtl8192cu ]; then
         return 0
       fi
       if [ "$drv" = rtl8xxxu ]; then
-        printf '%s\n' "$kernel" > /sys/bus/usb/drivers/rtl8xxxu/unbind
+        printf '%s\n' "$kernel" > "$sysroot/bus/usb/drivers/rtl8xxxu/unbind" || true
       fi
-      if [ -e /sys/bus/usb/drivers/rtl8xxxu/remove_id ]; then
-        printf '%s\n' "0bda 8176" > /sys/bus/usb/drivers/rtl8xxxu/remove_id || true
-      fi
-      if [ -e /sys/bus/usb/drivers/rtl8192cu/bind ]; then
-        printf '%s\n' "$kernel" > /sys/bus/usb/drivers/rtl8192cu/bind || true
+      if [ -e "$sysroot/bus/usb/drivers/rtl8192cu/bind" ]; then
+        printf '%s\n' "$kernel" > "$sysroot/bus/usb/drivers/rtl8192cu/bind" || true
       fi
     }
+    # A bind write while the probe is running can restart it, so retry
+    # about once a second instead of on every poll (T-0033).
+    wait_bound() {
+      local sys kernel i j drv
+      sys=$1
+      kernel=$2
+      i=0
+      while [ "$i" -lt 60 ]; do
+        drv=$(driver_of "$sys" || true)
+        if [ "$drv" = rtl8192cu ]; then
+          return 0
+        fi
+        bind_one "$sys" "$kernel"
+        j=0
+        while [ "$j" -lt 5 ]; do
+          drv=$(driver_of "$sys" || true)
+          if [ "$drv" = rtl8192cu ]; then
+            return 0
+          fi
+          j=$((j + 1))
+          sleep 0.2
+        done
+        i=$((i + 1))
+      done
+      echo "janus: 0bda:8176 stayed on ''${drv:-unbound}" >&2
+      return 1
+    }
+    bind_present() {
+      for sys in "$sysroot"/bus/usb/devices/*:*; do
+        [ -d "$sys" ] || continue
+        parent=$(usb_device_dir "$sys")
+        vendor=$(cat "$parent/idVendor" 2>/dev/null || true)
+        product=$(cat "$parent/idProduct" 2>/dev/null || true)
+        if [ "$vendor" = 0bda ] && [ "$product" = 8176 ]; then
+          name=$(basename "$(readlink -f "$sys")")
+          wait_bound "$sys" "$name"
+        fi
+      done
+    }
     if [ "$#" -eq 2 ]; then
-      bind_one "$1" "$2"
+      wait_bound "$(iface_sys "$1")" "$2"
       exit 0
     fi
-    if [ -e /sys/bus/usb/drivers/rtl8xxxu/remove_id ]; then
-      printf '%s\n' "0bda 8176" > /sys/bus/usb/drivers/rtl8xxxu/remove_id || true
-    fi
-    for sys in /sys/bus/usb/devices/*:*; do
-      [ -d "$sys" ] || continue
-      parent=$(dirname "$sys")
-      vendor=$(cat "$parent/idVendor" 2>/dev/null || true)
-      product=$(cat "$parent/idProduct" 2>/dev/null || true)
-      if [ "$vendor" = 0bda ] && [ "$product" = 8176 ]; then
-        bind_one "$sys" "$(basename "$sys")"
+    # udev-settle does not wait for this port. A stick that shows up
+    # during this window is bound here; a later add starts the oneshot
+    # again (T-0033).
+    i=0
+    while [ "$i" -lt 30 ]; do
+      found=0
+      for sys in "$sysroot"/bus/usb/devices/*:*; do
+        [ -d "$sys" ] || continue
+        parent=$(usb_device_dir "$sys")
+        vendor=$(cat "$parent/idVendor" 2>/dev/null || true)
+        product=$(cat "$parent/idProduct" 2>/dev/null || true)
+        if [ "$vendor" = 0bda ] && [ "$product" = 8176 ]; then
+          found=1
+          break
+        fi
+      done
+      if [ "$found" = 1 ]; then
+        bind_present
+        exit 0
       fi
+      i=$((i + 1))
+      sleep 1
     done
   '';
 
@@ -279,16 +345,18 @@ in {
         (lib.mkIf (lib.elem "0bda:8179" declaredUsbIds) ["rtl8xxxu"])
       ];
       services.udev.extraRules = lib.mkIf (lib.elem "0bda:8176" declaredUsbIds) ''
-        ACTION=="add", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_interface", ATTRS{idVendor}=="0bda", ATTRS{idProduct}=="8176", RUN+="${rtl8192cuBind} %p %k"
+        ACTION=="add", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_interface", ATTRS{idVendor}=="0bda", ATTRS{idProduct}=="8176", TAG+="systemd", ENV{SYSTEMD_WANTS}+="janus-rtl8192cu-bind.service"
       '';
       systemd.services = lib.mkIf (lib.elem "0bda:8176" declaredUsbIds) {
         janus-rtl8192cu-bind = {
           description = "Bind 0bda:8176 to rtl8192cu";
           wantedBy = ["multi-user.target"];
           after = ["systemd-modules-load.service" "systemd-udev-settle.service"];
+          # Stay inactive after a successful run. A later USB add can start
+          # this again. RemainAfterExit would make that add a no-op (T-0033).
           serviceConfig = {
             Type = "oneshot";
-            RemainAfterExit = true;
+            RemainAfterExit = false;
             ExecStart = rtl8192cuBind;
           };
         };
@@ -371,7 +439,9 @@ in {
         id = usbId name;
       in
         lib.optionalString (id != null) ''
-          SUBSYSTEM=="net", ACTION=="add", ATTRS{idVendor}=="${vendor id}", ATTRS{idProduct}=="${product id}", NAME="${iface name}"
+          SUBSYSTEM=="net", ACTION=="add", ATTRS{idVendor}=="${vendor id}", ATTRS{idProduct}=="${product id}", NAME="${iface name}"${
+            lib.optionalString (id == "0bda:8176") '', TAG+="systemd", ENV{SYSTEMD_WANTS}+="janus-hostapd-${name}.service"''
+          }
         '')
       apNames;
 
@@ -387,8 +457,14 @@ in {
               # joins the bridge if hostapd runs too early. docs/10 §4.7.
               after =
                 ["systemd-networkd.service" (deviceUnit name) (bridgeUnit cfg.wifi.${name}.lan)]
-                ++ lib.optional (cfg.wifi.${name}.passphraseSecret != null) "janus-wifi-secret-${name}.service";
-              wants = [(bridgeUnit cfg.wifi.${name}.lan)];
+                ++ lib.optional (cfg.wifi.${name}.passphraseSecret != null) "janus-wifi-secret-${name}.service"
+                ++ lib.optional (usbId name == "0bda:8176") "janus-rtl8192cu-bind.service";
+              # The rebind destroys wifi-* and BindsTo stops hostapd. Want the
+              # bind oneshot. Requiring it would stop hostapd when that
+              # oneshot exits, because it does not stay active (T-0033).
+              wants =
+                [(bridgeUnit cfg.wifi.${name}.lan)]
+                ++ lib.optional (usbId name == "0bda:8176") "janus-rtl8192cu-bind.service";
               requires = lib.optional (cfg.wifi.${name}.passphraseSecret != null) "janus-wifi-secret-${name}.service";
               bindsTo = [(deviceUnit name)];
               serviceConfig = {

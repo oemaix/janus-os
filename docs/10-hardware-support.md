@@ -320,7 +320,11 @@ D-0063 assigns `0bda:8176` to `rtl8192cu` by USB ID and leaves `rtl8xxxu`
 loaded, so the two drivers do not both attach. `rtl8xxxu` is the driver
 for `0bda:8179` (§4.11). A module-wide blacklist of `rtl8xxxu` removes
 that station. The image binds this USB ID to `rtl8192cu` and does not
-blacklist `rtl8xxxu`. Any board may declare
+blacklist `rtl8xxxu`. `remove_id` does not drop this static id, so the
+bind writes `driver_override` before the unbind and retries until
+`rtl8192cu` owns the interface. `hostapd` wants that wait and does not
+require it. When this stick's netdev appears again, udev requests the
+hostapd unit (T-0033). Any board may declare
 this USB id. The Le Potato row in §3 records the lab unit that confirmed
 the stick. Declaring the peripheral copies `rtlwifi/rtl8192cufw.bin`,
 `rtl8192cufw_A.bin`, `rtl8192cufw_B.bin`, and `rtl8192cufw_TMSC.bin` from
