@@ -7,8 +7,9 @@ Phase 1 checks:
   do not.
 * `packages.<system>.docs-options` — the `janus.*` option reference.
 * `checks.x86_64-linux.vm-x86_64-debug` — the serial console logs in as
-  root, and `systemd.unit=emergency.target` runs the initrd root shell
-  with `fsck.f2fs` on its path.
+  root and reaches multi-user. A failed state check opens the initrd
+  shell with `fsck.f2fs` on its path. A recover that exits before that
+  stamp does not open the shell.
 * `checks.x86_64-linux.vm-x86_64-test` — the image boots. `/` and `/nix`
   are read-only, `/var` is read-write, `machine-id` is bind-mounted, and
   the seed stamp matches the embedded hash. A disk 256 MiB larger grows

@@ -320,6 +320,36 @@ that limit fails the boot and does not format the partition. The request
 is removed before the check starts, so a check that does not finish is
 not repeated.
 
+## Bench
+
+`janus.debug` stays off unless the image turns a switch on. Each switch
+is a rebuild. Turn the set off before an image leaves the bench.
+
+`janus.debug.serialAutologin` logs in as root, with no password, on each
+serial port named by `console=`. Another console keeps a login prompt.
+SSH stays key-only.
+
+`janus.debug.initrdShell` opens a root shell on the console only when
+the state check fails. A state device that never appears does not open
+it. A failed grow still reaches the check. `fsck.f2fs` is on that
+shell's path. The boot does not wait for Enter.
+
+`janus.debug.kernelLogLevel` is an integer from 0 to 7. `7` prints
+kernel debug. Leaving it unset keeps loglevel 4.
+
+`janus.debug.tools` installs `tcpdump`, `ethtool`, `iw`, `conntrack`,
+and `strace`.
+
+`janus.debug.engineLog` writes the proxy engine log at debug.
+
+`janus.debug.closedFailLog` names packets the closed path drops. With
+sing-box that path is the blackhole default in table 2022. With xray
+it is port 12345 while the process is down. The packets are still
+dropped.
+
+A journal that survives reboot stays `janus.system.journal.persistent`.
+It is not one of these switches.
+
 ## Connection audit
 
 The audit is off unless the image sets `janus.monitoring.audit.enable =

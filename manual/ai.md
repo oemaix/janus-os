@@ -59,21 +59,29 @@ Read this file before answering a question about using Janus OS.
   `huawei_cdc_ncm`. Sound stays off unless `janus.audio.enable` selects
   an embedded or USB device on `matched` (D-0061). `compact` still drops
   sound. Compute accelerators stay off (D-0057).
-- `janus.debug` defaults to off (D-0067, D-0068). `serialAutologin`
-  logs in as root on the board serial console, with no password. The
-  line speed stays the kernel baud. Virtual terminals keep a login
-  prompt. SSH stays key-only. `initrdShell` opens a root shell when
-  `janus-state-recover` or the full state check exits non-zero.
-  `fsck.f2fs` is on that shell's path. A failed grow still reaches
-  recover. `kernelLogLevel` is unset or an integer 0–7. Unset leaves
-  loglevel 4. `tools` adds tcpdump, ethtool, iw, and conntrack.
+- `janus.debug` defaults to off (D-0067, D-0068, D-0069).
+  `serialAutologin` logs in as root, with no password, on each serial
+  device named by `console=`. A drop-in inserts `--autologin root` into
+  that instance's NixOS getty line. The template is not replaced.
+  `tty0` and any other UART keep a login prompt. SSH stays key-only.
+  `initrdShell` opens `/bin/sh` on the console only when
+  `/run/janus/state-check-failed` exists. The state scripts create that
+  file immediately before `fsck.f2fs` and remove it when the device is
+  missing. `emergencyAccess` stays off. A drop-in clears vendor
+  `OnFailure=emergency.target` on `initrd.target` while the switch is
+  on (T-0028). `fsck.f2fs` is on that shell's path. A failed grow still
+  reaches recover. `kernelLogLevel` is unset or an integer 0–7. Unset
+  leaves loglevel 4. A level above 4 warns. `tools` adds tcpdump,
+  ethtool, iw, conntrack, and strace. The base image has none of them.
   `engineLog` sets the engine log to debug. sing-box uses `log.level`.
   xray uses `log.loglevel`. The runtime render reads `logLevel` from
-  the model. Evaluation warns when a switch is on. Turn the set off
-  before an image leaves the bench. `janus.system.journal.persistent`
-  stays where it is (ADR-0013). Do not invent `janus.debug.firewallTrace`,
-  `janus.engineLog`, or `janus.debug.journal`. A filter drop log is
-  later work (*13*).
+  the model. `closedFailLog` logs the sing-box blackhole in table 2022
+  and, while xray is down, port 12345. It does not replace that route
+  or that tproxy (Q-0061). Evaluation warns when a switch is on. Turn
+  the set off before an image leaves the bench.
+  `janus.system.journal.persistent` stays where it is (ADR-0013). Do
+  not invent `janus.debug.firewallTrace`, `janus.engineLog`, or
+  `janus.debug.journal`.
 - `janus.system.region` is `cn` (default), `ru`, or `ir`. It selects domestic DNS
   and the `blockQuic` default. That reject follows direct rules; it is
   not a drop of every UDP/443. `janus.proxy.rules` stays empty until

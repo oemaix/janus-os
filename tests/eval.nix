@@ -7559,6 +7559,8 @@ exit 0
       then lib.concatStringsSep "\n" v
       else toString v;
     serial = os: text os.config.systemd.services."serial-getty@".serviceConfig.ExecStart;
+    dropName = "systemd/system/serial-getty@ttyS0.service.d/autologin.conf";
+    drop = on.config.environment.etc.${dropName}.text;
     vtRaw = on.config.systemd.services."getty@".serviceConfig.ExecStart;
     vtScript =
       if builtins.isList vtRaw
@@ -7568,6 +7570,13 @@ exit 0
       if v
       then "yes"
       else "no";
+    vtOnly = mk [
+      base
+      {
+        janus.debug.serialAutologin = true;
+        boot.kernelParams = lib.mkForce ["console=tty0"];
+      }
+    ];
   in
     pkgs.runCommand "eval-serial-autologin" {} ''
       test ${yesNo off.config.janus.debug.serialAutologin} = no
@@ -7576,13 +7585,18 @@ exit 0
       test ${lib.escapeShellArg on.config.services.openssh.settings.PermitRootLogin} = prohibit-password
       printf '%s\n' ${lib.escapeShellArg (serial off)} > off.txt
       printf '%s\n' ${lib.escapeShellArg (serial on)} > on.txt
+      printf '%s\n' ${lib.escapeShellArg drop} > drop.txt
       grep -q agetty off.txt
-      if grep -q -- '--autologin' off.txt; then
-        echo "serial autologin is on by default" >&2
+      if grep -q -- '--autologin' off.txt || grep -q -- '--autologin' on.txt; then
+        echo "the serial-getty template logs in" >&2
         exit 1
       fi
-      grep -q -- '--autologin root' on.txt
-      grep -q -- '--keep-baud' on.txt
+      grep -q -- '--autologin root' drop.txt
+      grep -q -- '--keep-baud' drop.txt
+      grep -q -- '--login-program' drop.txt
+      sed -n 's/^ExecStart=//p' drop.txt | sed 's/ --autologin root / /' > restored.txt
+      grep -F -x -f restored.txt on.txt
+      test ${yesNo (on.config.environment.etc ? "systemd/system/serial-getty@tty0.service.d/autologin.conf")} = no
       if grep -q -- '--autologin' ${vtScript}; then
         echo "virtual console also autologins" >&2
         exit 1
@@ -7592,6 +7606,8 @@ exit 0
         echo "warning without the option" >&2
         exit 1
       fi
+      echo ${lib.escapeShellArg (lib.concatStringsSep "\n" vtOnly.config.warnings)} | grep -q 'no serial console='
+      test ${yesNo (builtins.hasAttr dropName vtOnly.config.environment.etc)} = no
       echo ok > "$out"
     '';
   eval-debug = let
@@ -7610,6 +7626,10 @@ exit 0
           engineLog = true;
         };
       }
+    ];
+    quiet = mk [
+      base
+      {janus.debug.kernelLogLevel = 3;}
     ];
     yesNo = v:
       if v
@@ -7643,6 +7663,7 @@ exit 0
       test ${yesNo (has "ethtool" off)} = no
       test ${yesNo (has "iw" off)} = no
       test ${yesNo (has "conntrack-tools" off)} = no
+      test ${yesNo (has "strace" off)} = no
       test ${yesNo off.config.boot.initrd.systemd.emergencyAccess} = no
       test ${lib.escapeShellArg (failure off "janus-state-recover")} = ""
       test ${lib.escapeShellArg (failure off "janus-grow-state")} = ""
@@ -7658,12 +7679,40 @@ exit 0
       test ${yesNo (has "ethtool" on)} = yes
       test ${yesNo (has "iw" on)} = yes
       test ${yesNo (has "conntrack-tools" on)} = yes
+      test ${yesNo (has "strace" on)} = yes
       test ${yesNo (lib.elem "f2fs-tools" (map lib.getName on.config.boot.initrd.systemd.initrdBin))} = yes
-      test ${yesNo on.config.boot.initrd.systemd.emergencyAccess} = yes
-      test ${lib.escapeShellArg (failure on "janus-state-recover")} = emergency.target
-      test ${lib.escapeShellArg (failure on "janus-state-fsck-full")} = emergency.target
+      test ${yesNo on.config.boot.initrd.systemd.shell.enable} = yes
+      test ${yesNo on.config.boot.initrd.systemd.emergencyAccess} = no
+      test ${lib.escapeShellArg (failure on "janus-state-recover")} = janus-debug-shell.service
+      test ${lib.escapeShellArg (failure on "janus-state-fsck-full")} = janus-debug-shell.service
       test ${lib.escapeShellArg (failure on "janus-grow-state")} = ""
       test ${lib.escapeShellArg on.config.boot.initrd.systemd.services.janus-state-recover.unitConfig.OnFailureJobMode} = replace-irreversibly
+      test ${lib.escapeShellArg on.config.boot.initrd.systemd.services.janus-debug-shell.unitConfig.ConditionPathExists} = /run/janus/state-check-failed
+      test ${lib.escapeShellArg on.config.boot.initrd.systemd.services.janus-debug-shell.serviceConfig.ExecStart} = /bin/sh
+      test ${yesNo (on.config.boot.initrd.systemd.contents ? "/etc/systemd/system/initrd.target.d/janus-debug.conf")} = yes
+      test ${yesNo (off.config.boot.initrd.systemd.contents ? "/etc/systemd/system/initrd.target.d/janus-debug.conf")} = no
+      test ${toString quiet.config.boot.consoleLogLevel} = 3
+      if echo ${lib.escapeShellArg (lib.concatStringsSep "\n" quiet.config.warnings)} | grep -q 'janus.debug.kernelLogLevel is 3'; then
+        echo "a quieter loglevel warns" >&2
+        exit 1
+      fi
+      check_stamp() {
+        awk '
+          /mark_check\(\)/ { next }
+          /(^|[[:space:]])mark_check$/ { marked = 1; next }
+          /^[[:space:]]*fsck\.f2fs / { if (!marked) bad = 1; marked = 0; next }
+          /not a block device/ || /did not return/ { msg = 1; next }
+          /clear_check/ { if (msg) cleared++; msg = 0; next }
+          { if (msg) bad = 1; msg = 0 }
+          END { if (bad || cleared < 1) exit 1 }
+        ' || return 1
+      }
+      check_stamp <<'EOF'
+      ${on.config.boot.initrd.systemd.services.janus-state-recover.script}
+      EOF
+      check_stamp <<'EOF'
+      ${on.config.boot.initrd.systemd.services.janus-state-fsck-full.script}
+      EOF
       jq -e '.logLevel == "debug"' ${on.config.environment.etc."janus/proxy-model.json".source} >/dev/null
       jq -e '.log.level == "debug"' ${on.config.system.build.janusEngineConfig} >/dev/null
       printf '%s\n' '[]' > nodes.json
@@ -7682,6 +7731,57 @@ exit 0
         echo "initrd shell warns while off" >&2
         exit 1
       fi
+      echo ok > "$out"
+    '';
+  eval-closed-fail-log = let
+    lan = {
+      janus.network.lans.lan = {
+        members = ["lan"];
+        address = "192.168.10.1";
+        prefixLength = 24;
+      };
+      janus.proxy.enable = true;
+    };
+    off = mk [base lan];
+    on = mk [
+      base
+      lan
+      {janus.debug.closedFailLog = true;}
+    ];
+    xray = mk [
+      base
+      lan
+      {
+        janus.proxy.engine = "xray";
+        janus.debug.closedFailLog = true;
+      }
+    ];
+    yesNo = v:
+      if v
+      then "yes"
+      else "no";
+    table = os: os.config.networking.nftables.tables.janus_closed_log.content or "";
+  in
+    pkgs.runCommand "eval-closed-fail-log" {} ''
+      test ${yesNo (off.config.networking.nftables.tables ? janus_closed_log)} = no
+      printf '%s\n' ${lib.escapeShellArg (table on)} > sing.txt
+      grep -q 'fib daddr . mark type blackhole' sing.txt
+      grep -q 'log prefix "janus closed-fail "' sing.txt
+      if grep -q 'dev janus-closed' ${../pkgs/janus-engine.sh}; then
+        echo "the closed route is no longer a blackhole" >&2
+        exit 1
+      fi
+      grep -q 'blackhole default table 2022' ${../pkgs/janus-engine.sh}
+      grep -q 'JANUS_CLOSED_LOG=1' ${on.config.environment.etc."janus/bin/janus-proxy".source}
+      grep -q 'JANUS_CLOSED_LOG=0' ${off.config.environment.etc."janus/bin/janus-proxy".source}
+      printf '%s\n' ${lib.escapeShellArg xray.config.environment.etc."janus/closed-fail-log.nft".text} > xray.txt
+      grep -q 'th dport 12345' xray.txt
+      grep -q 'log prefix "janus closed-fail "' xray.txt
+      if grep -q tproxy xray.txt; then
+        echo "the xray log rule also tproxies" >&2
+        exit 1
+      fi
+      echo ${lib.escapeShellArg (lib.concatStringsSep "\n" on.config.warnings)} | grep -q 'janus.debug.closedFailLog is on'
       echo ok > "$out"
     '';
   eval-debug-loglevel = fail "eval-debug-loglevel" [

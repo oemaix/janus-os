@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-11-04 |
+| Last updated | 2026-11-13 |
 
 This document defines the **shape and semantics** of the `janus.*` option
 tree. The final, exhaustive reference (every option with type, default,
@@ -520,8 +520,9 @@ stays under `janus.system` (ADR-0013, Q-0060). A capped journal on
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `serialAutologin` | bool | `false` | Log in as root on the board serial console, with no password. The getty is the one systemd starts for the board `console=` device (`ttyS0`, `ttyS2`, `ttyAMA0`, `ttyAML0`). The line speed stays the kernel baud (`--keep-baud`). Virtual terminals keep a login prompt. SSH stays key-only. Anyone who can open the UART gets a root shell. Evaluation warns (D-0067). |
-| `initrdShell` | bool | `false` | Root shell on the console when `janus-state-recover` or the full state check exits non-zero. `fsck.f2fs` is on that shell's path. `boot.initrd.systemd.emergencyAccess` is set. A failed `janus-grow-state` still continues into recover (D-0049, D-0068). |
-| `kernelLogLevel` | null or int 0–7 | unset | Kernel console `loglevel`. Unset leaves 4. `7` prints debug (D-0068). |
-| `tools` | bool | `false` | Install `tcpdump`, `ethtool`, `iw`, and `conntrack` (D-0068). |
+| `serialAutologin` | bool | `false` | Log in as root, with no password, on each serial device named by `console=` (`ttyS0`, `ttyS2`, `ttyAMA0`, `ttyAML0`, and the same families). A drop-in inserts `--autologin root` into that instance's NixOS getty line. The template is not replaced. `--keep-baud` stays where NixOS puts it. `tty0` and any other UART keep a login prompt. An image with no serial `console=` warns and does not log in. SSH stays key-only. Anyone who can open that UART gets a root shell. Evaluation warns (D-0067). |
+| `initrdShell` | bool | `false` | Root shell on the console when the state check fails. `janus-state-recover` and `janus-state-fsck-full` start `janus-debug-shell.service`, which runs `/bin/sh` only if `/run/janus/state-check-failed` exists. The scripts create that file immediately before `fsck.f2fs` and remove it when the device is missing, so a missing device does not open the shell. `emergencyAccess` stays off. While this switch is on, a drop-in clears vendor `OnFailure=emergency.target` on `initrd.target` (T-0028). `fsck.f2fs` is on the shell's path. A failed `janus-grow-state` still continues into recover, because recover only wants grow (D-0049, D-0068). |
+| `kernelLogLevel` | null or int 0–7 | unset | Kernel console `loglevel`. Unset leaves 4. `7` prints debug. A level above 4 warns (D-0068). |
+| `tools` | bool | `false` | Install `tcpdump`, `ethtool`, `iw`, `conntrack`, and `strace`. The base image has none of them (D-0068). |
 | `engineLog` | bool | `false` | Write `logLevel` `debug` into the proxy model. sing-box renders `log.level`. xray renders `log.loglevel`. A runtime render reads the same field. Off leaves sing-box at `info` and xray at `warning` (D-0068). |
+| `closedFailLog` | bool | `false` | Log packets the closed-fail path drops, at most four lines a second, with the prefix `janus closed-fail `. sing-box keeps the blackhole default in table 2022 and logs `fib daddr . mark type blackhole`. xray logs port 12345 only while the process is down. The route and the tproxy stay the drop (D-0069, Q-0061). |

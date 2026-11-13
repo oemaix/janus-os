@@ -51,12 +51,29 @@ blackhole() {
   ip -6 route replace blackhole default table 2022
 }
 
+# xray's closed path is tproxy to :12345. The log table exists only while
+# that process is down, so a live session is not logged (D-0069).
+closed_log_install() {
+  [ "${JANUS_CLOSED_LOG:-0}" = 1 ] || return 0
+  [ -n "${JANUS_CLOSED_LOG_NFT:-}" ] || return 0
+  [ -f "${JANUS_CLOSED_LOG_NFT}" ] || return 0
+  nft -f "${JANUS_CLOSED_LOG_NFT}"
+}
+
+closed_log_remove() {
+  [ "${JANUS_CLOSED_LOG:-0}" = 1 ] || return 0
+  nft delete table inet janus_closed_log 2>/dev/null || true
+}
+
 intercept_up() {
   if [ "${JANUS_DNS_TPROXY}" = 1 ] || [ "${JANUS_ENGINE}" = xray ]; then
     tproxy_route
   fi
   [ "${JANUS_INTERCEPT}" = 1 ] || return 0
   if [ "${JANUS_ENGINE}" = xray ]; then
+    if [ "${JANUS_FAIL_MODE}" = closed ]; then
+      closed_log_install
+    fi
     return 0
   fi
   rule_add
@@ -121,6 +138,7 @@ tun_up() {
     tproxy_route
   fi
   if [ "${JANUS_ENGINE}" = xray ]; then
+    closed_log_remove
     if [ "${JANUS_FAIL_MODE}" = open ] && [ -n "${JANUS_XRAY_NFT:-}" ]; then
       nft delete table inet janus_xray 2>/dev/null || true
       nft -f "$JANUS_XRAY_NFT"
@@ -147,6 +165,8 @@ tun_down() {
   if [ "${JANUS_ENGINE}" = xray ]; then
     if [ "${JANUS_FAIL_MODE}" = open ]; then
       nft delete table inet janus_xray 2>/dev/null || true
+    else
+      closed_log_install
     fi
     return 0
   fi

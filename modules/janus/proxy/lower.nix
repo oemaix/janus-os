@@ -472,6 +472,12 @@
           then ""
           else toString (wanTable cfg.egressWan)
         }
+        JANUS_CLOSED_LOG=${
+          if config.janus.debug.closedFailLog
+          then "1"
+          else "0"
+        }
+        ${lib.optionalString (config.janus.debug.closedFailLog && cfg.engine == "xray" && cfg.failMode == "closed" && intercept) "JANUS_CLOSED_LOG_NFT=/etc/janus/closed-fail-log.nft"}
       ''
       + builtins.readFile ../../../pkgs/janus-engine.sh;
   };
@@ -638,6 +644,16 @@ in {
               type filter hook prerouting priority mangle; policy accept;
               ${markRules}
               ${xrayTproxy}
+            }
+          }
+        '';
+      }
+      // lib.optionalAttrs (config.janus.debug.closedFailLog && cfg.engine == "xray" && cfg.failMode == "closed" && intercept) {
+        "janus/closed-fail-log.nft".text = ''
+          table inet janus_closed_log {
+            chain log {
+              type filter hook prerouting priority -190; policy accept;
+              iifname { ${bridgeSet} } meta l4proto { tcp, udp } th dport 12345 limit rate 4/second log prefix "janus closed-fail "
             }
           }
         '';
@@ -818,6 +834,16 @@ in {
       inputExtra = lib.optionalString (dns.interceptPlaintext && dnsBridges != []) ''
         tcp dport 5353 accept
         udp dport 5353 accept
+      '';
+    };
+
+    networking.nftables.tables.janus_closed_log = lib.mkIf (config.janus.debug.closedFailLog && intercept && cfg.engine != "xray") {
+      family = "inet";
+      content = ''
+        chain closed {
+          type filter hook prerouting priority -100; policy accept;
+          meta mark 0x00004a01 fib daddr . mark type blackhole limit rate 4/second log prefix "janus closed-fail "
+        }
       '';
     };
 

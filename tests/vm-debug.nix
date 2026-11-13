@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
-# Boot the x86_64-test image twice. The first boot logs in as root on
-# the serial console. The second starts the initrd emergency target and
-# checks that its shell can see fsck.f2fs. docs/08 §13, D-0067, D-0068.
+# Boot the x86_64-test image. The serial console logs in as root.
+# A failed state check starts the initrd shell and can see fsck.f2fs.
+# A missing state device stops the boot without that shell.
+# docs/08 §13, D-0067, D-0068.
 {
   pkgs,
   self,
@@ -30,65 +31,90 @@
     esac
     ${pkgs.systemd}/bin/systemctl reboot || ${pkgs.coreutils}/bin/printf b > /proc/sysrq-trigger
   '';
-  os = self.lib.mkRouter {
-    name = "vm-debug";
-    source = self;
-    configRevision = self.rev or "unknown";
-    modules = [
-      ({lib, ...}: {
-        janus.hardware.board = "x86_64-test";
-        janus.storage.nix.minimumSize = "64M";
-        janus.storage.state.maximumSize = "640M";
-        janus.access.ssh.authorizedKeys = [
-          "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyForJanusEval janus-eval"
-        ];
-        janus.debug.serialAutologin = true;
-        janus.debug.initrdShell = true;
-        users.users.root.shell = lib.mkForce "${serialMarker}/bin/janus-serial-marker";
-        environment.shells = ["${serialMarker}/bin/janus-serial-marker"];
-        # The initrd passwd is built from these users. A second
-        # /etc/passwd text is appended, and getpwnam keeps the first root.
-        boot.initrd.systemd.users.root.shell = "${initrdMarker}/bin/janus-initrd-marker";
-        boot.initrd.systemd.storePaths = [initrdMarker];
-        systemd.services.janus-boot-stamp = {
-          description = "Report that the debug image reached multi-user";
-          wantedBy = ["multi-user.target"];
-          after = ["local-fs.target"];
-          path = [pkgs.coreutils];
-          serviceConfig = {
-            Type = "oneshot";
-            RemainAfterExit = true;
-          };
-          script = ''
-            printf '%s\n' JANUS_BOOT_OK > /dev/console
-            touch /run/janus-boot-ok
-            sleep infinity
-          '';
-        };
-      })
+  common = {
+    janus.hardware.board = "x86_64-test";
+    janus.storage.nix.minimumSize = "64M";
+    janus.storage.state.maximumSize = "640M";
+    janus.access.ssh.authorizedKeys = [
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyForJanusEval janus-eval"
     ];
+    janus.debug.serialAutologin = true;
+    janus.debug.initrdShell = true;
+    users.users.root.shell = pkgs.lib.mkForce "${serialMarker}/bin/janus-serial-marker";
+    environment.shells = ["${serialMarker}/bin/janus-serial-marker"];
+    boot.initrd.systemd.users.root.shell = "${initrdMarker}/bin/janus-initrd-marker";
+    boot.initrd.systemd.storePaths = [initrdMarker];
   };
-  toplevel = os.config.system.build.toplevel;
-  image = os.config.system.build.janusImage;
+  bootStamp = {pkgs, ...}: {
+    systemd.services.janus-boot-stamp = {
+      description = "Report that the debug image reached multi-user";
+      wantedBy = ["multi-user.target"];
+      after = ["local-fs.target"];
+      path = [pkgs.coreutils];
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+      };
+      script = ''
+        printf '%s\n' JANUS_BOOT_OK > /dev/console
+        touch /run/janus-boot-ok
+        sleep infinity
+      '';
+    };
+  };
+  shellExec = {
+    boot.initrd.systemd.services.janus-debug-shell.serviceConfig.ExecStart = pkgs.lib.mkForce "${initrdMarker}/bin/janus-initrd-marker";
+  };
+  router = modules:
+    self.lib.mkRouter {
+      name = "vm-debug";
+      source = self;
+      configRevision = self.rev or "unknown";
+      inherit modules;
+    };
+  loginOs = router [common bootStamp];
+  checkOs = router [
+    common
+    shellExec
+    {
+      boot.initrd.systemd.services.janus-state-recover.script = pkgs.lib.mkForce ''
+        set -eu
+        mkdir -p /run/janus
+        : > /run/janus/state-check-failed
+        exit 1
+      '';
+    }
+  ];
+  missOs = router [
+    common
+    shellExec
+    {
+      boot.initrd.systemd.services.janus-state-recover.script = pkgs.lib.mkForce ''
+        set -eu
+        exit 1
+      '';
+    }
+  ];
 in
   pkgs.runCommand "vm-x86_64-debug" {
     nativeBuildInputs = [pkgs.qemu pkgs.coreutils pkgs.gnugrep];
   } ''
     set -eu
-    params=$(tr '\n' ' ' < ${toplevel}/kernel-params)
-    params="$params init=${toplevel}/init"
 
     boot() {
-      local extra="$1" serial="$2"
+      local toplevel="$1" image="$2" extra="$3" serial="$4" seconds="$5"
+      local params
+      params=$(tr '\n' ' ' < "$toplevel/kernel-params")
+      params="$params init=$toplevel/init $extra"
       set +e
-      timeout 600 qemu-system-x86_64 \
+      timeout "$seconds" qemu-system-x86_64 \
         -m 2048 -smp 2 -no-reboot -display none \
         -machine accel=tcg \
-        -kernel ${toplevel}/kernel \
-        -initrd ${toplevel}/initrd \
-        -append "$params $extra" \
+        -kernel "$toplevel/kernel" \
+        -initrd "$toplevel/initrd" \
+        -append "$params" \
         -snapshot \
-        -drive if=none,id=disk,format=raw,file=${image}/janus-vm-debug.img \
+        -drive if=none,id=disk,format=raw,file="$image" \
         -device virtio-blk-pci,drive=disk \
         -netdev user,id=n0 -device virtio-net-pci,netdev=n0 \
         -netdev user,id=n1 -device virtio-net-pci,netdev=n1 \
@@ -98,11 +124,11 @@ in
 
     show() {
       echo "--- $1 ---" >&2
-      grep -a -n -E 'JANUS_|Press Enter|sulogin|Emergency' "$1" | tail -n 40 >&2 || true
+      grep -a -n -E 'JANUS_|sulogin|Emergency' "$1" | tail -n 40 >&2 || true
       tail -n 40 "$1" >&2 || true
     }
 
-    boot "" serial-login.log
+    boot ${loginOs.config.system.build.toplevel} ${loginOs.config.system.build.janusImage}/janus-vm-debug.img "" serial-login.log 600
     if grep -q JANUS_INITRD_SHELL serial-login.log \
       || ! grep -q JANUS_SERIAL_ROOT serial-login.log \
       || ! grep -q JANUS_BOOT_OK serial-login.log; then
@@ -111,52 +137,24 @@ in
       exit 1
     fi
 
-    # rd.systemd.unit= is the initrd copy. systemd.unit= would start the
-    # emergency shell after switch-root. An empty root password still
-    # waits for Enter.
-    rm -f guest.in guest.out
-    mkfifo guest.in guest.out
-    exec 3<>guest.in
-    exec 4<>guest.out
-    cat guest.out > serial-emergency.log &
-    catpid=$!
-    (
-      set +e
-      for _ in $(seq 1 400); do
-        if grep -q 'Press Enter' serial-emergency.log; then
-          printf '\n' > guest.in
-          exit 0
-        fi
-        sleep 0.2
-      done
-    ) &
-    feed=$!
-    set +e
-    timeout 180 qemu-system-x86_64 \
-      -m 2048 -smp 2 -no-reboot -display none \
-      -machine accel=tcg \
-      -kernel ${toplevel}/kernel \
-      -initrd ${toplevel}/initrd \
-      -append "$params rd.systemd.unit=emergency.target" \
-      -snapshot \
-      -drive if=none,id=disk,format=raw,file=${image}/janus-vm-debug.img \
-      -device virtio-blk-pci,drive=disk \
-      -netdev user,id=n0 -device virtio-net-pci,netdev=n0 \
-      -netdev user,id=n1 -device virtio-net-pci,netdev=n1 \
-      -serial pipe:guest
-    set -e
-    kill "$catpid" "$feed" 2>/dev/null || true
-    wait "$catpid" "$feed" 2>/dev/null || true
-    exec 3>&-
-    exec 4>&-
-    if ! grep -a -q JANUS_INITRD_SHELL serial-emergency.log \
-      || ! grep -a -q JANUS_INITRD_FSCK serial-emergency.log \
-      || grep -a -q JANUS_INITRD_FSCK_MISSING serial-emergency.log; then
-      echo "initrd emergency shell did not see fsck.f2fs" >&2
-      show serial-emergency.log
+    boot ${checkOs.config.system.build.toplevel} ${checkOs.config.system.build.janusImage}/janus-vm-debug.img "" serial-check.log 180
+    if ! grep -a -q JANUS_INITRD_SHELL serial-check.log \
+      || ! grep -a -q JANUS_INITRD_FSCK serial-check.log \
+      || grep -a -q JANUS_INITRD_FSCK_MISSING serial-check.log \
+      || grep -a -q JANUS_BOOT_OK serial-check.log; then
+      echo "a failed state check did not open the initrd shell" >&2
+      show serial-check.log
+      exit 1
+    fi
+
+    boot ${missOs.config.system.build.toplevel} ${missOs.config.system.build.janusImage}/janus-vm-debug.img "" serial-miss.log 120
+    if grep -a -q JANUS_INITRD_SHELL serial-miss.log \
+      || grep -a -q JANUS_BOOT_OK serial-miss.log; then
+      echo "a missing state device opened the initrd shell" >&2
+      show serial-miss.log
       exit 1
     fi
 
     mkdir -p "$out"
-    cp serial-login.log serial-emergency.log "$out/"
+    cp serial-login.log serial-check.log serial-miss.log "$out/"
   ''

@@ -67,14 +67,16 @@
   };
 
   # Bench only. Turn these off before the image leaves the bench
-  # (D-0067, D-0068). The journal stays janus.system.journal.persistent
-  # (ADR-0013). It is not one of these switches.
+  # (D-0067, D-0068, D-0069). The journal stays
+  # janus.system.journal.persistent (ADR-0013). It is not one of these
+  # switches.
   # janus.debug = {
-  #   serialAutologin = true; # root on the serial console, no password
-  #   initrdShell = true;     # root shell if the state check exits non-zero
+  #   serialAutologin = true; # root on each serial console=, no password
+  #   initrdShell = true;     # root shell only after a failed state check
   #   kernelLogLevel = 7;     # unset leaves loglevel 4
-  #   tools = true;           # tcpdump, ethtool, iw, conntrack
+  #   tools = true;           # tcpdump, ethtool, iw, conntrack, strace
   #   engineLog = true;       # sing-box and xray log at debug
+  #   closedFailLog = true;   # name the closed-fail drop; the drop stays
   # };
 
   janus.access.ssh.authorizedKeys = [

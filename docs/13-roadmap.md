@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-11-04 |
+| Last updated | 2026-11-13 |
 
 This file is the implementation plan, the progress of the code, and the
 notes for work that is specified but not started. Choices are *18*.
@@ -76,7 +76,6 @@ power-cut. Tier 3 ships the profile. The Future list stays after 1.0.
 * Optional local configuration wizard, a front end for the build-host commands in *16*. No hosted build service.
 * A check that a destination refuses the exit because the address is in Iran, China, or Russia, for example Gemini. A country guessed from the node name, and a connect check (ping, TCP, or a handshake), do not show that refusal.
 * One GPIO LED with the `heartbeat` trigger on `rpi2`, `rpi3`, `rpi4`, `rpi-zero-2w`, `rockpi-4c`, and `le-potato`. A dark LED then means the kernel timer has stopped. The GPIO is not chosen. The ROCK Pi 4C blue status LED already uses that trigger in the device tree (*10* §3.5). The Le Potato blue LED does the same in the mainline tree and is not yet recorded in *10*. The Raspberry Pi profiles do not set one.
-* A log of packets the filter drops is not a `janus.debug` option. The closed-fail path is a blackhole route, so a line at the end of the forward chain would not show it. Later work names that path before it adds a switch.
 * The maintenance page (*20*) is in the image. The retro console in *20* §7 is the design: no radius, no shadow, no gradient. Some functions and elements are still unusable or only partly worked out. Later work keeps that simple console and works out every function and every element so each behaves clearly and fluidly. The shape is in Notes.
 * Spotify Soloist as a playback device (*02* UC-23, FR-SVC-001). `janus.soloist.enable` defaults to false. False adds no unit, secret, or package, and the checks are not evaluated. True needs `janus.audio.enable`, a playback device, the API key as a sops secret for that router (FR-SEC-012), and a board architecture of `x86_64`, `aarch64`, or `armv7l`. Playback is `janus.audio` (D-0061). The image installs the locked official build and starts Soloist with system-wide PipeWire when playback needs a local device. UDP 5353 is accepted on `janus.soloist.zones` (default `lan`) and dropped elsewhere. The WebSocket stays off. Pairing is `janus bluetooth` and the maintenance page (D-0059). The archives are flake inputs (D-0058, T-0010). A 1.0 image leaves the switch false.
 * Shared audio (`janus.audio`, D-0061). `enable` defaults to false. Playback and recording are read only when it is true. `embedded` and `usb` need a non-blank PipeWire node and `kernelProfile` `standard` or `matched`. `compact` still rejects them (D-0057). `matched` includes that device's driver only when `enable` is true, and leaves `SOUND` off otherwise. `recording.input = bluetooth` fails while HFP and HSP stay off. PipeWire starts for Soloist, for speech on a local device, and for bluetooth playback or recording. BlueZ starts when playback or recording is `bluetooth`, without Soloist.
@@ -101,11 +100,14 @@ tree does not mean that behavior exists. Stubs are not finished features.
   when this board or a declared peripheral uses it. An MMC host the
   initrd does not list stays built in, including the Pi 3 and Pi 3+
   SD card.
-* `janus.debug` defaults to off (D-0067, D-0068): serial root login,
-  an initrd shell when the state check fails (`fsck.f2fs` on its path),
-  a kernel console loglevel, `tcpdump`/`ethtool`/`iw`/`conntrack`, and
-  engine debug logs. `janus.system.journal.persistent` stays the capped
-  journal (ADR-0013). The full state check stops after 30 minutes (D-0049).
+* `janus.debug` defaults to off (D-0067, D-0068, D-0069): serial root
+  login on each serial `console=` device, an initrd shell only after a
+  failed state check (`fsck.f2fs` on its path; a missing device does not
+  open it), a kernel console loglevel, `tcpdump`/`ethtool`/`iw`/
+  `conntrack`/`strace`, engine debug logs, and a closed-fail log for the
+  sing-box blackhole and for xray port 12345 while that process is down.
+  `janus.system.journal.persistent` stays the capped journal (ADR-0013).
+  The full state check stops after 30 minutes (D-0049).
 * Apache-2.0 license at the repository root.
 * Flake with `nixosModules.janus`, `nixosModules.boards`, `lib.mkRouter`,
   `templates.default`, and `devShells.default` (`nix develop`).
@@ -262,10 +264,6 @@ tree does not mean that behavior exists. Stubs are not finished features.
 ## 3. Notes for later implementation
 
 * Accepted ADRs bind. They are listed in `docs/adr/` and are not restated here.
-* A log of packets the filter drops is not a `janus.debug` option.
-  The closed-fail path is a blackhole route, so a line at the end of
-  the forward chain would not show it. Later work names that path
-  before it adds a switch.
 * Undecided choices, if any, are *18* §2. Do not invent an answer for one.
   D-0045 asks whether the board-local secret path goes away.
   D-0048 asks whether an existing PPPoE username and password join the

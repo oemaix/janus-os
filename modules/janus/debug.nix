@@ -1,55 +1,60 @@
 # SPDX-License-Identifier: Apache-2.0
-# Bench switches. Each defaults to off. docs/08 §13, D-0067, D-0068.
+# Bench switches. Each defaults to off. docs/08 §13, D-0067, D-0068, D-0069.
 {
   config,
   lib,
   pkgs,
   ...
 }: let
-  inherit (lib) mkOption types mkIf mkForce mkMerge;
+  inherit (lib) mkOption types mkIf mkMerge;
   cfg = config.janus.debug;
-  getty = config.services.getty;
-  # Same agetty line as nixos/modules/services/ttys/getty.nix, plus --autologin
-  # root. %I and $TERM stay systemd tokens, so they are not shell-quoted.
-  # --keep-baud keeps the speed from console= (1500000 on ROCK Pi 4C).
-  baseArgs =
-    [
-      "--login-program"
-      getty.loginProgram
-      "--issue-file"
-      "/etc/issue:/etc/issue.d:/run/issue:/run/issue.d"
-      "--autologin"
-      "root"
-    ]
-    ++ lib.optionals (getty.loginOptions != null) [
-      "--login-options"
-      getty.loginOptions
-    ]
-    ++ getty.extraArgs;
-  serialCmd = "${lib.getExe' pkgs.util-linux "agetty"} ${lib.escapeShellArgs baseArgs} %I --keep-baud $TERM";
+  # The NixOS serial line is agetty <options> %I --keep-baud $TERM.
+  # Insert --autologin root before the port. A copied argument list would
+  # drop the next flag NixOS adds (D-0067).
+  templateExec = config.systemd.services."serial-getty@".serviceConfig.ExecStart or [];
+  templateCmd =
+    if builtins.isList templateExec
+    then lib.last (lib.filter (s: s != "") templateExec)
+    else toString templateExec;
+  autologinCmd = lib.replaceStrings [" %I "] [" --autologin root %I "] templateCmd;
+  consoleName = param: let
+    matched = builtins.match "console=([^,]+).*" param;
+  in
+    if matched == null
+    then null
+    else builtins.head matched;
+  isSerial = name: builtins.match "tty(S|AMA|AML|GS|USB|MXC)[0-9]+" name != null;
+  serialConsoles = lib.unique (builtins.filter isSerial (builtins.filter (n: n != null) (map consoleName config.boot.kernelParams)));
   # A failed grow must still reach janus-state-recover (D-0049).
+  # The shell unit runs only when the check left the stamp (T-0028).
   shellOnFailure = {
-    OnFailure = "emergency.target";
+    OnFailure = "janus-debug-shell.service";
     OnFailureJobMode = "replace-irreversibly";
   };
+  initrdDropIn = pkgs.writeText "janus-debug-initrd.conf" ''
+    [Unit]
+    OnFailure=
+  '';
 in {
   options.janus.debug = {
     serialAutologin = mkOption {
       type = types.bool;
       default = false;
       description = ''
-        Log in as root on the board serial console, with no password.
-        Virtual terminals keep a login prompt. SSH is unchanged.
-        Anyone who can open the UART gets a root shell. Default is off (D-0067).
+        Log in as root on each serial console named by console=.
+        Virtual terminals and any other UART keep a login prompt.
+        SSH is unchanged. Anyone who can open that serial port gets a
+        root shell. Default is off (D-0067).
       '';
     };
     initrdShell = mkOption {
       type = types.bool;
       default = false;
       description = ''
-        Open a root shell on the console when janus-state-recover or the
-        full state check exits non-zero. fsck.f2fs is on that shell's
-        path. A failed grow still continues into recover. Default is off (D-0068).
+        Open a root shell on the console when the state check fails.
+        A missing state device still stops the boot without that shell.
+        fsck.f2fs is on the shell's path. A failed grow still continues
+        into the check. Default is off (D-0068).
       '';
     };
     kernelLogLevel = mkOption {
@@ -65,7 +70,8 @@ in {
       type = types.bool;
       default = false;
       description = ''
-        Install tcpdump, ethtool, iw, and conntrack. Default is off (D-0068).
+        Install tcpdump, ethtool, iw, conntrack, and strace.
+        Default is off (D-0068).
       '';
     };
     engineLog = mkOption {
@@ -77,19 +83,36 @@ in {
         Default is off (D-0068).
       '';
     };
+    closedFailLog = mkOption {
+      type = types.bool;
+      default = false;
+      description = ''
+        Log packets the closed-fail path drops. sing-box logs the
+        blackhole default in table 2022. xray logs port 12345 while
+        the process is down. Default is off (D-0069).
+      '';
+    };
   };
 
   config = mkMerge [
     (mkIf cfg.serialAutologin {
-      warnings = [
-        ''
-          janus.debug.serialAutologin is on. The serial console logs in as root with no password. Turn it off before an image leaves the bench.
-        ''
-      ];
-      systemd.services."serial-getty@".serviceConfig.ExecStart = mkForce [
-        ""
-        serialCmd
-      ];
+      warnings =
+        [
+          ''
+            janus.debug.serialAutologin is on. The serial console logs in as root with no password. Turn it off before an image leaves the bench.
+          ''
+        ]
+        ++ lib.optional (serialConsoles == []) ''
+          janus.debug.serialAutologin is on and this image has no serial console=. Nothing logs in.
+        '';
+      environment.etc = lib.mapAttrs' (dev: _: {
+        name = "systemd/system/serial-getty@${dev}.service.d/autologin.conf";
+        value.text = ''
+          [Service]
+          ExecStart=
+          ExecStart=${autologinCmd}
+        '';
+      }) (lib.genAttrs serialConsoles (_: null));
     })
     (mkIf cfg.initrdShell {
       warnings = [
@@ -97,26 +120,42 @@ in {
           janus.debug.initrdShell is on. A failed state check opens a root shell in the initrd. Turn it off before an image leaves the bench.
         ''
       ];
-      boot.initrd.systemd.emergencyAccess = true;
-      # The emergency shell's PATH is /bin. The recover unit's path
-      # does not apply there. The f2fs initrd support also installs
-      # this package; the line keeps fsck.f2fs next to the shell.
+      # The shell's PATH is /bin. The recover unit's path does not apply
+      # there. f2fs-tools also comes from the storage initrd support.
+      boot.initrd.systemd.shell.enable = true;
       boot.initrd.systemd.initrdBin = [pkgs.f2fs-tools];
+      # Vendor initrd.target starts emergency on every failed boot. That
+      # would hand out a shell for a missing disk. Clear it. The bench
+      # shell is janus-debug-shell, and only after a check (T-0028).
+      boot.initrd.systemd.contents."/etc/systemd/system/initrd.target.d/janus-debug.conf".source = initrdDropIn;
+      boot.initrd.systemd.services.janus-debug-shell = {
+        description = "Root shell after a failed state check";
+        unitConfig = {
+          DefaultDependencies = false;
+          ConditionPathExists = "/run/janus/state-check-failed";
+        };
+        serviceConfig = {
+          Type = "simple";
+          ExecStart = "/bin/sh";
+          StandardInput = "tty-force";
+          StandardOutput = "tty";
+          StandardError = "tty";
+          TTYPath = "/dev/console";
+        };
+      };
       boot.initrd.systemd.services.janus-state-recover.unitConfig = shellOnFailure;
       boot.initrd.systemd.services.janus-state-fsck-full.unitConfig = shellOnFailure;
     })
     (mkIf (cfg.kernelLogLevel != null) {
-      warnings = [
-        ''
-          janus.debug.kernelLogLevel is ${toString cfg.kernelLogLevel}. The console prints kernel messages at that level. Unset leaves loglevel 4.
-        ''
-      ];
+      warnings = lib.optional (cfg.kernelLogLevel > 4) ''
+        janus.debug.kernelLogLevel is ${toString cfg.kernelLogLevel}. The console prints kernel messages at that level. Unset leaves loglevel 4. Turn it off before an image leaves the bench.
+      '';
       boot.consoleLogLevel = cfg.kernelLogLevel;
     })
     (mkIf cfg.tools {
       warnings = [
         ''
-          janus.debug.tools is on. The image includes tcpdump, ethtool, iw, and conntrack. Turn it off before an image leaves the bench.
+          janus.debug.tools is on. The image includes tcpdump, ethtool, iw, conntrack, and strace. Turn it off before an image leaves the bench.
         ''
       ];
       environment.systemPackages = [
@@ -124,12 +163,20 @@ in {
         pkgs.ethtool
         pkgs.iw
         pkgs.conntrack-tools
+        pkgs.strace
       ];
     })
     (mkIf cfg.engineLog {
       warnings = [
         ''
           janus.debug.engineLog is on. The proxy engine log level is debug. Turn it off before an image leaves the bench.
+        ''
+      ];
+    })
+    (mkIf cfg.closedFailLog {
+      warnings = [
+        ''
+          janus.debug.closedFailLog is on. Dropped closed-fail packets are written to the kernel log. Turn it off before an image leaves the bench.
         ''
       ];
     })

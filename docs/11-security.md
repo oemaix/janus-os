@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-11-03 |
+| Last updated | 2026-11-13 |
 
 ## 1. Assets
 
@@ -51,16 +51,20 @@
 * Password login: opt-in; requires an existing key; a root password hash
   file on the state partition is used, never an inline plaintext.
 * Serial console: a login prompt. `janus.debug.serialAutologin` (default
-  off) logs in as root on that serial getty only (D-0067). It does not
-  change SSH. Anyone who can open the UART gets a root shell.
-  Evaluation warns.
+  off) logs in as root on each serial `console=` device only (D-0067).
+  Other consoles keep a prompt. It does not change SSH. Anyone who can
+  open that UART gets a root shell. Evaluation warns.
 * Initrd: `janus.debug.initrdShell` (default off) opens a root shell
-  when the state check exits non-zero (D-0068). The shell is the
-  initrd emergency console. `fsck.f2fs` is on its path.
-* Bench packages and logs: `janus.debug.tools` and `engineLog` default
-  off (D-0068). The engine log writes destinations into the journal.
-  The journal stays volatile unless `janus.system.journal.persistent`
-  is set (ADR-0013).
+  only when the state check fails (D-0068). A missing state device does
+  not. `emergencyAccess` stays off, and vendor `initrd.target` no longer
+  starts the emergency shell while this switch is on (T-0028).
+  `fsck.f2fs` is on the shell's path.
+* Bench packages and logs: `janus.debug.tools`, `engineLog`, and
+  `closedFailLog` default off (D-0068, D-0069). `tools` adds `tcpdump`,
+  `ethtool`, `iw`, `conntrack`, and `strace`. The engine log writes
+  destinations into the journal. `closedFailLog` writes dropped
+  closed-fail packets to the kernel log. The journal stays volatile
+  unless `janus.system.journal.persistent` is set (ADR-0013).
 * `janus` CLI is the only privileged operator tool; runs via `sudo` policies
   scoped to specific systemd units and files (no general shell needed for
   daily tasks, but root shell remains available to the key holder).
@@ -210,10 +214,12 @@ not document two first-class paths.
 * Traffic analysis of the tunnel itself (volume/timing) is out of scope.
 * `janus.debug.serialAutologin` left on gives the UART pins a root shell
   with no password. `janus.debug.initrdShell` does the same when the
-  state check fails. The header is often exposed. Turn both off before
-  an image leaves the bench.
+  state check fails. A missing disk does not. The header is often
+  exposed. Turn both off before an image leaves the bench.
 * `janus.debug.engineLog` left on writes engine destinations to the
-  journal. `janus.debug.tools` leaves `tcpdump` on the router.
+  journal. `janus.debug.tools` leaves `tcpdump` and `strace` on the
+  router. `janus.debug.closedFailLog` writes dropped closed-fail
+  packets to the kernel log.
 
 ## 6. Security update policy
 
