@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-11-12 |
+| Last updated | 2026-11-14 |
 
 ## 1. Terminology
 
@@ -320,10 +320,14 @@ D-0063 assigns `0bda:8176` to `rtl8192cu` by USB ID and leaves `rtl8xxxu`
 loaded, so the two drivers do not both attach. `rtl8xxxu` is the driver
 for `0bda:8179` (§4.11). A module-wide blacklist of `rtl8xxxu` removes
 that station. The image binds this USB ID to `rtl8192cu` and does not
-blacklist `rtl8xxxu`. `remove_id` does not drop this static id, so the
-bind writes `driver_override` before the unbind and retries until
-`rtl8192cu` owns the interface and the netdev is no longer named `wlanN`.
-The unbind runs only after that attribute reads back as `rtl8192cu`.
+blacklist `rtl8xxxu`. `remove_id` does not drop this static id, and a USB
+interface has no `driver_override`. The bind turns USB autoprobe off
+only when that write reads back as `0`, unbinds `rtl8xxxu`, and binds
+`rtl8192cu`. Before autoprobe comes back, every other unbound interface
+is written to `drivers_probe`. A stick that returns under a new bus name
+is scanned again. The bind retries until `rtl8192cu` owns the interface
+and the netdev is no longer named `wlanN`. When `driver_override` exists,
+the unbind runs only after that attribute reads back as `rtl8192cu`.
 The USB driver link changes before that rename. `hostapd` wants that wait
 and does not require it. It does not bind to the netdev unit: that unit is
 inactive across the rename, the start job fails with result `dependency`,

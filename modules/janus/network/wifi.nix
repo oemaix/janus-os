@@ -233,12 +233,19 @@
   };
   # 0bda:8176 is also in the rtl8xxxu table. Bind that ID to rtl8192cu
   # and leave rtl8xxxu loaded for 0bda:8179. remove_id does not drop a
-  # static id, so driver_override is set before the unbind (T-0033).
-  # docs/10 §4.4, D-0063.
+  # static id. A USB interface has no driver_override (T-0038), so the
+  # bind turns autoprobe off, unbinds rtl8xxxu, and binds rtl8192cu.
+  # A write that does not leave autoprobe at 0 does not unbind. Other
+  # unbound interfaces are probed before autoprobe comes back, and a
+  # stick that returns under a new bus name is scanned again (T-0039).
+  # When driver_override does exist, unbind waits for a rtl8192cu
+  # readback (T-0033). docs/10 §4.4, D-0063.
   rtl8192cuBind = pkgs.writeShellScript "janus-rtl8192cu-bind" ''
     set -eu
     # JANUS_SYS is the sysfs root. The image leaves it unset.
     sysroot=''${JANUS_SYS:-/sys}
+    autoprobe=$sysroot/bus/usb/drivers_autoprobe
+    autoprobe_held=0
     iface_sys() {
       case "$1" in
         "$sysroot"/*) printf '%s\n' "$1" ;;
@@ -256,8 +263,10 @@
     usb_device_dir() {
       dirname "$(readlink -f "$1")"
     }
-    # driver_override is set before the unbind. remove_id leaves the
-    # static id, so rtl8xxxu would take the stick back (T-0033).
+    # remove_id leaves the static id, so rtl8xxxu would take the stick
+    # back. USB has no driver_override. Unbind only after autoprobe
+    # reads back as 0, unless driver_override itself reads rtl8192cu
+    # (T-0033, T-0038, T-0039).
     override_is() {
       local cur
       [ -f "$1/driver_override" ] || return 1
@@ -277,12 +286,64 @@
         return 0
       fi
       if [ "$drv" = rtl8xxxu ]; then
-        override_is "$sys" || return 0
+        if [ -e "$sys/driver_override" ]; then
+          override_is "$sys" || return 0
+        elif [ -e "$autoprobe" ] && [ "$autoprobe_held" != 1 ]; then
+          return 0
+        fi
         printf '%s\n' "$kernel" > "$sysroot/bus/usb/drivers/rtl8xxxu/unbind" || true
       fi
+      # The unbind can drop the sysfs node. Do not bind the old name.
+      [ -e "$sys" ] || return 0
       if [ -e "$sysroot/bus/usb/drivers/rtl8192cu/bind" ]; then
         printf '%s\n' "$kernel" > "$sysroot/bus/usb/drivers/rtl8192cu/bind" || true
       fi
+    }
+    # Restoring the flag does not bind interfaces that appeared while it
+    # was off. 0bda:8176 stays out of this scan so rtl8xxxu cannot take
+    # it back (T-0039).
+    probe_others() {
+      local sys parent vendor product name probe
+      probe=$sysroot/bus/usb/drivers_probe
+      [ -e "$probe" ] || return 0
+      for sys in "$sysroot"/bus/usb/devices/*:*; do
+        [ -d "$sys" ] || continue
+        if [ -L "$sys/driver" ]; then
+          continue
+        fi
+        parent=$(usb_device_dir "$sys")
+        vendor=$(cat "$parent/idVendor" 2>/dev/null || true)
+        product=$(cat "$parent/idProduct" 2>/dev/null || true)
+        if [ "$vendor" = 0bda ] && [ "$product" = 8176 ]; then
+          continue
+        fi
+        name=$(basename "$(readlink -f "$sys")")
+        printf '%s\n' "$name" > "$probe" || true
+      done
+    }
+    restore_autoprobe() {
+      if [ "$autoprobe_held" = 1 ]; then
+        probe_others
+        printf '%s\n' "$autoprobe_was" > "$autoprobe" || true
+      fi
+    }
+    # A failed write, or a readback that is not 0, must not unbind.
+    hold_autoprobe() {
+      autoprobe_held=0
+      [ -e "$autoprobe" ] || return 0
+      if [ -f "$autoprobe" ]; then
+        autoprobe_was=$(cat "$autoprobe" 2>/dev/null || printf '%s\n' 1)
+        printf '%s\n' 0 > "$autoprobe" || true
+        if [ "$(cat "$autoprobe" 2>/dev/null || true)" = 0 ]; then
+          autoprobe_held=1
+        fi
+      else
+        autoprobe_was=1
+      fi
+      if [ "$autoprobe_held" != 1 ]; then
+        echo "janus: usb autoprobe stayed on" >&2
+      fi
+      trap restore_autoprobe EXIT
     }
     # The USB driver link flips to rtl8192cu before the netdev is
     # registered and renamed off wlanN (T-0034).
@@ -303,17 +364,29 @@
     # A bind write while the probe is running can restart it, so retry
     # about once a second instead of on every poll (T-0033).
     wait_bound() {
-      local sys kernel i j drv
+      local sys kernel i j drv target
       sys=$1
       kernel=$2
       i=0
       while [ "$i" -lt 60 ]; do
+        target=$(iface_sys "$sys")
+        # The bus name changes when the stick resets. Scanning again
+        # finds the new node (T-0039).
+        if [ ! -e "$target" ]; then
+          return 2
+        fi
         if iface_ready "$sys"; then
           return 0
         fi
         bind_one "$sys" "$kernel"
+        if [ ! -e "$target" ]; then
+          return 2
+        fi
         j=0
         while [ "$j" -lt 5 ]; do
+          if [ ! -e "$target" ]; then
+            return 2
+          fi
           if iface_ready "$sys"; then
             return 0
           fi
@@ -326,27 +399,10 @@
       echo "janus: 0bda:8176 stayed on ''${drv:-unbound}" >&2
       return 1
     }
+    # 0 ready, 1 still on the wrong driver, 2 no 0bda:8176, 3 the path
+    # disappeared and the scan has to run again.
     bind_present() {
-      for sys in "$sysroot"/bus/usb/devices/*:*; do
-        [ -d "$sys" ] || continue
-        parent=$(usb_device_dir "$sys")
-        vendor=$(cat "$parent/idVendor" 2>/dev/null || true)
-        product=$(cat "$parent/idProduct" 2>/dev/null || true)
-        if [ "$vendor" = 0bda ] && [ "$product" = 8176 ]; then
-          name=$(basename "$(readlink -f "$sys")")
-          wait_bound "$sys" "$name"
-        fi
-      done
-    }
-    if [ "$#" -eq 2 ]; then
-      wait_bound "$(iface_sys "$1")" "$2"
-      exit 0
-    fi
-    # udev-settle does not wait for this port. A stick that shows up
-    # during this window is bound here; a later add starts the oneshot
-    # again (T-0033).
-    i=0
-    while [ "$i" -lt 30 ]; do
+      local sys parent vendor product name rc found
       found=0
       for sys in "$sysroot"/bus/usb/devices/*:*; do
         [ -d "$sys" ] || continue
@@ -355,16 +411,55 @@
         product=$(cat "$parent/idProduct" 2>/dev/null || true)
         if [ "$vendor" = 0bda ] && [ "$product" = 8176 ]; then
           found=1
-          break
+          name=$(basename "$(readlink -f "$sys")")
+          rc=0
+          wait_bound "$sys" "$name" || rc=$?
+          if [ "$rc" -eq 2 ]; then
+            return 3
+          fi
+          if [ "$rc" -ne 0 ]; then
+            return 1
+          fi
         fi
       done
-      if [ "$found" = 1 ]; then
-        bind_present
+      if [ "$found" -eq 0 ]; then
+        return 2
+      fi
+      return 0
+    }
+    hold_autoprobe
+    if [ "$#" -eq 2 ]; then
+      rc=0
+      wait_bound "$(iface_sys "$1")" "$2" || rc=$?
+      exit "$rc"
+    fi
+    # udev-settle does not wait for this port. A stick that shows up
+    # during this window is bound here; a later add starts the oneshot
+    # again (T-0033). A path that disappears is scanned again (T-0039).
+    # No stick at all is success: the oneshot must not stay failed or a
+    # later USB add is dropped.
+    saw_gone=0
+    i=0
+    while [ "$i" -lt 30 ]; do
+      rc=0
+      bind_present || rc=$?
+      if [ "$rc" -eq 0 ]; then
         exit 0
+      fi
+      if [ "$rc" -eq 1 ]; then
+        exit 1
+      fi
+      if [ "$rc" -eq 3 ]; then
+        saw_gone=1
       fi
       i=$((i + 1))
       sleep 1
     done
+    if [ "$saw_gone" -eq 1 ]; then
+      echo "janus: 0bda:8176 left the bus" >&2
+      exit 1
+    fi
+    exit 0
   '';
 
   # The 43436s chip asks for its own CLM name. The Raspberry Pi package

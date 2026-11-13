@@ -2152,6 +2152,108 @@ in {
       kill "$pid" 2>/dev/null || true
       wait "$pid" || true
 
+      plain=$TMPDIR/plain
+      mkdir -p "$plain/sys/bus/usb/devices/1-2/1-2:1.0" "$plain/sys/bus/usb/drivers/rtl8xxxu" "$plain/sys/bus/usb/drivers/rtl8192cu"
+      mkdir -p "$plain/sys/bus/usb/devices/1-3/1-3:1.0" "$plain/sys/bus/usb/devices/1-4/1-4:1.0"
+      ln -s 1-2/1-2:1.0 "$plain/sys/bus/usb/devices/1-2:1.0"
+      ln -s 1-3/1-3:1.0 "$plain/sys/bus/usb/devices/1-3:1.0"
+      ln -s 1-4/1-4:1.0 "$plain/sys/bus/usb/devices/1-4:1.0"
+      printf '%s\n' 0bda > "$plain/sys/bus/usb/devices/1-2/idVendor"
+      printf '%s\n' 8176 > "$plain/sys/bus/usb/devices/1-2/idProduct"
+      printf '%s\n' 0bda > "$plain/sys/bus/usb/devices/1-3/idVendor"
+      printf '%s\n' 8179 > "$plain/sys/bus/usb/devices/1-3/idProduct"
+      printf '%s\n' 0bda > "$plain/sys/bus/usb/devices/1-4/idVendor"
+      printf '%s\n' 8176 > "$plain/sys/bus/usb/devices/1-4/idProduct"
+      ln -s "$plain/sys/bus/usb/drivers/rtl8xxxu" "$plain/sys/bus/usb/devices/1-2/1-2:1.0/driver"
+      printf '%s\n' 1 > "$plain/sys/bus/usb/drivers_autoprobe"
+      : > "$plain/sys/bus/usb/drivers_probe"
+      mkfifo "$plain/sys/bus/usb/drivers/rtl8xxxu/unbind"
+      mkfifo "$plain/sys/bus/usb/drivers/rtl8192cu/bind"
+      cp ${bind} "$plain/bind.sh"
+      (
+        read -r got < "$plain/sys/bus/usb/drivers/rtl8xxxu/unbind"
+        test "$got" = 1-2:1.0
+        test "$(cat "$plain/sys/bus/usb/drivers_autoprobe")" = 0
+        rm -f "$plain/sys/bus/usb/devices/1-2/1-2:1.0/driver"
+        ln -s "$plain/sys/bus/usb/drivers/rtl8192cu" "$plain/sys/bus/usb/devices/1-2/1-2:1.0/driver"
+        mkdir -p "$plain/sys/bus/usb/devices/1-2/1-2:1.0/net/wifi-home"
+        read -r got < "$plain/sys/bus/usb/drivers/rtl8192cu/bind"
+        test "$got" = 1-2:1.0
+        read -r got < "$plain/sys/bus/usb/drivers/rtl8192cu/bind"
+        test "$got" = 1-4:1.0
+        ln -s "$plain/sys/bus/usb/drivers/rtl8192cu" "$plain/sys/bus/usb/devices/1-4/1-4:1.0/driver"
+        mkdir -p "$plain/sys/bus/usb/devices/1-4/1-4:1.0/net/wifi-home"
+      ) &
+      helper=$!
+      if ! timeout 20 env JANUS_SYS="$plain/sys" bash "$plain/bind.sh"; then
+        echo "bind did not move 0bda:8176 without driver_override" >&2
+        kill "$helper" 2>/dev/null || true
+        wait "$helper" || true
+        exit 1
+      fi
+      wait "$helper"
+      test "$(cat "$plain/sys/bus/usb/drivers_autoprobe")" = 1
+      test "$(cat "$plain/sys/bus/usb/drivers_probe")" = 1-3:1.0
+      test "$(basename "$(readlink "$plain/sys/bus/usb/devices/1-2/1-2:1.0/driver")")" = rtl8192cu
+      test ! -e "$plain/sys/bus/usb/devices/1-3/1-3:1.0/driver"
+
+      held=$TMPDIR/held
+      mkdir -p "$held/sys/bus/usb/devices/1-2/1-2:1.0" "$held/sys/bus/usb/drivers/rtl8xxxu"
+      mkdir -p "$held/sys/bus/usb/drivers_autoprobe"
+      ln -s 1-2/1-2:1.0 "$held/sys/bus/usb/devices/1-2:1.0"
+      printf '%s\n' 0bda > "$held/sys/bus/usb/devices/1-2/idVendor"
+      printf '%s\n' 8176 > "$held/sys/bus/usb/devices/1-2/idProduct"
+      ln -s "$held/sys/bus/usb/drivers/rtl8xxxu" "$held/sys/bus/usb/devices/1-2/1-2:1.0/driver"
+      mkfifo "$held/sys/bus/usb/drivers/rtl8xxxu/unbind"
+      cp ${bind} "$held/bind.sh"
+      timeout 8 env JANUS_SYS="$held/sys" bash "$held/bind.sh" &
+      pid=$!
+      if timeout 1 cat "$held/sys/bus/usb/drivers/rtl8xxxu/unbind" >/dev/null; then
+        echo "unbind ran while usb autoprobe stayed on" >&2
+        kill "$pid" 2>/dev/null || true
+        wait "$pid" || true
+        exit 1
+      fi
+      kill "$pid" 2>/dev/null || true
+      wait "$pid" || true
+
+      move=$TMPDIR/move
+      mkdir -p "$move/sys/bus/usb/devices/1-2/1-2:1.0" "$move/sys/bus/usb/drivers/rtl8xxxu" "$move/sys/bus/usb/drivers/rtl8192cu"
+      ln -s 1-2/1-2:1.0 "$move/sys/bus/usb/devices/1-2:1.0"
+      printf '%s\n' 0bda > "$move/sys/bus/usb/devices/1-2/idVendor"
+      printf '%s\n' 8176 > "$move/sys/bus/usb/devices/1-2/idProduct"
+      ln -s "$move/sys/bus/usb/drivers/rtl8xxxu" "$move/sys/bus/usb/devices/1-2/1-2:1.0/driver"
+      printf '%s\n' 1 > "$move/sys/bus/usb/drivers_autoprobe"
+      mkfifo "$move/sys/bus/usb/drivers/rtl8xxxu/unbind"
+      mkfifo "$move/sys/bus/usb/drivers/rtl8192cu/bind"
+      cp ${bind} "$move/bind.sh"
+      (
+        read -r got < "$move/sys/bus/usb/drivers/rtl8xxxu/unbind"
+        test "$got" = 1-2:1.0
+        rm -rf "$move/sys/bus/usb/devices/1-2" "$move/sys/bus/usb/devices/1-2:1.0"
+        mkdir -p "$move/sys/bus/usb/devices/1-5/1-5:1.0"
+        ln -s 1-5/1-5:1.0 "$move/sys/bus/usb/devices/1-5:1.0"
+        printf '%s\n' 0bda > "$move/sys/bus/usb/devices/1-5/idVendor"
+        printf '%s\n' 8176 > "$move/sys/bus/usb/devices/1-5/idProduct"
+        read -r got < "$move/sys/bus/usb/drivers/rtl8192cu/bind"
+        if [ "$got" != 1-5:1.0 ]; then
+          read -r got < "$move/sys/bus/usb/drivers/rtl8192cu/bind"
+        fi
+        test "$got" = 1-5:1.0
+        ln -s "$move/sys/bus/usb/drivers/rtl8192cu" "$move/sys/bus/usb/devices/1-5/1-5:1.0/driver"
+        mkdir -p "$move/sys/bus/usb/devices/1-5/1-5:1.0/net/wifi-home"
+      ) &
+      helper=$!
+      if ! timeout 20 env JANUS_SYS="$move/sys" bash "$move/bind.sh"; then
+        echo "bind kept the old bus name after 0bda:8176 reset" >&2
+        kill "$helper" 2>/dev/null || true
+        wait "$helper" || true
+        exit 1
+      fi
+      wait "$helper"
+      test "$(cat "$move/sys/bus/usb/drivers_autoprobe")" = 1
+      test "$(basename "$(readlink "$move/sys/bus/usb/devices/1-5/1-5:1.0/driver")")" = rtl8192cu
+
       sup=$TMPDIR/sup
       mkdir -p "$sup/sys/class/net" "$sup/bin" "$sup/run" "$sup/state"
       printf '%s\n' secret-pass > "$sup/phrase"
