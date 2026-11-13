@@ -148,7 +148,7 @@ in {
     reboot.fsck = mkOption {
       type = types.bool;
       default = false;
-      description = "On the maintenance reboot, run a full fsck of the state partition and let it finish. The request is removed before that check, so a check that does not finish is not repeated. A normal boot does not.";
+      description = "On the maintenance reboot, run a full fsck of the state partition. It stops after 30 minutes. Hitting that cap fails the boot and does not reformat. The request is removed before that check, so a check that does not finish is not repeated. A normal boot does not.";
     };
   };
 

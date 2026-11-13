@@ -66,6 +66,19 @@
     # kernelProfile = "matched"; # D-0052. compact, then this board and its peripherals.
   };
 
+  # Bench only. Turn these off before the image leaves the bench
+  # (D-0067, D-0068, D-0069). The journal stays
+  # janus.system.journal.persistent (ADR-0013). It is not one of these
+  # switches.
+  # janus.debug = {
+  #   serialAutologin = true; # root on each serial console=, no password
+  #   initrdShell = true;     # root shell only after a failed state check
+  #   kernelLogLevel = 7;     # unset leaves loglevel 4
+  #   tools = true;           # tcpdump, ethtool, iw, conntrack, strace
+  #   engineLog = true;       # sing-box and xray log at debug
+  #   closedFailLog = true;   # name the closed-fail drop; the drop stays
+  # };
+
   janus.access.ssh.authorizedKeys = [
     "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA... you@laptop" # CHANGE ME (required)
   ];

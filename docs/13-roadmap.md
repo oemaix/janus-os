@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-11-12 |
+| Last updated | 2026-11-13 |
 
 This file is the implementation plan, the progress of the code, and the
 notes for work that is specified but not started. Choices are *18*.
@@ -102,6 +102,14 @@ tree does not mean that behavior exists. Stubs are not finished features.
   when this board or a declared peripheral uses it. An MMC host the
   initrd does not list stays built in, including the Pi 3 and Pi 3+
   SD card.
+* `janus.debug` defaults to off (D-0067, D-0068, D-0069): serial root
+  login on each serial `console=` device, an initrd shell only after a
+  failed state check (`fsck.f2fs` on its path; a missing device does not
+  open it), a kernel console loglevel, `tcpdump`/`ethtool`/`iw`/
+  `conntrack`/`strace`, engine debug logs, and a closed-fail log for the
+  sing-box blackhole and for the xray mark `0x4a02` while that process is down.
+  `janus.system.journal.persistent` stays the capped journal (ADR-0013).
+  The full state check stops after 30 minutes (D-0049).
 * Apache-2.0 license at the repository root.
 * Flake with `nixosModules.janus`, `nixosModules.boards`, `lib.mkRouter`,
   `templates.default`, and `devShells.default` (`nix develop`).
@@ -117,7 +125,7 @@ tree does not mean that behavior exists. Stubs are not finished features.
   `mutable = false`. `JANUS_STATE` grows to at most `state.maximumSize`
   (default 4 GiB). Boot runs `fsck.f2fs -a --no-kernel-check`. A full
   check runs only on the maintenance reboot with `janus.system.reboot.fsck`
-  (D-0049).
+  and stops after 30 minutes (D-0049).
 * `janus.network` lowers ports, LAN VLANs, WAN `dhcp`/`static`/`pppoe`,
   LAN bridges, DHCPv4, and the IPv6 modes into networkd, pppd, and
   dnsmasq. `janus.firewall` lowers zones, NAT, and port forwards into

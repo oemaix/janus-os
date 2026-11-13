@@ -6,6 +6,11 @@ Phase 1 checks:
   phase 1 board profiles (`eval-boards`), and known-bad configurations
   do not.
 * `packages.<system>.docs-options` — the `janus.*` option reference.
+* `checks.x86_64-linux.vm-x86_64-debug` — the serial console logs in as
+  root and reaches multi-user. The real recover script opens the initrd
+  shell, with `fsck.f2fs` on its path, when `fsck.f2fs` exits 126. A
+  recover that exits before that stamp does not reach multi-user. A
+  failed grow still reaches multi-user.
 * `checks.x86_64-linux.vm-x86_64-test` — the image boots. `/` and `/nix`
   are read-only, `/var` is read-write, `machine-id` is bind-mounted, and
   the seed stamp matches the embedded hash. A disk 256 MiB larger grows

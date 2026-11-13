@@ -84,6 +84,19 @@
   # 512-byte sectors, the same unit sgdisk uses for the 1 MiB backup gap.
   stateMaxSectors = sizeMiB cfg.state.maximumSize * 2048;
 
+  # Set before the probe and fsck. A missing device clears it, so the
+  # bench shell does not open for a node that never appeared. Resize
+  # clears it only after it returns (T-0028).
+  stateCheckMark = ''
+    mark_check() {
+      mkdir -p /run/janus
+      : > /run/janus/state-check-failed
+    }
+    clear_check() {
+      rm -f /run/janus/state-check-failed
+    }
+  '';
+
   waitForState = ''
     dev=/dev/disk/by-partuuid/${statePartUuid}
     for _ in $(seq 1 50); do
@@ -669,7 +682,8 @@ in {
 
     # -a repairs a checkpoint the kernel marked bad. It does not scan the
     # volume. --no-kernel-check skips the 30-day full scan inside fsck.f2fs.
-    # 15 min bounds a stuck card. A full check has its own unit and no cap.
+    # 15 min bounds a stuck card. A full check has its own unit and stops
+    # after 30 minutes.
     boot.initrd.systemd.services.janus-state-recover = {
       description = "Repair or reformat the Janus state partition";
       requiredBy = ["local-fs-pre.target"];
@@ -683,9 +697,11 @@ in {
       };
       script = ''
         set -eu
+        ${stateCheckMark}
         ${waitForState}
         run_fsck() {
           set +e
+          mark_check
           fsck.f2fs -a --no-kernel-check "$dev"
           fsck_status=$?
           set -e
@@ -700,6 +716,7 @@ in {
             sleep 0.1
           done
           echo "<3>janus: JANUS_STATE did not return; not reformatting" > /dev/kmsg
+          clear_check
           exit 1
         }
         run_fsck
@@ -726,6 +743,7 @@ in {
         fi
         if [ ! -b "$dev" ]; then
           echo "<3>janus: JANUS_STATE is not a block device; not reformatting" > /dev/kmsg
+          clear_check
           exit 1
         fi
         action=mount
@@ -734,6 +752,7 @@ in {
         esac
         mount_status=1
         probe_once() {
+          mark_check
           mount_status=1
           mounted=0
           set +e
@@ -775,17 +794,20 @@ in {
         if [ "$mount_status" != 0 ]; then
           if [ ! -b "$dev" ]; then
             echo "<3>janus: JANUS_STATE is not a block device; not reformatting" > /dev/kmsg
+            clear_check
             exit 1
           fi
           ${corruptState}
         fi
         resize.f2fs "$dev"
+        clear_check
       '';
     };
 
     # Runs only when recover copied /var/lib/janus/full-fsck into /run.
-    # The on-disk request is removed before fsck -f, so a hang is not repeated.
-    # No start timeout: a full check of a large volume is allowed to finish.
+    # The on-disk request is removed before fsck -f, so a stopped check
+    # is not repeated and does not reformat. 30 minutes covers a 4 GiB
+    # state partition and a 64 GiB one. Hitting the cap fails this boot.
     boot.initrd.systemd.services.janus-state-fsck-full = {
       description = "Full check of the Janus state partition";
       requiredBy = ["local-fs-pre.target"];
@@ -798,10 +820,11 @@ in {
       path = [pkgs.f2fs-tools pkgs.util-linux pkgs.kmod pkgs.coreutils];
       serviceConfig = {
         Type = "oneshot";
-        TimeoutStartSec = "infinity";
+        TimeoutStartSec = "30min";
       };
       script = ''
         set -eu
+        ${stateCheckMark}
         ${waitForState}
         # The node can disappear while the kernel rereads the partition
         # table. Coming back is not corruption. Staying away fails the
@@ -813,9 +836,11 @@ in {
             sleep 0.1
           done
           echo "<3>janus: JANUS_STATE did not return; not reformatting" > /dev/kmsg
+          clear_check
           exit 1
         }
         probe_rw() {
+          mark_check
           mount_status=1
           mounted=0
           set +e
@@ -847,6 +872,7 @@ in {
           probe_rw
         fi
         set +e
+        mark_check
         fsck.f2fs -f "$dev"
         fsck_status=$?
         set -e
@@ -861,6 +887,7 @@ in {
             wait_state_back
           fi
           set +e
+          mark_check
           fsck.f2fs -f "$dev"
           fsck_status=$?
           set -e
@@ -871,6 +898,7 @@ in {
         fi
         if [ ! -b "$dev" ]; then
           echo "<3>janus: JANUS_STATE is not a block device; not reformatting" > /dev/kmsg
+          clear_check
           exit 1
         fi
         case "$fsck_status" in
@@ -888,10 +916,12 @@ in {
             if [ "$mount_status" != 0 ]; then
               if [ ! -b "$dev" ]; then
                 echo "<3>janus: JANUS_STATE is not a block device; not reformatting" > /dev/kmsg
+                clear_check
                 exit 1
               fi
               ${corruptState}
             else
+              clear_check
               rm -f /run/janus/full-fsck
               echo "<6>janus: full fsck of JANUS_STATE finished ($fsck_status)" > /dev/kmsg
             fi

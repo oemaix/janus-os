@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-11-12 |
+| Last updated | 2026-11-13 |
 
 This document defines the **shape and semantics** of the `janus.*` option
 tree. The final, exhaustive reference (every option with type, default,
@@ -48,7 +48,7 @@ learning path: copy, edit values, build.
 | `journal.maxUse` | str | `"64M"` | |
 | `embedSource` | bool | `true` | Embed the whole flake source tree (`flake.nix`, `flake.lock`, all `.nix` modules) read-only at `/etc/janus/source` (FR-CFG-008). Disable only if the tree contains inline secrets you do not want readable on the device. |
 | `reboot.schedule` | null or str | off | Maintenance reboot. `monthly` is 04:00 on the 1st, `yearly` is 04:00 on 1 January, or a five-field cron whose day-of-week is `*`. Further actions on this reboot are sibling options (D-0049). |
-| `reboot.fsck` | bool | `false` | On that reboot, run a full state check and let it finish. The request is removed before the check, so a check that does not finish is not repeated. A normal boot does not. Requires `reboot.schedule`. |
+| `reboot.fsck` | bool | `false` | On that reboot, run a full state check. It stops after 30 minutes. Hitting that cap fails the boot and does not reformat. The request is removed before the check, so a check that does not finish is not repeated. A normal boot does not. Requires `reboot.schedule`. |
 | `region` | `cn\|ru\|ir` | `cn` | Reference region. Selects domestic DNS and the `blockQuic` default in *21*. Routing rules stay empty until written. Not a hot override. |
 | `kernelProfile` | `standard\|compact\|matched` | `standard` | `standard` is the NixOS kernel. `compact` is one config for every board and drops sound, desktop and 3D GPUs, compute accelerators, cameras and TV, HDMI-CEC and infrared remotes, industrial I/O and Comedi, InfiniBand, and SAN. NIC drivers, Wi-Fi, USB, WWAN, Bluetooth, MMC, the NVMe host, AHCI, simpledrm, SoC scanout that does not depend on ALSA, f2fs, vfat, and virtio stay. Raspberry Pi HDMI depends on ALSA and is not in `compact`. The board consoles are serial (D-0051). `matched` includes that cut, then keeps a driver only when this board or a declared peripheral uses it (D-0052). An MMC host the initrd does not list stays built in. Huawei NCM (`12d1:1506`) keeps `huawei_cdc_ncm`. Sound stays off unless `janus.audio.enable` selects an embedded or USB device on `matched` (D-0061). `compact` still drops sound. Compute accelerators stay off (D-0057). |
 
@@ -514,3 +514,20 @@ export`. `janus-build fleet pull` writes leases into
 * `janus.soloist.enable` needs `janus.audio.enable`, a playback device, the API-key secret and its sops file, at least one zone other than `wan`, and a board architecture of `x86_64`, `aarch64`, or `armv7l`. A false setting skips these checks and does not install the secret. BlueZ starts from `janus.audio` bluetooth, without Soloist (D-0061).
 * `janus.edge.api.enable` defaults to false. True needs exactly one of `tokenSecret` and `tokenFile`, a non-empty zone list, and no `wan`. `janus.edge.speech.asr.enable` and `janus.edge.speech.tts.enable` fail while it is false. Recognition fails on the Zero 2 W, the Pi 2, the Pi 3, Le Potato, and the VisionFive 2. Synthesis fails on the Zero 2 W and the VisionFive 2. `tts.voice` is a locked Piper id. `asr.language` is unset or a language id of the locked `base` model (D-0062).
 * A Wi-Fi role outside the peripheral profile fails evaluation (D-0063). One peripheral is an access point or a station WAN. A `mode = "wifi"` WAN names a profile that lists `sta`, and each network has one WPA2 passphrase. `0bda:8176` is bound to `rtl8192cu` by USB ID. `rtl8xxxu` stays loaded.
+* `janus.debug` warns when a switch is on. A `kernelLogLevel` outside 0–7 fails the type. None of them fails evaluation for being on.
+
+## 13. `janus.debug`
+
+Bench switches. Each defaults to off. Turning one on is a rebuild.
+A production image leaves the set off. `janus.system.journal.persistent`
+stays under `janus.system` (ADR-0013, Q-0070). A capped journal on
+`/var` is for a router that has left the bench.
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `serialAutologin` | bool | `false` | Log in as root, with no password, on each serial device named by `console=` (`ttyS0`, `ttyS2`, `ttyAMA0`, `ttyAML0`, and the same families). A drop-in inserts `--autologin root` into that instance's NixOS getty line. The template is not replaced. `--keep-baud` stays where NixOS puts it. `tty0` and any other UART keep a login prompt. An image with no serial `console=` warns and does not log in. SSH stays key-only. Anyone who can open that UART gets a root shell. Evaluation warns (D-0067). |
+| `initrdShell` | bool | `false` | Root shell on the console when the state check fails. `janus-state-recover` and `janus-state-fsck-full` start `janus-debug-shell.service`, which runs `/bin/sh` only if `/run/janus/state-check-failed` exists. The scripts create that file before the mount probe and before `fsck.f2fs`, and remove it when the device is missing and after `resize.f2fs` returns, so a missing device does not open the shell. A failed resize does. `emergencyAccess` stays off. While this switch is on, a drop-in clears vendor `OnFailure=emergency.target` on `initrd.target` (T-0028). `fsck.f2fs` is on the shell's path. A failed `janus-grow-state` still continues into recover, because recover only wants grow (D-0049, D-0068). |
+| `kernelLogLevel` | null or int 0–7 | unset | Kernel console `loglevel`. Unset leaves 4. `7` prints debug. A level above 4 warns (D-0068). |
+| `tools` | bool | `false` | Install `tcpdump`, `ethtool`, `iw`, `conntrack`, and `strace`. The base image has none of them (D-0068). |
+| `engineLog` | bool | `false` | Write `logLevel` `debug` into the proxy model. sing-box renders `log.level`. xray renders `log.loglevel`. A runtime render reads the same field. Off leaves sing-box at `info` and xray at `warning` (D-0068). |
+| `closedFailLog` | bool | `false` | Log packets the closed-fail path drops, at most four lines a second, with the prefix `janus closed-fail `. sing-box keeps the blackhole default in table 2022 and logs `fib daddr . mark type blackhole`. xray logs mark `0x4a02` after the mangle hook, skipping port 53, only while the process is down. Installing the log deletes the table first. The route and the tproxy stay the drop (D-0069, Q-0071). |
