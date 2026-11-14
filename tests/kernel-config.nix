@@ -220,6 +220,10 @@ in
     exact aarch64 MMC_SDHCI_IPROC n "$matchedPi3"
     exact aarch64 BCMGENET m "$matchedPi4"
     exact aarch64 MMC_SDHCI_IPROC y "$matchedPi4"
+    # The default follows ARCH_BRCMSTB, which matched turns off. T-0043.
+    exact aarch64 PCIE_BRCMSTB m "$matchedPi4"
+    off aarch64 PCIE_BRCMSTB "$matchedZero"
+    off aarch64 PCIE_BRCMSTB "$matchedPi3"
     exact riscv64 MMC_DW_STARFIVE m "$matchedVf2"
     exact riscv64 BLK_DEV_NVME m "$matchedVf2"
     exact riscv64 MOTORCOMM_PHY m "$matchedVf2"
@@ -255,6 +259,31 @@ in
     exact x86_64 SND_USB_AUDIO m "$matchedX86Usb"
     exact x86_64 SND_HDA_INTEL n "$matchedX86Usb"
     exact x86_64 SND_VIRTIO n "$matchedX86Usb"
+    # One vendor platform per board. A kept vendor still builds its other SoCs.
+    each aarch64 "$matchedZero" on ARCH_BCM ARCH_BCM2835
+    each aarch64 "$matchedZero" off \
+      ARCH_ROCKCHIP ARCH_MESON ARCH_QCOM ARCH_APPLE ARCH_MXC ARCH_TEGRA \
+      ARCH_THUNDER ARCH_BCM_IPROC DRM SPMI IMX_SCMI_BBM_EXT DRM_IMX_DCSS \
+      SPMI_APPLE APPLE_AIC PCI_HOST_THUNDER_ECAM PCI_HOST_THUNDER_PEM \
+      PCI_TEGRA USB_XHCI_TEGRA CLK_RK3562 COMMON_CLK_QCOM
+    exact aarch64 RASPBERRYPI_FIRMWARE y "$matchedZero"
+    each aarch64 "$matchedR4s" on ARCH_ROCKCHIP
+    exact aarch64 CLK_RK3562 y "$matchedR4s"
+    each aarch64 "$matchedR4s" off \
+      ARCH_BCM ARCH_BCM2835 ARCH_MESON ARCH_QCOM ARCH_APPLE DRM \
+      RASPBERRYPI_FIRMWARE BCM2835_MBOX SERIAL_8250_BCM2835AUX \
+      PCI_TEGRA PCI_HOST_THUNDER_ECAM
+    each aarch64 "$matchedRock" on ARCH_ROCKCHIP
+    each aarch64 "$matchedRock" off ARCH_BCM2835 ARCH_MESON DRM
+    each aarch64 "$matchedPotato" on ARCH_MESON PINCTRL RESET_CONTROLLER SERIAL_MESON
+    each aarch64 "$matchedPotato" off ARCH_ROCKCHIP ARCH_BCM2835 DRM
+    each armv7 "$matchedPi2" on ARCH_BCM ARCH_BCM2835
+    each armv7 "$matchedPi2" off ARCH_ROCKCHIP ARCH_MESON ARCH_QCOM ARCH_MXC DRM
+    each riscv64 "$matchedVf2" on SOC_STARFIVE
+    each riscv64 "$matchedVf2" off ARCH_SIFIVE ARCH_THEAD ARCH_SUNXI ARCH_VIRT DRM
+    off x86_64 DRM "$matchedYanyu"
+    on x86_64 DRM "$matchedX86"
+    on x86_64 DRM_VIRTIO_GPU "$matchedX86"
     if [ "$fail" -ne 0 ]; then
       exit 1
     fi

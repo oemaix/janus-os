@@ -49,12 +49,15 @@ Read this file before answering a question about using Janus OS.
   overrides cover an existing subscription URL, a static lease on an
   existing LAN, and an existing Wi-Fi passphrase.
 - `janus.system.kernelProfile` is `standard` (default), `compact`, or
-  `matched` (D-0051, D-0052). `standard` is the NixOS kernel. `compact`
+  `matched` (D-0051, D-0052). How they are built is
+  `docs/23-kernel-profiles.md`. `standard` is the NixOS kernel. `compact`
   drops sound, desktop and 3D GPUs, cameras, industrial I/O, InfiniBand,
   and SAN, and keeps NIC drivers, Wi-Fi, USB, WWAN, MMC, NVMe, AHCI, the
   serial console, and virtio. Raspberry Pi HDMI depends on ALSA and is
   not in `compact`. `matched` includes that cut, then keeps a driver only
-  when this board or a declared peripheral uses it. An MMC host the initrd
+  when this board or a declared peripheral uses it. Foreign SoC
+  platforms are left out. One vendor stays, and that vendor's other
+  chips stay with it. `DRM` stays only on the test VM. An MMC host the initrd
   does not list stays built in. Huawei `12d1:1506` in `ncm` keeps
   `huawei_cdc_ncm`. Sound stays off unless `janus.audio.enable` selects
   an embedded or USB device on `matched` (D-0061). `compact` still drops

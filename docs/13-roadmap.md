@@ -98,7 +98,8 @@ tree does not mean that behavior exists. Stubs are not finished features.
 * `janus.system.kernelProfile` is `standard` (default, the NixOS kernel),
   `compact`, or `matched` (D-0051, D-0052). `compact` is one config for
   every board. `matched` includes that cut, then keeps a driver only
-  when this board or a declared peripheral uses it. An MMC host the
+  when this board or a declared peripheral uses it, and keeps one SoC
+  vendor for that board. An MMC host the
   initrd does not list stays built in, including the Pi 3 and Pi 3+
   SD card.
 * `janus.debug` defaults to off (D-0067, D-0068, D-0069): serial root
@@ -316,7 +317,7 @@ tree does not mean that behavior exists. Stubs are not finished features.
   and x86_64 keep the binary cache. `compact` drops a subsystem only
   when no household router board, current or later, has a use for it.
   The symbols are `modules/janus/system/kernel-profile.nix` and
-  `kernel-matched.nix`. Sound,
+  `kernel-matched.nix`. How that cut is applied is *23*. Sound,
   desktop and 3D GPUs, compute accelerators, cameras and TV, HDMI-CEC
   and infrared remotes, industrial I/O and Comedi, InfiniBand, and SAN
   go. NIC drivers stay, including ones no current board uses. Wi-Fi,
@@ -336,7 +337,9 @@ tree does not mean that behavior exists. Stubs are not finished features.
   `compact`. The compile-time cut matters while kernel patches still
   force a rebuild, and on riscv64 and armv7l, which have no cache.
   `matched` keeps a driver only when this board or a declared peripheral
-  uses it (D-0052). Spotify Soloist audio, the Ara240
+  uses it (D-0052). It also turns foreign SoC platforms off, one vendor
+  per board. A kept vendor still builds that vendor's other SoCs.
+  `DRM` stays only for the virtio display on `x86_64-test`. Spotify Soloist audio, the Ara240
   runtime, and the Hailo-10H need sound or a compute accelerator. `compact`
   drops both.
   Whether a later image that enables one of them must set `standard`, or

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# janus.system.kernelProfile. docs/08 §1, D-0051, D-0052.
+# janus.system.kernelProfile. docs/08 §1, docs/23, D-0051, D-0052.
 # standard is the NixOS kernel. compact is one config for every board.
 # matched is that cut, then one config for this board and its peripherals.
 {
@@ -246,7 +246,7 @@
     "MLX5_CORE_IPOIB"
   ];
 
-  matchedSymbols = import ./kernel-matched.nix {inherit lib;} {
+  matchedCut = import ./kernel-matched.nix {inherit lib;} {
     board = config.janus.hardware.board;
     peripherals = config.janus.hardware.peripherals;
     bluetoothPlayback = config.janus.audio.enable && config.janus.audio.playback.output == "bluetooth";
@@ -277,7 +277,9 @@ in {
       on ALSA, f2fs, vfat, and virtio stay. Raspberry Pi HDMI depends on
       ALSA and is not in compact. matched starts from that cut and then
       keeps a driver only when this board or a declared peripheral uses
-      it (D-0052). An MMC host the initrd does not list stays built in.
+      it (D-0052). Foreign SoC platforms are off. One vendor platform
+      stays, and that vendor's other SoCs stay with it. DRM stays only
+      on x86_64-test. An MMC host the initrd does not list stays built in.
       Sound stays off unless janus.audio.enable selects an embedded or USB
       device. compact still drops that sound. Compute accelerators stay
       off (D-0057, D-0061).
@@ -326,9 +328,13 @@ in {
           # gets only two passes, so the transport stayed y after the HBAs
           # were turned off. The seed must not select it.
           patch = ./kernel-compact-arm64-defconfig.patch;
+          # The platform extraConfig string is appended after this
+          # structured set. Symbols it restates are repeated in extraConfig,
+          # which is appended last. T-0041.
           structuredExtraConfig =
             compactSymbols
-            // lib.optionalAttrs (cfg.kernelProfile == "matched") matchedSymbols;
+            // lib.optionalAttrs (cfg.kernelProfile == "matched") matchedCut.symbols;
+          extraConfig = lib.optionalString (cfg.kernelProfile == "matched") matchedCut.extraConfig;
         }
       ];
     };

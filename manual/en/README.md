@@ -150,7 +150,10 @@ patch forces a rebuild. `matched` starts from that cut and then keeps
 a driver only for this board and the peripherals the configuration
 names. An undeclared network device, Wi-Fi radio, cellular modem, or
 Bluetooth dongle is left out, and so are NVMe and virtio on a board
-that does not use them. The test VM keeps virtio. `compact` leaves
+that does not use them. Other SoC vendors are left out. A Rockchip
+board still includes that vendor's other chips. Display drivers stay
+out except the test VM, which keeps the virtio display. A Waveshare
+or SSD1306 panel is SPI or I²C, not a DRM panel. The test VM keeps virtio. `compact` leaves
 sound out. `matched` includes a board or USB audio driver only when
 `janus.audio.enable` is true.
 

@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # Extra kernel symbols for janus.system.kernelProfile = "matched".
-# docs/08 §1, D-0052. The compact cut is applied by kernel-profile.nix.
+# docs/08 §1, docs/23, D-0052. The compact cut is applied by kernel-profile.nix.
 # A driver stays only when this board, or a peripheral declared on it, uses it.
+# One vendor platform stays. That vendor's other SoCs stay with it.
 {lib}: {
   board,
   peripherals,
@@ -165,6 +166,9 @@
     "MMC_MESON_GX"
     "MMC_BCM2835"
     "MMC_SDHCI_IPROC"
+    # Defaults to ARCH_BRCMSTB. matched turns that platform off. The Pi 4
+    # initrd lists pcie_brcmstb, so the host stays m. T-0043.
+    "PCIE_BRCMSTB"
     "MMC_DW_STARFIVE"
     "MMC_SDHCI_OF_ARASAN"
     "REALTEK_PHY"
@@ -207,6 +211,7 @@
     (lib.optional (board == "yanyu-stx-r19f") "E1000E")
     ++ (lib.optional (board == "nanopi-r4s") "R8169")
     ++ (lib.optional (board == "rpi4") "BCMGENET")
+    ++ (lib.optional (board == "rpi4") "PCIE_BRCMSTB")
     ++ (lib.optionals (lib.elem board ["nanopi-r4s" "rockpi-4c" "le-potato" "visionfive2"]) ["STMMAC_ETH"])
     ++ (lib.optionals (lib.elem board ["nanopi-r4s" "rockpi-4c"]) ["DWMAC_ROCKCHIP" "REALTEK_PHY"])
     ++ (lib.optionals (board == "le-potato") ["DWMAC_MESON" "MESON_GXL_PHY"])
@@ -502,13 +507,220 @@
   keepSoundYes = lib.optionals (wantEmbeddedAudio && board == "yanyu-stx-r19f") [
     "SND_HDA_HWDEP"
   ];
+  # One vendor platform per board. A kept platform still builds that
+  # vendor's other SoCs: CLK_RK3562 stays on an RK3399 board. Hidden
+  # symbols are not named. ARCH_STARFIVE follows SOC_STARFIVE.
+  # ARCH_MICROCHIP on arm64, and ARCH_BCM_IPROC and ARCH_BCM_MOBILE on
+  # armv7, have no prompt. D-0052, T-0041, T-0042.
+  aarch64 = lib.elem board ["rpi-zero-2w" "rpi3" "rpi4" "nanopi-r4s" "rockpi-4c" "le-potato"];
+  armv7 = board == "rpi2";
+  riscv = board == "visionfive2";
+  keepPlatform =
+    if pi
+    then ["ARCH_BCM" "ARCH_BCM2835"]
+    else if lib.elem board ["nanopi-r4s" "rockpi-4c"]
+    then ["ARCH_ROCKCHIP"]
+    else if board == "le-potato"
+    then ["ARCH_MESON"]
+    else if board == "visionfive2"
+    then ["SOC_STARFIVE"]
+    else [];
+  arm64Platforms = [
+    "ARCH_ACTIONS"
+    "ARCH_AIROHA"
+    "ARCH_SUNXI"
+    "ARCH_ALPINE"
+    "ARCH_APPLE"
+    "ARCH_ARTPEC"
+    "ARCH_AXIADO"
+    "ARCH_BCM"
+    "ARCH_BCM2835"
+    "ARCH_BCM_IPROC"
+    "ARCH_BCMBCA"
+    "ARCH_BRCMSTB"
+    "ARCH_BERLIN"
+    "ARCH_BITMAIN"
+    "ARCH_BLAIZE"
+    "ARCH_CIX"
+    "ARCH_EXYNOS"
+    "ARCH_K3"
+    "ARCH_LG1K"
+    "ARCH_HISI"
+    "ARCH_KEEMBAY"
+    "ARCH_MEDIATEK"
+    "ARCH_MESON"
+    "ARCH_LAN969X"
+    "ARCH_SPARX5"
+    "ARCH_MMP"
+    "ARCH_MVEBU"
+    "ARCH_NXP"
+    "ARCH_LAYERSCAPE"
+    "ARCH_MXC"
+    "ARCH_S32"
+    "ARCH_MA35"
+    "ARCH_NPCM"
+    "ARCH_PENSANDO"
+    "ARCH_QCOM"
+    "ARCH_REALTEK"
+    "ARCH_RENESAS"
+    "ARCH_ROCKCHIP"
+    "ARCH_SEATTLE"
+    "ARCH_INTEL_SOCFPGA"
+    "ARCH_SOPHGO"
+    "ARCH_STM32"
+    "ARCH_SYNQUACER"
+    "ARCH_TEGRA"
+    "ARCH_TESLA_FSD"
+    "ARCH_SPRD"
+    "ARCH_THUNDER"
+    "ARCH_THUNDER2"
+    "ARCH_UNIPHIER"
+    "ARCH_VEXPRESS"
+    "ARCH_VISCONTI"
+    "ARCH_XGENE"
+    "ARCH_ZYNQMP"
+  ];
+  armv7Platforms = [
+    "ARCH_VIRT"
+    "ARCH_AIROHA"
+    "ARCH_SUNPLUS"
+    "ARCH_UNIPHIER"
+    "ARCH_ACTIONS"
+    "ARCH_ALPINE"
+    "ARCH_ARTPEC"
+    "ARCH_ASPEED"
+    "ARCH_AT91"
+    "ARCH_BCM"
+    "ARCH_BCM_CYGNUS"
+    "ARCH_BCM_HR2"
+    "ARCH_BCM_NSP"
+    "ARCH_BCM_5301X"
+    "ARCH_BCM_281XX"
+    "ARCH_BCM_21664"
+    "ARCH_BCM_23550"
+    "ARCH_BCM2835"
+    "ARCH_BCM_53573"
+    "ARCH_BRCMSTB"
+    "ARCH_BCMBCA"
+    "ARCH_BCMBCA_CORTEXA7"
+    "ARCH_BCMBCA_CORTEXA9"
+    "ARCH_BCMBCA_BRAHMAB15"
+    "ARCH_BERLIN"
+    "ARCH_DIGICOLOR"
+    "ARCH_EXYNOS"
+    "ARCH_HIGHBANK"
+    "ARCH_HISI"
+    "ARCH_HIP01"
+    "ARCH_HIP04"
+    "ARCH_HIX5HD2"
+    "ARCH_HPE"
+    "ARCH_HPE_GXP"
+    "ARCH_MXC"
+    "ARCH_KEYSTONE"
+    "ARCH_MEDIATEK"
+    "ARCH_MESON"
+    "ARCH_MILBEAUT"
+    "ARCH_MILBEAUT_M10V"
+    "ARCH_MMP"
+    "ARCH_MVEBU"
+    "ARCH_OMAP3"
+    "ARCH_OMAP4"
+    "ARCH_QCOM"
+    "ARCH_ROCKCHIP"
+    "ARCH_RENESAS"
+    "ARCH_INTEL_SOCFPGA"
+    "ARCH_SPEAR13XX"
+    "ARCH_STI"
+    "ARCH_STM32"
+    "ARCH_SUNXI"
+    "ARCH_TEGRA"
+    "ARCH_TEGRA_114_SOC"
+    "ARCH_TEGRA_124_SOC"
+    "ARCH_U8500"
+    "ARCH_VEXPRESS"
+    "ARCH_VEXPRESS_TC2_PM"
+    "ARCH_WM8850"
+    "ARCH_ZYNQ"
+  ];
+  riscvPlatforms = [
+    "ARCH_ANDES"
+    "ARCH_ESWIN"
+    "ARCH_MICROCHIP"
+    "ARCH_RENESAS"
+    "ARCH_SIFIVE"
+    "ARCH_SOPHGO"
+    "ARCH_SPACEMIT"
+    "SOC_STARFIVE"
+    "ARCH_SUNXI"
+    "ARCH_THEAD"
+    "ARCH_VIRT"
+    "ARCH_CANAAN"
+  ];
+  platformCatalog =
+    if aarch64
+    then arm64Platforms
+    else if armv7
+    then armv7Platforms
+    else if riscv
+    then riscvPlatforms
+    else [];
+  # Asked after the SoC platform is n. autoModules would set a default-n
+  # tristate to m. DRM covers the panels and the i.MX DCSS display.
+  # SPMI covers the Apple, Qualcomm, MediaTek, and HiSilicon controllers.
+  # T-0042.
+  survivorOff =
+    lib.optionals (aarch64 || armv7 || riscv) [
+      "IMX_SCMI_BBM_EXT"
+      "IMX_SCMI_CPU_EXT"
+      "IMX_SCMI_LMM_EXT"
+      "IMX_SCMI_MISC_EXT"
+      "IMX_SCMI_CPU_DRV"
+      "IMX_SCMI_LMM_DRV"
+      "IMX_SCMI_MISC_DRV"
+      "SPMI"
+    ]
+    ++ lib.optionals aarch64 ["APPLE_AIC" "PCI_HOST_THUNDER_PEM" "FSL_MC_UAPI_SUPPORT"]
+    ++ lib.optionals (aarch64 || armv7) ["SUN8I_DE2_CCU"]
+    # common-config sets these required. DRM n hides the questions. T-0003.
+    ++ lib.optionals (board != "x86_64-test") [
+      "DRM_DISPLAY_DP_AUX_CHARDEV"
+      "DRM_FBDEV_EMULATION"
+      "DRM_LOAD_EDID_FIRMWARE"
+      "DRM_NOVA"
+      "DRM_PANIC"
+      "DRM_PANIC_SCREEN"
+      "DRM_PANIC_SCREEN_QR_CODE"
+      "AGP"
+      "VGA_SWITCHEROO"
+      "DRM_GMA500"
+      "DRM_I915_GVT"
+      "DRM_I915_GVT_KVMGT"
+    ];
+  # Nixpkgs aarch64 extraConfig is a string after structuredExtraConfig.
+  # The last line in the answer file wins, so these are repeated on the
+  # kernel patch. Optional, because the question disappears with the
+  # platform. The Pi console keeps the mini UART. T-0041.
+  stringOff =
+    lib.optionals aarch64 [
+      "PCI_HOST_THUNDER_ECAM"
+      "PCI_TEGRA"
+      "USB_XHCI_TEGRA"
+    ]
+    ++ lib.optionals (aarch64 && !pi) [
+      "ARCH_BCM2835"
+      "BCM2835_MBOX"
+      "BCM2835_WDT"
+      "RASPBERRYPI_FIRMWARE"
+      "RASPBERRYPI_POWER"
+      "SERIAL_8250_BCM2835AUX"
+    ];
   drop = names: keep: lib.filter (n: !lib.elem n keep) names;
   # optional n: a symbol this arch does not ask is ignored. mkForce still
   # replaces a defconfig y or m when the symbol is asked.
   off = names: lib.genAttrs names (_: lib.mkForce (lib.kernel.option lib.kernel.no));
   asMod = names: lib.genAttrs names (_: lib.mkForce lib.kernel.module);
   asYes = names: lib.genAttrs names (_: lib.mkForce lib.kernel.yes);
-in
+  symbols =
   off (drop modCatalog (keepMod ++ keepBuiltin))
   // off (drop yesCatalog keepYes)
   // off childOff
@@ -534,3 +746,19 @@ in
       SND_DYNAMIC_MINORS = lib.mkForce lib.kernel.yes;
     }
   )
+  // off (drop platformCatalog keepPlatform)
+  // asYes keepPlatform
+  // off survivorOff
+  // off stringOff
+  // lib.optionalAttrs (board != "x86_64-test") {
+    # Scanout and DRM panels. The HMI panels are SPI or I²C.
+    # x86_64-test keeps DRM for the virtio and bochs display.
+    DRM = lib.mkForce (lib.kernel.option lib.kernel.no);
+  }
+  # ARCH_MESON does not select these. The GXL pinctrl and reset
+  # drivers are inside the menus. T-0041.
+  // lib.optionalAttrs (board == "le-potato") (asYes ["PINCTRL" "RESET_CONTROLLER"]);
+in {
+  inherit symbols;
+  extraConfig = lib.concatMapStrings (name: "${name}? n\n") stringOff;
+}

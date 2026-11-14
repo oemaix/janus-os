@@ -7225,6 +7225,7 @@ in {
       ${eq yanyu "SATA_AHCI" "m"}
       ${eq yanyu "USB_STORAGE" "m"}
       ${eq yanyu "BLK_DEV_NVME" "n"}
+      ${eq yanyu "DRM" "n"}
       ${eq r4s "R8169" "m"}
       ${eq r4s "DWMAC_ROCKCHIP" "m"}
       ${eq r4s "REALTEK_PHY" "m"}
@@ -7235,6 +7236,10 @@ in {
       ${eq r4s "BLK_DEV_NVME" "n"}
       ${eq r4s "SATA_AHCI" "n"}
       ${eq r4s "DRM_ROCKCHIP" "n"}
+      ${eq r4s "ARCH_ROCKCHIP" "y"}
+      ${eq r4s "ARCH_BCM2835" "n"}
+      ${eq r4s "DRM" "n"}
+      ${eq r4s "PCI_TEGRA" "n"}
       ${eq r4s "VIRTIO_NET" "n"}
       ${eq r4s "WLAN" "n"}
       ${eq r4sPlus "USB_RTL8152" "m"}
@@ -7254,6 +7259,11 @@ in {
       ${eq zero "BRCMFMAC" "n"}
       ${eq zero "MMC_SDHCI_IPROC" "n"}
       ${eq zero "MMC_BCM2835" "y"}
+      ${eq zero "ARCH_ROCKCHIP" "n"}
+      ${eq zero "ARCH_QCOM" "n"}
+      ${eq zero "ARCH_APPLE" "n"}
+      ${eq zero "DRM" "n"}
+      ${eq zero "SPMI" "n"}
       ${eq zero "USB_RTL8152" "n"}
       ${eq zeroFull "BRCMFMAC" "m"}
       ${eq zeroFull "MMC_SDHCI_IPROC" "m"}
@@ -7266,6 +7276,10 @@ in {
       ${eq potato "DWMAC_MESON" "m"}
       ${eq potato "MESON_GXL_PHY" "m"}
       ${eq potato "MMC_MESON_GX" "y"}
+      ${eq potato "ARCH_MESON" "y"}
+      ${eq potato "PINCTRL" "y"}
+      ${eq potato "RESET_CONTROLLER" "y"}
+      ${eq potato "DRM" "n"}
       ${eq potato "USB_NET_HUAWEI_CDC_NCM" "n"}
       ${eq potato "R8169" "n"}
       ${eq potato "RTL8192CU" "n"}
@@ -7296,12 +7310,18 @@ in {
       ${eq pi3 "USB_NET_CDC_NCM" "n"}
       ${eq pi3 "BCMGENET" "n"}
       ${eq pi4 "BCMGENET" "m"}
+      ${eq pi4 "PCIE_BRCMSTB" "m"}
+      ${eq pi3 "PCIE_BRCMSTB" "n"}
+      ${eq zero "PCIE_BRCMSTB" "n"}
       ${eq pi4 "USB_LAN78XX" "n"}
       ${eq pi4 "R8169" "n"}
       ${eq pi4 "MT7921U" "n"}
       ${eq pi4Wifi "MT7921U" "m"}
       ${eq pi4Wifi "WLAN_VENDOR_MEDIATEK" "y"}
       ${eq pi4Wifi "BCMGENET" "m"}
+      ${eq vf2 "SOC_STARFIVE" "y"}
+      ${eq vf2 "ARCH_SIFIVE" "n"}
+      ${eq vf2 "DRM" "n"}
       ${eq vf2 "DWMAC_STARFIVE" "m"}
       ${eq vf2 "MOTORCOMM_PHY" "m"}
       ${eq vf2 "E1000E" "n"}
@@ -7313,6 +7333,16 @@ in {
       ${eq potatoHuawei "USB_NET_CDCETHER" "m"}
       ${eq potatoHuawei "USB_WDM" "m"}
       ${eq potatoHuawei "MMC_MESON_GX" "y"}
+      # The platform string is after structuredExtraConfig. The patch
+      # repeats the override. A Pi keeps the firmware answers. T-0041.
+      printf '%s\n' ${lib.escapeShellArg (patchOf r4s).extraConfig} | grep -qx 'PCI_TEGRA? n'
+      printf '%s\n' ${lib.escapeShellArg (patchOf r4s).extraConfig} | grep -qx 'RASPBERRYPI_FIRMWARE? n'
+      printf '%s\n' ${lib.escapeShellArg (patchOf zero).extraConfig} | grep -qx 'PCI_TEGRA? n'
+      if printf '%s\n' ${lib.escapeShellArg (patchOf zero).extraConfig} | grep -qx 'RASPBERRYPI_FIRMWARE? n'; then
+        echo "zero overrides the Pi firmware" >&2
+        exit 1
+      fi
+      test -z ${lib.escapeShellArg (patchOf vm).extraConfig}
       if printf '%s\n' ${lib.escapeShellArg (listed potato)} | grep -qw meson-gx-mmc; then
         echo "le potato initrd lists meson-gx-mmc" >&2
         exit 1
