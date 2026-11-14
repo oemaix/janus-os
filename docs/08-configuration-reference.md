@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-11-14 |
+| Last updated | 2026-11-15 |
 
 This document defines the **shape and semantics** of the `janus.*` option
 tree. The final, exhaustive reference (every option with type, default,
@@ -204,6 +204,26 @@ on `janus.edge.api`. Ara240 and Hailo-10H are two runtimes for that
 role (FR-SVC-002, FR-SVC-003, D-0060). The vendor choice stays under
 `llm`. Vision models stay out. CPU speech stays `janus.edge.speech`.
 
+## 1f. `janus.build`
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `strategy` | `native\|emulated\|cross` | `emulated` on aarch64 and x86_64; `cross` on armv7l and riscv64 | How `mkRouter` builds a board. `emulated` keeps the target's own packages, so an x86_64 host runs them through binfmt and the aarch64 binary cache still applies. `cross` sets `nixpkgs.buildPlatform` to the build machine and `nixpkgs.hostPlatform` to the board. `native` is a build host of the same architecture as the board. *09* §4. |
+
+## 1g. `janus.security`
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `allowInlineSecrets` | bool | `false` | Allow secret strings in the Nix store. Prefer sops files under `secrets/` (§11). |
+
+## 1h. `janus.firmware`
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `extraUnfree` | list of str | `[]` | Package names allowed besides redistributable closed firmware. A name here is not itself a redistributable blob. Soloist adds `soloist` only while `janus.soloist.enable` is true. |
+
+`janus.board.configTxt` and `janus.board.bootScript` are internal. Board profiles write them. `janus.network.internal.multipleDefaults`, `janus.network.lans.<name>.internal.intercept`, and `janus.dns.domestic.probe` are internal too. `domestic.probe` follows `janus.system.region`. An operator configuration does not set these.
+
 ## 2. `janus.hardware`
 
 | Option | Type | Default | Description |
@@ -226,11 +246,12 @@ role (FR-SVC-002, FR-SVC-003, D-0060). The vendor choice stays under
 ## 3. `janus.storage`
 
 See *05 — Storage* §8. Key options: `layout.partitions.<label>.{size,
-fsType, mountPoint, readOnly, options}`, `readOnlyFs`, `nix.minimumSize`, `state.minimumSize`,
+fsType, mountPoint, readOnly, options, slack}`, `readOnlyFs`, `nix.minimumSize`, `state.minimumSize`,
 `state.maximumSize` (default `4G`; growth stops there or at the end of the
 media, and a smaller cap does not shrink), `state.onCorruption`,
 `firmwareOffsetMiB` (board default),
 `slots.enable` (default false; duplicate `ROOT` and `NIX`, *09* §8.4).
+`slack` defaults to `0%`. The Nix partition uses `15%`, and the builder also reserves one 4 KiB node block per file plus 128 MiB.
 A normal boot runs `fsck.f2fs -a --no-kernel-check` and does not scan the
 volume. A missing block device is not corruption. Status 4 or 255 is
 checked again before reformat (D-0049).
