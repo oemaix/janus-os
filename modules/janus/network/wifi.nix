@@ -10,6 +10,7 @@
   cfg = config.janus.network;
   hw = config.janus.hardware.peripherals;
   allow = import ../hardware/allowlist.nix;
+  match = import ./wifi-match.nix {inherit lib;};
   apNames = lib.attrNames cfg.wifi;
   secretNames = lib.filter (name: cfg.wifi.${name}.passphraseSecret != null) apNames;
 
@@ -17,6 +18,20 @@
     periph = hw.${ap.peripheral} or null;
   in
     periph != null && periph.match.onboard;
+
+  usbRow = ap: let
+    periph = hw.${ap.peripheral} or null;
+    id = if periph == null then null else periph.match.usbVendorProduct or null;
+  in
+    if id == null
+    then null
+    else allow.usb.${id} or null;
+
+  # A USB row that lists bands is a fixed radio, same checks as onboard.
+  limitedUsb = ap: let
+    row = usbRow ap;
+  in
+    row != null && (row.bands or []) != [];
 
   onboardNames = lib.filter (name: onboardAp cfg.wifi.${name}) apNames;
 
@@ -58,6 +73,8 @@
       then ap.passphraseFile
       else "/var/lib/janus/wifi/${name}.passphrase";
     onboard = onboardAp ap;
+    # rtl8xxxu has no 40 MHz channels. Pin HT20 the way the onboard radios do.
+    ht20 = onboard || limitedUsb ap;
     isolate = onboard && builtins.hasAttr ap.lan cfg.lans && cfg.lans.${ap.lan}.isolation;
     launch =
       if isolate
@@ -120,7 +137,7 @@
         printf 'ssid=%s\n' "$ssid"
         printf '%s\n' "wpa=2" "wpa_key_mgmt=${keyMgmt ap}" "rsn_pairwise=CCMP" "hw_mode=${bandMode ap}" "channel=${channel ap}" "ieee80211n=1" "country_code=${cfg.wifiCountry}" "ieee80211d=1"
         printf 'wpa_passphrase=%s\n' "$pass"
-        ${lib.optionalString onboard ''printf '%s\n' "wmm_enabled=1" "ht_capab=[HT20][SHORT-GI-20]"''}
+        ${lib.optionalString ht20 ''printf '%s\n' "wmm_enabled=1" "ht_capab=[HT20][SHORT-GI-20]"''}
         ${lib.optionalString (ap.security != "wpa2") ''printf '%s\n' "ieee80211w=1"''}
         ${lib.optionalString ap.hidden ''printf '%s\n' "ignore_broadcast_ssid=1"''}
       } > /run/janus/wifi/${name}.conf
@@ -131,8 +148,6 @@
       ''}
       ${launch}
     '';
-
-  usbId = name: hw.${cfg.wifi.${name}.peripheral}.match.usbVendorProduct or null;
 
   # USB ids of declared peripherals. The board is not part of the match.
   declaredUsbIds = lib.mapAttrsToList (_: p: p.match.usbVendorProduct or null) hw;
@@ -156,71 +171,31 @@
       "mediatek/WIFI_MT7961_patch_mcu_1_2_hdr.bin"
     ];
   };
-  # rtl8192cu picks one of these names from the chip revision.
+  # rtl8xxxu picks one of these three from the chip revision. docs/10 §4.4.
   rtl8188cusFirmware = firmwareSlice {
     pname = "rtl8192cu-firmware";
     description = "Firmware for RTL8188CUS";
     paths = [
-      "rtlwifi/rtl8192cufw.bin"
       "rtlwifi/rtl8192cufw_A.bin"
       "rtlwifi/rtl8192cufw_B.bin"
       "rtlwifi/rtl8192cufw_TMSC.bin"
     ];
   };
-  # rtl8xxxu requests this name for 0bda:8179. docs/10 §4.11.
-  rtl8188euFirmware = firmwareSlice {
+  rtl8188eusFirmware = firmwareSlice {
     pname = "rtl8188eu-firmware";
     description = "Firmware for RTL8188EUS";
     paths = ["rtlwifi/rtl8188eufw.bin"];
   };
-  # 0bda:8176 is also in the rtl8xxxu table. Bind that ID to rtl8192cu
-  # and leave rtl8xxxu loaded for 0bda:8179. Module list order is not
-  # load order (T-0006). docs/10 §4.4, D-0063.
-  rtl8192cuBind = pkgs.writeShellScript "janus-rtl8192cu-bind" ''
-    set -eu
-    bind_one() {
-      devpath=$1
-      kernel=$2
-      case "$devpath" in
-        /sys/*) sys=$devpath ;;
-        *) sys="/sys$devpath" ;;
-      esac
-      [ -e "$sys" ] || return 0
-      drv=""
-      if [ -L "$sys/driver" ]; then
-        drv=$(basename "$(readlink "$sys/driver")")
-      fi
-      if [ "$drv" = rtl8192cu ]; then
-        return 0
-      fi
-      if [ "$drv" = rtl8xxxu ]; then
-        printf '%s\n' "$kernel" > /sys/bus/usb/drivers/rtl8xxxu/unbind
-      fi
-      if [ -e /sys/bus/usb/drivers/rtl8xxxu/remove_id ]; then
-        printf '%s\n' "0bda 8176" > /sys/bus/usb/drivers/rtl8xxxu/remove_id || true
-      fi
-      if [ -e /sys/bus/usb/drivers/rtl8192cu/bind ]; then
-        printf '%s\n' "$kernel" > /sys/bus/usb/drivers/rtl8192cu/bind || true
-      fi
-    }
-    if [ "$#" -eq 2 ]; then
-      bind_one "$1" "$2"
-      exit 0
-    fi
-    if [ -e /sys/bus/usb/drivers/rtl8xxxu/remove_id ]; then
-      printf '%s\n' "0bda 8176" > /sys/bus/usb/drivers/rtl8xxxu/remove_id || true
-    fi
-    for sys in /sys/bus/usb/devices/*:*; do
-      [ -d "$sys" ] || continue
-      parent=$(dirname "$sys")
-      vendor=$(cat "$parent/idVendor" 2>/dev/null || true)
-      product=$(cat "$parent/idProduct" 2>/dev/null || true)
-      if [ "$vendor" = 0bda ] && [ "$product" = 8176 ]; then
-        bind_one "$sys" "$(basename "$sys")"
-      fi
-    done
-  '';
-
+  rtl8192euFirmware = firmwareSlice {
+    pname = "rtl8192eu-firmware";
+    description = "Firmware for RTL8192EU";
+    paths = ["rtlwifi/rtl8192eu_nic.bin"];
+  };
+  rtl8188fuFirmware = firmwareSlice {
+    pname = "rtl8188fu-firmware";
+    description = "Firmware for RTL8188FU";
+    paths = ["rtlwifi/rtl8188fufw.bin"];
+  };
   # The 43436s chip asks for its own CLM name. The Raspberry Pi package
   # ships that blob only as brcmfmac43436-sdio.clm_blob. docs/10 §4.7.
   zero2wClm = janusBuildPkgs.runCommand "brcmfmac43436s-clm" {
@@ -237,13 +212,53 @@
     cp -L "$src" "$out/lib/firmware/brcm/brcmfmac43436s-sdio.raspberrypi,model-zero-2-w.clm_blob"
   '';
 
+  hasUsb = id: lib.elem id declaredUsbIds;
+  # 8176, 8179, 818b, and f179. docs/10 §4.4.
+  realtekUsb = lib.any hasUsb ["0bda:8176" "0bda:8179" "0bda:818b" "0bda:f179"];
   piBoards = ["rpi-zero-2w" "rpi3" "rpi4"];
   piRadio = lib.elem config.janus.hardware.board piBoards;
   # Pi 4 enables this host for the SD card in the board profile. docs/10 §4.12.
   piSdioAp = lib.elem config.janus.hardware.board ["rpi-zero-2w" "rpi3"];
 
-  vendor = id: builtins.substring 0 4 id;
-  product = id: builtins.substring 5 4 id;
+  staUplinks = map (n: cfg.wans.${n}.uplink) (
+    lib.filter (n: cfg.wans.${n}.mode == "wifi") (lib.attrNames cfg.wans)
+  );
+  wanOf = periph:
+    lib.findFirst (n: cfg.wans.${n}.mode == "wifi" && cfg.wans.${n}.uplink == periph) null (
+      lib.attrNames cfg.wans
+    );
+  # One radio used as the access point and the station. docs/06 §11, D-0066.
+  concurrent = lib.filter (p: lib.elem p (map (n: cfg.wifi.${n}.peripheral) apNames)) staUplinks;
+  apNameOf = periph: lib.findFirst (n: cfg.wifi.${n}.peripheral == periph) null apNames;
+
+  rename = name: periph: let
+    p = hw.${periph} or null;
+    id = if p == null then null else p.match.usbVendorProduct or null;
+  in
+    if id == null
+    then ""
+    else
+      match.renameRule {
+        inherit id;
+        inherit name;
+        usbPath = p.match.usbPath or null;
+        mac = p.match.mac or null;
+      };
+
+  vif = periph: let
+    apName = apNameOf periph;
+    wan = wanOf periph;
+    apDev = iface apName;
+    staDev = "wifi-${periph}";
+  in
+    pkgs.writeShellScript "wifi-vif-${periph}" ''
+      set -eu
+      if [ -e /sys/class/net/${staDev} ]; then
+        exit 0
+      fi
+      phy=$(basename "$(readlink -f /sys/class/net/${apDev}/phy80211)")
+      exec ${pkgs.iw}/bin/iw phy "$phy" interface add ${staDev} type managed
+    '';
 in {
   config = lib.mkMerge [
     {
@@ -270,29 +285,15 @@ in {
       hardware.firmware = lib.mkMerge [
         (lib.mkIf (lib.elem "0e8d:7612" declaredUsbIds) [mt7612uFirmware])
         (lib.mkIf (lib.elem "0e8d:7961" declaredUsbIds) [mt7921auFirmware])
-        (lib.mkIf (lib.elem "0bda:8176" declaredUsbIds) [rtl8188cusFirmware])
-        (lib.mkIf (lib.elem "0bda:8179" declaredUsbIds) [rtl8188euFirmware])
+        (lib.mkIf (hasUsb "0bda:8176") [rtl8188cusFirmware])
+        (lib.mkIf (hasUsb "0bda:8179") [rtl8188eusFirmware])
+        (lib.mkIf (hasUsb "0bda:818b") [rtl8192euFirmware])
+        (lib.mkIf (hasUsb "0bda:f179") [rtl8188fuFirmware])
       ];
-      # Declaring the stick loads its driver. An access point is not required.
-      boot.kernelModules = lib.mkMerge [
-        (lib.mkIf (lib.elem "0bda:8176" declaredUsbIds) ["rtl8192cu"])
-        (lib.mkIf (lib.elem "0bda:8179" declaredUsbIds) ["rtl8xxxu"])
-      ];
-      services.udev.extraRules = lib.mkIf (lib.elem "0bda:8176" declaredUsbIds) ''
-        ACTION=="add", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_interface", ATTRS{idVendor}=="0bda", ATTRS{idProduct}=="8176", RUN+="${rtl8192cuBind} %p %k"
-      '';
-      systemd.services = lib.mkIf (lib.elem "0bda:8176" declaredUsbIds) {
-        janus-rtl8192cu-bind = {
-          description = "Bind 0bda:8176 to rtl8192cu";
-          wantedBy = ["multi-user.target"];
-          after = ["systemd-modules-load.service" "systemd-udev-settle.service"];
-          serviceConfig = {
-            Type = "oneshot";
-            RemainAfterExit = true;
-            ExecStart = rtl8192cuBind;
-          };
-        };
-      };
+      # One driver. rtl8192cu still lists 0bda:8176, so that id keeps it
+      # from autoloading. Do not blacklist rtl8xxxu. Do not rebind (T-0040).
+      boot.kernelModules = lib.mkIf realtekUsb ["rtl8xxxu"];
+      boot.blacklistedKernelModules = lib.mkIf (hasUsb "0bda:8176") ["rtl8192cu"];
     }
     (lib.mkIf (apNames != []) {
       boot.kernelModules = lib.mkMerge [
@@ -360,6 +361,28 @@ in {
             }
           ])
         apNames
+        ++ lib.concatMap (name: let
+          ap = cfg.wifi.${name};
+          row = usbRow ap;
+        in
+          lib.optionals (limitedUsb ap) [
+            {
+              assertion = lib.elem ap.band (row.bands or []);
+              message = "janus.network.wifi.${name}.band = ${ap.band} is not a band of this USB radio. docs/10 §4.4.";
+            }
+            {
+              assertion = lib.elem ap.security (row.security or []);
+              message = "janus.network.wifi.${name}.security = ${ap.security} is not supported on this USB radio. docs/10 §4.4.";
+            }
+            {
+              assertion =
+                ap.channel
+                == "auto"
+                || (lib.isInt ap.channel && lib.elem ap.channel (row.channels or []));
+              message = "janus.network.wifi.${name}.channel is not a channel of this USB radio. docs/10 §4.4.";
+            }
+          ])
+        apNames
         ++ [
           {
             assertion = lib.length onboardNames <= 1;
@@ -367,13 +390,7 @@ in {
           }
         ];
 
-      services.udev.extraRules = lib.concatMapStrings (name: let
-        id = usbId name;
-      in
-        lib.optionalString (id != null) ''
-          SUBSYSTEM=="net", ACTION=="add", ATTRS{idVendor}=="${vendor id}", ATTRS{idProduct}=="${product id}", NAME="${iface name}"
-        '')
-      apNames;
+      services.udev.extraRules = lib.concatMapStrings (name: rename (iface name) cfg.wifi.${name}.peripheral) apNames;
 
       systemd.services =
         lib.listToAttrs (map (name: {
@@ -387,8 +404,11 @@ in {
               # joins the bridge if hostapd runs too early. docs/10 §4.7.
               after =
                 ["systemd-networkd.service" (deviceUnit name) (bridgeUnit cfg.wifi.${name}.lan)]
-                ++ lib.optional (cfg.wifi.${name}.passphraseSecret != null) "janus-wifi-secret-${name}.service";
-              wants = [(bridgeUnit cfg.wifi.${name}.lan)];
+                ++ lib.optional (cfg.wifi.${name}.passphraseSecret != null) "janus-wifi-secret-${name}.service"
+                ++ lib.optional (lib.elem cfg.wifi.${name}.peripheral concurrent) "janus-wifi-vif-${cfg.wifi.${name}.peripheral}.service";
+              wants =
+                [(bridgeUnit cfg.wifi.${name}.lan)]
+                ++ lib.optional (lib.elem cfg.wifi.${name}.peripheral concurrent) "janus-wifi-vif-${cfg.wifi.${name}.peripheral}.service";
               requires = lib.optional (cfg.wifi.${name}.passphraseSecret != null) "janus-wifi-secret-${name}.service";
               bindsTo = [(deviceUnit name)];
               serviceConfig = {
@@ -400,6 +420,23 @@ in {
             };
           })
           apNames)
+        // lib.listToAttrs (map (periph: let
+          apName = apNameOf periph;
+          wan = wanOf periph;
+        in {
+          name = "janus-wifi-vif-${periph}";
+          value = {
+            description = "Second Wi-Fi interface on ${periph}";
+            after = [(deviceUnit apName)];
+            before = ["janus-hostapd-${apName}.service" "janus-wpa-${wan}.service"];
+            serviceConfig = {
+              Type = "oneshot";
+              RemainAfterExit = true;
+              ExecStart = vif periph;
+            };
+          };
+        })
+        concurrent)
         // lib.listToAttrs (map (name: {
             name = "janus-wifi-secret-${name}";
             value = {

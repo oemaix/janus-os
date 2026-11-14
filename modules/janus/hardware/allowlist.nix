@@ -10,24 +10,40 @@
     "0b95:1790" = {class = "nic";};
     "0e8d:7612" = {
       class = "wifi";
-      capabilities = ["ap" "sta"];
+      capabilities = ["ap" "sta" "concurrent"];
     };
     "0e8d:7961" = {
       class = "wifi";
-      capabilities = ["ap" "sta"];
+      capabilities = ["ap" "sta" "concurrent"];
     };
     "0bda:8812" = {
       class = "wifi";
       unsupported = true;
     };
+    # One driver, rtl8xxxu. docs/10 §4.4, D-0063, D-0070.
+    # 8176 and 8179 are stations. 818b and f179 are either role.
     "0bda:8176" = {
       class = "wifi";
-      capabilities = ["ap" "sta"];
+      capabilities = ["sta"];
     };
-    # RTL8188EUS. Station only. docs/10 §4.11, D-0063.
     "0bda:8179" = {
       class = "wifi";
       capabilities = ["sta"];
+    };
+    # 2.4 GHz WPA2 HT20. channel auto is 6. docs/10 §4.4.
+    "0bda:818b" = {
+      class = "wifi";
+      capabilities = ["ap" "sta"];
+      bands = ["2g"];
+      security = ["wpa2"];
+      channels = [1 2 3 4 5 6 7 8 9 10 11 12 13];
+    };
+    "0bda:f179" = {
+      class = "wifi";
+      capabilities = ["ap" "sta"];
+      bands = ["2g"];
+      security = ["wpa2"];
+      channels = [1 2 3 4 5 6 7 8 9 10 11 12 13];
     };
     "05c6:90b6" = {
       class = "wwan";

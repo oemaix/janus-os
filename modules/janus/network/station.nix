@@ -9,7 +9,9 @@
 }: let
   cfg = config.janus.network;
   hw = config.janus.hardware.peripherals;
+  match = import ./wifi-match.nix {inherit lib;};
   staNames = lib.filter (n: cfg.wans.${n}.mode == "wifi") (lib.attrNames cfg.wans);
+  apPeriphs = map (n: cfg.wifi.${n}.peripheral) (lib.attrNames cfg.wifi);
 
   iface = wan: "wifi-${cfg.wans.${wan}.uplink}";
 
@@ -37,8 +39,6 @@
     else "/var/lib/janus/wifi/sta-${wan}-${toString net.i}.passphrase";
 
   usbId = wan: hw.${cfg.wans.${wan}.uplink}.match.usbVendorProduct or null;
-  vendor = id: builtins.substring 0 4 id;
-  product = id: builtins.substring 5 4 id;
 
   start = wan:
     pkgs.writeShellScript "wpa-${wan}" ''
@@ -71,12 +71,22 @@
     '';
 in {
   config = lib.mkIf (staNames != []) {
+    # A concurrent radio's second interface is created by name. The access
+    # point's udev rule names the driver's own netdev. docs/06 §11, D-0066.
     services.udev.extraRules = lib.concatMapStrings (wan: let
       id = usbId wan;
+      periph = cfg.wans.${wan}.uplink;
+      p = hw.${periph} or null;
     in
-      lib.optionalString (id != null) ''
-        SUBSYSTEM=="net", ACTION=="add", ATTRS{idVendor}=="${vendor id}", ATTRS{idProduct}=="${product id}", NAME="${iface wan}"
-      '')
+      if id == null || lib.elem periph apPeriphs || p == null
+      then ""
+      else
+        match.renameRule {
+          inherit id;
+          name = iface wan;
+          usbPath = p.match.usbPath or null;
+          mac = p.match.mac or null;
+        })
     staNames;
 
     systemd.services =
@@ -88,8 +98,11 @@ in {
             after =
               ["systemd-networkd.service" (deviceUnit wan)]
               ++ lib.optional (hasSecret wan) "sops-install-secrets.service"
-              ++ lib.optional (hasInline wan) "janus-wifi-sta-passphrases.service";
-            wants = lib.optional (hasSecret wan) "sops-install-secrets.service";
+              ++ lib.optional (hasInline wan) "janus-wifi-sta-passphrases.service"
+              ++ lib.optional (lib.elem cfg.wans.${wan}.uplink apPeriphs) "janus-wifi-vif-${cfg.wans.${wan}.uplink}.service";
+            wants =
+              lib.optional (hasSecret wan) "sops-install-secrets.service"
+              ++ lib.optional (lib.elem cfg.wans.${wan}.uplink apPeriphs) "janus-wifi-vif-${cfg.wans.${wan}.uplink}.service";
             bindsTo = [(deviceUnit wan)];
             serviceConfig = {
               Type = "simple";

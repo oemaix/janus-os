@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-11-13 |
+| Last updated | 2026-11-14 |
 
 This document defines the **shape and semantics** of the `janus.*` option
 tree. The final, exhaustive reference (every option with type, default,
@@ -210,14 +210,14 @@ role (FR-SVC-002, FR-SVC-003, D-0060). The vendor choice stays under
 |--------|------|---------|-------------|
 | `board` | enum | — (required) | `rpi-zero-2w` `rpi2` `rpi3` `rpi4` `nanopi-r4s` `rockpi-4c` `le-potato` `visionfive2` `yanyu-stx-r19f` `x86_64-test` |
 | `peripherals.<name>.class` | enum | — | `wifi` `nic` `wwan` `bluetooth` `hmi` `power`. A `bluetooth` row selects the dongle driver. BlueZ starts when `janus.audio.playback.output` or `janus.audio.recording.input` is `bluetooth` (D-0061). `recording.input = bluetooth` still fails while HFP and HSP stay off. An Ara240 or Hailo-10H class is later work (*13*, D-0056) and is not an option in this tree. |
-| `peripherals.<name>.match` | attrs | — | `usbVendorProduct = "0bda:8153"`, or `usbPath`, `pciSlot`, `mac`. `onboard = true` is the radio soldered to the board (*10* §4.7, §4.10, §4.12). |
+| `peripherals.<name>.match` | attrs | — | `usbVendorProduct = "0bda:8153"`, `usbPath` (kernel USB port, such as `1-1.2`), `mac`, or `pciSlot`. Two Wi-Fi sticks of one USB id need a distinct `usbPath` or a distinct `mac` (*10* §4.4, D-0071). `onboard = true` is the radio soldered to the board (*10* §4.7, §4.10, §4.12). |
 | `peripherals.<name>.wwan.mode` | enum | `auto` | `auto` uses the mode the allowlist records for that USB ID (*10* §4.2). Explicit values: `ecm` `ncm` `rndis` `qmi` `mbim`. |
 | `peripherals.<name>.wwan.modeSwitch` | attrs | `{}` | usb_modeswitch parameters. Empty does not run usb_modeswitch. |
 | `peripherals.<name>.wwan.atPort` | str/null | auto | Serial device for AT commands (status only) |
 | `peripherals.<name>.hmi.profile` | enum | — | `waveshare-1.3-oled-hat` sets the SH1106 panel, SPI pins, and the key map in *10* §4.6. Behaviour is *15*. |
 | `peripherals.<name>.hmi.driver` | enum | from profile | `sh1106` `ssd1306` `st7789` `waveshare-epd-2in13` |
 | `peripherals.<name>.hmi.keys.<name>` | enum | profile default | Replace one key's action: `refresh`, `reboot-hold`, `factory-reset`, `unbound`. The joystick stays navigation. |
-| `peripherals.<name>.wifi.capabilities` | list | from db | `ap` `sta`. Empty uses the allowlist. A capability outside that list fails evaluation. An access point on a station-only ID fails evaluation (D-0063). |
+| `peripherals.<name>.wifi.capabilities` | list | from db | `ap` `sta` `concurrent`. Empty uses the allowlist. A capability outside that list fails evaluation. `concurrent` is an access point and a station on one radio (D-0063, D-0066). |
 | `peripherals.<name>.power.shutdown.enable` | bool | `true` if the profile knows the discharge sign | Early cutoff while the cell is discharging (*10* §4.5). |
 | `peripherals.<name>.power.shutdown.warnVolts` | float | `3.60` | Must be ≥ the shutdown voltage. |
 | `peripherals.<name>.power.shutdown.volts` | float | `3.50` | Sustained 60 s. MUST NOT be set below 3.50. |
@@ -513,7 +513,7 @@ export`. `janus-build fleet pull` writes leases into
 * `janus.audio.enable` defaults to false. Playback and recording are read only then. `embedded` and `usb` need a non-blank node and `kernelProfile` `standard` or `matched`. `compact` rejects them. `recording.input = bluetooth` fails while HFP and HSP stay off. `matched` includes the selected embedded or USB driver only when `enable` is true.
 * `janus.soloist.enable` needs `janus.audio.enable`, a playback device, the API-key secret and its sops file, at least one zone other than `wan`, and a board architecture of `x86_64`, `aarch64`, or `armv7l`. A false setting skips these checks and does not install the secret. BlueZ starts from `janus.audio` bluetooth, without Soloist (D-0061).
 * `janus.edge.api.enable` defaults to false. True needs exactly one of `tokenSecret` and `tokenFile`, a non-empty zone list, and no `wan`. `janus.edge.speech.asr.enable` and `janus.edge.speech.tts.enable` fail while it is false. Recognition fails on the Zero 2 W, the Pi 2, the Pi 3, Le Potato, and the VisionFive 2. Synthesis fails on the Zero 2 W and the VisionFive 2. `tts.voice` is a locked Piper id. `asr.language` is unset or a language id of the locked `base` model (D-0062).
-* A Wi-Fi role outside the peripheral profile fails evaluation (D-0063). One peripheral is an access point or a station WAN. A `mode = "wifi"` WAN names a profile that lists `sta`, and each network has one WPA2 passphrase. `0bda:8176` is bound to `rtl8192cu` by USB ID. `rtl8xxxu` stays loaded.
+* A Wi-Fi role outside the peripheral profile fails evaluation (D-0063). Without `concurrent`, one peripheral is an access point or a station WAN. With `concurrent`, it may be both (D-0066). A `mode = "wifi"` WAN names a profile that lists `sta`, and each network has one WPA2 passphrase. `0bda:8176` and `0bda:8179` are stations on `rtl8xxxu`. `0bda:818b` and `0bda:f179` are an access point or a station, 2.4 GHz WPA2 HT20. `channel = "auto"` is 6. The image loads `rtl8xxxu`. `0bda:8176` blacklists `rtl8192cu` (D-0070).
 * `janus.debug` warns when a switch is on. A `kernelLogLevel` outside 0–7 fails the type. None of them fails evaluation for being on.
 
 ## 13. `janus.debug`

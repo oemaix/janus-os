@@ -33,7 +33,7 @@ obligation for that release, not a reason to omit the profile.
 | **Raspberry Pi 4 / CM4** (`rpi4`) | BCM2711 · aarch64 | Pi 4: 1× 1 GbE. CM4: that port on the official IO board. USB 3 NICs are peripherals. Wi-Fi 5 onboard when the chip is fitted. | 2 | Tier 2 (D-0016). EEPROM firmware, FAT `config.txt`, hybrid MBR so the bootloader finds the GPT boot partition. One `eth0`; the profile does not choose a WAN. The onboard radio is a WPA2 access point, 2.4 GHz or 5 GHz, when `match.onboard` is set (§4.12, D-0064). A Compute Module 4 without the wireless chip leaves that unset. The Pi 400 is not a board: it has no Ethernet jack (D-0032). |
 | **Raspberry Pi 3 / 3+** (`rpi3`) | BCM2837 · aarch64 | 1× 100 MbE (USB 2 shared). Onboard Wi-Fi on the Pi 3 and Pi 3+. | 2 | Low throughput; fine for tunnel-only use behind another router. FAT `config.txt`, hybrid MBR so the boot ROM finds the GPT boot partition. The SD card is built-in `sdhost`. The boot files are `bcm2837-rpi-3-b.dtb` and `bcm2837-rpi-3-b-plus.dtb`. The onboard radio is a 2.4 GHz WPA2 access point when `match.onboard` is set (§4.12, D-0064). A Pi 2 v1.2 uses this profile and leaves that unset. |
 | **Raspberry Pi Zero 2 W** | BCM2710A1 · aarch64 | Wi-Fi 4 + Bluetooth, no Ethernet | 1 | Owner's lab. 512 MiB RAM. Needs a USB Ethernet peripheral for a wired WAN or LAN. FAT `config.txt`, hybrid MBR. The onboard radio is a 2.4 GHz WPA2 access point (§4.7, D-0043). Bluetooth is present and unused. Later audio output is *13*. Not a 500-node target. INA219 UPS overlay is part of this board's lab setup (FR-HW-008). |
-| **Libre Computer Le Potato (AML-S905X-CC)** | S905X · aarch64 | 1× 100 MbE | 1 | Owner's lab. Mainline U-Boot FIP at sector 1 (`u-boot.gxl.sd.bin`); DOS table plus a backup GPT (§3.6, D-0055). eMMC or SD. Lab peripherals: Fibocom NL668 as USB Ethernet (§4.2), RTL8188CUS as AP (§4.4), CSR Bluetooth. The portable pair is §4.11: RTL8188EUS as the station WAN, RTL8188CUS as the access point. |
+| **Libre Computer Le Potato (AML-S905X-CC)** | S905X · aarch64 | 1× 100 MbE | 1 | Owner's lab. Mainline U-Boot FIP at sector 1 (`u-boot.gxl.sd.bin`); DOS table plus a backup GPT (§3.6, D-0055). eMMC or SD. Lab peripherals: Fibocom NL668 as USB Ethernet (§4.2), RTL8188CUS as the station and RTL8192EU as the access point (§4.4), CSR Bluetooth. |
 | **StarFive VisionFive 2** | JH7110 · riscv64 | 2× 1 GbE | 3 | Needs recent kernel. U-Boot 2026.04 runs from QSPI (D-0047). One GPT image for SD, eMMC, and NVMe. Boot order is eMMC, then SD, then NVMe. No binary cache. v1.3B clocks both MACs from the Motorcomm PHY. The kernel keeps that receive clock running so the DMA reset can finish with no link. |
 | **Raspberry Pi 2 (v1.1)** | BCM2836 · armv7l | 1× 100 MbE | 3 | 32-bit; no cache; RPi 2 v1.2 is BCM2837 and uses the `rpi3` profile. |
 | **Yanyu STX-R19F** (`yanyu-stx-r19f`) | Intel Celeron J1900 (Bay Trail-D) · x86_64 | 4× Intel 82583V GbE on PCIe, SATA SSD. No Wi-Fi, Bluetooth, or WWAN. | 1 | Lab reference x86 board. Legacy AMI BIOS, 4 GiB RAM. The lab OpenWrt install uses GRUB. The Janus image uses Limine. Case labels in §3.1. |
@@ -277,11 +277,13 @@ are not part of the profile. QMI and MBIM are not how this unit attaches.
 | Realtek RTL8153 USB 3 GbE | `0bda:8153` | nic | supported via in-tree `r8152` (§4.9) |
 | Realtek RTL8156 USB 2.5 GbE | `0bda:8156` | nic | supported via in-tree `r8152` (§4.9) |
 | ASIX AX88179 | `0b95:1790` | nic | supported |
-| MediaTek MT7612U (e.g. Alfa AWUS036ACM) | `0e8d:7612` | wifi (AP 2.4/5) | supported |
-| MediaTek MT7921AU | `0e8d:7961` | wifi (AP) | supported (recent kernel) |
+| MediaTek MT7612U (e.g. Alfa AWUS036ACM) | `0e8d:7612` | wifi (AP, STA, concurrent) | supported (§4.8, D-0066) |
+| MediaTek MT7921AU | `0e8d:7961` | wifi (AP, STA, concurrent) | supported (§4.8, D-0066) |
 | Realtek RTL8812AU | `0bda:8812` | wifi | unsupported (out-of-tree driver) |
-| Realtek RTL8188CUS | `0bda:8176` | wifi (AP, 2.4 GHz HT20) | supported via in-tree `rtl8192cu` (§4.4) |
-| Realtek RTL8188EUS | `0bda:8179` | wifi (STA, 2.4 GHz HT20) | supported (§4.11, D-0063) |
+| Realtek RTL8188CUS | `0bda:8176` | wifi (STA, 2.4 GHz HT20) | supported via in-tree `rtl8xxxu` (§4.4) |
+| Realtek RTL8188EUS | `0bda:8179` | wifi (STA, 2.4 GHz HT20) | supported via in-tree `rtl8xxxu` (§4.4) |
+| Realtek RTL8192EU | `0bda:818b` | wifi (AP or STA, 2.4 GHz HT20) | supported via in-tree `rtl8xxxu` (§4.4) |
+| Realtek RTL8188FU | `0bda:f179` | wifi (AP or STA, 2.4 GHz HT20) | supported via in-tree `rtl8xxxu` (§4.4) |
 | Raspberry Pi Zero 2 W onboard CYW43430 | board radio, `match.onboard` | wifi (AP, 2.4 GHz HT20, WPA2) | supported via in-tree `brcmfmac` (§4.7) |
 | ROCK Pi 4C onboard AP6256 | board radio, `match.onboard` | wifi (AP, 2.4/5 GHz HT20, WPA2) | supported via in-tree `brcmfmac` (§4.10) |
 | Raspberry Pi 3 / 3+ onboard CYW43430 / CYW43455 | board radio, `match.onboard` | wifi (AP, 2.4 GHz HT20, WPA2) | supported via in-tree `brcmfmac` (§4.12) |
@@ -303,37 +305,55 @@ are not part of the profile. QMI and MBIM are not how this unit attaches.
 Peripherals not in the matrix produce an evaluation warning (FR-HW-005);
 users may add `hardware.firmware`/kernel modules via raw NixOS options.
 
-### 4.4 RTL8188CUS (`0bda:8176`)
+### 4.4 Realtek USB on `rtl8xxxu`
 
-The chip is an RTL8192CU-family USB device, 2.4 GHz, one spatial stream.
-The lab runs it as an access point on OpenWrt today. That fact and
-"the USB ID is in the default kernel of NixOS, Ubuntu, and Debian" are
-both true, and they are not the same driver.
+These four ids share one in-tree driver, `rtl8xxxu`. Declaring any of
+them loads that module. The image does not load `rtl8192cu` and does
+not blacklist `rtl8xxxu`. `rtl8192cu` still lists `0bda:8176`, so that
+id blacklists `rtl8192cu` and the image does not rebind the stick
+(D-0070, T-0040). NixOS answers `RTL8XXXU_UNTESTED=y`, which is what
+puts `0bda:8176` in this driver's table. `standard` keeps that cache.
+`matched` keeps `RTL8XXXU` and turns `RTL8192CU` off.
 
-| Driver | Where it comes from | AP |
-|--------|---------------------|----|
-| `rtl8192cu` (rtlwifi, mac80211) | In-tree. This is OpenWrt's `kmod-rtl8192cu`. | Yes, for years, with `hostapd` `nl80211`. This is the working lab setup. Reports exist of the driver stalling the machine while it initialises. |
-| `rtl8xxxu` | In-tree, and the driver those desktop distributions usually bind for this USB ID. The device appears with no DKMS package. | Not advertised before Linux 6.15. The flag `supports_ap` was merged for this family in February 2025 (`rtw-next`, pull 2025-02-10). The author measured about 4 Mbit/s TX against about 24 Mbit/s on `rtl8192cu`. |
-| Realtek vendor driver plus `hostapd` `rtl871xdrv` | Out of tree. | How people forced AP mode before `rtl8192cu`. Forbidden here (FR-HW-006). |
+The driver has no 40 MHz channels. `hostapd` sets
+`ht_capab=[HT20][SHORT-GI-20]`. An access point on `0bda:818b` or
+`0bda:f179` fails evaluation for `band = "5g"`, for `security` other
+than `wpa2`, and for a channel outside 1–13. `channel = "auto"` is 6.
+The access point keeps that channel. It does not follow the station.
+An out-of-tree Realtek driver is forbidden (FR-HW-006).
 
-D-0063 assigns `0bda:8176` to `rtl8192cu` by USB ID and leaves `rtl8xxxu`
-loaded, so the two drivers do not both attach. `rtl8xxxu` is the driver
-for `0bda:8179` (§4.11). A module-wide blacklist of `rtl8xxxu` removes
-that station. The image binds this USB ID to `rtl8192cu` and does not
-blacklist `rtl8xxxu`. Any board may declare
-this USB id. The Le Potato row in §3 records the lab unit that confirmed
-the stick. Declaring the peripheral copies `rtlwifi/rtl8192cufw.bin`,
-`rtl8192cufw_A.bin`, `rtl8192cufw_B.bin`, and `rtl8192cufw_TMSC.bin` from
-the pinned `linux-firmware` package. The driver picks one of those names
-when the stick starts. The rest of that collection stays out of the image.
-`hostapd` uses `nl80211`. A build is acceptable only when `iw list` on
-that kernel shows `AP` for this phy. Expected use is a small 2.4 GHz
-network, not a fast AP. `rtl8xxxu` on Linux 6.15 or newer is the fallback
-if `rtl8192cu` cannot be made stable, and its TX rate is the reason it is
-not the default. A later image may remove this id from `rtl8xxxu` instead
-of the bind (D-0070). The bind stays until that row is decided. Two sticks
-of one USB id, one access point and one station, are a later match
-(D-0071).
+| USB id | Chip | Roles | Firmware |
+|--------|------|-------|----------|
+| `0bda:8176` | RTL8188CUS | `sta` | `rtlwifi/rtl8192cufw_A.bin`, `rtl8192cufw_B.bin`, `rtl8192cufw_TMSC.bin` |
+| `0bda:8179` | RTL8188EUS | `sta` | `rtlwifi/rtl8188eufw.bin` |
+| `0bda:818b` | RTL8192EU | `ap` or `sta` | `rtlwifi/rtl8192eu_nic.bin` |
+| `0bda:f179` | RTL8188FU | `ap` or `sta` | `rtlwifi/rtl8188fufw.bin` |
+
+Mainline binds `0bda:f179` as RTL8188FU. RTL8192FU is a separate
+chip on `rtl8192fu`, with firmware `rtlwifi/rtl8192fufw.bin`. The
+tested Realtek ids for that chip are `0bda:f192` and `0bda:318b`.
+This profile leaves those two ids out.
+
+RTL8192EU advertises an access point since `8c34b621` (2023-07-10).
+The author tested that path only briefly and expected it to work as
+well as RTL8188FU, which already set `supports_ap`. Both are 2.4 GHz.
+Neither profile lists `concurrent`, so one stick has one role (D-0066).
+
+RTL8188CUS is a station. The same driver sets `supports_ap` for that
+family, and the measured access-point rate was about 4 Mbit/s. Janus
+does not offer the role. RTL8188EUS does not set the flag. The driver
+picks one of the three RTL8188CUS names from the chip revision.
+
+The lab Le Potato uses RTL8188CUS as the station and RTL8192EU as the
+access point. The ids differ, so `match.usbPath` is optional. Two
+sticks of one id still need a distinct port or a distinct MAC. The
+port is the kernel USB name, such as `1-1.2`, the directory under
+`/sys/bus/usb/devices/` that has no colon. The role follows that
+socket. `match.mac` follows the stick. One stick of an id still
+matches the id alone (D-0071).
+
+Any board may declare these ids. Declaring one copies only the
+firmware that id requests. `hostapd` uses `nl80211`.
 
 ### 4.5 Battery shutdown
 
@@ -452,7 +472,10 @@ MT7612U (`0e8d:7612`) and MT7921AU (`0e8d:7961`) are USB peripherals.
 The board is not part of the match. Declaring the peripheral copies
 the redistributable files the driver requests out of the pinned
 `linux-firmware` package. The rest of that collection stays out of the
-image.
+image. The in-tree `mt76` driver advertises an access point and a
+station on one radio. The profile lists `concurrent` for that pair
+(D-0066). Janus adds the station interface with `iw` and leaves the
+driver's own netdev for `hostapd`.
 
 | USB id | Driver requests |
 |--------|-----------------|
@@ -498,39 +521,28 @@ in. Declaring the access point does not add a kernel patch.
 `brcmfmac` is loaded for that access point and is blacklisted
 otherwise.
 
-### 4.11 RTL8188EUS (`0bda:8179`)
+### 4.11 Station uplink
 
-USB ID `0bda:8179` is an RTL8188EU-family device (RTL8188EUS), 2.4 GHz,
-one spatial stream. It is a different chip from the RTL8188CUS in §4.4.
+A peripheral whose profile lists `sta` is a WAN with `mode = "wifi"`
+(*06* §4, §11, FR-NET-018, D-0063). `wpa_supplicant` associates,
+networkd takes DHCP, and the interface joins the `wan` zone. The
+dongle keeps its permanent MAC. The interface name is `wifi-<uplink>`.
+udev renames the kernel's `wlan*` device. The rule matches the USB id
+and, when set, `match.usbPath` or `match.mac` (§4.4).
 
-`rtl8xxxu` binds that ID through `rtl8188eu_fops`. Firmware is
-`rtlwifi/rtl8188eufw.bin` in `linux-firmware`. The phy advertises
-station mode. `rtl8188eu_fops` leaves `supports_ap` unset, so the phy
-does not advertise an access point. A series posted to linux-wireless
-on 2026-03-13 sets that flag and reports that clients still fail to
-associate. Mainline does not contain it. An out-of-tree access-point
-driver for this chip stays out (FR-HW-006, D-0010).
+RTL8188CUS (`0bda:8176`) and RTL8188EUS (`0bda:8179`) are stations.
+RTL8192EU (`0bda:818b`) and RTL8188FU (`0bda:f179`) are an access
+point or a station (§4.4). The lab Le Potato uses RTL8188CUS as
+`role = "backup"` and RTL8192EU as the LAN access point. Both radios
+are 2.4 GHz HT20. The access point keeps its configured channel.
+Unset, that is 6. The expected load is a few clients. With a lease
+on the Ethernet WAN, that WAN keeps the default route (D-0036).
 
-The profile lists `sta`. Evaluation fails when this peripheral is an
-access point (FR-NET-018, D-0063). A build is acceptable when `iw list`
-shows station mode for this phy. The station uplink is a WAN with
-`mode = "wifi"` (*06* §4, §11). `wpa_supplicant` associates, networkd
-takes DHCP, and the interface joins the `wan` zone. The dongle keeps
-its permanent MAC. The interface name is `wifi-<uplink>`. The allowlist
-lists this ID as `sta`. Declaring it copies `rtlwifi/rtl8188eufw.bin`
-and loads `rtl8xxxu`.
-
-The portable Le Potato uses this stick as `role = "backup"` and the
-§4.4 stick as the LAN access point. §4.4 assigns `0bda:8176` to
-`rtl8192cu` by USB ID and leaves `rtl8xxxu` loaded. Both radios are
-2.4 GHz HT20 in one case, so the access point uses the upstream
-channel and the expected load is a few clients. With a lease on the
-Ethernet WAN, that WAN keeps the default route (D-0036).
-
-A profile that lists `ap` and `sta` allows either role. One peripheral
-still has one role. These two drivers do not advertise a concurrent
-access point and station on one radio. When a later driver does, that
-peripheral may take both roles (D-0066).
+`ap` and `sta` on one profile mean either role. One peripheral then
+has one role. `concurrent` means the in-tree driver advertises both
+at once, and that peripheral may be the access point and the station
+together (D-0066). MT7612U and MT7921AU list it (§4.8). The Realtek
+profiles do not.
 
 Known networks are WPA2-PSK. The SSID is configuration. The passphrase
 is one sops file, the same shape as an access-point passphrase

@@ -904,8 +904,18 @@ in {
       wanNames
       ++ [
         {
-          assertion = lib.all (p: !lib.elem p staPeriphs) (map (ap: ap.peripheral) (lib.attrValues cfg.wifi));
-          message = "A Wi-Fi peripheral is an access point and a station. One peripheral has one role.";
+          assertion = lib.all (p:
+            !lib.elem p staPeriphs
+            || (hw ? ${p} && lib.elem "concurrent" (effectiveCaps hw.${p})))
+          (map (ap: ap.peripheral) (lib.attrValues cfg.wifi));
+          message = "A Wi-Fi peripheral is an access point and a station. That needs the concurrent capability. docs/06 §11.";
+        }
+        {
+          assertion = let
+            ps = map (ap: ap.peripheral) (lib.attrValues cfg.wifi);
+          in
+            lib.length ps == lib.length (lib.unique ps);
+          message = "Two access points use the same peripheral.";
         }
         {
           assertion = lib.length staPeriphs == lib.length (lib.unique staPeriphs);

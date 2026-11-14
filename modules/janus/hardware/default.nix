@@ -32,7 +32,8 @@
             usbPath = mkOption {
               type = types.nullOr types.str;
               default = null;
-              description = "Stable USB bus path.";
+              example = "1-1.2";
+              description = "Kernel name of the USB port, such as 1-1.2. The role follows that socket. docs/10 §4.4.";
             };
             pciSlot = mkOption {
               type = types.nullOr types.str;
@@ -43,7 +44,8 @@
             mac = mkOption {
               type = types.nullOr types.str;
               default = null;
-              description = "MAC address match.";
+              example = "e8:4e:06:5e:42:e6";
+              description = "Permanent MAC. The role follows this stick across ports. docs/10 §4.4.";
             };
             onboard = mkOption {
               type = types.bool;
@@ -92,9 +94,9 @@
         description = "Replace one key action. The joystick stays navigation.";
       };
       wifi.capabilities = mkOption {
-        type = types.listOf (types.enum ["ap" "sta"]);
+        type = types.listOf (types.enum ["ap" "sta" "concurrent"]);
         default = [];
-        description = "Requested Wi-Fi roles. Empty uses the allowlist.";
+        description = "Requested Wi-Fi roles. Empty uses the allowlist. concurrent is both roles on one radio.";
       };
       power.shutdown.enable = mkOption {
         type = types.bool;
@@ -255,6 +257,24 @@ in {
               '';
             }
           ]
+          ++ lib.optionals (match.usbPath != null) [
+            {
+              assertion = builtins.match "[0-9]+-[0-9]+(\\.[0-9]+)*" match.usbPath != null;
+              message = ''
+                janus.hardware.peripherals.${name}.match.usbPath must be the kernel USB port, such as 1-1.2.
+                See docs/10 §4.4.
+              '';
+            }
+          ]
+          ++ lib.optionals (match.mac != null) [
+            {
+              assertion = builtins.match "[0-9a-f]{2}(:[0-9a-f]{2}){5}" (lib.toLower match.mac) != null;
+              message = ''
+                janus.hardware.peripherals.${name}.match.mac must be six lowercase hex bytes.
+                See docs/10 §4.4.
+              '';
+            }
+          ]
           ++ lib.optionals (class == "wifi" && wifi.capabilities != [] && !match.onboard) [
             {
               assertion =
@@ -320,7 +340,25 @@ in {
             See docs/10 §4.7, §4.10, and §4.12.
           '';
         }
-      ];
+      ]
+      ++ (let
+        byId = lib.groupBy (p: p.match.usbVendorProduct) (
+          lib.filter (p: p.class == "wifi" && p.match.usbVendorProduct != null) (lib.attrValues cfg.peripherals)
+        );
+        distinct = xs: lib.all (x: x != null) xs && lib.length xs == lib.length (lib.unique xs);
+      in
+        lib.mapAttrsToList (id: group: {
+          assertion = let
+            paths = map (p: p.match.usbPath) group;
+            macs = map (p: p.match.mac) group;
+          in
+            lib.length group < 2 || distinct paths || distinct macs;
+          message = ''
+            USB id ${id} is declared more than once. Set a distinct match.usbPath on each peripheral, or a distinct match.mac.
+            See docs/10 §4.4.
+          '';
+        })
+        byId);
 
     warnings =
       lib.concatMap (

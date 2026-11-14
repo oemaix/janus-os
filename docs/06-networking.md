@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-10-25 |
+| Last updated | 2026-11-14 |
 
 ## 1. Substrate
 
@@ -266,11 +266,13 @@ A peripheral whose profile lists `sta` can instead be a WAN uplink
 ```
 janus.hardware.peripherals.cafe0 = {
   class = "wifi";
-  match.usbVendorProduct = "0bda:8179";
+  match.usbVendorProduct = "0bda:8176";
+  match.usbPath = "1-1.3";
 };
 janus.hardware.peripherals.ap0 = {
   class = "wifi";
-  match.usbVendorProduct = "0bda:8176";
+  match.usbVendorProduct = "0bda:818b";
+  match.usbPath = "1-1.2";
 };
 janus.network.wifi.room = {
   peripheral = "ap0"; ssid = "janus"; passphraseSecret = "wifi-potato-room"; lan = "lan";
@@ -284,13 +286,24 @@ janus.network.wans.cafe = {
 };
 ```
 
-The profile is the list of modes the in-tree driver advertises, `ap`,
-`sta`, or both. The operator picks one role per peripheral. A profile
-that lists both means either role is legal. It does not mean one radio
-is an access point and a station together. Evaluation fails when an
+The profile lists `ap`, `sta`, and `concurrent` when the in-tree driver
+advertises that pair on one radio (D-0066). `ap` and `sta` without
+`concurrent` mean either role, and that peripheral has one role.
+`concurrent` lets the same peripheral be the access point and the
+station. MT7612U and MT7921AU list it. RTL8188CUS (`0bda:8176`) and
+RTL8188EUS (`0bda:8179`) list `sta` only. RTL8192EU (`0bda:818b`) and
+RTL8188FU (`0bda:f179`) list `ap` and `sta`, so each of those sticks
+has one role. Those two access points are 2.4 GHz WPA2 HT20.
+Evaluation fails for `5g`, for a channel outside 1–13, and for
+`security` other than `wpa2`. `channel = "auto"` is 6, and the access
+point keeps it (*10* §4.4). The ids in the example differ, so the
+port is optional.
+Two peripherals that share a USB id set a distinct `match.usbPath`
+(the socket, such as `1-1.2`) or a distinct `match.mac` (D-0071).
+Evaluation fails when an
 access point names a peripheral whose profile lacks `ap`, when a
 `mode = "wifi"` WAN names one whose profile lacks `sta`, or when one
-peripheral is used both ways.
+peripheral is used both ways without `concurrent`.
 
 `wpa_supplicant` renders `wifi.networks` and networkd runs DHCP on the
 station interface. The interface joins the `wan` zone. The passphrase

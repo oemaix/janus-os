@@ -51,8 +51,9 @@
     # Add "ap" to the LAN members. docs/10 §4.7, §4.10, and §4.12.
     # radio = { class = "wifi"; match.onboard = true; };
 
-    # RTL8188EUS as a WPA2 station. The passphrase is a sops file.
-    # cafe0 = { class = "wifi"; match.usbVendorProduct = "0bda:8179"; };
+    # RTL8188CUS station and RTL8192EU access point. docs/10 §4.4.
+    # cafe0 = { class = "wifi"; match.usbVendorProduct = "0bda:8176"; };
+    # ap0 = { class = "wifi"; match.usbVendorProduct = "0bda:818b"; };
   };
 
   ############################################################################

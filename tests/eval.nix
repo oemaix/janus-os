@@ -1911,7 +1911,7 @@ in {
         janus.security.allowInlineSecrets = true;
         janus.hardware.peripherals.stick = {
           class = "wifi";
-          match.usbVendorProduct = "0bda:8176";
+          match.usbVendorProduct = "0bda:818b";
         };
         janus.network.lans.lan = {
           members = ["lan" "home"];
@@ -1934,26 +1934,37 @@ in {
       grep -q 'wpa_passphrase=%s' ${script}
       grep -q 'country_code=CN' ${script}
       grep -q 'ieee80211d=1' ${script}
+      grep -q 'channel=6' ${script}
+      grep -F -q 'ht_capab=[HT20][SHORT-GI-20]' ${script}
       grep -q ${lib.escapeShellArg "ssid='ja\$nus'"} ${script}
       if grep -q '<<' ${script}; then
         echo "hostapd config is still a shell heredoc" >&2
         exit 1
       fi
       printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " os.config.boot.blacklistedKernelModules)} > blacklist
-      if grep -q rtl8xxxu blacklist; then
-        echo "0bda:8176 blacklists rtl8xxxu" >&2
+      if grep -q rtl8xxxu blacklist || grep -q rtl8192cu blacklist; then
+        echo "0bda:818b blacklists a Realtek USB driver" >&2
         exit 1
       fi
       printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " os.config.boot.kernelModules)} > modules
-      grep -q rtl8192cu modules
+      grep -q rtl8xxxu modules
+      if grep -q rtl8192cu modules; then
+        echo "0bda:818b loads rtl8192cu" >&2
+        exit 1
+      fi
       printf '%s\n' ${lib.escapeShellArg os.config.services.udev.extraRules} > rules
-      grep -q 'ENV{DEVTYPE}=="usb_interface"' rules
-      grep -q 'ATTRS{idProduct}=="8176"' rules
+      grep -F -q 'KERNEL=="wlan*"' rules
+      grep -q 'NAME="wifi-home"' rules
+      grep -q 'ATTRS{idProduct}=="818b"' rules
+      if grep -q 'janus-rtl8192cu-bind' rules; then
+        echo "0bda:8176 still rebinds in udev" >&2
+        exit 1
+      fi
       test ${
         if os.config.systemd.services ? janus-rtl8192cu-bind
         then "yes"
         else "no"
-      } = yes
+      } = no
       echo ok > "$out"
     '';
   eval-wifi-sta = let
@@ -1962,10 +1973,6 @@ in {
       {
         janus.security.allowInlineSecrets = true;
         janus.hardware.peripherals.cafe0 = {
-          class = "wifi";
-          match.usbVendorProduct = "0bda:8179";
-        };
-        janus.hardware.peripherals.ap0 = {
           class = "wifi";
           match.usbVendorProduct = "0bda:8176";
         };
@@ -2028,17 +2035,24 @@ in {
       grep -q wifi-cafe0 nft
       printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " os.config.boot.kernelModules)} > modules
       grep -q rtl8xxxu modules
-      grep -q rtl8192cu modules
+      if grep -q rtl8192cu modules; then
+        echo "station image loads rtl8192cu" >&2
+        exit 1
+      fi
       printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " os.config.boot.blacklistedKernelModules)} > blacklist
+      grep -q rtl8192cu blacklist
       if grep -q rtl8xxxu blacklist; then
         echo "station image blacklists rtl8xxxu" >&2
         exit 1
       fi
       printf '%s\n' ${lib.escapeShellArg os.config.services.udev.extraRules} > rules
       grep -q 'NAME="wifi-cafe0"' rules
-      grep -q 'ENV{DEVTYPE}=="usb_interface"' rules
+      grep -F -q 'KERNEL=="wlan*"' rules
       printf '%s\n' ${lib.escapeShellArg names} > names
-      grep -q rtl8188eu-firmware names
+      if grep -q rtl8188eu-firmware names; then
+        echo "station image still ships rtl8188eu firmware" >&2
+        exit 1
+      fi
       grep -q rtl8192cu-firmware names
       echo ok > "$out"
     '';
@@ -2057,6 +2071,230 @@ in {
       };
       janus.network.wifi.room = {
         peripheral = "cafe0";
+        ssid = "janus";
+        passphrase = "secret12";
+        lan = "lan";
+      };
+    }
+  ];
+  eval-wifi-rtl-5g = fail "eval-wifi-rtl-5g" [
+    base
+    {
+      janus.security.allowInlineSecrets = true;
+      janus.hardware.peripherals.stick = {
+        class = "wifi";
+        match.usbVendorProduct = "0bda:818b";
+      };
+      janus.network.lans.lan = {
+        members = ["lan" "room"];
+        address = "192.168.10.1";
+        prefixLength = 24;
+      };
+      janus.network.wifi.room = {
+        peripheral = "stick";
+        ssid = "janus";
+        passphrase = "secret12";
+        lan = "lan";
+        band = "5g";
+      };
+    }
+  ];
+  eval-wifi-rtl-wpa3 = fail "eval-wifi-rtl-wpa3" [
+    base
+    {
+      janus.security.allowInlineSecrets = true;
+      janus.hardware.peripherals.stick = {
+        class = "wifi";
+        match.usbVendorProduct = "0bda:818b";
+      };
+      janus.network.lans.lan = {
+        members = ["lan" "room"];
+        address = "192.168.10.1";
+        prefixLength = 24;
+      };
+      janus.network.wifi.room = {
+        peripheral = "stick";
+        ssid = "janus";
+        passphrase = "secret12";
+        lan = "lan";
+        security = "wpa3";
+      };
+    }
+  ];
+  eval-wifi-rtl-channel = fail "eval-wifi-rtl-channel" [
+    base
+    {
+      janus.security.allowInlineSecrets = true;
+      janus.hardware.peripherals.stick = {
+        class = "wifi";
+        match.usbVendorProduct = "0bda:818b";
+      };
+      janus.network.lans.lan = {
+        members = ["lan" "room"];
+        address = "192.168.10.1";
+        prefixLength = 24;
+      };
+      janus.network.wifi.room = {
+        peripheral = "stick";
+        ssid = "janus";
+        passphrase = "secret12";
+        lan = "lan";
+        channel = 36;
+      };
+    }
+  ];
+  eval-wifi-f179-5g = fail "eval-wifi-f179-5g" [
+    base
+    {
+      janus.security.allowInlineSecrets = true;
+      janus.hardware.peripherals.stick = {
+        class = "wifi";
+        match.usbVendorProduct = "0bda:f179";
+      };
+      janus.network.lans.lan = {
+        members = ["lan" "room"];
+        address = "192.168.10.1";
+        prefixLength = 24;
+      };
+      janus.network.wifi.room = {
+        peripheral = "stick";
+        ssid = "janus";
+        passphrase = "secret12";
+        lan = "lan";
+        band = "5g";
+      };
+    }
+  ];
+  eval-wifi-f179 = let
+    os = mk [
+      base
+      {
+        janus.security.allowInlineSecrets = true;
+        janus.hardware.peripherals.stick = {
+          class = "wifi";
+          match.usbVendorProduct = "0bda:f179";
+        };
+        janus.network.lans.lan = {
+          members = ["lan" "room"];
+          address = "192.168.10.1";
+          prefixLength = 24;
+        };
+        janus.network.wifi.room = {
+          peripheral = "stick";
+          ssid = "janus";
+          passphrase = "secret12";
+          lan = "lan";
+        };
+      }
+    ];
+    script = os.config.systemd.services.janus-hostapd-room.serviceConfig.ExecStart;
+  in
+    pkgs.runCommand "eval-wifi-f179" {} ''
+      grep -q 'channel=6' ${script}
+      grep -F -q 'ht_capab=[HT20][SHORT-GI-20]' ${script}
+      grep -q 'wpa_key_mgmt=WPA-PSK' ${script}
+      if grep -q 'wpa_key_mgmt=SAE' ${script}; then
+        echo "RTL8188FU access point enables SAE" >&2
+        exit 1
+      fi
+      printf '%s\n' ${lib.escapeShellArg os.config.services.udev.extraRules} > rules
+      grep -q 'ATTRS{idProduct}=="f179"' rules
+      grep -q 'NAME="wifi-room"' rules
+      echo ok > "$out"
+    '';
+  eval-wifi-potato-pair = let
+    os = mk [
+      base
+      {
+        janus.security.allowInlineSecrets = true;
+        janus.hardware.peripherals.cafe0 = {
+          class = "wifi";
+          match.usbVendorProduct = "0bda:8176";
+          match.usbPath = "1-1.3";
+        };
+        janus.hardware.peripherals.ap0 = {
+          class = "wifi";
+          match.usbVendorProduct = "0bda:818b";
+          match.usbPath = "1-1.2";
+        };
+        janus.network.lans.lan = {
+          members = ["lan" "room"];
+          address = "192.168.10.1";
+          prefixLength = 24;
+        };
+        janus.network.wifi.room = {
+          peripheral = "ap0";
+          ssid = "janus";
+          passphrase = "secret12";
+          lan = "lan";
+        };
+        janus.network.wans.cafe = {
+          uplink = "cafe0";
+          mode = "wifi";
+          role = "backup";
+          wifi.networks = [
+            {
+              ssid = "Cafeteria";
+              passphrase = "secret12";
+            }
+          ];
+        };
+      }
+    ];
+    script = os.config.systemd.services.janus-hostapd-room.serviceConfig.ExecStart;
+    names = lib.concatMapStringsSep " " (p: p.name) (
+      lib.filter (p: lib.isAttrs p && lib.isDerivation p) (
+        lib.flatten os.options.hardware.firmware.definitions
+      )
+    );
+  in
+    pkgs.runCommand "eval-wifi-potato-pair" {} ''
+      grep -q 'channel=6' ${script}
+      grep -F -q 'ht_capab=[HT20][SHORT-GI-20]' ${script}
+      grep -q 'interface=wifi-room' ${script}
+      printf '%s\n' ${lib.escapeShellArg os.config.services.udev.extraRules} > rules
+      grep -q 'NAME="wifi-room"' rules
+      grep -q 'NAME="wifi-cafe0"' rules
+      grep -q 'ATTRS{idProduct}=="818b"' rules
+      grep -q 'ATTRS{idProduct}=="8176"' rules
+      grep -q 'KERNELS=="1-1.2"' rules
+      grep -q 'KERNELS=="1-1.3"' rules
+      printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " os.config.boot.kernelModules)} > modules
+      grep -q rtl8xxxu modules
+      if grep -q rtl8192cu modules; then
+        echo "lab pair loads rtl8192cu" >&2
+        exit 1
+      fi
+      printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep " " os.config.boot.blacklistedKernelModules)} > blacklist
+      grep -q rtl8192cu blacklist
+      if grep -q rtl8xxxu blacklist; then
+        echo "lab pair blacklists rtl8xxxu" >&2
+        exit 1
+      fi
+      printf '%s\n' ${lib.escapeShellArg names} > names
+      grep -q rtl8192cu-firmware names
+      grep -q rtl8192eu-firmware names
+      if grep -q rtl8188eu-firmware names || grep -q rtl8188fu-firmware names; then
+        echo "lab pair ships a firmware file it does not use" >&2
+        exit 1
+      fi
+      echo ok > "$out"
+    '';
+  eval-wifi-cus-ap = fail "eval-wifi-cus-ap" [
+    base
+    {
+      janus.security.allowInlineSecrets = true;
+      janus.hardware.peripherals.stick = {
+        class = "wifi";
+        match.usbVendorProduct = "0bda:8176";
+      };
+      janus.network.lans.lan = {
+        members = ["lan" "room"];
+        address = "192.168.10.1";
+        prefixLength = 24;
+      };
+      janus.network.wifi.room = {
+        peripheral = "stick";
         ssid = "janus";
         passphrase = "secret12";
         lan = "lan";
@@ -2095,6 +2333,65 @@ in {
       };
     }
   ];
+  eval-wifi-same-id = fail "eval-wifi-same-id" [
+    base
+    {
+      janus.hardware.peripherals.cafe0 = {
+        class = "wifi";
+        match.usbVendorProduct = "0bda:8176";
+      };
+      janus.hardware.peripherals.ap0 = {
+        class = "wifi";
+        match.usbVendorProduct = "0bda:8176";
+      };
+    }
+  ];
+  eval-wifi-concurrent = let
+    os = mk [
+      base
+      {
+        janus.security.allowInlineSecrets = true;
+        janus.hardware.peripherals.radio = {
+          class = "wifi";
+          match.usbVendorProduct = "0e8d:7612";
+        };
+        janus.network.lans.lan = {
+          members = ["lan" "room"];
+          address = "192.168.10.1";
+          prefixLength = 24;
+        };
+        janus.network.wifi.room = {
+          peripheral = "radio";
+          ssid = "janus";
+          passphrase = "secret12";
+          lan = "lan";
+        };
+        janus.network.wans.cafe = {
+          uplink = "radio";
+          mode = "wifi";
+          role = "backup";
+          wifi.networks = [
+            {
+              ssid = "Cafeteria";
+              passphrase = "secret12";
+            }
+          ];
+        };
+      }
+    ];
+    vif = os.config.systemd.services.janus-wifi-vif-radio.serviceConfig.ExecStart;
+    rules = os.config.services.udev.extraRules;
+  in
+    pkgs.runCommand "eval-wifi-concurrent" {} ''
+      grep -q 'interface add wifi-radio type managed' ${vif}
+      printf '%s\n' ${lib.escapeShellArg rules} > rules
+      grep -q 'NAME="wifi-room"' rules
+      if grep -q 'NAME="wifi-radio"' rules; then
+        echo "concurrent station is also a udev rename" >&2
+        exit 1
+      fi
+      echo ok > "$out"
+    '';
   eval-wifi-sta-nosta = fail "eval-wifi-sta-nosta" [
     base
     {
@@ -2121,7 +2418,7 @@ in {
     {
       janus.hardware.peripherals.cafe0 = {
         class = "wifi";
-        match.usbVendorProduct = "0bda:8179";
+        match.usbVendorProduct = "0bda:8176";
       };
       janus.network.wans.cafe = {
         uplink = "cafe0";
@@ -2140,7 +2437,7 @@ in {
           janus.security.allowInlineSecrets = true;
           janus.hardware.peripherals.stick = {
             class = "wifi";
-            match.usbVendorProduct = "0bda:8176";
+            match.usbVendorProduct = "0bda:818b";
           };
           janus.network.lans.lan = {
             members = ["home"];
@@ -2176,7 +2473,7 @@ in {
       janus.security.allowInlineSecrets = true;
       janus.hardware.peripherals.stick = {
         class = "wifi";
-        match.usbVendorProduct = "0bda:8176";
+        match.usbVendorProduct = "0bda:818b";
       };
       janus.network.lans.lan = {
         members = ["home"];
@@ -2212,6 +2509,9 @@ in {
     mt7612 = declared "0e8d:7612";
     mt7921 = declared "0e8d:7961";
     rtl = declared "0bda:8176";
+    eus = declared "0bda:8179";
+    eu = declared "0bda:818b";
+    fu = declared "0bda:f179";
   in
     pkgs.runCommand "eval-wifi-mt76" {} ''
       set -eu
@@ -2241,12 +2541,32 @@ in {
         exit 1
       fi
       fw=${rtl.config.hardware.firmware}
-      for f in rtl8192cufw.bin rtl8192cufw_A.bin rtl8192cufw_B.bin rtl8192cufw_TMSC.bin; do
+      for f in rtl8192cufw_A.bin rtl8192cufw_B.bin rtl8192cufw_TMSC.bin; do
         n=$(find -L "$fw/lib/firmware" -type f -name "$f*" | wc -l)
         test "$n" = 1
       done
+      n=$(find -L "$fw/lib/firmware" -type f -name 'rtl8192cufw.bin*' | wc -l)
+      test "$n" = 0
       n=$(find -L "$fw/lib/firmware" -type f | wc -l)
-      test "$n" = 4
+      test "$n" = 3
+      echo ${lib.escapeShellArg (names eus)} | grep -q rtl8188eu-firmware
+      fw=${eus.config.hardware.firmware}
+      n=$(find -L "$fw/lib/firmware" -type f -name 'rtl8188eufw.bin*' | wc -l)
+      test "$n" = 1
+      n=$(find -L "$fw/lib/firmware" -type f | wc -l)
+      test "$n" = 1
+      echo ${lib.escapeShellArg (names eu)} | grep -q rtl8192eu-firmware
+      fw=${eu.config.hardware.firmware}
+      n=$(find -L "$fw/lib/firmware" -type f -name 'rtl8192eu_nic.bin*' | wc -l)
+      test "$n" = 1
+      n=$(find -L "$fw/lib/firmware" -type f | wc -l)
+      test "$n" = 1
+      echo ${lib.escapeShellArg (names fu)} | grep -q rtl8188fu-firmware
+      fw=${fu.config.hardware.firmware}
+      n=$(find -L "$fw/lib/firmware" -type f -name 'rtl8188fufw.bin*' | wc -l)
+      test "$n" = 1
+      n=$(find -L "$fw/lib/firmware" -type f | wc -l)
+      test "$n" = 1
       echo ok > "$out"
     '';
   eval-wifi-sops = let
@@ -2255,7 +2575,7 @@ in {
       {
         janus.hardware.peripherals.stick = {
           class = "wifi";
-          match.usbVendorProduct = "0bda:8176";
+          match.usbVendorProduct = "0bda:818b";
         };
         janus.network.lans.lan = {
           members = ["lan" "home"];
@@ -6829,17 +7149,19 @@ in {
     potatoSta = one "le-potato" {
       cafe0 = {
         class = "wifi";
-        match.usbVendorProduct = "0bda:8179";
+        match.usbVendorProduct = "0bda:8176";
       };
     };
     potatoPair = one "le-potato" {
       cafe0 = {
         class = "wifi";
-        match.usbVendorProduct = "0bda:8179";
+        match.usbVendorProduct = "0bda:8176";
+        match.usbPath = "1-1.3";
       };
       ap0 = {
         class = "wifi";
-        match.usbVendorProduct = "0bda:8176";
+        match.usbVendorProduct = "0bda:818b";
+        match.usbPath = "1-1.2";
       };
     };
     pi2 = bare "rpi2";
@@ -6947,14 +7269,15 @@ in {
       ${eq potato "USB_NET_HUAWEI_CDC_NCM" "n"}
       ${eq potato "R8169" "n"}
       ${eq potato "RTL8192CU" "n"}
+      ${eq potato "RTL8XXXU" "n"}
       ${eq potato "BT" "n"}
-      ${eq potatoFull "RTL8192CU" "m"}
-      ${eq potatoFull "RTL8XXXU" "n"}
+      ${eq potatoFull "RTL8XXXU" "m"}
+      ${eq potatoFull "RTL8192CU" "n"}
       ${eq potatoSta "RTL8XXXU" "m"}
       ${eq potatoSta "RTL8192CU" "n"}
       ${eq potatoSta "WLAN_VENDOR_REALTEK" "y"}
-      ${eq potatoPair "RTL8192CU" "m"}
       ${eq potatoPair "RTL8XXXU" "m"}
+      ${eq potatoPair "RTL8192CU" "n"}
       ${eq potatoFull "USB_NET_QMI_WWAN" "m"}
       ${eq potatoFull "USB_WDM" "m"}
       ${eq potatoFull "USB_NET_CDCETHER" "n"}

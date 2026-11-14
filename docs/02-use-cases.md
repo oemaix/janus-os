@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-11-04 |
+| Last updated | 2026-11-14 |
 
 ## 1. Personas
 
@@ -327,6 +327,6 @@ requirements it drives (see *03 — Requirements*).
 ### UC-26 Carry a Le Potato between a café and a hotel
 
 * **Actor:** Jonas
-* **Precondition:** Le Potato, Ethernet in the hotel, no cable in the café. RTL8188CUS (`0bda:8176`) is the access point. RTL8188EUS (`0bda:8179`) is the station. The café is WPA2-PSK and routes when the handshake finishes.
-* **Flow:** The LAN access point stays up in both places, so the laptop keeps the Janus SSID. `wans.cable` is Ethernet `dhcp` with `role = "default"`. `wans.cafe` is `mode = "wifi"` with `role = "backup"`, the café SSID in the configuration, and the passphrase in `secrets/wifi/<host>/cafeteria.yaml`. In the café the cable has no lease and the station becomes the default route. In the hotel the cable has a lease and keeps it (D-0036). The access point uses the café's channel. An open network, a password typed in at the desk, or a captive portal waits until after 1.0.
+* **Precondition:** Le Potato, Ethernet in the hotel, no cable in the café. RTL8192EU (`0bda:818b`) in USB port `1-1.2` is the access point. RTL8188CUS (`0bda:8176`) in `1-1.3` is the station. The café is WPA2-PSK and routes when the handshake finishes.
+* **Flow:** The LAN access point stays up in both places, so the laptop keeps the Janus SSID. `wans.cable` is Ethernet `dhcp` with `role = "default"`. `wans.cafe` is `mode = "wifi"` with `role = "backup"`, the café SSID in the configuration, and the passphrase in `secrets/wifi/<host>/cafeteria.yaml`. In the café the cable has no lease and the station becomes the default route. In the hotel the cable has a lease and keeps it (D-0036). The access point keeps its own channel. Unset, that is 6. It does not move when the café changes channel. An open network, a password typed in at the desk, or a captive portal waits until after 1.0.
 * **Drives:** FR-NET-018, FR-NET-007, D-0063
