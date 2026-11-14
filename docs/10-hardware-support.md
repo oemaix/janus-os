@@ -320,22 +320,7 @@ D-0063 assigns `0bda:8176` to `rtl8192cu` by USB ID and leaves `rtl8xxxu`
 loaded, so the two drivers do not both attach. `rtl8xxxu` is the driver
 for `0bda:8179` (§4.11). A module-wide blacklist of `rtl8xxxu` removes
 that station. The image binds this USB ID to `rtl8192cu` and does not
-blacklist `rtl8xxxu`. `remove_id` does not drop this static id, and a USB
-interface has no `driver_override`. The bind turns USB autoprobe off
-only when that write reads back as `0`, unbinds `rtl8xxxu`, and binds
-`rtl8192cu`. Before autoprobe comes back, every other unbound interface
-is written to `drivers_probe`. A stick that returns under a new bus name
-is scanned again. The bind retries until `rtl8192cu` owns the interface
-and the netdev is no longer named `wlanN`. When `driver_override` exists,
-the unbind runs only after that attribute reads back as `rtl8192cu`.
-The USB driver link changes before that rename. `hostapd` wants that wait
-and does not require it. It does not bind to the netdev unit: that unit is
-inactive across the rename, the start job fails with result `dependency`,
-and `Restart=` does not retry it (T-0034). `hostapd` waits until `wifi-*`
-is on `rtl8192cu`. The same shell stops `hostapd` when that interface
-leaves `rtl8192cu` and starts it again when the interface returns. When
-this stick's netdev appears again, udev requests the hostapd unit
-(T-0033). Any board may declare
+blacklist `rtl8xxxu`. Any board may declare
 this USB id. The Le Potato row in §3 records the lab unit that confirmed
 the stick. Declaring the peripheral copies `rtlwifi/rtl8192cufw.bin`,
 `rtl8192cufw_A.bin`, `rtl8192cufw_B.bin`, and `rtl8192cufw_TMSC.bin` from

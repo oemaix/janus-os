@@ -59,67 +59,10 @@
       else "/var/lib/janus/wifi/${name}.passphrase";
     onboard = onboardAp ap;
     isolate = onboard && builtins.hasAttr ap.lan cfg.lans && cfg.lans.${ap.lan}.isolation;
-  launch =
-    if usbId name == "0bda:8176"
-    then ''
-      # The shell stays up. A recreated wifi-* does not start this unit
-      # again while it is active, and a zero exit does not trigger
-      # Restart= (T-0034).
-      sysroot=''${JANUS_SYS:-/sys}
-      rtl_ready() {
-        local link
-        [ -L "$sysroot/class/net/${dev}/device/driver" ] || return 1
-        link=$(readlink "$sysroot/class/net/${dev}/device/driver") || return 1
-        [ "$(basename "$link")" = rtl8192cu ]
-      }
-      fails=0
-      while true; do
-        i=0
-        while ! rtl_ready; do
-          if [ "$i" -ge 150 ]; then
-            echo "janus: ${dev} is not on rtl8192cu" >&2
-            exit 1
-          fi
-          i=$((i + 1))
-          sleep 0.2
-        done
-        ${pkgs.hostapd}/bin/hostapd "$run/${name}.conf" &
-        pid=$!
-        miss=0
-        while kill -0 "$pid" 2>/dev/null; do
-          if rtl_ready; then
-            miss=0
-          else
-            miss=$((miss + 1))
-            if [ "$miss" -ge 2 ]; then
-              kill "$pid" 2>/dev/null || true
-              k=0
-              while kill -0 "$pid" 2>/dev/null && [ "$k" -lt 10 ]; do
-                k=$((k + 1))
-                sleep 0.2
-              done
-              kill -9 "$pid" 2>/dev/null || true
-              break
-            fi
-          fi
-          sleep 1
-        done
-        wait "$pid" || true
-        if rtl_ready; then
-          fails=$((fails + 1))
-          if [ "$fails" -ge 5 ]; then
-            echo "janus: ${dev} hostapd exited" >&2
-            exit 1
-          fi
-          sleep 3
-        else
-          fails=0
-        fi
-      done
-    ''
-    else if isolate
-    then ''
-        ${pkgs.hostapd}/bin/hostapd "$run/${name}.conf" &
+    launch =
+      if isolate
+      then ''
+        ${pkgs.hostapd}/bin/hostapd /run/janus/wifi/${name}.conf &
         pid=$!
         i=0
         joined=0
@@ -152,13 +95,12 @@
         wait "$pid"
       ''
       else ''
-        exec ${pkgs.hostapd}/bin/hostapd "$run/${name}.conf"
+        exec ${pkgs.hostapd}/bin/hostapd /run/janus/wifi/${name}.conf
       '';
   in
     pkgs.writeShellScript "hostapd-${name}" ''
       set -euo pipefail
-      run=''${JANUS_WIFI_RUN:-/run/janus/wifi}
-      install -d -m 0755 "$run"
+      install -d -m 0755 /run/janus/wifi
       # The hot override is a board file. It wins over the sops passphrase.
       over=''${JANUS_WIFI_PASS:-/var/lib/janus/secrets/wifi-${name}}
       if [ -s "$over" ]; then
@@ -181,7 +123,7 @@
         ${lib.optionalString onboard ''printf '%s\n' "wmm_enabled=1" "ht_capab=[HT20][SHORT-GI-20]"''}
         ${lib.optionalString (ap.security != "wpa2") ''printf '%s\n' "ieee80211w=1"''}
         ${lib.optionalString ap.hidden ''printf '%s\n' "ignore_broadcast_ssid=1"''}
-      } > "$run/${name}.conf"
+      } > /run/janus/wifi/${name}.conf
       ${lib.optionalString onboard ''
         ${pkgs.iproute2}/bin/ip link set dev ${dev} nomaster || true
         ${pkgs.iproute2}/bin/ip link set dev ${dev} down
@@ -232,234 +174,51 @@
     paths = ["rtlwifi/rtl8188eufw.bin"];
   };
   # 0bda:8176 is also in the rtl8xxxu table. Bind that ID to rtl8192cu
-  # and leave rtl8xxxu loaded for 0bda:8179. remove_id does not drop a
-  # static id. A USB interface has no driver_override (T-0038), so the
-  # bind turns autoprobe off, unbinds rtl8xxxu, and binds rtl8192cu.
-  # A write that does not leave autoprobe at 0 does not unbind. Other
-  # unbound interfaces are probed before autoprobe comes back, and a
-  # stick that returns under a new bus name is scanned again (T-0039).
-  # When driver_override does exist, unbind waits for a rtl8192cu
-  # readback (T-0033). docs/10 §4.4, D-0063.
+  # and leave rtl8xxxu loaded for 0bda:8179. Module list order is not
+  # load order (T-0006). docs/10 §4.4, D-0063.
   rtl8192cuBind = pkgs.writeShellScript "janus-rtl8192cu-bind" ''
     set -eu
-    # JANUS_SYS is the sysfs root. The image leaves it unset.
-    sysroot=''${JANUS_SYS:-/sys}
-    autoprobe=$sysroot/bus/usb/drivers_autoprobe
-    autoprobe_held=0
-    iface_sys() {
-      case "$1" in
-        "$sysroot"/*) printf '%s\n' "$1" ;;
-        /*) printf '%s\n' "$sysroot$1" ;;
-        *) printf '%s\n' "$sysroot/$1" ;;
-      esac
-    }
-    driver_of() {
-      if [ -L "$1/driver" ]; then
-        basename "$(readlink "$1/driver")"
-      fi
-    }
-    # devices/1-2:1.0 is a symlink into 1-2/1-2:1.0. dirname of the bus
-    # path is devices/, which has no idVendor (T-0033).
-    usb_device_dir() {
-      dirname "$(readlink -f "$1")"
-    }
-    # remove_id leaves the static id, so rtl8xxxu would take the stick
-    # back. USB has no driver_override. Unbind only after autoprobe
-    # reads back as 0, unless driver_override itself reads rtl8192cu
-    # (T-0033, T-0038, T-0039).
-    override_is() {
-      local cur
-      [ -f "$1/driver_override" ] || return 1
-      cur=$(cat "$1/driver_override" 2>/dev/null || true)
-      [ "$cur" = rtl8192cu ]
-    }
     bind_one() {
-      local sys kernel drv
-      sys=$(iface_sys "$1")
+      devpath=$1
       kernel=$2
+      case "$devpath" in
+        /sys/*) sys=$devpath ;;
+        *) sys="/sys$devpath" ;;
+      esac
       [ -e "$sys" ] || return 0
-      if [ -f "$sys/driver_override" ]; then
-        printf '%s\n' rtl8192cu > "$sys/driver_override" || true
+      drv=""
+      if [ -L "$sys/driver" ]; then
+        drv=$(basename "$(readlink "$sys/driver")")
       fi
-      drv=$(driver_of "$sys" || true)
       if [ "$drv" = rtl8192cu ]; then
         return 0
       fi
       if [ "$drv" = rtl8xxxu ]; then
-        if [ -e "$sys/driver_override" ]; then
-          override_is "$sys" || return 0
-        elif [ -e "$autoprobe" ] && [ "$autoprobe_held" != 1 ]; then
-          return 0
-        fi
-        printf '%s\n' "$kernel" > "$sysroot/bus/usb/drivers/rtl8xxxu/unbind" || true
+        printf '%s\n' "$kernel" > /sys/bus/usb/drivers/rtl8xxxu/unbind
       fi
-      # The unbind can drop the sysfs node. Do not bind the old name.
-      [ -e "$sys" ] || return 0
-      if [ -e "$sysroot/bus/usb/drivers/rtl8192cu/bind" ]; then
-        printf '%s\n' "$kernel" > "$sysroot/bus/usb/drivers/rtl8192cu/bind" || true
+      if [ -e /sys/bus/usb/drivers/rtl8xxxu/remove_id ]; then
+        printf '%s\n' "0bda 8176" > /sys/bus/usb/drivers/rtl8xxxu/remove_id || true
+      fi
+      if [ -e /sys/bus/usb/drivers/rtl8192cu/bind ]; then
+        printf '%s\n' "$kernel" > /sys/bus/usb/drivers/rtl8192cu/bind || true
       fi
     }
-    # Restoring the flag does not bind interfaces that appeared while it
-    # was off. 0bda:8176 stays out of this scan so rtl8xxxu cannot take
-    # it back (T-0039).
-    probe_others() {
-      local sys parent vendor product name probe
-      probe=$sysroot/bus/usb/drivers_probe
-      [ -e "$probe" ] || return 0
-      for sys in "$sysroot"/bus/usb/devices/*:*; do
-        [ -d "$sys" ] || continue
-        if [ -L "$sys/driver" ]; then
-          continue
-        fi
-        parent=$(usb_device_dir "$sys")
-        vendor=$(cat "$parent/idVendor" 2>/dev/null || true)
-        product=$(cat "$parent/idProduct" 2>/dev/null || true)
-        if [ "$vendor" = 0bda ] && [ "$product" = 8176 ]; then
-          continue
-        fi
-        name=$(basename "$(readlink -f "$sys")")
-        printf '%s\n' "$name" > "$probe" || true
-      done
-    }
-    restore_autoprobe() {
-      if [ "$autoprobe_held" = 1 ]; then
-        probe_others
-        printf '%s\n' "$autoprobe_was" > "$autoprobe" || true
-      fi
-    }
-    # A failed write, or a readback that is not 0, must not unbind.
-    hold_autoprobe() {
-      autoprobe_held=0
-      [ -e "$autoprobe" ] || return 0
-      if [ -f "$autoprobe" ]; then
-        autoprobe_was=$(cat "$autoprobe" 2>/dev/null || printf '%s\n' 1)
-        printf '%s\n' 0 > "$autoprobe" || true
-        if [ "$(cat "$autoprobe" 2>/dev/null || true)" = 0 ]; then
-          autoprobe_held=1
-        fi
-      else
-        autoprobe_was=1
-      fi
-      if [ "$autoprobe_held" != 1 ]; then
-        echo "janus: usb autoprobe stayed on" >&2
-      fi
-      trap restore_autoprobe EXIT
-    }
-    # The USB driver link flips to rtl8192cu before the netdev is
-    # registered and renamed off wlanN (T-0034).
-    iface_ready() {
-      local sys ent base
-      sys=$(readlink -f "$(iface_sys "$1")")
-      [ "$(driver_of "$sys" || true)" = rtl8192cu ] || return 1
-      for ent in "$sys"/net/*; do
-        [ -e "$ent" ] || return 1
-        base=$(basename "$ent")
-        case "$base" in
-          wlan[0-9]*) return 1 ;;
-        esac
-        return 0
-      done
-      return 1
-    }
-    # A bind write while the probe is running can restart it, so retry
-    # about once a second instead of on every poll (T-0033).
-    wait_bound() {
-      local sys kernel i j drv target
-      sys=$1
-      kernel=$2
-      i=0
-      while [ "$i" -lt 60 ]; do
-        target=$(iface_sys "$sys")
-        # The bus name changes when the stick resets. Scanning again
-        # finds the new node (T-0039).
-        if [ ! -e "$target" ]; then
-          return 2
-        fi
-        if iface_ready "$sys"; then
-          return 0
-        fi
-        bind_one "$sys" "$kernel"
-        if [ ! -e "$target" ]; then
-          return 2
-        fi
-        j=0
-        while [ "$j" -lt 5 ]; do
-          if [ ! -e "$target" ]; then
-            return 2
-          fi
-          if iface_ready "$sys"; then
-            return 0
-          fi
-          j=$((j + 1))
-          sleep 0.2
-        done
-        i=$((i + 1))
-      done
-      drv=$(driver_of "$(iface_sys "$sys")" || true)
-      echo "janus: 0bda:8176 stayed on ''${drv:-unbound}" >&2
-      return 1
-    }
-    # 0 ready, 1 still on the wrong driver, 2 no 0bda:8176, 3 the path
-    # disappeared and the scan has to run again.
-    bind_present() {
-      local sys parent vendor product name rc found
-      found=0
-      for sys in "$sysroot"/bus/usb/devices/*:*; do
-        [ -d "$sys" ] || continue
-        parent=$(usb_device_dir "$sys")
-        vendor=$(cat "$parent/idVendor" 2>/dev/null || true)
-        product=$(cat "$parent/idProduct" 2>/dev/null || true)
-        if [ "$vendor" = 0bda ] && [ "$product" = 8176 ]; then
-          found=1
-          name=$(basename "$(readlink -f "$sys")")
-          rc=0
-          wait_bound "$sys" "$name" || rc=$?
-          if [ "$rc" -eq 2 ]; then
-            return 3
-          fi
-          if [ "$rc" -ne 0 ]; then
-            return 1
-          fi
-        fi
-      done
-      if [ "$found" -eq 0 ]; then
-        return 2
-      fi
-      return 0
-    }
-    hold_autoprobe
     if [ "$#" -eq 2 ]; then
-      rc=0
-      wait_bound "$(iface_sys "$1")" "$2" || rc=$?
-      exit "$rc"
+      bind_one "$1" "$2"
+      exit 0
     fi
-    # udev-settle does not wait for this port. A stick that shows up
-    # during this window is bound here; a later add starts the oneshot
-    # again (T-0033). A path that disappears is scanned again (T-0039).
-    # No stick at all is success: the oneshot must not stay failed or a
-    # later USB add is dropped.
-    saw_gone=0
-    i=0
-    while [ "$i" -lt 30 ]; do
-      rc=0
-      bind_present || rc=$?
-      if [ "$rc" -eq 0 ]; then
-        exit 0
+    if [ -e /sys/bus/usb/drivers/rtl8xxxu/remove_id ]; then
+      printf '%s\n' "0bda 8176" > /sys/bus/usb/drivers/rtl8xxxu/remove_id || true
+    fi
+    for sys in /sys/bus/usb/devices/*:*; do
+      [ -d "$sys" ] || continue
+      parent=$(dirname "$sys")
+      vendor=$(cat "$parent/idVendor" 2>/dev/null || true)
+      product=$(cat "$parent/idProduct" 2>/dev/null || true)
+      if [ "$vendor" = 0bda ] && [ "$product" = 8176 ]; then
+        bind_one "$sys" "$(basename "$sys")"
       fi
-      if [ "$rc" -eq 1 ]; then
-        exit 1
-      fi
-      if [ "$rc" -eq 3 ]; then
-        saw_gone=1
-      fi
-      i=$((i + 1))
-      sleep 1
     done
-    if [ "$saw_gone" -eq 1 ]; then
-      echo "janus: 0bda:8176 left the bus" >&2
-      exit 1
-    fi
-    exit 0
   '';
 
   # The 43436s chip asks for its own CLM name. The Raspberry Pi package
@@ -520,18 +279,16 @@ in {
         (lib.mkIf (lib.elem "0bda:8179" declaredUsbIds) ["rtl8xxxu"])
       ];
       services.udev.extraRules = lib.mkIf (lib.elem "0bda:8176" declaredUsbIds) ''
-        ACTION=="add", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_interface", ATTRS{idVendor}=="0bda", ATTRS{idProduct}=="8176", TAG+="systemd", ENV{SYSTEMD_WANTS}+="janus-rtl8192cu-bind.service"
+        ACTION=="add", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_interface", ATTRS{idVendor}=="0bda", ATTRS{idProduct}=="8176", RUN+="${rtl8192cuBind} %p %k"
       '';
       systemd.services = lib.mkIf (lib.elem "0bda:8176" declaredUsbIds) {
         janus-rtl8192cu-bind = {
           description = "Bind 0bda:8176 to rtl8192cu";
           wantedBy = ["multi-user.target"];
           after = ["systemd-modules-load.service" "systemd-udev-settle.service"];
-          # Stay inactive after a successful run. A later USB add can start
-          # this again. RemainAfterExit would make that add a no-op (T-0033).
           serviceConfig = {
             Type = "oneshot";
-            RemainAfterExit = false;
+            RemainAfterExit = true;
             ExecStart = rtl8192cuBind;
           };
         };
@@ -614,9 +371,7 @@ in {
         id = usbId name;
       in
         lib.optionalString (id != null) ''
-          SUBSYSTEM=="net", ACTION=="add", ATTRS{idVendor}=="${vendor id}", ATTRS{idProduct}=="${product id}", NAME="${iface name}"${
-            lib.optionalString (id == "0bda:8176") '', TAG+="systemd", ENV{SYSTEMD_WANTS}+="janus-hostapd-${name}.service"''
-          }
+          SUBSYSTEM=="net", ACTION=="add", ATTRS{idVendor}=="${vendor id}", ATTRS{idProduct}=="${product id}", NAME="${iface name}"
         '')
       apNames;
 
@@ -632,18 +387,10 @@ in {
               # joins the bridge if hostapd runs too early. docs/10 §4.7.
               after =
                 ["systemd-networkd.service" (deviceUnit name) (bridgeUnit cfg.wifi.${name}.lan)]
-                ++ lib.optional (cfg.wifi.${name}.passphraseSecret != null) "janus-wifi-secret-${name}.service"
-                ++ lib.optional (usbId name == "0bda:8176") "janus-rtl8192cu-bind.service";
-              # The rebind destroys wifi-*. Want the bind oneshot. Requiring
-              # it would stop hostapd when that oneshot exits, because it
-              # does not stay active (T-0033). 0bda:8176 does not bind to
-              # the netdev unit. The shell stays up and starts hostapd
-              # again when wifi-* returns (T-0034).
-              wants =
-                [(bridgeUnit cfg.wifi.${name}.lan)]
-                ++ lib.optional (usbId name == "0bda:8176") "janus-rtl8192cu-bind.service";
+                ++ lib.optional (cfg.wifi.${name}.passphraseSecret != null) "janus-wifi-secret-${name}.service";
+              wants = [(bridgeUnit cfg.wifi.${name}.lan)];
               requires = lib.optional (cfg.wifi.${name}.passphraseSecret != null) "janus-wifi-secret-${name}.service";
-              bindsTo = lib.optionals (usbId name != "0bda:8176") [(deviceUnit name)];
+              bindsTo = [(deviceUnit name)];
               serviceConfig = {
                 Type = "simple";
                 ExecStart = start name cfg.wifi.${name};
