@@ -23,6 +23,17 @@ in {
     # The SD card is the builtin sdhost (MMC_BCM2835). The Arasan host is
     # the onboard radio. It is loaded with that access point, not here.
     # docs/10 §4.7.
+    # Mainline includes bcm283x-rpi-usb-otg.dtsi (dr_mode = "otg" and the
+    # gadget FIFO sizes). dwc2 registers the root hub and does not
+    # enumerate a device. The Pi 2 and Pi 3 include
+    # bcm283x-rpi-usb-host.dtsi. This kernel has no dwc_otg.
+    # docs/10 §3.7, T-0045.
+    boot.kernelPatches = [
+      {
+        name = "janus-rpi-zero-2w-usb-host";
+        patch = ./janus-rpi-zero-2w-usb-host.patch;
+      }
+    ];
     boot.initrd.availableKernelModules = [
       "mmc_block"
       "dwc2"

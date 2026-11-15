@@ -637,6 +637,26 @@ in {
         then "yes"
         else "no"
       } = yes
+      test ${
+        if (lib.findFirst (p: p.name == "janus-rpi-zero-2w-usb-host") null zero.config.boot.kernelPatches) == null
+        then "no"
+        else "yes"
+      } = yes
+      test ${
+        if (lib.findFirst (p: p.name == "janus-rpi-zero-2w-usb-host") null rpi.config.boot.kernelPatches) == null
+        then "yes"
+        else "no"
+      } = yes
+      test ${
+        if (lib.findFirst (p: p.name == "janus-rpi-zero-2w-usb-host") null rpi2.config.boot.kernelPatches) == null
+        then "yes"
+        else "no"
+      } = yes
+      test ${
+        if (lib.findFirst (p: p.name == "janus-rpi-zero-2w-usb-host") null rpi4.config.boot.kernelPatches) == null
+        then "yes"
+        else "no"
+      } = yes
       test ${lib.escapeShellArg (lib.head (lib.attrNames rpi.config.janus.network.ports))} = eth0
       echo ${text rpi.config.system.build.janusBoardImage.bootExtra} | grep -q bcm2837-rpi-3-b.dtb
       echo ${text rpi.config.system.build.janusBoardImage.bootExtra} | grep -q bcm2837-rpi-3-b-plus.dtb
@@ -3074,6 +3094,38 @@ in {
         echo "kernel Makefile still installs bcm2710-rpi-3-b.dtb" >&2
         exit 1
       fi
+      arm_dts=$(grep -m1 'arch/arm/boot/dts/broadcom/bcm2837-rpi-zero-2-w.dts$' "$TMPDIR/kernel-files")
+      arm64_dts=$(grep -m1 'arch/arm64/boot/dts/broadcom/bcm2837-rpi-zero-2-w.dts$' "$TMPDIR/kernel-files")
+      host_dtsi=$(grep -m1 'arch/arm/boot/dts/broadcom/bcm283x-rpi-usb-host.dtsi$' "$TMPDIR/kernel-files")
+      otg_dtsi=$(grep -m1 'arch/arm/boot/dts/broadcom/bcm283x-rpi-usb-otg.dtsi$' "$TMPDIR/kernel-files")
+      pi3_dts=$(grep -m1 'arch/arm/boot/dts/broadcom/bcm2837-rpi-3-b.dts$' "$TMPDIR/kernel-files")
+      test -n "$arm_dts"
+      test -n "$arm64_dts"
+      test -n "$host_dtsi"
+      test -n "$otg_dtsi"
+      test -n "$pi3_dts"
+      tar -xJf ${zero.src} -O "$arm64_dts" > "$TMPDIR/zero-arm64.dts"
+      grep -q 'arm/broadcom/bcm2837-rpi-zero-2-w.dts' "$TMPDIR/zero-arm64.dts"
+      tar -xJf ${zero.src} -O "$host_dtsi" > "$TMPDIR/usb-host.dtsi"
+      tar -xJf ${zero.src} -O "$otg_dtsi" > "$TMPDIR/usb-otg.dtsi"
+      tar -xJf ${zero.src} -O "$pi3_dts" > "$TMPDIR/pi3.dts"
+      grep -q 'dr_mode = "host"' "$TMPDIR/usb-host.dtsi"
+      if grep -q 'g-rx-fifo-size' "$TMPDIR/usb-host.dtsi"; then
+        echo "host dtsi sets a gadget fifo" >&2
+        exit 1
+      fi
+      grep -q 'dr_mode = "otg"' "$TMPDIR/usb-otg.dtsi"
+      grep -q 'g-rx-fifo-size' "$TMPDIR/usb-otg.dtsi"
+      grep -q 'bcm283x-rpi-usb-host.dtsi' "$TMPDIR/pi3.dts"
+      mkdir -p "$TMPDIR/tree/arch/arm/boot/dts/broadcom"
+      tar -xJf ${zero.src} -O "$arm_dts" > "$TMPDIR/tree/arch/arm/boot/dts/broadcom/bcm2837-rpi-zero-2-w.dts"
+      grep -q 'bcm283x-rpi-usb-otg.dtsi' "$TMPDIR/tree/arch/arm/boot/dts/broadcom/bcm2837-rpi-zero-2-w.dts"
+      patch -p1 --fuzz=0 -d "$TMPDIR/tree" < ${../modules/boards/janus-rpi-zero-2w-usb-host.patch}
+      grep -q 'bcm283x-rpi-usb-host.dtsi' "$TMPDIR/tree/arch/arm/boot/dts/broadcom/bcm2837-rpi-zero-2-w.dts"
+      if grep -q 'bcm283x-rpi-usb-otg.dtsi' "$TMPDIR/tree/arch/arm/boot/dts/broadcom/bcm2837-rpi-zero-2-w.dts"; then
+        echo "zero tree still includes the otg dtsi" >&2
+        exit 1
+      fi
       echo ok > "$out"
     '';
   eval-wifi-onboard-board = fail "eval-wifi-onboard-board" [
@@ -4785,6 +4837,7 @@ in {
     janus = self.packages.${pkgs.stdenv.hostPlatform.system}.janus-cli;
     panel = pkgs.callPackage ../pkgs/hmi-panel.nix {};
     spi = pkgs.writeText "janus-spi.dts" os.config.system.build.janusSpiDts;
+    kernelSrc = os.config.boot.kernelPackages.kernel.src;
     snap = pkgs.writeShellApplication {
       name = "janus-hmi-snapshot";
       runtimeInputs = with pkgs; [gawk jq iproute2 curl systemd coreutils];
@@ -4808,10 +4861,110 @@ in {
       dtc -@ -I dts -O dtb -o spi.dtbo ${spi}
       test -s spi.dtbo
       grep -q 'target = <&spi>' ${spi}
+      grep -q 'target = <&alt0>' ${spi}
+      grep -q 'target = <&gpioout>' ${spi}
+      grep -q 'brcm,pins = <4>' ${spi}
+      grep -q 'brcm,pins = <5 6>' ${spi}
+      grep -q 'brcm,function = <0>' ${spi}
+      grep -q 'brcm,pull = <2>' ${spi}
       grep -q 'rohm,dh2228fv' ${spi}
       grep -q 'spi0 = "/soc/spi@7e204000"' ${spi}
       grep -q 'brcm,bcm2711' ${spi}
       grep -q 'brcm,bcm2837' ${spi}
+      # gpioout and alt0 come from the kernel tree. The firmware drops
+      # the whole overlay when either label is missing.
+      tar -tJf ${kernelSrc} > "$TMPDIR/kernel-files"
+      kdt() {
+        member=$(grep -m1 "$1\$" "$TMPDIR/kernel-files")
+        test -n "$member"
+        tar -xJf ${kernelSrc} -O "$member"
+      }
+      kdt arch/arm/boot/dts/broadcom/bcm2835-rpi.dtsi > "$TMPDIR/bcm2835-rpi.dtsi"
+      grep -q 'gpioout: gpioout' "$TMPDIR/bcm2835-rpi.dtsi"
+      grep -q 'brcm,pins = <6>;' "$TMPDIR/bcm2835-rpi.dtsi"
+      grep -q 'alt0: alt0' "$TMPDIR/bcm2835-rpi.dtsi"
+      grep -q 'brcm,pins = <4 5 7 8 9 10 11>;' "$TMPDIR/bcm2835-rpi.dtsi"
+      kdt arch/arm/boot/dts/broadcom/bcm2836-rpi.dtsi > "$TMPDIR/bcm2836-rpi.dtsi"
+      grep -q '#include "bcm2835-rpi.dtsi"' "$TMPDIR/bcm2836-rpi.dtsi"
+      kdt arch/arm/boot/dts/broadcom/bcm2711-rpi.dtsi > "$TMPDIR/bcm2711-rpi.dtsi"
+      grep -q '#include "bcm2835-rpi.dtsi"' "$TMPDIR/bcm2711-rpi.dtsi"
+      kdt arch/arm/boot/dts/broadcom/bcm2837-rpi-zero-2-w.dts > "$TMPDIR/zero.dts"
+      grep -q 'pinctrl-0 = <&gpioout &alt0>;' "$TMPDIR/zero.dts"
+      kdt arch/arm64/boot/dts/broadcom/bcm2837-rpi-zero-2-w.dts > "$TMPDIR/zero-arm64.dts"
+      grep -q 'arm/broadcom/bcm2837-rpi-zero-2-w.dts' "$TMPDIR/zero-arm64.dts"
+      kdt arch/arm/boot/dts/broadcom/bcm2837-rpi-3-b.dts > "$TMPDIR/pi3.dts"
+      kdt arch/arm/boot/dts/broadcom/bcm2837-rpi-3-b-plus.dts > "$TMPDIR/pi3plus.dts"
+      grep -q '#include "bcm2836-rpi.dtsi"' "$TMPDIR/pi3.dts"
+      grep -q '#include "bcm2836-rpi.dtsi"' "$TMPDIR/pi3plus.dts"
+      kdt arch/arm/boot/dts/broadcom/bcm2711-rpi-4-b.dts > "$TMPDIR/pi4.dts"
+      kdt arch/arm/boot/dts/broadcom/bcm2711-rpi-cm4.dtsi > "$TMPDIR/cm4.dtsi"
+      kdt arch/arm/boot/dts/broadcom/bcm2711-rpi-cm4-io.dts > "$TMPDIR/cm4-io.dts"
+      grep -q '#include "bcm2711-rpi.dtsi"' "$TMPDIR/pi4.dts"
+      grep -q '#include "bcm2711-rpi.dtsi"' "$TMPDIR/cm4.dtsi"
+      grep -q '#include "bcm2711-rpi-cm4.dtsi"' "$TMPDIR/cm4-io.dts"
+      cat > base.dts << 'ENDDTS'
+      /dts-v1/;
+      / {
+          soc {
+              spi: spi@7e204000 {
+                  status = "disabled";
+              };
+              gpio: gpio@7e200000 {
+                  pinctrl-names = "default";
+                  pinctrl-0 = <&gpioout &alt0>;
+                  gpioout: gpioout {
+                      brcm,pins = <6>;
+                      brcm,function = <1>;
+                  };
+                  alt0: alt0 {
+                      brcm,pins = <4 5 7 8 9 10 11>;
+                      brcm,function = <4>;
+                  };
+                  spi0_gpio7: spi0-gpio7 {
+                      brcm,pins = <7 8 9 10 11>;
+                      brcm,function = <4>;
+                  };
+              };
+          };
+          aliases {
+          };
+      };
+      ENDDTS
+      dtc -@ -I dts -O dtb -o base.dtb base.dts
+      fdtoverlay -i base.dtb -o merged.dtb spi.dtbo
+      dtc -I dtb -O dts -o merged.dts merged.dtb
+      node_of() {
+        # dtc prints "label: name {" when the label differs from the name.
+        awk -v node="$1" '
+          $0 ~ ("(^|[[:space:]])" node "[[:space:]]*\{") {
+            grab = 1
+            depth = 0
+          }
+          grab {
+            print
+            line = $0
+            opens = gsub(/\{/, "{", line)
+            closes = gsub(/\}/, "}", line)
+            depth += opens - closes
+            if (depth <= 0) {
+              grab = 0
+            }
+          }
+        ' merged.dts
+      }
+      node_of alt0 > alt0.dts
+      node_of gpioout > gpioout.dts
+      node_of spi0-gpio7 > spi0.dts
+      grep -E -q 'brcm,pins = <(0x0*4|4)>;' alt0.dts
+      if grep -E -q 'brcm,pins = <[^;]*(0x0*7|7)([[:space:]]|>)' alt0.dts; then
+        echo "alt0 still lists BCM 7" >&2
+        exit 1
+      fi
+      grep -E -q 'brcm,pins = <(0x0*5 0x0*6|5 6)>;' gpioout.dts
+      grep -E -q 'brcm,function = <(0x0+|0)>;' gpioout.dts
+      grep -E -q 'brcm,pull = <(0x0*2|2)>;' gpioout.dts
+      grep -E -q 'brcm,pins = <[^;]*(0x0*7|7)[[:space:]]' spi0.dts
+      grep -q 'status = "okay"' merged.dts
       grep -q 'dtoverlay=janus-spi' boot
       grep -q 'overlays/janus-spi.dtbo' boot
       if grep -q 'dtparam=spi=on' boot; then

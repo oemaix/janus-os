@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-11-14 |
+| Last updated | 2026-11-15 |
 
 These answers explain a choice that already binds somewhere else. The
 cited ADR, requirement, or section is that place. This list does not
@@ -85,3 +85,4 @@ Each question is `Q-nnnn`. The number is assigned once and is not reused.
 | Q-0069 | Why does serial root login use its own option, and why is the account fixed? | `services.getty.autologinUser` also logs in on `tty1`. A board with HDMI or VGA would hand that console a root shell as well. The drop-in names each serial `console=` device and leaves the NixOS getty line intact. A second UART keeps a login prompt. The image has no other interactive user. SSH stays key-only. See D-0067. |
 | Q-0070 | Why does the persistent journal stay under `janus.system`? | ADR-0013 keeps journald volatile and leaves `journal.persistent` for a capped journal on `/var`. That is for a router which has left the bench, including after a power cut. `janus.debug` is the set to turn off before an image ships. The engine log is `janus.debug.engineLog`. See D-0068. |
 | Q-0071 | Why is a closed-fail log not a rule at the end of the forward chain? | sing-box drops that traffic with a blackhole route in table 2022. The packet never reaches the forward chain. The log looks up that blackhole and leaves the route in place. xray drops it by tproxy while the process is down. The log matches mark `0x4a02` after that tproxy sets the mark, and it is removed when the process is up. See D-0069 and T-0029. |
+| Q-0072 | Why does the Zero 2 W micro-USB port register a root hub and show no device? | The mainline tree leaves that port in OTG mode, with gadget FIFO sizes and no `vbus-supply`. `dwc2` registers the hub and does not enumerate the stick. The Pi 2 and Pi 3 use the host include for the same controller. OpenWrt on this board uses downstream `dwc_otg`, which this kernel does not have. See D-0072 and *10* §3.7. |

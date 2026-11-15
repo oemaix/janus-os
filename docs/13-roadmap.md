@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-11-14 |
+| Last updated | 2026-11-15 |
 
 This file is the implementation plan, the progress of the code, and the
 notes for work that is specified but not started. Choices are *18*.
@@ -159,8 +159,8 @@ tree does not mean that behavior exists. Stubs are not finished features.
   (U-Boot at sector 64, `eth0`/`eth1`, no WAN chosen, port LEDs follow
   the silkscreen jacks, the SYS LED heartbeats, *10* §3.2), Le Potato (U-Boot
   FIP from `u-boot.gxl.sd.bin` at sector 1, DOS table and backup GPT,
-  D-0055, one `eth0`), Raspberry Pi Zero 2 W (FAT `config.txt`, no Ethernet
-  port), Raspberry Pi 3 / 3+ (`rpi3`, FAT `config.txt`, hybrid MBR, one `eth0`,
+  D-0055, one `eth0`),   Raspberry Pi Zero 2 W (FAT `config.txt`, no Ethernet
+  port, micro-USB host, D-0072), Raspberry Pi 3 / 3+ (`rpi3`, FAT `config.txt`, hybrid MBR, one `eth0`,
   onboard access point when `match.onboard` is set, 2.4 GHz WPA2,
   D-0064),
   Raspberry Pi 4 and Compute Module 4 (`rpi4`, FAT `config.txt`, hybrid

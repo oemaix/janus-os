@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-11-14 |
+| Last updated | 2026-11-15 |
 
 ## 1. Terminology
 
@@ -32,7 +32,7 @@ obligation for that release, not a reason to omit the profile.
 | **ROCK Pi 4C** (`rockpi-4c`) | RK3399 · aarch64 | 1× 1 GbE (RTL8211E). A second port is a USB peripheral. M.2 is NVMe. Wi-Fi 5 onboard. | 1 | Lab unit is v1.2 (D-0016, D-0053). Mainline U-Boot at sector 64; GPT. SPI NOR is tried first and this image does not program it (§3.5). One `eth0`; the profile does not choose a WAN. The onboard radio is a WPA2 access point when `match.onboard` is set (§4.10). ROCK 4C+ is not this profile. |
 | **Raspberry Pi 4 / CM4** (`rpi4`) | BCM2711 · aarch64 | Pi 4: 1× 1 GbE. CM4: that port on the official IO board. USB 3 NICs are peripherals. Wi-Fi 5 onboard when the chip is fitted. | 2 | Tier 2 (D-0016). EEPROM firmware, FAT `config.txt`, hybrid MBR so the bootloader finds the GPT boot partition. One `eth0`; the profile does not choose a WAN. The onboard radio is a WPA2 access point, 2.4 GHz or 5 GHz, when `match.onboard` is set (§4.12, D-0064). A Compute Module 4 without the wireless chip leaves that unset. The Pi 400 is not a board: it has no Ethernet jack (D-0032). |
 | **Raspberry Pi 3 / 3+** (`rpi3`) | BCM2837 · aarch64 | 1× 100 MbE (USB 2 shared). Onboard Wi-Fi on the Pi 3 and Pi 3+. | 2 | Low throughput; fine for tunnel-only use behind another router. FAT `config.txt`, hybrid MBR so the boot ROM finds the GPT boot partition. The SD card is built-in `sdhost`. The boot files are `bcm2837-rpi-3-b.dtb` and `bcm2837-rpi-3-b-plus.dtb`. The onboard radio is a 2.4 GHz WPA2 access point when `match.onboard` is set (§4.12, D-0064). A Pi 2 v1.2 uses this profile and leaves that unset. |
-| **Raspberry Pi Zero 2 W** | BCM2710A1 · aarch64 | Wi-Fi 4 + Bluetooth, no Ethernet | 1 | Owner's lab. 512 MiB RAM. Needs a USB Ethernet peripheral for a wired WAN or LAN. FAT `config.txt`, hybrid MBR. The onboard radio is a 2.4 GHz WPA2 access point (§4.7, D-0043). Bluetooth is present and unused. Later audio output is *13*. Not a 500-node target. INA219 UPS overlay is part of this board's lab setup (FR-HW-008). |
+| **Raspberry Pi Zero 2 W** | BCM2710A1 · aarch64 | Wi-Fi 4 + Bluetooth, no Ethernet | 1 | Owner's lab. 512 MiB RAM. Needs a USB Ethernet peripheral for a wired WAN or LAN. The micro-USB port is a host (§3.7, D-0072). FAT `config.txt`, hybrid MBR. The onboard radio is a 2.4 GHz WPA2 access point (§4.7, D-0043). Bluetooth is present and unused. Later audio output is *13*. Not a 500-node target. INA219 UPS overlay is part of this board's lab setup (FR-HW-008). |
 | **Libre Computer Le Potato (AML-S905X-CC)** | S905X · aarch64 | 1× 100 MbE | 1 | Owner's lab. Mainline U-Boot FIP at sector 1 (`u-boot.gxl.sd.bin`); DOS table plus a backup GPT (§3.6, D-0055). eMMC or SD. Lab peripherals: Fibocom NL668 as USB Ethernet (§4.2), RTL8188CUS as the station and RTL8192EU as the access point (§4.4), CSR Bluetooth. |
 | **StarFive VisionFive 2** | JH7110 · riscv64 | 2× 1 GbE | 3 | Needs recent kernel. U-Boot 2026.04 runs from QSPI (D-0047). One GPT image for SD, eMMC, and NVMe. Boot order is eMMC, then SD, then NVMe. No binary cache. v1.3B clocks both MACs from the Motorcomm PHY. The kernel keeps that receive clock running so the DMA reset can finish with no link. |
 | **Raspberry Pi 2 (v1.1)** | BCM2836 · armv7l | 1× 100 MbE | 3 | 32-bit; no cache; RPi 2 v1.2 is BCM2837 and uses the `rpi3` profile. |
@@ -210,6 +210,21 @@ blkid's partition id on this disk stays the DOS id. A plain GPT disk
 also matches blkid's UUID, because `partx` can publish a partition
 without the kernel property. Grow waits for both links before it exits.
 
+### 3.7 Zero 2 W USB host
+
+The micro-USB socket is the only data port. A wired WAN or LAN on this
+board is a USB peripheral on that socket (§4.3). The mainline tree
+`bcm2837-rpi-zero-2-w.dts` includes `bcm283x-rpi-usb-otg.dtsi`. That
+sets `dr_mode = "otg"` and the gadget FIFO sizes `g-rx-fifo-size`,
+`g-np-tx-fifo-size`, and `g-tx-fifo-size`. There is no `vbus-supply`.
+`dwc2` binds `brcm,bcm2835-usb`, registers the root hub, and does not
+enumerate a device. The Pi 2 and Pi 3 trees include
+`bcm283x-rpi-usb-host.dtsi`, which sets `dr_mode = "host"` and leaves
+the gadget FIFO sizes out. `dwc2` reads those sizes only for peripheral
+or OTG mode. The Zero 2 W image uses the host include (D-0072). The
+initrd still lists `dwc2`. This kernel has no `dwc_otg`. The image
+uses that port as a host.
+
 ## 4. Peripherals
 
 ### 4.1 Classes
@@ -289,7 +304,7 @@ are not part of the profile. QMI and MBIM are not how this unit attaches.
 | Raspberry Pi 3 / 3+ onboard CYW43430 / CYW43455 | board radio, `match.onboard` | wifi (AP, 2.4 GHz HT20, WPA2) | supported via in-tree `brcmfmac` (§4.12) |
 | Raspberry Pi 4 / CM4 onboard CYW43455 / CYW43456 | board radio, `match.onboard` | wifi (AP, 2.4/5 GHz HT20, WPA2) | supported via in-tree `brcmfmac` (§4.12) |
 | Fibocom NL668 (LTE Cat.4) | `05c6:90b6` (product string `Android`) | wwan, Ethernet mode | supported on Le Potato. Same USB ID as other Qualcomm gadgets; the user declares the peripheral. |
-| EigenComm, exposed as a NIC | `19d1:0001` | wwan (ethernet mode, LTE Cat.1) | supported on Zero 2 W |
+| EigenComm, exposed as a NIC | `19d1:0001` | wwan (ethernet mode, LTE Cat.1) | supported on Zero 2 W. The micro-USB port is a host (§3.7). |
 | mcuzone Pi Zero UPS (INA219) | I²C `0x40` | power | supported on Zero 2 W (FR-HW-008) |
 | Waveshare Pi Zero UPS (INA219) | I²C `0x43` | power | Address reserved. No discharge measurement, so no readings and shutdown stays unarmed (FR-HW-008). |
 | Huawei E3372h (HiLink) | `12d1:14dc` / `12d1:1f01` | wwan (ecm/rndis) | supported |
@@ -401,6 +416,13 @@ names BCM numbers and applies to Raspberry Pi boards, including the Zero
 `overlays/janus-spi.dtbo`, which enables the mainline `&spi` controller
 on GPIO 7–11 and exposes `/dev/spidev0.0`. The panel clock is 4 MHz.
 
+On the Zero 2 W the boot tree selects `alt0` and `gpioout` as the GPIO
+controller's own pinctrl. `alt0` is BCM 4, 5, 7, 8, 9, 10, and 11.
+`gpioout` drives BCM 6 as an output. The overlay keeps BCM 4 in `alt0`,
+sets BCM 5 and BCM 6 to inputs with pull-ups, and drops BCM 7–11 from
+that controller so `&spi` can select `spi0_gpio7` (T-0044). BCM 5 is
+joystick left and BCM 6 is joystick up.
+
 The behaviour is *15 — Panel User Interface*. This profile only binds the
 controls. Left and right move between pages. Up and down move the focused
 row. Press confirms. The three keys default to:
@@ -461,9 +483,10 @@ declares this access point enables that option as a module and loads
 The SD card stays on `sdhost` (`MMC_BCM2835`), which the defconfig
 builds in, and `matched` leaves that host built in.
 
-The boot file is the mainline tree `bcm2837-rpi-zero-2-w.dtb`. Its
-compatible string is `raspberrypi,model-zero-2-w`, which is how the
-kernel picks those firmware files. The downstream name
+The boot file is the mainline tree `bcm2837-rpi-zero-2-w.dtb`, with the
+USB port set to host (§3.7). Its compatible string is
+`raspberrypi,model-zero-2-w`, which is how the kernel picks those
+firmware files. The downstream name
 `bcm2710-rpi-zero-2-w.dtb` is not what this kernel installs.
 
 ### 4.8 MediaTek USB firmware

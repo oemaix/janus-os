@@ -31,12 +31,29 @@
   # Mainline trees leave &spi disabled and have no firmware dtparam.
   # GPIO 7-11 are the header SPI. rohm,dh2228fv is the in-tree spidev
   # binding, so the node appears as /dev/spidev0.0. The panel clock is 4 MHz.
+  # The Zero 2 W tree applies alt0 and gpioout as the GPIO controller's
+  # own pinctrl. Those groups have to give the pins up first (T-0044).
   spiDts = ''
     /dts-v1/;
     /plugin/;
     / {
         compatible = "brcm,bcm2837", "brcm,bcm2711";
         fragment@0 {
+            target = <&alt0>;
+            __overlay__ {
+                brcm,pins = <4>;
+                brcm,function = <4>; /* ALT0 */
+            };
+        };
+        fragment@1 {
+            target = <&gpioout>;
+            __overlay__ {
+                brcm,pins = <5 6>;
+                brcm,function = <0>; /* GPIO in */
+                brcm,pull = <2>; /* pull-up */
+            };
+        };
+        fragment@2 {
             target = <&spi>;
             __overlay__ {
                 pinctrl-names = "default";
@@ -51,7 +68,7 @@
                 };
             };
         };
-        fragment@1 {
+        fragment@3 {
             target-path = "/aliases";
             __overlay__ {
                 spi0 = "/soc/spi@7e204000";
