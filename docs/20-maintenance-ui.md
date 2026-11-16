@@ -3,8 +3,8 @@
 | Field | Value |
 |-------|-------|
 | Status | Draft |
-| Version | 0.8.0 |
-| Last updated | 2026-11-12 |
+| Version | 0.9.3 |
+| Last updated | 2026-11-17 |
 
 The maintenance page is the browser surface deferred by ADR-0007 and
 bounded by FR-ACC-005 and D-0012. It calls the `janus` commands in *14*.
@@ -160,7 +160,8 @@ when pressed.
 `per-host`. Otherwise the monitoring section shows the scope and no top
 table.
 
-The audit line is recording on or off, path, and size. The page does not
+The audit line is `yes` or `no`, the path, the size, and `oldest` when
+that status has one. The page does not
 export the log and does not start or stop recording.
 
 An action shows the catalog word `running`, then `ok` or the CLI error
@@ -187,7 +188,7 @@ rebuild, the same refusal as the CLI.
 | Key | What the page shows | How a new value is sent |
 |-----|---------------------|-------------------------|
 | `proxy.subscriptions.<existing>.url` | The subscription name, and `image` or `override`. The URL is a secret and is not shown. | stdin of `janus override set`. Not an argument. |
-| `network.lans.<existing>.dhcp.staticLeases.<host>` | Hostname, MAC, and address. These are not secrets. | `janus override set` with `--mac` and `--ip` |
+| `network.lans.<existing>.dhcp.staticLeases.<host>` | Hostname, LAN name, MAC, and address. These are not secrets. | `janus override set` with `--mac` and `--ip` |
 | `network.wifi.<existing>.passphrase` | The AP name, and `image` or `override`. The passphrase is not shown. | stdin of `janus override set`. Not an argument. |
 
 `unset` removes that override. A secret field is write-only. The
@@ -284,7 +285,8 @@ them.
 | `violet` | `#7e84e6` | `#4f55c4` | Reserved |
 
 Space separates regions. The page does not paint a frame around the
-bar, the strip, a section, a row, a choice, or an action.
+bar, the strip, a section, or a row. Segments that share an edge are
+split by a 1px `line` rule.
 
 The open section and the selected node are `inverse-bg` with
 `inverse-fg`, and they have no border. Theme and language are text on
@@ -294,13 +296,17 @@ current word has a 1px `fg` rule under it, and no fill. A resting
 choice is text on `bg`.
 An action is text on `bg`. Neither has a fill or a border.
 
-A field is `raised` with a 1px `line` along its bottom edge only.
+A field is `raised` with a 1px `line` frame. A placeholder, when one
+is shown, is `line`, so it is not read as a stored value.
 
 A healthy bar shows `ok` in `green`. A fault shows `alarm` in `red`.
 The status section does not take a red frame. Focus is 2px `blue`,
-square to the control, with no offset and no glow.
+square to the control, with no offset and no glow. A resting control
+under the pointer turns `blue`. An inverse control keeps `inverse-fg`.
+The reboot control stays `red`.
 
-`up` is `green`. `down` is `red`. `running` is `yellow`. The reboot
+`up` and `active` are `green`. `down` and `inactive` are `red`.
+`running` is `yellow`. The reboot
 control is `red` text on `bg`, with no frame. A hostname value is
 `blue`. The fingerprint is `cyan`. Every other value is `fg`.
 
@@ -323,11 +329,15 @@ letters is a bug.
 
 | Role | Size | Weight | Line height |
 |------|------|--------|-------------|
-| Wordmark `janus` | 16px | 650 | 1.2 |
-| Controls | 14px | 550 | 1.2 |
-| Box heading | 12px | 650 | 1.2 |
-| Rows | 15px | 450 | 1.45 |
-| Fingerprint and `pre` | 13px | 450 | 1.4 |
+| Wordmark `janus` | 16px | 700 | 1.2 |
+| Controls | 14px | 400 | 1.2 |
+| Box heading | 12px | 700 | 1.2 |
+| Rows | 15px | 400 | 1.45 |
+| Fingerprint and `pre` | 13px | 400 | 1.4 |
+
+The mono faces in the stack have two weights, regular and bold. The
+page uses `400` and `700`. It does not ask for a weight those faces
+cannot draw.
 
 These stay on the mono stack in Persian and Chinese too, and they stay left to
 right: the wordmark, a hostname, a fingerprint, an address, a MAC, a
@@ -366,32 +376,34 @@ action. The pressed control shows `running` until the action returns,
 then its own label again. The result line is where `ok` or the CLI error
 text stays. The CLI error text is not translated (§7.7).
 
-The column is at most `72ch`, at the start, with `16px` padding. Text
+The column is at most `88ch`, centered, with `16px` padding. Text
 aligns to the start. The page does not justify. `16px` separates the bar
 from the strip. `12px` separates the strip from the result line, and the
 result line from the section. The section has no frame and no extra
 padding. Its name has one `line` rule under it. A row has no rule. A
-row's block padding is `6px`.
+row's block padding is `6px`. The wider measure keeps a label, a value,
+and a three-word action on one line.
 
 The bar is one line. The wordmark and the alarm word are one cluster,
 `12px` apart. At least `40px` separates that cluster from the theme
-group. `40px` separates the theme group from the language group. When
-the line does not fit, the theme choice and the language choice wrap
-together onto the next line of the bar, at the end edge. The strip
+word and the language word. `16px` separates those two words. When
+the line does not fit, the two words wrap together onto the next line
+of the bar, at the end edge. The strip
 stays the band below. The strip is as wide as its
 controls. It does not draw an empty segment past the last one.
 
 A row has three tracks. The label track is `12rem`. The value track
 takes the rest. The action track is as wide as the widest row action in
 that box, and a shorter row action stretches to that width. The gap is
-`16px`. Below `36rem` the row is one track: label, then value, then
-action.
+`16px`. Below `48rem` the row is one track: label, then value, then
+action. The section strip drops the hairline and separates whole
+controls with space, so a wrapped line does not open with a rule.
 
 A catalog label is one short word and stays on one line. A data name used
 as a label wraps inside the label track when it is wider than that track.
 A strip control does not break; the strip wraps by whole control. A value
-may wrap. A plain token wider than its track breaks anywhere. Hyphenation
-is off.
+may wrap. A plain token wider than its track breaks at a hyphen first, and
+anywhere only when it still does not fit. Hyphenation is off.
 
 A read-only value may contain a catalog word and a datum. That is one
 value, not a second field. On a status row, `node` and the node name are
@@ -423,11 +435,11 @@ Every control is one of these patterns.
 
 | Pattern | Shape | Rule |
 |---------|-------|------|
-| Choice | Segments that share edges. One segment is inverse. | The strip, and a member list. A member list is a choice whose labels are data, drawn in the value track. Theme and language are not this pattern. |
+| Choice | Segments that share edges. One segment is inverse. | The strip, a member list, and a short list of names in a field. A choice is not a native menu. Theme and language are not this pattern. |
 | Read-only row | Label, then a value across the value track and the action track. | No button. |
 | Row action | Label, one field in the value track, one action in the action track. | The action applies to that field. The action is one button, or one segmented group of buttons that all apply to that same field. A field that a section action reads leaves the action track empty. |
 | Pair | Two or more rows. The action is only on the last. Earlier rows leave the action track empty. | The action applies to every field in the pair. The fields still share a width. An empty required field does nothing. |
-| Section action | Buttons in the value track, under the heading and before the rows. | No field of their own. Buttons that share a subject share edges. None stays inverse. |
+| Section action | Buttons at the start of the box, under the heading and before the rows. | No field of their own. Buttons that share a subject share edges. None stays inverse. |
 | Secret | A read-only row, then a row action. | The read-only value is `image` or `override`. The field is write-only and starts empty. The page never shows the stored value. Both rows use the same name as the label. |
 | Danger | A row action in red text, then a hint. | No frame. The hint is the next row: an empty label, and the hint in the value track. The button does nothing until the field is the required word. |
 
@@ -437,30 +449,31 @@ members keeps its head and `test`, and draws no member choice.
 | Place | Pattern |
 |-------|---------|
 | Login | Read-only `host`. Read-only `fingerprint`. Row action `passphrase` with `enter`. There is no strip. The result line sits under the passphrase row. `rejected` and `closed` use it. |
-| `status` | Read-only rows only. One row per WAN: label `wan` and the name, value `up` or `down` and the address. One row per LAN: label `lan` and the name, value `leases` and the count. Then `engine`, `refresh`, `geo`, `drift`, `state`, and `power` when a reading exists. One row per group: label `group` and the name, value `node` and the node name. |
-| `tunnel` | Section actions `refresh` and `geo`, sharing edges. `refresh` here has no field and refreshes every subscription. Each group is a row action: the label is the group name, the value is the strategy, the action is `test`. Under that row, the members are a choice in the value track. The current node is inverse. Activating a member runs `select`. The button text is the node name. There is no second form for typing a group and a node. One row action `subscription`: the field is a choice of names, the action is `refresh` for that name only. The same catalog word as the section action. The place is the difference. No subscription omits that row. |
+| `status` | Read-only rows only. One row per WAN: label `wan` and the name, value `up` or `down` and the address. One row per LAN: label `lan` and the name, value `leases` and the count. Then `engine`, `refresh`, `geo`, `drift`, `state`, and `power` when a reading exists. One row per node: label `node` and the name, value the node's labels. The picked name is inverse. A label is the key, one space, the value, then two spaces before the next key. There is no asterisk and no equals sign. |
+| `tunnel` | Section actions `refresh`, `geo`, and `probe`, sharing edges, at the start under the heading. `refresh` here has no field and refreshes every subscription. Each node is a read-only row. The label is the node name, inverse when the engine picked it. The value is that node's labels, drawn as on `status`. One row action `subscription`: the field is a choice of names, the action is `refresh` for that name only. The same catalog word as the section action. The place is the difference. No subscription omits that row. |
 | `network` | Row action `wan`. The field is the typed name. The action is the segmented pair `show` and `restart`. Row action `lan`. The field is a choice of LAN names from the image facts. The action is `leases`. No LAN omits that row. |
 | `bluetooth` | Section action `discover`. One row per nearby speaker: the label is the name, or the address when the name is empty, the value is the address, and the action is `pair` when it is not already paired. The `code` field has no button of its own. Every `pair` in the section reads it. Empty is Just Works. A code that is not 1 to 16 letters or digits is rejected. Row action `address` with `pair`. An address that is not six hex bytes does nothing. Then one row per paired speaker. The label is the name, or the address when the name is empty. The value is `paired`, `connected`, `trusted`, and `last` for the flags that are set. The action is the segmented group `connect`, `disconnect`, `remove`. |
-| `overrides` | Each subscription and each Wi-Fi AP is a secret. A lease is a pair: `lease` (a LAN choice), `host`, `mac`, and `ip`, with `set` only on the `ip` row. An empty host, MAC, or address does nothing. Row action `unset`: the field is the key. |
+| `overrides` | Each subscription and each Wi-Fi AP is a secret. When the state is `override`, `unset` shares an edge with `set`. A listed lease is a row: the label is the host, the value is the LAN name, the MAC, and the address, and the action is `unset`. A new lease is one pair under the `lease` row: the LAN choice, then `host`, `mac`, and `ip` indented beneath it, with `set` only on the `ip` row. Those three rows are not peers of the listed leases or of `unset`. An empty host, MAC, or address does nothing. Row action `unset`: the field is a key that is not already listed. |
 | `monitoring` | Read-only `scope`. The `iface` row is a field and no action. An empty field means every interface. Section actions `traffic`, `daily`, and `monthly` share edges and use that field. `top` joins that group only when the scope is `per-host`. A second group, sharing edges among itself: `stats`, `check`, `flush`. Row action `name` with `query`. Read-only `audit` when that feature is in the image. |
-| `system` | The version is a `pre` block. Danger: label `reboot`, the confirmation field, the red `reboot` button. The hint row is `reboot-hint`. The button runs only when the field is the Latin word `reboot`. |
+| `system` | The version is a `pre` block. Danger: label `reboot`, the confirmation field, the red `reboot` button. The hint row is `reboot-hint`. The button runs only when the field is the Latin word `reboot`. A successful reboot writes `ok` on the result line and leaves the version where it is. |
 
 ### 7.6 Direction, theme, and language
 
 `en`, `ru`, and `zh` set `dir="ltr"`. `fa` sets `dir="rtl"` and `lang="fa"`.
 Spacing and alignment use logical properties (`padding-inline`,
-`text-align: start`, `margin-inline`). The column sits on the start edge,
-which is the right edge in Persian. The section order in the document
-does not change, so `status` is the first control at that edge.
+`text-align: start`, `margin-inline`). The column stays centered. Text
+inside it aligns to the start, which is the right edge in Persian. The
+section order in the document does not change, so `status` is the first
+control at that edge.
 
 A value is a bidi isolate. Identifiers, addresses, the fingerprint, and
 typed fields are `dir="ltr"` inside that isolate, so an address does not
 reverse. The passphrase field and the reboot field are left to right.
 
-The first visit follows `prefers-color-scheme`. The theme control is
+The first visit follows `prefers-color-scheme`. The theme list is
 `light` then `dark`, stored in the browser under `janus-theme`. The
-language control is `en`, `ru`, `fa`, `zh`, in that order, stored under
-`janus-lang`. The drawn labels are `en`, `ру`, `فا`, and `简中`, in every
+language list is `en`, `ru`, `fa`, `zh`, in that order, stored under
+`janus-lang`. The drawn labels are `eng`, `рус`, `فارسی`, and `简中`, in every
 page language. The first visit walks `navigator.languages` and takes
 the first match. `en`, `ru`, and `fa` match their primary tag. `zh`,
 `zh-Hans`, `zh-CN`, and `zh-SG` match `zh`. `zh-Hant`, `zh-TW`, `zh-HK`,
@@ -468,10 +481,14 @@ and `zh-MO` do not match. No match is `en`. The language does not follow
 `janus.system.region`. The router stores neither choice, and neither
 choice takes a rebuild.
 
-Theme is one compact group, `light / dark`. Language is a second,
-`en / ру / فا / 简中`. The slash is the separator, not a catalog word.
-`40px` separates the two groups. At least `40px` separates them from
-the wordmark and the alarm word. The current word has the `fg` rule.
+The bar shows the current theme word and the current language word.
+Each has the `fg` rule under it, and each is at least 24px tall.
+Activating a word draws its list under that word: the same words,
+stacked, in a `line` frame, on `bg`. The current row is inverse.
+Activating a row applies it and closes the list. A press outside the
+list, or Escape, closes it without a change. The list is not a native
+menu. `16px` separates the two words. At least `40px` separates them
+from the wordmark and the alarm word.
 
 ### 7.7 Strings
 
@@ -516,6 +533,7 @@ drawn label. A member button shows the node name.
 | `system` | system | система | سیستم | 系统 |
 | `refresh` | refresh | обновить | تازه‌سازی | 刷新 |
 | `geo` | geo | гео | ژئو | 地理 |
+| `probe` | probe | проба | آزمایش | 探测 |
 | `subscription` | subscription | подписка | اشتراک | 订阅 |
 | `group` | group | группа | گروه | 分组 |
 | `node` | node | узел | گره | 节点 |
@@ -564,21 +582,21 @@ drawn label. A member button shows the node name.
 | `counters` | counters | счётчики | شمارنده‌ها | 计数 |
 | `per-host` | per-host | по узлам | به‌ازای میزبان | 按主机 |
 | `flows` | flows | потоки | جریان‌ها | 流 |
+| `oldest` | oldest | старейшая | کهنه‌ترین | 最早 |
 | `script` | this page needs the browser script | этой странице нужен сценарий браузера | این صفحه به اسکریپت مرورگر نیاز دارد | 此页面需要浏览器脚本 |
 
 ### 7.8 Picture
 
-Brackets are the inverse control. The current theme and the current
-language are not bracketed. In these pictures the rule sits under
-`light` and under `en`. A field is drawn as dots. `potato` is
-`blue`. The fingerprint is `cyan`. On the signed-in bar, `ok` is
+Brackets are the inverse control. The bar shows the current theme word
+and the current language word, with the rule under each. A field is
+drawn as dots. `potato` is `blue`. The fingerprint is `cyan`. On the signed-in bar, `ok` is
 `green`. `enter` is a resting row action, on the passphrase row. The
 marks around a picture are the column. The page does not paint that
 frame, and it does not paint a rule on each row.
 
 ```
 +------------------------------------------------------------------+
-| janus                 light / dark          en / ру / فا / 简中    |
+| janus                                          dark   eng        |
 +------------------------------------------------------------------+
 | host              potato                                         |
 | fingerprint       AA:BB:CC:DD:EE:FF:00:11                        |
@@ -589,7 +607,7 @@ frame, and it does not paint a rule on each row.
 
 ```
 +------------------------------------------------------------------+
-| janus   ok            light / dark          en / ру / فا / 简中    |
+| janus   ok                                     dark   eng        |
 +------------------------------------------------------------------+
 | [status]  tunnel  network  overrides  monitoring  system         |
 +------------------------------------------------------------------+
@@ -598,7 +616,8 @@ frame, and it does not paint a rule on each row.
 | wan main          up        203.0.113.10                         |
 | lan home          leases    4                                    |
 | engine            active                                         |
-| group proxy       node      Tokyo                                |
+| node [Tokyo]      latency 42  protocol vless  region jp          |
+| node Osaka        latency 88  protocol vmess  region jp          |
 | refresh           ok                                             |
 | geo               ok                                             |
 | drift             no                                             |
@@ -606,25 +625,26 @@ frame, and it does not paint a rule on each row.
 +------------------------------------------------------------------+
 ```
 
-`node` and `Tokyo` on the status row are one value. The tunnel box puts
-section actions in the value track. They are not inverse. `Tokyo` is
-the current member. `refresh` on the subscription row is the one-name
+`node` and the node name share the label track. `[Tokyo]` is the picked
+name. The tunnel box puts section actions at the start. They are not
+inverse. `[Tokyo]` is the node the engine picked. `[vendor]` is the
+current subscription name. `refresh` on that row is the one-name
 action, not the section action.
 
 ```
 +------------------------------------------------------------------+
 | tunnel                                                           |
 |------------------------------------------------------------------|
-|                   refresh  geo                                   |
+| refresh | geo | probe                                            |
 |------------------------------------------------------------------|
-| proxy             url-test                             test      |
-|                   [Tokyo]  Osaka                                 |
-| subscription      main                                refresh    |
+| [Tokyo]           latency 42  protocol vless  region jp          |
+| Osaka             latency 88  protocol vmess  region jp          |
+| subscription      [vendor] | backup                   refresh    |
 +------------------------------------------------------------------+
 ```
 
-In Persian the same blocks sit on the right. `potato`, the fingerprint,
-and `203.0.113.10` stay left to right.
+In Persian the text of the same centered column starts on the right.
+`potato`, the fingerprint, and `203.0.113.10` stay left to right.
 
 ## 8. Out of scope
 

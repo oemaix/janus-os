@@ -93,13 +93,13 @@ html[lang="zh"] { font-family: var(--cjk); letter-spacing: 0; }
 html, body { margin: 0; background: var(--bg); color: var(--fg); }
 body {
   font-size: 15px;
-  font-weight: 450;
+  font-weight: 400;
   line-height: 1.45;
   hyphens: none;
   text-align: start;
   font-variant-numeric: lining-nums;
 }
-.col { max-width: 72ch; padding: 16px; }
+.col { max-width: 88ch; margin-inline: auto; padding: 16px; }
 .mono, .value, input, select, pre, .brand, .ltr {
   font-family: var(--mono);
   font-variant-ligatures: none;
@@ -107,16 +107,16 @@ body {
 .brand {
   padding: 0;
   font-size: 16px;
-  font-weight: 650;
+  font-weight: 700;
   line-height: 1.2;
   letter-spacing: 0.06em;
 }
-.alarm { padding: 0; font-size: 14px; font-weight: 550; line-height: 1.2; }
+.alarm { padding: 0; font-size: 14px; font-weight: 400; line-height: 1.2; }
 .hd {
   font-family: var(--mono);
   font-variant-ligatures: none;
   font-size: 12px;
-  font-weight: 650;
+  font-weight: 700;
   line-height: 1.2;
   letter-spacing: 0.04em;
 }
@@ -127,9 +127,34 @@ html[lang="zh"] .hd { font-family: var(--cjk); font-variant-ligatures: normal; l
   flex-wrap: wrap;
   align-items: stretch;
 }
-.bar { justify-content: space-between; column-gap: 40px; row-gap: 8px; align-items: baseline; margin-bottom: 16px; }
-.bar-start { flex: 0 0 auto; flex-wrap: nowrap; align-items: baseline; gap: 12px; }
-.bar-end { flex: 1 1 auto; flex-wrap: nowrap; align-items: baseline; justify-content: flex-end; column-gap: 40px; margin-inline-start: auto; }
+.bar { justify-content: space-between; column-gap: 40px; row-gap: 8px; align-items: center; margin-bottom: 16px; }
+.bar-start { flex: 0 0 auto; flex-wrap: nowrap; align-items: center; gap: 12px; }
+.bar-end { flex: 1 1 auto; flex-wrap: nowrap; align-items: center; justify-content: flex-end; column-gap: 16px; margin-inline-start: auto; }
+.menu { position: relative; }
+.menu-face {
+  padding: 2px 0;
+  min-height: 24px;
+  border-bottom: 1px solid var(--fg);
+}
+.menu-face:hover { color: var(--blue); border-bottom-color: var(--blue); }
+.menu-list {
+  position: absolute;
+  z-index: 3;
+  inset-inline-end: 0;
+  top: calc(100% + 4px);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: max-content;
+  min-width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--line);
+}
+.menu-list > button { text-align: start; padding: 4px 8px; min-height: 24px; }
+.menu-list > button + button { border-inline-start: 0; border-block-start: 1px solid var(--line); }
+#lang-face[lang="fa"], #lang-fa { font-family: var(--ar); font-variant-ligatures: normal; letter-spacing: 0; }
+#lang-face[lang="zh"], #lang-zh { font-family: var(--cjk); letter-spacing: 0; }
+#lang-face[lang="en"], #lang-face[lang="ru"], #lang-en, #lang-ru { font-family: var(--mono); font-variant-ligatures: none; }
 .tabs, .choice, .actions { width: fit-content; max-width: 100%; }
 [hidden] { display: none !important; }
 button, .tab, input, select, .box {
@@ -143,19 +168,34 @@ button, .tab {
   padding: 8px 12px;
   margin: 0;
   font-size: 14px;
-  font-weight: 550;
+  font-weight: 400;
   line-height: 1.2;
   white-space: nowrap;
   text-align: start;
+  cursor: pointer;
 }
 button.on, .tab.on { background: var(--inverse-bg); color: var(--inverse-fg); }
-.quiet { flex-wrap: nowrap; align-items: baseline; gap: 0; }
-.quiet > button { padding: 2px 0; }
+button:hover, .tab:hover { color: var(--blue); }
+button.on:hover, .tab.on:hover { color: var(--inverse-fg); }
+button.danger:hover { color: var(--red); }
+.actions > button + button,
+.seg:not(.quiet) > button + button,
+.tabs > .tab + .tab,
+.choice > button + button { border-inline-start: 1px solid var(--line); }
+.quiet { flex-wrap: nowrap; align-items: center; gap: 0; }
+.quiet > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.25em;
+  min-height: 24px;
+  padding: 2px 4px;
+}
 .quiet > button.on { background: transparent; color: var(--fg); border-bottom: 1px solid var(--fg); }
+.quiet > button:hover { color: var(--blue); }
+.quiet > button.on:hover { color: var(--blue); border-bottom-color: var(--blue); }
+.mark { background: var(--inverse-bg); color: var(--inverse-fg); padding: 0 0.25em; }
 .sep { padding-inline: 0.15em; color: var(--line); font-family: var(--mono); font-variant-ligatures: none; }
-#lang-en, #lang-ru { font-family: var(--mono); font-variant-ligatures: none; }
-#lang-fa { font-family: var(--ar); font-variant-ligatures: normal; letter-spacing: 0; }
-#lang-zh { font-family: var(--cjk); letter-spacing: 0; }
 button.danger { color: var(--red); }
 button.run { color: var(--yellow); }
 .box {
@@ -167,7 +207,7 @@ button.run { color: var(--yellow); }
   margin-top: 12px;
 }
 #login { margin-top: 0; }
-.hd, pre, #login-form, #lease-form, #url-forms, #wifi-forms, #override-rows, #nodes, #status-body {
+.hd, pre, #login-form, #lease-form, #url-forms, #wifi-forms, #override-rows, #nodes, #status-body, #bt-found, #bt-devices {
   display: grid;
   grid-template-columns: subgrid;
   grid-column: 1 / -1;
@@ -183,7 +223,7 @@ pre:empty { display: none; }
   padding-block: 6px;
 }
 .cluster { display: contents; }
-.lab { min-width: 0; overflow-wrap: anywhere; }
+.lab { min-width: 0; overflow-wrap: break-word; }
 .value { unicode-bidi: isolate; min-width: 0; }
 .fp { overflow-wrap: normal; }
 .fp-chunk { display: inline-block; white-space: nowrap; }
@@ -199,39 +239,48 @@ input, select {
   min-width: 0;
   padding: 6px 8px;
   background: var(--raised);
-  border-bottom: 1px solid var(--line);
+  border: 1px solid var(--line);
   font-family: var(--mono);
   font-variant-ligatures: none;
   font-size: 15px;
-  font-weight: 450;
+  font-weight: 400;
   line-height: 1.45;
 }
+input::placeholder { color: var(--line); }
 pre {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   margin: 8px 0 0;
   font-size: 13px;
-  font-weight: 450;
+  font-weight: 400;
   line-height: 1.4;
   text-align: start;
 }
-.fp { color: var(--cyan); font-size: 13px; font-weight: 450; line-height: 1.4; }
+.fp { color: var(--cyan); font-size: 13px; font-weight: 400; line-height: 1.4; }
 .host { color: var(--blue); }
 .ok { color: var(--green); }
 .bad { color: var(--red); }
 .run { color: var(--yellow); }
 .hint { font-size: 13px; line-height: 1.4; white-space: normal; padding-bottom: 8px; }
 button:focus, input:focus, select:focus, .tab:focus { outline: 2px solid var(--blue); outline-offset: 0; }
-.actions, .choice { grid-column: 2 / -1; justify-self: start; margin: 0; }
-.actions { padding-block: 6px; }
-.choice { padding-block: 0 6px; }
+.actions { grid-column: 1 / -1; justify-self: start; margin: 0; padding-block: 6px; }
+.choice { justify-self: start; margin: 0; max-width: 100%; }
+.pair { margin-top: 10px; }
+#url-forms > .pair:first-child, #wifi-forms > .pair:first-child { margin-top: 0; }
+#lease-form { margin-top: 10px; }
+.sub { padding-block: 2px; }
+.sub > .lab { padding-inline-start: 2rem; }
+html[dir="rtl"] .sub > .lab.ltr { padding-inline-start: 0; padding-inline-end: 2rem; text-align: end; }
+#unset-row { margin-top: 10px; }
 .choice > button { white-space: normal; overflow-wrap: anywhere; max-width: 100%; }
 #result { min-height: 1.2em; margin-top: 12px; }
 #login-msg { grid-column: 2 / -1; min-height: 1.2em; }
 #login-msg:empty { display: none; }
-@media (max-width: 36rem) {
+@media (max-width: 48rem) {
   .box { grid-template-columns: minmax(0, 1fr); }
   .row > .value.text:last-child, .hint, .actions, .choice, #login-msg { grid-column: 1 / -1; }
+  .tabs > .tab + .tab { border-inline-start: 0; }
+  .tabs { column-gap: 12px; row-gap: 4px; }
 }
 </style>
 </head>
@@ -243,19 +292,21 @@ button:focus, input:focus, select:focus, .tab:focus { outline: 2px solid var(--b
       <div class="alarm ok" id="alarm" data-state="ok" hidden>ok</div>
     </div>
     <div class="bar-end">
-      <div class="seg quiet">
-        <button type="button" id="theme-light" data-i18n="light">light</button>
-        <span class="sep" aria-hidden="true">/</span>
-        <button type="button" id="theme-dark" data-i18n="dark">dark</button>
+      <div class="menu">
+        <button type="button" class="menu-face" id="theme-face" data-i18n="dark" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">dark</button>
+        <div class="menu-list" id="theme-list" hidden role="group">
+          <button type="button" id="theme-light" data-i18n="light">light</button>
+          <button type="button" id="theme-dark" data-i18n="dark">dark</button>
+        </div>
       </div>
-      <div class="seg quiet">
-        <button type="button" id="lang-en">en</button>
-        <span class="sep" aria-hidden="true">/</span>
-        <button type="button" id="lang-ru">ру</button>
-        <span class="sep" aria-hidden="true">/</span>
-        <button type="button" id="lang-fa">فا</button>
-        <span class="sep" aria-hidden="true">/</span>
-        <button type="button" id="lang-zh">简中</button>
+      <div class="menu">
+        <button type="button" class="menu-face" id="lang-face" lang="en" aria-haspopup="true" aria-expanded="false" aria-controls="lang-list">en</button>
+        <div class="menu-list" id="lang-list" hidden role="group">
+          <button type="button" id="lang-en">eng</button>
+          <button type="button" id="lang-ru">рус</button>
+          <button type="button" id="lang-fa">فارسی</button>
+          <button type="button" id="lang-zh">简中</button>
+        </div>
       </div>
     </div>
   </div>
@@ -291,13 +342,13 @@ button:focus, input:focus, select:focus, .tab:focus { outline: 2px solid var(--b
         <button type="button" id="probe-nodes" data-i18n="probe">probe</button>
       </div>
       <div id="nodes"></div>
-      <div class="row" id="sub-row"><span class="lab" data-i18n="subscription">subscription</span><select id="sub-name" dir="ltr"></select><button type="button" id="refresh-one" data-i18n="refresh">refresh</button></div>
+      <div class="row" id="sub-row"><span class="lab" id="sub-lab" data-i18n="subscription">subscription</span><span class="choice" id="sub-name" role="group" aria-labelledby="sub-lab"></span><button type="button" id="refresh-one" data-i18n="refresh">refresh</button></div>
       <pre class="value text ltr" id="tunnel-out"></pre>
     </section>
     <section class="box" id="network-box" data-panel="network" hidden>
       <div class="hd" data-i18n="network">network</div>
-      <div class="row"><span class="lab ltr">wan</span><input id="wan-name" autocomplete="off" dir="ltr"><span class="seg"><button type="button" id="wan-show" data-i18n="show">show</button><button type="button" id="wan-restart" data-i18n="restart">restart</button></span></div>
-      <div class="row" id="lan-row"><span class="lab ltr">lan</span><select id="lan-name" dir="ltr"></select><button type="button" id="lan-leases" data-i18n="leases">leases</button></div>
+      <div class="row"><label class="lab ltr" for="wan-name">wan</label><input id="wan-name" autocomplete="off" dir="ltr"><span class="seg"><button type="button" id="wan-show" data-i18n="show">show</button><button type="button" id="wan-restart" data-i18n="restart">restart</button></span></div>
+      <div class="row" id="lan-row"><span class="lab ltr" id="lan-lab">lan</span><span class="choice" id="lan-name" role="group" aria-labelledby="lan-lab"></span><button type="button" id="lan-leases" data-i18n="leases">leases</button></div>
       <pre class="value text ltr" id="network-out"></pre>
     </section>
     <section class="box" id="bluetooth-box" data-panel="bluetooth" hidden>
@@ -306,8 +357,8 @@ button:focus, input:focus, select:focus, .tab:focus { outline: 2px solid var(--b
         <button type="button" id="bt-discover" data-i18n="discover">discover</button>
       </div>
       <div id="bt-found"></div>
-      <div class="row"><span class="lab" data-i18n="code">code</span><span class="value cluster"><input id="bt-code" autocomplete="off" dir="ltr" maxlength="16"></span></div>
-      <div class="row"><span class="lab" data-i18n="address">address</span><span class="value cluster"><input id="bt-address" autocomplete="off" dir="ltr" placeholder="aa:bb:cc:dd:ee:ff"><button type="button" id="bt-pair" data-i18n="pair">pair</button></span></div>
+      <div class="row"><label class="lab" for="bt-code" data-i18n="code">code</label><span class="value cluster"><input id="bt-code" autocomplete="off" dir="ltr" maxlength="16"></span></div>
+      <div class="row"><label class="lab" for="bt-address" data-i18n="address">address</label><span class="value cluster"><input id="bt-address" autocomplete="off" dir="ltr"><button type="button" id="bt-pair" data-i18n="pair">pair</button></span></div>
       <div id="bt-devices"></div>
       <pre class="value text ltr" id="bt-out"></pre>
     </section>
@@ -317,18 +368,18 @@ button:focus, input:focus, select:focus, .tab:focus { outline: 2px solid var(--b
       <div id="wifi-forms"></div>
       <div id="override-rows"></div>
       <div id="lease-form">
-        <div class="row"><span class="lab" data-i18n="lease">lease</span><select id="lease-lan" dir="ltr"></select></div>
-        <div class="row"><span class="lab" data-i18n="host">host</span><input id="lease-host" data-i18n-placeholder="host" placeholder="host" autocomplete="off" dir="ltr"></div>
-        <div class="row"><span class="lab ltr">mac</span><input id="lease-mac" placeholder="mac" autocomplete="off" dir="ltr"></div>
-        <div class="row"><span class="lab ltr">ip</span><input id="lease-ip" placeholder="ip" autocomplete="off" dir="ltr"><button type="button" id="lease-set" data-i18n="set">set</button></div>
+        <div class="row"><span class="lab" id="lease-lab" data-i18n="lease">lease</span><span class="choice" id="lease-lan" role="group" aria-labelledby="lease-lab"></span></div>
+        <div class="row sub"><label class="lab" for="lease-host" data-i18n="host">host</label><input id="lease-host" autocomplete="off" dir="ltr"></div>
+        <div class="row sub"><label class="lab ltr" for="lease-mac">mac</label><input id="lease-mac" autocomplete="off" dir="ltr"></div>
+        <div class="row sub"><label class="lab ltr" for="lease-ip">ip</label><input id="lease-ip" autocomplete="off" dir="ltr"><button type="button" id="lease-set" data-i18n="set">set</button></div>
       </div>
-      <div class="row"><span class="lab" data-i18n="unset">unset</span><span class="value cluster"><input id="unset-key" autocomplete="off" dir="ltr"><button type="button" id="do-unset" data-i18n="unset">unset</button></span></div>
+      <div class="row" id="unset-row"><label class="lab" for="unset-key" data-i18n="unset">unset</label><span class="value cluster"><input id="unset-key" autocomplete="off" dir="ltr"><button type="button" id="do-unset" data-i18n="unset">unset</button></span></div>
       <pre class="value text ltr" id="override-out"></pre>
     </section>
     <section class="box" id="monitoring-box" data-panel="monitoring" hidden>
       <div class="hd" data-i18n="monitoring">monitoring</div>
       <div class="row"><span class="lab" data-i18n="scope">scope</span><span class="value text ltr" id="scope-line"></span></div>
-      <div class="row"><span class="lab" data-i18n="iface">iface</span><input id="traffic-iface" autocomplete="off" dir="ltr"></div>
+      <div class="row"><label class="lab" for="traffic-iface" data-i18n="iface">iface</label><input id="traffic-iface" autocomplete="off" dir="ltr"></div>
       <div class="actions">
         <button type="button" id="traffic-now" data-i18n="traffic">traffic</button>
         <button type="button" id="traffic-daily" data-i18n="daily">daily</button>
@@ -340,15 +391,15 @@ button:focus, input:focus, select:focus, .tab:focus { outline: 2px solid var(--b
         <button type="button" id="dns-check" data-i18n="check">check</button>
         <button type="button" id="dns-flush" data-i18n="flush">flush</button>
       </div>
-      <div class="row"><span class="lab" data-i18n="name">name</span><span class="value cluster"><input id="dns-name" autocomplete="off" dir="ltr"><button type="button" id="dns-query" data-i18n="query">query</button></span></div>
+      <div class="row"><label class="lab" for="dns-name" data-i18n="name">name</label><span class="value cluster"><input id="dns-name" autocomplete="off" dir="ltr"><button type="button" id="dns-query" data-i18n="query">query</button></span></div>
       <div class="row" id="audit-row"><span class="lab" data-i18n="audit">audit</span><span class="value text ltr" id="audit-line"></span></div>
       <pre class="value text ltr" id="mon-out"></pre>
     </section>
     <section class="box" id="system-box" data-panel="system" hidden>
       <div class="hd" data-i18n="system">system</div>
       <pre class="value text ltr" id="version-out"></pre>
-      <div class="row"><span class="lab" data-i18n="reboot">reboot</span><span class="value cluster"><input id="reboot-word" autocomplete="off" dir="ltr"><button type="button" id="do-reboot" class="danger" data-i18n="reboot">reboot</button></span></div>
-      <div class="hint" data-i18n="reboot-hint">type reboot</div>
+      <div class="row"><label class="lab" for="reboot-word" data-i18n="reboot">reboot</label><span class="value cluster"><input id="reboot-word" autocomplete="off" dir="ltr"><button type="button" id="do-reboot" class="danger" data-i18n="reboot">reboot</button></span></div>
+      <div class="row"><span class="lab"></span><span class="hint" data-i18n="reboot-hint">type reboot</span></div>
     </section>
   </div>
 </div>
@@ -370,6 +421,7 @@ var STR = {
     active: "active", inactive: "inactive", yes: "yes", no: "no", selector: "selector",
     "url-test": "url-test", fallback: "fallback", "load-balance": "load-balance",
     counters: "counters", "per-host": "per-host", flows: "flows",
+    oldest: "oldest",
     script: "this page needs the browser script"
   },
   ru: {
@@ -389,6 +441,7 @@ var STR = {
     active: "активен", inactive: "неактивен", yes: "да", no: "нет", selector: "выбор",
     "url-test": "проверка", fallback: "запасной", "load-balance": "баланс",
     counters: "счётчики", "per-host": "по узлам", flows: "потоки",
+    oldest: "старейшая",
     script: "этой странице нужен сценарий браузера"
   },
   fa: {
@@ -408,6 +461,7 @@ var STR = {
     active: "فعال", inactive: "غیرفعال", yes: "بله", no: "خیر", selector: "گزینش",
     "url-test": "آزمون نشانی", fallback: "پشتیبان", "load-balance": "توازن",
     counters: "شمارنده‌ها", "per-host": "به‌ازای میزبان", flows: "جریان‌ها",
+    oldest: "کهنه‌ترین",
     script: "این صفحه به اسکریپت مرورگر نیاز دارد"
   },
   zh: {
@@ -427,6 +481,7 @@ var STR = {
     active: "运行", inactive: "停止", yes: "是", no: "否", selector: "选择",
     "url-test": "测速", fallback: "回退", "load-balance": "均衡",
     counters: "计数", "per-host": "按主机", flows: "流",
+    oldest: "最早",
     script: "此页面需要浏览器脚本"
   }
 };
@@ -461,6 +516,28 @@ function applyLang(lang) {
   ["en", "ru", "fa", "zh"].forEach(function (tag) {
     document.getElementById("lang-" + tag).classList.toggle("on", tag === lang);
   });
+  var face = document.getElementById("lang-face");
+  var drawn = {en: "eng", ru: "рус", fa: "فارسی", zh: "简中"};
+  face.textContent = drawn[lang] || "en";
+  face.lang = lang;
+  closeMenus();
+}
+
+function closeMenus() {
+  document.querySelectorAll(".menu-list").forEach(function (list) { list.hidden = true; });
+  document.querySelectorAll(".menu-face").forEach(function (face) {
+    face.setAttribute("aria-expanded", "false");
+  });
+}
+
+function toggleMenu(faceId, listId) {
+  var list = document.getElementById(listId);
+  var face = document.getElementById(faceId);
+  var willOpen = list.hidden;
+  closeMenus();
+  if (!willOpen) return;
+  list.hidden = false;
+  face.setAttribute("aria-expanded", "true");
 }
 
 function theme(name) {
@@ -468,6 +545,10 @@ function theme(name) {
   try { localStorage.setItem("janus-theme", name); } catch (e) {}
   document.getElementById("theme-light").classList.toggle("on", name === "light");
   document.getElementById("theme-dark").classList.toggle("on", name === "dark");
+  var face = document.getElementById("theme-face");
+  face.setAttribute("data-i18n", name);
+  face.textContent = t(name);
+  closeMenus();
 }
 
 function parseBody(text) {
@@ -574,8 +655,8 @@ function paintCatalog(el, raw) {
 function word(key) {
   var el = document.createElement("span");
   var tone = "";
-  if (key === "up" || key === "ok") tone = "ok";
-  else if (key === "down" || key === "alarm" || key === "failed" || key === "rejected" || key === "closed") tone = "bad";
+  if (key === "up" || key === "ok" || key === "active") tone = "ok";
+  else if (key === "down" || key === "alarm" || key === "failed" || key === "rejected" || key === "closed" || key === "inactive") tone = "bad";
   else if (key === "running") tone = "run";
   if (tone) el.className = tone;
   el.setAttribute("data-state", key);
@@ -695,10 +776,7 @@ function renderStatus(el, data) {
     data.nodes.forEach(function (node) {
       if (!node || typeof node !== "object") return;
       var labels = node.labels && typeof node.labels === "object" ? node.labels : {};
-      var text = Object.keys(labels).sort().map(function (key) {
-        return key + "=" + String(labels[key]);
-      }).join(" ");
-      addRow(el, spaced([word("node"), lit((node.picked ? "* " : "") + (node.name || ""))]), shown(text));
+      addRow(el, spaced([word("node"), nameNode(node.name, node.picked)]), [labelsNode(labels)]);
     });
   }
   ["refresh", "geo", "drift", "state", "power"].forEach(function (key) {
@@ -807,6 +885,65 @@ function startPoll() {
   }, 10000);
 }
 
+function paintAudit(res) {
+  var el = document.getElementById("audit-line");
+  el.className = "value text";
+  el.textContent = "";
+  el.removeAttribute("data-state");
+  if (res.status !== 200) {
+    el.className = "value text ltr";
+    el.textContent = messageOf(res.text, res.status);
+    return;
+  }
+  var data = res.data;
+  var rec;
+  var path = "";
+  var size = "";
+  var oldest = "";
+  if (data && typeof data === "object" && !Array.isArray(data) && (data.recording !== undefined || data.path || data.size !== undefined)) {
+    rec = data.recording;
+    path = data.path || "";
+    size = data.size === undefined || data.size === null ? "" : String(data.size);
+    oldest = data.oldest || "";
+  } else {
+    String(res.text || "").split("\n").forEach(function (line) {
+      var cut = line.indexOf(":");
+      if (cut < 0) return;
+      var key = line.slice(0, cut).trim();
+      var value = line.slice(cut + 1).trim();
+      if (key === "recording") rec = value;
+      else if (key === "path") path = value;
+      else if (key === "size") size = value;
+      else if (key === "oldest") oldest = value;
+    });
+  }
+  if (rec === undefined && !path && !size) {
+    el.className = "value text ltr";
+    el.style.whiteSpace = "pre-wrap";
+    el.textContent = typeof res.data === "string" ? res.data : (res.text || "");
+    return;
+  }
+  var on = rec === true || rec === "on" || rec === "yes" || rec === "true";
+  el.appendChild(word(on ? "yes" : "no"));
+  if (path) {
+    el.appendChild(document.createTextNode(" "));
+    el.appendChild(lit(path));
+  }
+  if (size) {
+    el.appendChild(document.createTextNode(" "));
+    el.appendChild(lit(size));
+  }
+  if (oldest) {
+    el.appendChild(document.createTextNode(" "));
+    var tag = document.createElement("span");
+    tag.setAttribute("data-i18n", "oldest");
+    tag.textContent = t("oldest");
+    el.appendChild(tag);
+    el.appendChild(document.createTextNode(" "));
+    el.appendChild(lit(oldest));
+  }
+}
+
 function showSection(name) {
   current = name;
   clearNote();
@@ -837,7 +974,7 @@ function showSection(name) {
     api("GET", "/api/traffic").then(function (res) { fillOut("mon-out", res); });
     if (META.audit) {
       api("GET", "/api/audit").then(function (res) {
-        document.getElementById("audit-line").textContent = res.status === 200 ? res.text : messageOf(res.text, res.status);
+        paintAudit(res);
       });
     }
   }
@@ -858,21 +995,50 @@ function loadNodes(keepOut) {
   });
 }
 
-function fillSelect(id, values, placeholder) {
-  var sel = document.getElementById(id);
-  sel.textContent = "";
-  if (placeholder) {
-    var empty = document.createElement("option");
-    empty.value = "";
-    empty.textContent = placeholder;
-    sel.appendChild(empty);
-  }
+function choiceValue(id) {
+  var box = document.getElementById(id);
+  if (!box) return "";
+  var on = box.querySelector("button.on");
+  return on ? (on.getAttribute("data-value") || "") : "";
+}
+
+function fillChoice(id, values) {
+  var box = document.getElementById(id);
+  var current = choiceValue(id);
+  var pick = current && values.indexOf(current) >= 0 ? current : (values[0] || "");
+  box.textContent = "";
   values.forEach(function (value) {
-    var opt = document.createElement("option");
-    opt.value = value;
-    opt.textContent = value;
-    sel.appendChild(opt);
+    var button = document.createElement("button");
+    button.type = "button";
+    button.className = "ltr";
+    button.setAttribute("data-value", value);
+    button.textContent = value;
+    if (value === pick) button.classList.add("on");
+    button.addEventListener("click", function () {
+      var all = box.querySelectorAll("button");
+      for (var i = 0; i < all.length; i++) all[i].classList.toggle("on", all[i] === button);
+    });
+    box.appendChild(button);
   });
+}
+
+function nameNode(name, picked) {
+  var el = document.createElement("span");
+  el.className = "ltr" + (picked ? " mark" : "");
+  el.textContent = name || "";
+  return el;
+}
+
+function labelsNode(labels) {
+  var span = document.createElement("span");
+  span.className = "ltr";
+  Object.keys(labels || {}).sort().forEach(function (key, i) {
+    if (i) span.appendChild(document.createTextNode("  "));
+    span.appendChild(lit(key));
+    span.appendChild(document.createTextNode(" "));
+    span.appendChild(lit(String(labels[key])));
+  });
+  return span;
 }
 
 function renderNodes(data) {
@@ -884,32 +1050,54 @@ function renderNodes(data) {
     if (!item || typeof item !== "object") return;
     var row = document.createElement("div");
     row.className = "row";
-    var label = document.createElement("span");
-    label.className = "lab ltr";
-    label.textContent = (item.picked ? "* " : "") + (item.name || "");
+    var label = nameNode(item.name, item.picked);
+    label.className = "lab ltr" + (item.picked ? " mark" : "");
     var value = document.createElement("span");
     value.className = "value text ltr";
     var labels = item.labels && typeof item.labels === "object" ? item.labels : {};
-    value.textContent = Object.keys(labels).sort().map(function (key) {
-      return key + "=" + String(labels[key]);
-    }).join(" ");
+    value.appendChild(labelsNode(labels));
     row.appendChild(label);
     row.appendChild(value);
     el.appendChild(row);
   });
 }
 
+function afterOverride(res) {
+  setOut("override-out", res);
+  if (res.status === 200) {
+    api("GET", "/api/override").then(function (again) {
+      if (again.status === 200) renderOverrideRows(again.data);
+    });
+  }
+}
+
+function unsetButton(key) {
+  var button = document.createElement("button");
+  button.type = "button";
+  button.setAttribute("data-i18n", "unset");
+  button.textContent = t("unset");
+  button.addEventListener("click", function () {
+    running(button, function () {
+      return api("POST", "/api/override/unset", {key: key}, true);
+    }).then(afterOverride);
+  });
+  return button;
+}
+
 function secretRows(parent, name, state, key, inputType) {
   addRow(parent, [lit(name)], [word(state)]);
+  var listed = parent.children;
+  if (listed.length) listed[listed.length - 1].classList.add("pair");
   var row = document.createElement("div");
   row.className = "row";
-  var label = document.createElement("span");
+  var label = document.createElement("label");
   label.className = "lab ltr";
   label.textContent = name;
   var input = document.createElement("input");
   input.type = inputType;
   input.autocomplete = "off";
   input.dir = "ltr";
+  input.setAttribute("aria-label", name);
   var button = document.createElement("button");
   button.type = "button";
   button.setAttribute("data-i18n", "set");
@@ -919,17 +1107,19 @@ function secretRows(parent, name, state, key, inputType) {
       return api("POST", "/api/override", {key: key, value: input.value}, true);
     }).then(function (res) {
       if (res.status === 200) input.value = "";
-      setOut("override-out", res);
-      if (res.status === 200) {
-        api("GET", "/api/override").then(function (again) {
-          if (again.status === 200) renderOverrideRows(again.data);
-        });
-      }
+      afterOverride(res);
     });
   });
+  var action = button;
+  if (state === "override") {
+    action = document.createElement("span");
+    action.className = "seg";
+    action.appendChild(button);
+    action.appendChild(unsetButton(key));
+  }
   row.appendChild(label);
   row.appendChild(input);
-  row.appendChild(button);
+  row.appendChild(action);
   parent.appendChild(row);
 }
 
@@ -957,9 +1147,27 @@ function renderOverrideRows(data) {
     var mark = ".staticLeases.";
     var at = key.lastIndexOf(mark);
     var host = at < 0 ? "" : key.slice(at + mark.length);
-    var bits = [colonToken(item.mac), colonToken(item.ip || "")];
-    if (host) addRow(leases, [lit(host)], bits);
-    else addRow(leases, [word("lease")], [colonToken(key)].concat(bits));
+    var lanAt = key.indexOf("network.lans.");
+    var lanEnd = key.indexOf(".dhcp.staticLeases.");
+    var lan = lanAt === 0 && lanEnd > lanAt ? key.slice("network.lans.".length, lanEnd) : "";
+    var row = document.createElement("div");
+    row.className = "row";
+    var label = document.createElement("span");
+    label.className = "lab ltr";
+    label.textContent = host || key;
+    var value = document.createElement("span");
+    value.className = "value text ltr";
+    if (lan) {
+      value.appendChild(lit(lan));
+      value.appendChild(document.createTextNode(" "));
+    }
+    value.appendChild(colonToken(item.mac));
+    value.appendChild(document.createTextNode(" "));
+    value.appendChild(colonToken(item.ip || ""));
+    row.appendChild(label);
+    row.appendChild(value);
+    row.appendChild(unsetButton(key));
+    leases.appendChild(row);
   });
 }
 
@@ -1095,9 +1303,9 @@ function applyMeta(meta) {
   document.getElementById("sub-row").hidden = subs.length === 0;
   document.getElementById("lan-row").hidden = lans.length === 0;
   paintCatalog(document.getElementById("scope-line"), META.monitoringScope);
-  fillSelect("sub-name", subs, "");
-  fillSelect("lan-name", lans, "");
-  fillSelect("lease-lan", lans, "");
+  fillChoice("sub-name", subs);
+  fillChoice("lan-name", lans);
+  fillChoice("lease-lan", lans);
   renderOverrideRows(null);
   document.getElementById("lease-form").hidden = lans.length === 0;
 }
@@ -1119,6 +1327,18 @@ function boot() {
   theme(document.documentElement.getAttribute("data-theme") || "light");
   document.getElementById("host").textContent = META.hostname || "";
   setFingerprint(META.fingerprint || "");
+  document.getElementById("theme-face").addEventListener("click", function (event) {
+    event.stopPropagation();
+    toggleMenu("theme-face", "theme-list");
+  });
+  document.getElementById("lang-face").addEventListener("click", function (event) {
+    event.stopPropagation();
+    toggleMenu("lang-face", "lang-list");
+  });
+  document.addEventListener("click", function () { closeMenus(); });
+  document.addEventListener("keydown", function (event) {
+    if (event.key === "Escape") closeMenus();
+  });
   document.getElementById("theme-light").addEventListener("click", function () { theme("light"); });
   document.getElementById("theme-dark").addEventListener("click", function () { theme("dark"); });
   ["en", "ru", "fa", "zh"].forEach(function (tag) {
@@ -1159,7 +1379,7 @@ function boot() {
       .then(function (res) { setOut("tunnel-out", res); });
   });
   document.getElementById("refresh-one").addEventListener("click", function () {
-    var name = document.getElementById("sub-name").value;
+    var name = choiceValue("sub-name");
     if (!name) return;
     running(this, function () { return api("POST", "/api/proxy/refresh", {name: name}, true); })
       .then(function (res) { setOut("tunnel-out", res); });
@@ -1211,13 +1431,13 @@ function boot() {
     });
   });
   document.getElementById("lan-leases").addEventListener("click", function () {
-    var name = document.getElementById("lan-name").value;
+    var name = choiceValue("lan-name");
     var path = name ? "/api/lan/leases?lan=" + encodeURIComponent(name) : "/api/lan/leases";
     running(this, function () { return api("GET", path); })
       .then(function (res) { setOut("network-out", res); });
   });
   document.getElementById("lease-set").addEventListener("click", function () {
-    var lan = document.getElementById("lease-lan").value;
+    var lan = choiceValue("lease-lan");
     var host = document.getElementById("lease-host").value;
     var mac = document.getElementById("lease-mac").value;
     var ip = document.getElementById("lease-ip").value;
@@ -1291,7 +1511,9 @@ function boot() {
     if (document.getElementById("reboot-word").value !== "reboot") return;
     running(this, function () {
       return api("POST", "/api/reboot", {confirm: "reboot"}, true);
-    }).then(function (res) { setOut("version-out", res); });
+    }).then(function (res) {
+      showNote(document.getElementById("result"), res.status === 200 ? "ok" : messageOf(res.text, res.status));
+    });
   });
   document.addEventListener("visibilitychange", function () {
     if (!document.hidden && current === "status" && !document.getElementById("app").hidden) loadStatus();

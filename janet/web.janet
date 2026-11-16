@@ -807,7 +807,7 @@
   (expect (string/find "navigator.languages" page) "languages")
   (expect (string/find "ui-monospace" page) "mono")
   (expect (string/find "Noto Naskh Arabic" page) "arabic")
-  (expect (string/find "72ch" page) "measure")
+  (expect (string/find "88ch" page) "measure")
   (expect (string/find "createElement(\"wbr\")" page) "fingerprint wrap")
   (expect (string/find "хост" page) "russian host")
   (expect (string/find "میزبان" page) "persian host")
