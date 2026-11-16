@@ -460,7 +460,9 @@
       ''
         JANUS_SCRIPT=${janetScript}
         JANUS_ENGINE=${cfg.engine}
-        JANUS_DIG=${pkgs.bind}/bin/dig
+        # Janet reads this from the environment. An assignment stays in this shell (T-0046).
+        # dig is the dnsutils output. The server output has named and mdig, and no dig (T-0047).
+        export JANUS_DIG=${pkgs.bind.dnsutils}/bin/dig
         JANUS_FAIL_MODE=${cfg.failMode}
         ${lib.optionalString (cfg.engine == "xray") "export XRAY_LOCATION_ASSET=${xrayAssets}"}
         ${lib.optionalString (cfg.engine == "xray" && cfg.failMode == "open" && intercept) "JANUS_XRAY_NFT=/etc/janus/xray-open.nft"}

@@ -1349,6 +1349,18 @@ in {
         test -f "$src"
         test "$(dirname "$src")" = /nix/store
       done
+      grep -q '^export JANUS_DIG=' ${proxyBin}
+      if grep -q '^JANUS_DIG=' ${proxyBin}; then
+        echo "JANUS_DIG is assigned and not exported" >&2
+        exit 1
+      fi
+      dig=$(sed -n 's/^export JANUS_DIG=//p' ${proxyBin})
+      test -x "$dig"
+      test "$(basename "$dig")" = dig
+      if [ -e "$(dirname "$dig")/named" ]; then
+        echo "JANUS_DIG points at the bind server output" >&2
+        exit 1
+      fi
       grep -a -F -q 'dest}.partial' ${proxyBin}
       if grep -a -F -q 'rm -f "/var/lib/janus/geodata/' ${proxyBin}; then
         echo "geo refresh deletes the live rule set" >&2
@@ -4176,6 +4188,27 @@ in {
       "''${resolve_env[@]}" janet "$script" render --model geo-model.json --nodes geo-nodes.json --engine xray --rule-set remote --resolve --geoip geo.dat --labels xray-labels.json --output xray-geo.json
       jq -e '.["cnix/a"].region == "us"' xray-labels.json >/dev/null
       jq -e 'any(.outbounds[]; .protocol == "vmess")' xray-geo.json >/dev/null
+      mkdir -p "$TMPDIR/empty-bin"
+      janet_bin=$(dirname "$(command -v janet)")
+      printf '%s\n' '#!/bin/sh' 'printf "%s\n" "203.0.113.50"' > "$TMPDIR/fake-dig"
+      chmod +x "$TMPDIR/fake-dig"
+      dig_env=(env JANUS_DIG="$TMPDIR/fake-dig" PATH="$TMPDIR/empty-bin:$janet_bin")
+      "''${dig_env[@]}" janet "$script" render --model geo-model.json --nodes geo-nodes.json --engine sing-box --rule-set remote --resolve --geoip geo.dat --labels dig-labels.json --output dig-geo.json
+      jq -e '.["cnix/a"].region == "us"' dig-labels.json >/dev/null
+      sing-box check -c dig-geo.json
+      # A resolver that cannot be started is a failed lookup. The render still finishes.
+      miss_env=(env -u JANUS_DIG PATH="$TMPDIR/empty-bin:$janet_bin")
+      if "''${miss_env[@]}" janet "$script" render --model geo-model.json --nodes geo-nodes.json --engine sing-box --rule-set remote --resolve --geoip geo.dat --labels miss-labels.json --output miss-geo.json; then
+        :
+      else
+        echo "a missing resolver still aborts the render" >&2
+        exit 1
+      fi
+      jq -e '.["cnix/a"] | has("region") | not' miss-labels.json >/dev/null
+      sing-box check -c miss-geo.json
+      bad_dig=(env JANUS_DIG="$TMPDIR/no-such-dig" PATH="$TMPDIR/empty-bin:$janet_bin")
+      "''${bad_dig[@]}" janet "$script" render --model geo-model.json --nodes geo-nodes.json --engine sing-box --rule-set remote --resolve --geoip geo.dat --labels bad-dig-labels.json --output bad-dig-geo.json
+      jq -e '.["cnix/a"] | has("region") | not' bad-dig-labels.json >/dev/null
       echo ok > "$out"
     '';
   eval-boot-install =

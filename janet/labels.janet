@@ -355,13 +355,22 @@
 
 # os/execute accepts a file or a stream. :pipe is only valid for os/spawn,
 # and the refresh render dies on that keyword (T-0036).
+# A missing resolver throws from os/spawn. That is a failed lookup (T-0046).
 (defn command-out [argv]
   (def err (file/open "/dev/null" :w))
-  (def proc (os/spawn argv :p {:out :pipe :err err}))
-  (def buf (:read (proc :out) :all))
-  (:close (proc :out))
-  (:close err)
-  @{:exit (os/proc-wait proc) :out (if buf (string buf) "")})
+  (def proc
+    (try
+      (os/spawn argv :p {:out :pipe :err err})
+      ([_] nil)))
+  (if (nil? proc)
+    (do
+      (:close err)
+      @{:exit 127 :out ""})
+    (do
+      (def buf (:read (proc :out) :all))
+      (:close (proc :out))
+      (:close err)
+      @{:exit (os/proc-wait proc) :out (if buf (string buf) "")})))
 
 (defn dig-out [dig host qtype]
   (def res (command-out [dig "+short" "+time=2" "+tries=1" host qtype]))

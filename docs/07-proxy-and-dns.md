@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-11-12 |
+| Last updated | 2026-11-16 |
 
 ## 1. Scope
 
@@ -698,7 +698,10 @@ rule sets the label.
 is the officially assigned alpha-2 code of the node's server address,
 and that code is the label value. A user-assigned code is not a `geoip`
 result. An IP literal is classified directly. A hostname is resolved on
-the router when labels are recomputed, not at image build. `countries`,
+the router when labels are recomputed, not at image build. The proxy
+script exports `JANUS_DIG` as the absolute path of BIND's `dig` from
+the dnsutils output. The server output has no `dig`. A resolver that
+cannot be started is a failed lookup and does not abort the render. `countries`,
 when set, lists officially assigned codes and limits which of them are
 written. A node with no database row, a failed lookup, a code outside
 `countries`, or a code that is not in the shipped officially assigned
