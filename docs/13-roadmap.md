@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-11-15 |
+| Last updated | 2026-11-16 |
 
 This file is the implementation plan, the progress of the code, and the
 notes for work that is specified but not started. Choices are *18*.
@@ -272,10 +272,11 @@ tree does not mean that behavior exists. Stubs are not finished features.
 * Accepted ADRs bind. They are listed in `docs/adr/` and are not restated here.
 * ADR-0027 and ADR-0028 are accepted and do not replace the group model yet. Implement labels from *07* §11 when the Future item starts. Do not add `janus.proxy.labels` before then.
 * Undecided choices, if any, are *18* §2. Do not invent an answer for one.
-  D-0045 asks whether the board-local secret path goes away.
+  D-0045 asks whether every remaining plaintext credential goes, so a credential arrives only as a sops name. That includes the board-local file path and an inline subscription `url`. The `url` path has not been tried on hardware. The current options stay until that row is decided.
   D-0048 asks whether an existing PPPoE username and password join the
   hot-override allowlist.
   D-0057 stays open for `compact` embedded and USB audio, and for Ara240 and Hailo-10H. `matched` includes the embedded or USB driver when `janus.audio.enable` is true (D-0061). Bluetooth A2DP is D-0061.
+  D-0073 asks whether `compact` is removed or deprecated, leaving `standard` and `matched`. Not decided. D-0051 and D-0052 stay until then.
   D-0058 records the Soloist download and still asks how Ara240 and Hailo-10H reach an operator image.
   D-0065 asks whether Ethernet, then a Wi-Fi station, then WWAN, becomes the uplink order. Role and metric stay the order until that row is decided (D-0036).
 * sing-box renders D-0037 through D-0042: fake-IP for names that LAN
@@ -345,6 +346,8 @@ tree does not mean that behavior exists. Stubs are not finished features.
   Whether a later image that enables one of them must set `standard`, or
   whether `compact` keeps those subsystems when the service is on, stays
   open (D-0057). Until that row is decided, those services are not built.
+  Whether `compact` itself stays is D-0073 and is not decided. Until
+  then the three values remain (D-0051, D-0052).
 * Spotify Soloist is the playback program documented at
   <https://developer.spotify.com/documentation/soloist>. The API key
   starts the daemon. The WebSocket has no authentication and stays on

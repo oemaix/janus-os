@@ -4,12 +4,13 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-11-14 |
+| Last updated | 2026-11-16 |
 
 This document explains how `janus.system.kernelProfile` is built.
 The principles of the `matched` cut are §2.
 The option contract is *08* §1. The binding choices are D-0051 and
-D-0052. A failure that shows up only in a later build or boot is *22*.
+D-0052. Whether `compact` stays is D-0073 and is not decided. A failure
+that shows up only in a later build or boot is *22*.
 This file does not add a choice. When it and a decision disagree, the
 decision wins.
 
