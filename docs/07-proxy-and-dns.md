@@ -49,15 +49,12 @@ dropped.
 | Hysteria2, TUIC, `tls.insecure`, or a Shadowsocks plugin | sing-box |
 | A DNS cache size other than 4096, or a written TTL other than 60 | sing-box. xray 26 has neither knob. Another value fails evaluation. The defaults are accepted and left to xray's own cache. |
 | A blocked name answered by a DNS reject | sing-box. xray 26 has no reject code. The lookup is sent to a closed port on the router, and the client receives the failure. |
-| Group strategy `load-balance` | xray. sing-box has no such group. |
-| `groupsAuto = false` | sing-box. xray keeps the implicit `Auto` group and fails evaluation (ADR-0026). |
 | Nodes written for xray, with every LAN on one DNS policy | xray |
 
 Address, port, and protocol rules may still differ per LAN on xray, because
-those rules do not change the DNS decision. `url-test` and `manual` work on
-both engines. On xray, `janus proxy select` rewrites the configuration. On
-sing-box it uses the running API. Group strategy `fallback` fails on both.
-`listen.lans` and `encryption` behave the same on both. Interception is TUN
+those rules do not change the DNS decision. The renderer emits `urltest`
+on sing-box and a `leastPing` balancer on xray (§11.9). `listen.lans` and
+`encryption` behave the same on both. Interception is TUN
 on sing-box and TPROXY on xray (D-0031). Both still intercept.
 
 ## 3. Nodes
@@ -78,14 +75,16 @@ on sing-box and TPROXY on xray (D-0031). Both still intercept.
 ```
 janus.proxy.subscriptions.<name> = {
   enable       = true;                             # false: this router does not use it (D-0044)
-  url          = "https://…";
+  url          = "https://…";                      # exactly one of url and urlSecret
+  urlSecret    = "subscription-vendor";             # sops name; the decrypted file is the URL
   format       = "auto" | "share-links" | "clash" | "sing-box";
   refresh      = "6h" | "30m" | "0 */6 * * *" | "0 4 * * 2,4,6";
   userAgent    = "clash.meta";                     # many providers key on UA
   headers      = { };
-  via          = "tunnel" | "direct" | "tunnel-then-direct";  # runtime fetch path
+  via          = "tunnel" | "direct" | "tunnel-then-direct";  # runtime fetch path; default tunnel
   snapshot     = { hash = null; }                  # pin build-time snapshot (reproducible builds)
   minimumNodes = 1;                                # refuse a refresh that yields fewer
+  allowMissingAtBuild = false;                     # true: build when the fetch fails (*09* §5)
   nameFilter   = null;                             # optional matcher to drop junk entries (e.g. "剩余流量")
 };
 ```
@@ -93,17 +92,18 @@ janus.proxy.subscriptions.<name> = {
 The Node normalizer (Janet) converts every format into canonical node JSON
 and rejects unknown protocols with a listed reason. Build-time fetch is an
 impure derivation by default (`--impure` documented) or a fixed-output
-derivation when `snapshot.hash` is set.
+derivation when `snapshot.hash` is set. `allowMissingAtBuild` defaults to
+false. True builds the image when that fetch fails. The router then starts
+from an empty subscription and refreshes at runtime (*09* §5). `via`
+defaults to `tunnel`.
 
 `enable` defaults to true. `false` on one router drops that subscription
-from the snapshot, the refresh timer, and the engine. `url` or `urlSecret`
-stays set, so the host still names the secret file and remains a recipient
-(D-0044). A cache file already at
+from the snapshot, the refresh timer, and the engine. Exactly one of `url`
+and `urlSecret` is set. With `urlSecret`, `enable = false` still names the
+secret file, so the host remains a recipient (D-0044). A cache file already at
 `/var/lib/janus/subscriptions/<name>.json` is loaded only when `<name>` is
 enabled in this image. The file stays on disk. A fleet declares every vendor in `common/` and sets `enable =
-false` in the host file for the vendors that router does not take. A group
-that names a disabled subscription fails evaluation. An empty
-`fromSubscriptions` means every enabled subscription.
+false` in the host file for the vendors that router does not take.
 
 `refresh` and `geodata.refresh` accept `Nh`, `Nm`, `weekly`, `daily`,
 `hourly`, or a five-field cron expression. The day-of-month and the month
@@ -139,14 +139,17 @@ and the CLI do not present a group.
 
 ```
 janus.proxy.mode = "bypass" | "rule-based" | "proxy-all";   # inherited default
-janus.proxy.defaultTarget = "group:Auto";
+janus.proxy.defaultTarget = {};                          # {} matches every node
 janus.proxy.rules = [
   { match = { geosite = [ "private" "cn" ]; };            target = "direct"; }
   { match = { geoip = [ "cn" "private" ]; };              target = "direct"; }
   { match = { geosite = [ "category-ads-all" ]; };        target = "block"; }
-  { match = { domainSuffix = [ "netflix.com" "nflxvideo.net" ]; }; target = "group:Streaming"; }
-  { match = { geosite = [ "telegram" ]; geoip = [ "telegram" ]; }; target = "group:Telegram"; }
+  { match = { domainSuffix = [ "netflix.com" "nflxvideo.net" ]; };
+    labels = { region = [ "jp" "sg" ]; }; }
+  { match = { domains = [ "example.com" ]; ipCidr = [ "203.0.113.0/24" ]; };
+    target = "direct"; }
   { match = { port = [ 853 ]; protocol = "tcp"; };        target = "block"; }
+  { match = { sourceIp = [ "192.168.10.50" ]; };          target = "direct"; }
 ];
 janus.proxy.exceptions = [ ... ];   # proxy-all: always direct (private, iptv)
 
@@ -163,7 +166,7 @@ values every LAN inherits (D-0042, FR-PRX-023). A LAN overrides any of
 them. A set `rules` list replaces the inherited list. The renderer does
 not append, because the winner would then depend on two orders. A LAN
 that wants the same rules binds the same Nix list, or leaves `rules`
-unset. Nodes, groups, and subscriptions stay on the router. One engine
+unset. Nodes and subscriptions stay on the router. One engine
 matches the LAN by source address.
 
 `bypass` is not intercepted. That LAN still has a path to WAN when a
@@ -171,6 +174,13 @@ firewall policy accepts it, including while the engine is down.
 `rule-based` and `proxy-all` are intercepted. While the engine is down
 and `failMode` is `closed`, those flows drop. `proxied` is not a second
 switch.
+
+A match may set `domains` (exact names), `domainSuffix`, `geosite`,
+`geoip`, `ipCidr` (destination prefixes), `port`, `protocol`, `sourceLan`,
+and `sourceIp` (source addresses). A rule sets exactly one of `target`,
+`labels`, and `failover`. `target` is `direct` or `block`. `labels` is one
+selector and `failover` is an ordered list (§11.7, §11.8). There is no
+`group:` name.
 
 A rule may still set `sourceLan`. In a LAN's effective list it may name
 only that LAN. Another name fails evaluation. Selecting a whole LAN is
@@ -315,12 +325,18 @@ listens. The client receives the lookup failure. It does not receive
 | `"keep"` | A proxied name may receive a globally routable AAAA. That is the leak. |
 
 `janus.dns` is the policy every LAN inherits (D-0042, FR-DNS-014).
-`janus.network.lans.<name>.dns` has the same shape. A field that is set
-overrides the inherited field. A field that is unset stays inherited, so
-a LAN reuses the household resolvers by leaving them alone. `recursive`
-defaults to `true`. `recursive = false` answers hosts and static leases
-only and does not ask an upstream. That is the IoT case: the router does
-not look the wider Internet up for a LAN with no WAN path.
+`janus.network.lans.<name>.dns` is the inheritable subset: `recursive`,
+`bootstrap`, `domestic.resolvers`, `domestic.domains`, `remote.resolvers`,
+`remote.via`, `fakeIp.{enable, v4Range, v6Range, exclude}`, `ipv6Answers`,
+`hosts`, and `forwarders`. A field that is set overrides the inherited
+field. A field that is unset stays inherited, so a LAN reuses the
+household resolvers by leaving them alone. `listen.lans`, `encryption`,
+`domestic.ecs`, `remote.ecs`, `cache`, `carrierResolvers`,
+`interceptPlaintext`, `blockDoT`, `blockKnownDoH`, and `bogusAnswers`
+stay on the router. `recursive` defaults to `true`. `recursive = false`
+answers hosts and static leases only and does not ask an upstream. That
+is the IoT case: the router does not look the wider Internet up for a
+LAN with no WAN path.
 
 The LAN's mode picks the path for a name the policy does not answer as a
 host or a forwarder:
@@ -449,17 +465,16 @@ HTTP label when one is configured, then renders again.
 
 ## 10. Example templates shipped in the example configuration
 
-Region groups (enabled): `JP`, `US`, `HK`, `SG`, `EU`, `UK`, `IN`, each a
-`regex` matcher with common name variants (`(?i)japan|jp|日本|🇯🇵`), strategy
-`url-test`. Usage groups (commented out): `Telegram`, `Gemini`, `Claude`,
-`Netflix`, `YouTube`, `GitHub`, each with a suggested member group and the
-matching rule block, so a user enables a feature by uncommenting two
-stanzas. When §11 lands, a user label of type `region` may take a `geoip` rule.
-The rule writes the alpha-2 code of the node address. A node the
-database does not classify stays unlabeled. A name pattern may set
-`gb`. `uk` fails evaluation. `eu` is not a country code. A usage block
-constrains labels instead of naming a group. `Gemini` becomes an
-`empty` label set by an HTTP probe through the node.
+`labels.region` is a `region` label. A `geoip` rule writes the official
+alpha-2 of the node address. Later name patterns fill a node the database
+does not classify: `jp`, `us`, `hk`, `sg`, `gb`, `de`, `fr`, and `in`.
+`uk` fails evaluation. `eu` is not a country code. The United Kingdom is
+`gb`.
+
+Commented usage rules constrain a label or walk a `failover` list:
+Telegram, Gemini, Claude, Netflix, YouTube, and GitHub. Uncommenting one
+rule enables that use. Gemini is an `empty` label set by an HTTP probe
+through the node. There is no group in the example.
 
 ## 11. Labels
 
@@ -847,9 +862,8 @@ an option and not a name the operator writes, and it is not shown on the
 configuration, the maintenance page, the panel, or the CLI. Nested
 outbound tags are not emitted. xray remote DNS detours through the
 generated tag of the default selector. `janus.proxy.groups` and
-`janus.proxy.groupsAuto` are removed with this section. Setting either
-fails evaluation. The module does not translate a group into a selector.
-ADR-0026 binds the group model until this section replaces §4.
+`janus.proxy.groupsAuto` are not options. Setting either fails evaluation.
+The module does not translate a group into a selector.
 
 `urltest` uses the current test defaults: URL
 `https://www.gstatic.com/generate_204`, interval `5m`, tolerance `50`.
@@ -857,9 +871,8 @@ The latency label decides eligibility. The url-test picks among the nodes
 that passed and moves when one stops answering.
 
 `load-balance` and `manual` are not strategies of this model.
-`janus proxy select` has no group argument once this section replaces §4
-and §9. The later CLI shows the labels on each node and the node the
-engine picked, and the latency probe is the test action. *14* gains those
-commands in the same change. The panel tunnel page and the maintenance
-`tunnel` section follow that CLI.
+`janus proxy select` has no group argument. The CLI shows the labels on
+each node and the node the engine picked, and the latency probe is the
+test action. The panel tunnel page and the maintenance `tunnel` section
+follow that CLI.
 

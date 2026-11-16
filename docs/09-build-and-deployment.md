@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-11-13 |
+| Last updated | 2026-11-16 |
 
 ## 1. Principles
 
@@ -151,7 +151,8 @@ There is no refresh timer for those addresses.
 The build fails with a clear message if a subscription cannot be fetched
 and no previous snapshot is cached (`janus.proxy.subscriptions.<n>.
 allowMissingAtBuild = false` by default; when `true`, the image boots with
-an empty subscription and refreshes at runtime).
+an empty subscription and refreshes at runtime). The field is part of the
+subscription shape (*07* §3.2, *08* §6).
 
 ## 6. Image assembly
 

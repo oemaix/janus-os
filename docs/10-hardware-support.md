@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-11-15 |
+| Last updated | 2026-11-16 |
 
 ## 1. Terminology
 
@@ -372,7 +372,9 @@ firmware that id requests. `hostapd` uses `nl80211`.
 
 ### 4.5 Battery shutdown
 
-A `power` peripheral (the INA219 UPS boards) measures the cell. Janus shuts
+A `power` peripheral is `class = "power"` and `match.i2cAddress` (*08* §2).
+The mcuzone INA219 board is `0x40`. The Waveshare board is `0x43`. The
+peripheral measures the cell. Janus shuts
 the router down while the cell can still hold the board up, instead of
 running it into a brown-out. The default is that early cutoff. Readings
 stay visible in `janus status` either way.

@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-11-12 |
+| Last updated | 2026-11-16 |
 
 ## 1. Architectural drivers
 
@@ -101,11 +101,9 @@ Node        { id, name, source: subscription:<name> | manual,
               transport: tcp|ws|grpc|http-upgrade|…,
               credentials: {…}, plugin: { name, options } }
 
-Group       { name, members: [NodeRef|GroupRef], strategy,
-              strategyOptions: { url, interval, tolerance } }
-
-Rule        { match: { domains, geosite, ipCidr, geoip, port, protocol,
-                       sourceLan, sourceIp }, target: group:<n>|direct|block }
+Rule        { match: { domains, domainSuffix, geosite, ipCidr, geoip, port,
+                       protocol, sourceLan, sourceIp },
+              one of: target direct|block, labels selector, failover }
 
 DnsPolicy   { domesticResolver, remoteResolver, carrierResolvers: never|
               fallback-only|domestic-only, encryption: prefer|require,
@@ -125,11 +123,13 @@ through D-0042 per LAN, plus ECS and the DNS cache. xray 26 has one DNS
 module, so LANs that do not share a DNS policy fail evaluation. Which
 engine to keep is *07* §2.1.
 
-The diagram above is the model the modules implement. ADR-0027 and
-ADR-0028 specify a later operator model: labels on nodes, label
-constraints on rules, and one generated engine group per selector
-(*07* §11). That model is not implemented. This diagram stays until the
-*13* item lands.
+The diagram above is the model the modules implement. `Group` and a
+`group:` target are not options. ADR-0027 and ADR-0028 replace membership
+with labels on nodes. A rule sets one of `target` (`direct` or `block`),
+`labels` (one selector), and `failover` (*07* §4, §11). `domains` are
+exact names, `ipCidr` is destination prefixes, and `sourceIp` is source
+addresses. `janus.proxy.groups` and `janus.proxy.groupsAuto` fail
+evaluation.
 
 ## 5. Key runtime flows
 

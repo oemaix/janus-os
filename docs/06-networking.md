@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-11-14 |
+| Last updated | 2026-11-16 |
 
 ## 1. Substrate
 
@@ -56,7 +56,7 @@ janus.network.wans.<name> = {
   metric   = 100;
   dhcp     = { vendorClass, clientId, requestOptions, hostname, sendRelease };
   static   = { address, prefixLength, gateway, dns };
-  pppoe    = { username, passwordFile|password, serviceName, mtu, mru,
+  pppoe    = { username, passwordFile|password|passwordSecret, serviceName, mtu, mru,
                lcpEchoInterval, lcpEchoFailure, ipv6 };
   wwan     = { peripheral, apn, pin, auth };
   wifi     = { networks = [ { ssid; passphraseFile|passphrase|passphraseSecret;
@@ -176,7 +176,7 @@ janus.firewall = {
                { from = "guest"; to = "lan"; action = "drop"; } ];
   rules = [ { name = "allow-iot-mqtt"; from = "iot"; to = "lan";
               protocol = "tcp"; dport = 1883; dest = "192.168.10.5"; action = "accept"; } ];
-  services = { ssh = { zones = [ "lan" "mgmt" ]; port = 22; };
+  services = { ssh = { zones = [ "lan" "mgmt" ]; port = 22; protocol = "tcp"; };
                dns = { zones = [ "lan" "guest" ]; }; dhcp = {...}; icmp = { zones = ["*"]; }; };
   hooks = { preroutingRaw = ""; forwardExtra = ""; inputExtra = ""; };
   rateLimits = { sshNew = "10/minute"; };
@@ -197,9 +197,10 @@ Internet without reaching `lan`. A zone with no policy to `wan`, such as
 a written list that should keep the owner's Internet includes the
 `lan → wan` row.
 
-A service may set `confine = true`. The port is then accepted on the
-named zones and dropped on every other interface, before a zone whose
-`input` is `accept` can open it. Prometheus uses this, so
+A service may set `protocol` to `tcp` or `udp`. Unset keeps that
+service's historical protocol. A service may set `confine = true`. The
+port is then accepted on the named zones and dropped on every other
+interface, before a zone whose `input` is `accept` can open it. Prometheus uses this, so
 `prometheus.zones` is the only path to port 9100. The DNS service
 defaults to the `lan` zone. A guest or IoT zone queries the router only
 after that zone is added to `services.dns.zones`.

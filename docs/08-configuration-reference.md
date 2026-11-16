@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-11-15 |
+| Last updated | 2026-11-16 |
 
 This document defines the **shape and semantics** of the `janus.*` option
 tree. The final, exhaustive reference (every option with type, default,
@@ -23,8 +23,9 @@ learning path: copy, edit values, build.
   (`janus.network.lans.guest`), never lists, so that other options can
   refer to them by name.
 * References to other objects use typed prefixes where ambiguity is
-  possible: `port:`, `vlan:`, `node:`, `group:`, `sub:`. Where the type is
+  possible: `port:`, `vlan:`, `node:`, `sub:`. Where the type is
   fixed by context (e.g. `lans.<n>.members`), plain names are accepted.
+  A proxy target is not a `group:` name (*07* §4, §11).
 * Secrets: prefer sops-nix (`urlSecret`, `passwordSecret`, …) naming a
   file under `secrets/` (§11). A `…File` sibling remains for a file
   created on the board with `janus secrets put`. Inline strings require
@@ -230,7 +231,7 @@ role (FR-SVC-002, FR-SVC-003, D-0060). The vendor choice stays under
 |--------|------|---------|-------------|
 | `board` | enum | — (required) | `rpi-zero-2w` `rpi2` `rpi3` `rpi4` `nanopi-r4s` `rockpi-4c` `le-potato` `visionfive2` `yanyu-stx-r19f` `x86_64-test` |
 | `peripherals.<name>.class` | enum | — | `wifi` `nic` `wwan` `bluetooth` `hmi` `power`. A `bluetooth` row selects the dongle driver. BlueZ starts when `janus.audio.playback.output` or `janus.audio.recording.input` is `bluetooth` (D-0061). `recording.input = bluetooth` still fails while HFP and HSP stay off. An Ara240 or Hailo-10H class is later work (*13*, D-0056) and is not an option in this tree. |
-| `peripherals.<name>.match` | attrs | — | `usbVendorProduct = "0bda:8153"`, `usbPath` (kernel USB port, such as `1-1.2`), `mac`, or `pciSlot`. Two Wi-Fi sticks of one USB id need a distinct `usbPath` or a distinct `mac` (*10* §4.4, D-0071). `onboard = true` is the radio soldered to the board (*10* §4.7, §4.10, §4.12). |
+| `peripherals.<name>.match` | attrs | — | `usbVendorProduct = "0bda:8153"`, `usbPath` (kernel USB port, such as `1-1.2`), `mac`, or `pciSlot`. Two Wi-Fi sticks of one USB id need a distinct `usbPath` or a distinct `mac` (*10* §4.4, D-0071). `onboard = true` is the radio soldered to the board (*10* §4.7, §4.10, §4.12). `i2cAddress` is the I²C address of a `power` peripheral, such as `"0x40"` (*10* §4.5). |
 | `peripherals.<name>.wwan.mode` | enum | `auto` | `auto` uses the mode the allowlist records for that USB ID (*10* §4.2). Explicit values: `ecm` `ncm` `rndis` `qmi` `mbim`. |
 | `peripherals.<name>.wwan.modeSwitch` | attrs | `{}` | usb_modeswitch parameters. Empty does not run usb_modeswitch. |
 | `peripherals.<name>.wwan.atPort` | str/null | auto | Serial device for AT commands (status only) |
@@ -282,6 +283,7 @@ in the `wan` zone, and it keeps the dongle MAC. `wifi.networks` lists
 and `priority` (default 0, higher first). Open networks, WPA-Enterprise,
 a network added without a rebuild, and captive-portal completion are
 after 1.0. The other modes are `dhcp`, `static`, `pppoe`, and `wwan`.
+`pppoe` takes one of `password`, `passwordFile`, or `passwordSecret` (*06* §4).
 Defaults: `role = "default"`, `metric = 100 + index` (`1100 + index` when
 `role` is `backup`), `ipv6.mode = "disabled"`, `healthCheck.enable =
 (role == "backup" || >1 default WANs)`.
@@ -305,7 +307,9 @@ is `IR` (D-0054).
 ## 5. `janus.firewall`
 
 See *06* §7–8: `zones`, `policies`, `rules`, `services`, `portForwards`,
-`hooks`, `rateLimits`. Defaults implement FR-FW-002.
+`hooks`, `rateLimits`. `services.<name>.protocol` is `tcp` or `udp`.
+Unset keeps that service's historical protocol. `confine` drops the port
+on every interface outside `zones`. Defaults implement FR-FW-002.
 
 ## 6. `janus.proxy`
 
@@ -316,10 +320,10 @@ See *06* §7–8: `zones`, `policies`, `rules`, `services`, `portForwards`,
 | `engine` | `sing-box\|xray` | `sing-box` | Keep sing-box when LANs need different DNS. The other reasons to switch are *07* §2.1. |
 | `mode` | `bypass\|rule-based\|proxy-all` | `rule-based` | Default traffic mode. A LAN inherits it (*07* §5, D-0042). |
 | `defaultTarget` | selector, `direct`, or `block` | `{}` | `{}` matches every node. *07* §11 |
-| `subscriptions.<name>` | submodule | | *07* §3.2 |
+| `subscriptions.<name>` | submodule | | *07* §3.2. `enable` defaults to true. Exactly one of `url` and `urlSecret`. `format` defaults to `auto`. `refresh` defaults to `6h`. `userAgent` and `headers` are optional. `via` is `tunnel` (default), `direct`, or `tunnel-then-direct`. `snapshot.hash` pins the build-time fetch. `minimumNodes` defaults to 1. `nameFilter` drops names that do not match. `allowMissingAtBuild` defaults to false (*09* §5). |
 | `nodes.<name>` | submodule | | Manual nodes; protocol-specific submodules `vless`, `trojan`, `shadowsocks`, `hysteria2`, `tuic`. `labels.<key>` sets a manual value. |
 | `labels.<key>` | submodule | | One declaration per key: `type`, labeling `rules`, and for `enum` a `values` list. *07* §11 |
-| `rules` | list | `[]` | Inherited by a LAN that does not set `proxy.rules`. A set LAN list replaces this one. *07* §5, *21*. Empty until written. The example has the `cn`, `ru`, and `ir` lists. |
+| `rules` | list | `[]` | Inherited by a LAN that does not set `proxy.rules`. A set LAN list replaces this one. Match fields: `domains`, `domainSuffix`, `geosite`, `geoip`, `ipCidr`, `port`, `protocol`, `sourceLan`, `sourceIp`. A rule sets exactly one of `target` (`direct` or `block`), `labels` (one selector), and `failover`. *07* §5 and §11, *21*. Empty until written. The example has the `cn`, `ru`, and `ir` lists. |
 | `exceptions` | list | private, iptv | `proxy-all` exceptions. A LAN inherits this list. |
 | `egressWan` | str/null | `null` | Pin engine egress to a WAN |
 | `blockQuic` | bool | `false`; `true` when `janus.system.region` is `ru` | *21* |
@@ -333,10 +337,9 @@ operator does not declare `vendor` or `protocol`. `latency` accepts only
 `timeout` and `interval`. An unset `defaultTarget` is `{}`, so every node
 is eligible. sing-box renders one `urltest` per distinct selector. xray
 renders one `leastPing` balancer. The tag stays inside the renderer.
-Until that roadmap item, `groups` and `groupsAuto` remain. When it
-lands, both are removed. Setting either fails evaluation. There is no
-compatibility and no migration. The configuration does not present a
-group.
+`groups` and `groupsAuto` are not options. Setting either fails
+evaluation. There is no compatibility and no migration. The configuration
+does not present a group.
 
 ### 6.1 Node submodule (manual) — common fields
 
@@ -363,9 +366,13 @@ proxy enabled, an empty list fails evaluation.
 Unset, it follows the region: `cn` is `223.5.5.5` and `223.6.6.6`, `ru` is
 `77.88.8.8` and `77.88.8.1`, `ir` is empty. An explicit list replaces that.
 The build does not look the hostnames up. A name with an empty list fails
-evaluation. `recursive` defaults to `true`. A LAN's `dns` inherits the fields that
-exist on that submodule (*07* §7.2, D-0042). `listen.lans`, `encryption`,
-`domestic.ecs`, `remote.ecs`, and `cache` stay on the router.
+evaluation. `recursive` defaults to `true`. A LAN's `dns` inherits the fields
+on that submodule (*07* §7.2, D-0042): `recursive`, `bootstrap`,
+`domestic.resolvers`, `domestic.domains`, `remote.resolvers`, `remote.via`,
+`fakeIp`, `ipv6Answers`, `hosts`, and `forwarders`. `listen.lans`,
+`encryption`, `domestic.ecs`, `remote.ecs`, `cache`, `carrierResolvers`,
+`interceptPlaintext`, `blockDoT`, `blockKnownDoH`, and `bogusAnswers` stay
+on the router.
 
 `listen.lans` defaults to `all`: those LANs are told, by DHCP option 6 and
 by RA, to use the router. A delegated RA names the IPv6 link-local. `encryption`
@@ -521,9 +528,8 @@ export`. `janus-build fleet pull` writes leases into
 * No two LANs overlap in IPv4 subnet; no LAN overlaps a WAN static subnet.
 * Exactly one `role = "default"` WAN with the lowest metric, or explicit
   metrics for all defaults.
-* Every `target = "group:X"` refers to a defined group or `Auto`.
-* Every group has a non-empty membership at build time *or* an
-  `emptyFallback`.
+* A routing rule sets exactly one of `target`, `labels`, and `failover`. `target` is `direct` or `block`. `labels` is one selector (*07* §11). Setting `janus.proxy.groups` or `janus.proxy.groupsAuto` fails evaluation.
+* A subscription sets exactly one of `url` and `urlSecret`.
 * Engine capability check for every node protocol and feature.
 * `janus.access.ssh.authorizedKeys != []`.
 * `janus.storage`: `/` and `/nix` read-only; exactly one rw partition at `/var`.
