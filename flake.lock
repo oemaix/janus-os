@@ -3,11 +3,11 @@
     "iran-sing-box-rules": {
       "flake": false,
       "locked": {
-        "lastModified": 1794745135,
-        "narHash": "sha256-nkgi2+8QF/e36U56HwJhmojWeU7xGI/5iDMGtUxloOE=",
+        "lastModified": 1794834647,
+        "narHash": "sha256-r+gHeDFXKus9fNK5c4+/Zi9yifzbiJzaDbTIId+MT4Q=",
         "owner": "Chocolate4U",
         "repo": "Iran-sing-box-rules",
-        "rev": "682763c57004c4afcc2bb660bbfa2622b7b64485",
+        "rev": "ccb22ea4573defe81052e36a506912785a89ed36",
         "type": "github"
       },
       "original": {
@@ -19,11 +19,11 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1794552581,
-        "narHash": "sha256-qXFIqA6FCcx7XeDzw0ZNlkDT9UiCzrNDwK8RuU8RcHM=",
+        "lastModified": 1794756927,
+        "narHash": "sha256-IfuPcOpwC+bYvBdtUhA9hHhY7xV7k9T5LeOTZFiJB4o=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "f1e5c356f35d07e7b71a6b5e6c9338e0b029e0c0",
+        "rev": "b349185bb79c7cf7ad8ea8c097931730bf473c71",
         "type": "github"
       },
       "original": {
@@ -207,7 +207,7 @@
       "flake": false,
       "locked": {
         "lastModified": 946684800,
-        "narHash": "sha256-8BzJBCa8wq0Y1nYulZxHQwU7RU3kD5ix4EY09ZGiQYA=",
+        "narHash": "sha256-QXGQoa7LWHbehfHNOlv7VETqvcKFNqcI5DtMWCZdURw=",
         "type": "tarball",
         "url": "https://soloist-builds.spotifycdn.com/soloist_release_arm64.tar.gz"
       },
@@ -220,7 +220,7 @@
       "flake": false,
       "locked": {
         "lastModified": 946684800,
-        "narHash": "sha256-v1OrST/7XThFQ2eZw+T1bst7E4eeQNu9kA7eFhEbrYE=",
+        "narHash": "sha256-UEN9CTHof70XLukGikFen+RiTokmOM/9XG+AKXDYerE=",
         "type": "tarball",
         "url": "https://soloist-builds.spotifycdn.com/soloist_release_arm32.tar.gz"
       },
@@ -233,7 +233,7 @@
       "flake": false,
       "locked": {
         "lastModified": 946684800,
-        "narHash": "sha256-wZqaZvxXmAgjjDR70VQ4BGZdg0duEODjpICPac2+K3Y=",
+        "narHash": "sha256-BQd8NZSEnV2r35KwvYqakxtsMls7/PJ5N4QaVJCg2oQ=",
         "type": "tarball",
         "url": "https://soloist-builds.spotifycdn.com/soloist_release_x86_64.tar.gz"
       },
