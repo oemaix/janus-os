@@ -35,6 +35,8 @@
     [Unit]
     OnFailure=
   '';
+  # NixOS defaultPackages includes strace. The base image does not (D-0068, T-0051).
+  demote = pkg: lib.setPrio ((pkg.meta.priority or lib.meta.defaultPriority) + 3) pkg;
 in {
   options.janus.debug = {
     serialAutologin = mkOption {
@@ -96,6 +98,12 @@ in {
   };
 
   config = mkMerge [
+    {
+      environment.defaultPackages = lib.mkDefault [
+        (demote pkgs.perl)
+        (demote pkgs.rsync)
+      ];
+    }
     (mkIf cfg.serialAutologin {
       warnings =
         [

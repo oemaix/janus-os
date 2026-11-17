@@ -8472,7 +8472,9 @@ exit 0
       jq -e '.logLevel == "debug"' ${on.config.environment.etc."janus/proxy-model.json".source} >/dev/null
       jq -e '.log.level == "debug"' ${on.config.system.build.janusEngineConfig} >/dev/null
       printf '%s\n' '[]' > nodes.json
-      janet ${../janet/janus.janet} render \
+      mkdir -p janet
+      cp ${../janet}/janus.janet ${../janet}/labels.janet janet/
+      janet janet/janus.janet render \
         --model ${on.config.environment.etc."janus/proxy-model.json".source} \
         --nodes nodes.json \
         --engine xray \
