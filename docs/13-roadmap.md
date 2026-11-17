@@ -76,7 +76,7 @@ power-cut. Tier 3 ships the profile. The Future list stays after 1.0.
 * Optional local configuration wizard, a front end for the build-host commands in *16*. No hosted build service.
 * A check that a destination refuses the exit because the address is in Iran, China, or Russia, for example Gemini. A country guessed from the node name, and a connect check (ping, TCP, or a handshake), do not show that refusal.
 * One GPIO LED with the `heartbeat` trigger on `rpi2`, `rpi3`, `rpi4`, `rpi-zero-2w`, `rockpi-4c`, and `le-potato`. A dark LED then means the kernel timer has stopped. The GPIO is not chosen. The ROCK Pi 4C blue status LED already uses that trigger in the device tree (*10* §3.5). The Le Potato blue LED does the same in the mainline tree and is not yet recorded in *10*. The Raspberry Pi profiles do not set one.
-* The maintenance page (*20*) is in the image. The retro console in *20* §7 is the design: no radius, no shadow, no gradient. Some functions and elements are still unusable or only partly worked out. Later work keeps that simple console and works out every function and every element so each behaves clearly and fluidly. The shape is in Notes.
+* The maintenance page (*20*) is in the image. The retro console in *20* §7 is the design: no radius, no shadow, no gradient. The column is centered, fields are framed, and a short list is a choice of segments. Later work keeps that console. `janus --json status` is still the flat counter object, so the rich status rows appear when that payload has them.
 * Spotify Soloist as a playback device (*02* UC-23, FR-SVC-001). `janus.soloist.enable` defaults to false. False adds no unit, secret, or package, and the checks are not evaluated. True needs `janus.audio.enable`, a playback device, the API key as a sops secret for that router (FR-SEC-012), and a board architecture of `x86_64`, `aarch64`, or `armv7l`. Playback is `janus.audio` (D-0061). The image installs the locked official build and starts Soloist with system-wide PipeWire when playback needs a local device. UDP 5353 is accepted on `janus.soloist.zones` (default `lan`) and dropped elsewhere. The WebSocket stays off. Pairing is `janus bluetooth` and the maintenance page (D-0059). The archives are flake inputs (D-0058, T-0010). A 1.0 image leaves the switch false.
 * Shared audio (`janus.audio`, D-0061). `enable` defaults to false. Playback and recording are read only when it is true. `embedded` and `usb` need a non-blank PipeWire node and `kernelProfile` `standard` or `matched`. `compact` still rejects them (D-0057). `matched` includes that device's driver only when `enable` is true, and leaves `SOUND` off otherwise. `recording.input = bluetooth` fails while HFP and HSP stay off. PipeWire starts for Soloist, for speech on a local device, and for bluetooth playback or recording. BlueZ starts when playback or recording is `bluetooth`, without Soloist.
 * Bluetooth audio output of that playback (*02* UC-23, FR-HW-009). The router is the Spotify Connect device. `janus.audio.enable` and `janus.audio.playback.output = bluetooth` start BlueZ as an A2DP source with AVRCP, without Soloist (D-0061). HFP and HSP stay off. The last connected speaker connects again after boot, and again when it returns, unless it was disconnected during this boot. `janus bluetooth` discovers nearby devices, then lists, pairs, connects, disconnects, and removes them by address or by a unique name. A pairing code is optional. The maintenance page discovers, then pairs, and has the same later actions when that page is in the image (FR-ACC-007, D-0059). The CSR dongle `0a12:0001` stays allowlisted. Onboard Bluetooth on the Zero 2 W, the Pi 3, the Pi 4, and the ROCK Pi 4C is included for `compact` and `matched` when this playback is set. `hci_uart` on the ROCK Pi 4C stays blacklisted until then.
@@ -243,7 +243,7 @@ tree does not mean that behavior exists. Stubs are not finished features.
   off unless set. `janus web stop` pauses the listener without a rebuild.
   Login is a per-host sops passphrase (`secrets/web/<host>.yaml`), not the root password. The page calls the
   allowlisted `janus` commands and does not edit the rest of the configuration.
-  Some functions and elements are still unusable or only partly worked out. Working those out inside the retro console is Future.
+  The console in *20* §7 is centered, with framed fields and choice segments. `janus --json status` is still the flat counter object.
 * `janus.edge.api.enable` is the shared listener on port 8473. Recognition and
   synthesis are separate switches on that listener (D-0062). Both default
   off. `janus.audio.playback.output = bluetooth` starts BlueZ and PipeWire
@@ -376,14 +376,13 @@ tree does not mean that behavior exists. Stubs are not finished features.
   that program exists, and a stub that returned invented data would be
   worse than no server.
 * The maintenance page (*20*) listens, logs in, and runs the allowlisted
-  commands. The retro console is the intended design: one column, one
-  geometry for light and dark, and no radius, shadow, gradient, icon,
-  or webfont. The page stays that simple. Some functions and elements
-  are still unusable or only partly worked out. Later work keeps the
-  console and considers every function and every element already on
-  the page, until each behavior is clear and fluid. It does not replace
-  the console with another style, and it does not add a control *20*
-  leaves out.
+  commands. The retro console is the intended design: one centered
+  column, one geometry for light and dark, and no radius, shadow,
+  gradient, icon, or webfont. Fields have a square frame. A short list
+  is a row of segments. The picked node is inverse. Later work keeps
+  that console. It does not replace it with another style, and it does
+  not add a control *20* leaves out. `janus --json status` is still the
+  flat counter object, so the rich rows wait on that payload.
 
 ## 4. Risks
 
