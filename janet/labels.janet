@@ -96,125 +96,196 @@
           (set ok false)))
       (if ok n nil))))
 
-(defn take-varint [buf i]
+(defn as-int [n]
+  (scan-number (string (int/s64 n))))
+
+(defn take-varint-lim [buf i end]
   (var n 0)
   (var shift 0)
   (var j i)
-  (while (< j (length buf))
+  (var ok false)
+  (while (and (< j end) (< shift 64))
     (def b (get buf j))
     (set n (bor n (blshift (band b 127) shift)))
     (set j (+ j 1))
     (set shift (+ shift 7))
-    (when (< b 128) (break)))
-  [n j])
+    (when (< b 128)
+      (set ok true)
+      (break)))
+  (if ok [n j] nil))
 
-(defn skip-field [buf i wt]
+(defn skip-lim [buf i wt end]
   (case wt
-    0 (get (take-varint buf i) 1)
-    1 (+ i 8)
-    2 (let [pair (take-varint buf i)
-            n (get pair 0)
-            j (get pair 1)]
-        (+ j n))
-    5 (+ i 4)
-    i))
+    0 (let [pair (take-varint-lim buf i end)]
+        (when pair (get pair 1)))
+    1 (when (<= (+ i 8) end) (+ i 8))
+    2 (let [pair (take-varint-lim buf i end)]
+        (when pair
+          (def n (get pair 0))
+          (def j (get pair 1))
+          (when (<= (+ j n) end) (+ j n))))
+    5 (when (<= (+ i 4) end) (+ i 4))
+    nil))
 
-(defn parse-cidr [buf]
-  (var i 0)
-  (var ip nil)
+(defn lower-byte [b]
+  (if (and (>= b 65) (<= b 90)) (+ b 32) b))
+
+# A prefix shorter than 8 bits covers more than one first byte (T-0048).
+(defn each-slot [first prefix f]
+  (cond
+    (<= prefix 0) (for slot 0 256 (f slot))
+    (>= prefix 8) (f first)
+    (let [width (blshift 1 (- 8 prefix))
+          mask (band (blshift (- (blshift 1 prefix) 1) (- 8 prefix)) 255)
+          base (band first mask)]
+      (for off 0 width (f (+ base off))))))
+
+(defn store-prefix [buckets buf at n prefix c0 c1]
+  (when (and (>= prefix 0) (<= prefix 128) (<= (+ at n) (length buf)))
+    (each-slot (get buf at) prefix (fn [slot]
+      (def bucket (get buckets slot))
+      (buffer/blit bucket buf (length bucket) at (+ at n))
+      (buffer/push bucket prefix c0 c1)))))
+
+(defn entry-code [buf start end]
+  (var i start)
+  (var c0 nil)
+  (var c1 nil)
+  (while (< i end)
+    (def key (take-varint-lim buf i end))
+    (if (nil? key)
+      (break)
+      (let [tag (get key 0)
+            j (get key 1)
+            field (brshift tag 3)
+            wt (band tag 7)]
+        (cond
+          (and (= field 1) (= wt 2))
+          (let [pair (take-varint-lim buf j end)]
+            (if (nil? pair)
+              (break)
+              (let [n (get pair 0)
+                    k (get pair 1)
+                    nxt (+ k n)]
+                (when (> nxt end) (break))
+                (when (and (= n 2) (<= (+ k 2) end))
+                  (set c0 (lower-byte (get buf k)))
+                  (set c1 (lower-byte (get buf (+ k 1)))))
+                (set i nxt))))
+          (let [nxt (skip-lim buf j wt end)]
+            (if (or (nil? nxt) (<= nxt i)) (break) (set i nxt)))))))
+  (if (nil? c0) nil [c0 c1]))
+
+(defn pack-cidr [v4 v6 buf start end c0 c1]
+  (var i start)
+  (var ip-at nil)
+  (var ip-n 0)
   (var prefix 32)
-  (while (< i (length buf))
-    (def key (take-varint buf i))
-    (def tag (get key 0))
-    (def j (get key 1))
-    (def field (brshift tag 3))
-    (def wt (band tag 7))
-    (cond
-      (and (= field 1) (= wt 2))
-      (let [pair (take-varint buf j)
-            n (get pair 0)
-            k (get pair 1)]
-        (set ip (string/slice buf k (+ k n)))
-        (set i (+ k n)))
-      (and (= field 2) (= wt 0))
-      (let [pair (take-varint buf j)]
-        (set prefix (get pair 0))
-        (set i (get pair 1)))
-      (set i (skip-field buf j wt))))
-  [ip prefix])
+  (while (< i end)
+    (def key (take-varint-lim buf i end))
+    (if (nil? key)
+      (break)
+      (let [tag (get key 0)
+            j (get key 1)
+            field (brshift tag 3)
+            wt (band tag 7)]
+        (cond
+          (and (= field 1) (= wt 2))
+          (let [pair (take-varint-lim buf j end)]
+            (if (nil? pair)
+              (break)
+              (let [n (get pair 0)
+                    k (get pair 1)
+                    nxt (+ k n)]
+                (if (> nxt end)
+                  (break)
+                  (do
+                    (set ip-at k)
+                    (set ip-n n)
+                    (set i nxt))))))
+          (and (= field 2) (= wt 0))
+          (let [pair (take-varint-lim buf j end)]
+            (if (nil? pair)
+              (break)
+              (do
+                (set prefix (get pair 0))
+                (set i (get pair 1)))))
+          (let [nxt (skip-lim buf j wt end)]
+            (if (or (nil? nxt) (<= nxt i)) (break) (set i nxt)))))))
+  (cond
+    (= ip-n 4) (store-prefix v4 buf ip-at 4 prefix c0 c1)
+    (= ip-n 16) (store-prefix v6 buf ip-at 16 prefix c0 c1)))
 
-(defn parse-geo-entry [buf]
-  (var i 0)
-  (var code "")
-  (def cidrs @[])
-  (while (< i (length buf))
-    (def key (take-varint buf i))
-    (def tag (get key 0))
-    (def j (get key 1))
-    (def field (brshift tag 3))
-    (def wt (band tag 7))
-    (cond
-      (and (= field 1) (= wt 2))
-      (let [pair (take-varint buf j)
-            n (get pair 0)
-            k (get pair 1)]
-        (set code (string/ascii-lower (string/slice buf k (+ k n))))
-        (set i (+ k n)))
-      (and (= field 2) (= wt 2))
-      (let [pair (take-varint buf j)
-            n (get pair 0)
-            k (get pair 1)
-            got (parse-cidr (string/slice buf k (+ k n)))]
-        (let [raw-str (get got 0)
-              nbytes (if raw-str (length raw-str) 0)]
-          (cond
-            (= nbytes 4)
-            (let [raw (bytes raw-str)]
-              (array/push cidrs [(int/s64 (+ (* (get raw 0) 16777216)
-                                              (* (get raw 1) 65536)
-                                              (* (get raw 2) 256)
-                                              (get raw 3)))
-                                 (get got 1)]))
-            (= nbytes 16)
-            (array/push cidrs [raw-str (get got 1)])))
-        (set i (+ k n)))
-      (set i (skip-field buf j wt))))
-  [code cidrs])
+(defn pack-entry [v4 v6 buf start end c0 c1]
+  (var i start)
+  (while (< i end)
+    (def key (take-varint-lim buf i end))
+    (if (nil? key)
+      (break)
+      (let [tag (get key 0)
+            j (get key 1)
+            field (brshift tag 3)
+            wt (band tag 7)]
+        (cond
+          (and (= field 2) (= wt 2))
+          (let [pair (take-varint-lim buf j end)]
+            (if (nil? pair)
+              (break)
+              (let [n (get pair 0)
+                    k (get pair 1)
+                    nxt (+ k n)]
+                (if (> nxt end)
+                  (break)
+                  (do
+                    (pack-cidr v4 v6 buf k nxt c0 c1)
+                    (set i nxt))))))
+          (let [nxt (skip-lim buf j wt end)]
+            (if (or (nil? nxt) (<= nxt i)) (break) (set i nxt))))))))
 
-(defn as-int [n]
-  (scan-number (string (int/s64 n))))
-
-(defn empty-buckets []
+(defn empty-pack []
   (def buckets @[])
-  (for _ 0 256 (array/push buckets @[]))
+  (for _ 0 256 (array/push buckets @""))
   buckets)
 
+(defn freeze-pack [buckets]
+  (for i 0 256
+    (put buckets i (string (get buckets i))))
+  buckets)
+
+# One Janet value per prefix is hundreds of MiB (T-0048). A record is
+# the address, one prefix byte, and two country bytes. Buckets are frozen
+# to exact strings. The slurped file is collected before the table is kept.
 (defn load-geoip [path]
-  (def v4 (empty-buckets))
-  (def v6 (empty-buckets))
+  (def v4 (empty-pack))
+  (def v6 (empty-pack))
   (when (and (string? path) (os/stat path))
     (def buf (slurp path))
+    (def end (length buf))
     (var i 0)
-    (while (< i (length buf))
-      (def key (take-varint buf i))
-      (def tag (get key 0))
-      (def j (get key 1))
-      (def field (brshift tag 3))
-      (def wt (band tag 7))
-      (if (and (= field 1) (= wt 2))
-        (let [pair (take-varint buf j)
-              n (get pair 0)
-              k (get pair 1)
-              got (parse-geo-entry (string/slice buf k (+ k n)))
-              code (get got 0)]
-          (each row (get got 1)
-            (def ip (get row 0))
-            (when ip
-              (if (string? ip)
-                (array/push (get v6 (get (bytes ip) 0)) [ip (get row 1) code])
-                (array/push (get v4 (as-int (band (brshift ip 24) 255))) [ip (get row 1) code]))))
-          (set i (+ k n)))
-        (set i (skip-field buf j wt)))))
+    (while (< i end)
+      (def key (take-varint-lim buf i end))
+      (if (nil? key)
+        (break)
+        (let [tag (get key 0)
+              j (get key 1)
+              field (brshift tag 3)
+              wt (band tag 7)]
+          (cond
+            (and (= field 1) (= wt 2))
+            (let [pair (take-varint-lim buf j end)]
+              (if (or (nil? pair) (> (+ (get pair 1) (get pair 0)) end))
+                (break)
+                (let [k (get pair 1)
+                      entry-end (+ k (get pair 0))
+                      code (entry-code buf k entry-end)]
+                  (when code
+                    (pack-entry v4 v6 buf k entry-end (get code 0) (get code 1)))
+                  (set i entry-end))))
+            (let [nxt (skip-lim buf j wt end)]
+              (if (or (nil? nxt) (<= nxt i)) (break) (set i nxt))))))))
+  (freeze-pack v4)
+  (freeze-pack v6)
+  (gccollect)
   @{:v4 v4 :v6 v6})
 
 (var geoip-memo @{:path nil :buckets nil})
@@ -308,31 +379,67 @@
   (when (and zero (= (get b 10) 255) (= (get b 11) 255))
     (string (get b 12) "." (get b 13) "." (get b 14) "." (get b 15))))
 
+(defn code-at [bucket i]
+  (string/from-bytes (get bucket i) (get bucket (+ i 1))))
+
+(defn scan-v4 [bucket ip]
+  (def n (length bucket))
+  (var i 0)
+  (var found nil)
+  (var best -1)
+  (while (< i n)
+    (def network (int/s64 (+ (* (get bucket i) 16777216)
+                             (* (get bucket (+ i 1)) 65536)
+                             (* (get bucket (+ i 2)) 256)
+                             (get bucket (+ i 3)))))
+    (def prefix (get bucket (+ i 4)))
+    (when (and (cidr-hit? ip prefix network) (> prefix best))
+      (set best prefix)
+      (set found (code-at bucket (+ i 5))))
+    (set i (+ i 7)))
+  found)
+
+(defn bits-hit-at? [addr buf at prefix]
+  (def ab (bytes addr))
+  (cond
+    (<= prefix 0) true
+    (> prefix 128) false
+    (do
+      (var left prefix)
+      (var i 0)
+      (var ok true)
+      (while (and ok (> left 0))
+        (def take (min 8 left))
+        (def mask (brshift 255 (- 8 take)))
+        (when (not= (band (get ab i) mask) (band (get buf (+ at i)) mask))
+          (set ok false))
+        (set left (- left take))
+        (++ i))
+      ok)))
+
+(defn scan-v6 [bucket raw]
+  (def n (length bucket))
+  (var i 0)
+  (var found nil)
+  (var best -1)
+  (while (< i n)
+    (def prefix (get bucket (+ i 16)))
+    (when (and (bits-hit-at? raw bucket i prefix) (> prefix best))
+      (set best prefix)
+      (set found (code-at bucket (+ i 17))))
+    (set i (+ i 19)))
+  found)
+
 (defn geoip-lookup [path ip]
   (def data (geoip-buckets path))
   (def v4 (ipv4-int ip))
   (if v4
-    (do
-      (var found nil)
-      (var best -1)
-      (each row (get (data :v4) (as-int (band (brshift v4 24) 255)))
-        (when (and (cidr-hit? v4 (get row 1) (get row 0)) (> (get row 1) best))
-          (set best (get row 1))
-          (set found (get row 2))))
-      found)
+    (scan-v4 (get (data :v4) (as-int (band (brshift v4 24) 255))) v4)
     (let [raw (ipv6-bytes ip)
           mapped (if raw (v4-mapped raw) nil)]
       (cond
         mapped (geoip-lookup path mapped)
-        raw
-        (do
-          (var found nil)
-          (var best -1)
-          (each row (get (data :v6) (get (bytes raw) 0))
-            (when (and (bits-hit? raw (get row 0) (get row 1)) (> (get row 1) best))
-              (set best (get row 1))
-              (set found (get row 2))))
-          found)
+        raw (scan-v6 (get (data :v6) (get (bytes raw) 0)) raw)
         nil))))
 
 (defn dns-name? [host]
@@ -1009,9 +1116,43 @@
   (spit v6-path (pb-ld 1 entry))
   (label-expect (= (geoip-lookup v4-path "203.0.113.10") "jp") "ipv4 geoip")
   (label-expect (nil? (geoip-lookup v4-path "198.51.100.8")) "ipv4 miss")
+  (def v4-bucket (get ((geoip-buckets v4-path) :v4) 203))
+  (label-expect (and (string? v4-bucket) (not (array? v4-bucket))) "ipv4 bucket is a flat string")
+  (label-expect (= (length v4-bucket) 7) "ipv4 record is 7 bytes")
   (label-expect (= (geoip-lookup v4-path "::ffff:203.0.113.10") "jp") "v4-mapped geoip")
   (label-expect (= (geoip-lookup v6-path "2001:db8::1") "jp") "ipv6 geoip")
   (label-expect (nil? (geoip-lookup v6-path "2001:db9::1")) "ipv6 miss")
+  (def v6-bucket (get ((geoip-buckets v6-path) :v6) 0x20))
+  (label-expect (and (string? v6-bucket) (= (length v6-bucket) 19)) "ipv6 record is 19 bytes")
+  (def longer (string "/tmp/janus-label-long-" (os/time) ".dat"))
+  (def us (pb-cat (pb-ld 1 "US") (pb-ld 2 (pb-cat (pb-ld 1 (string/from-bytes 10 0 0 0)) (pb-var 2 8)))))
+  (def jp (pb-cat (pb-ld 1 "jp") (pb-ld 2 (pb-cat (pb-ld 1 (string/from-bytes 10 1 2 0)) (pb-var 2 24)))))
+  (spit longer (pb-cat (pb-ld 1 us) (pb-ld 1 jp)))
+  (label-expect (= (geoip-lookup longer "10.1.2.3") "jp") "longest prefix wins")
+  (label-expect (= (geoip-lookup longer "10.9.0.1") "us") "shorter prefix still matches")
+  (def wide (string "/tmp/janus-label-wide-" (os/time) ".dat"))
+  (def de (pb-cat (pb-ld 1 "de") (pb-ld 2 (pb-cat (pb-ld 1 (string/from-bytes 10 0 0 0)) (pb-var 2 7)))))
+  (spit wide (pb-ld 1 de))
+  (label-expect (= (geoip-lookup wide "11.1.2.3") "de") "prefix under 8 covers the next byte")
+  (label-expect (nil? (geoip-lookup wide "12.0.0.1")) "prefix under 8 stops at its range")
+  (def skip (string "/tmp/janus-label-skip-" (os/time) ".dat"))
+  (def abc (pb-cat (pb-ld 1 "abc") (pb-ld 2 (pb-cat (pb-ld 1 (string/from-bytes 198 51 100 0)) (pb-var 2 24)))))
+  (spit skip (pb-ld 1 abc))
+  (label-expect (nil? (geoip-lookup skip "198.51.100.8")) "a code that is not two letters is skipped")
+  (label-expect (= (length (get ((geoip-buckets skip) :v4) 198)) 0) "a long code stores no record")
+  (def many (string "/tmp/janus-label-many-" (os/time) ".dat"))
+  (def body @"")
+  (for n 0 32
+    (def entry (pb-cat (pb-ld 1 "jp") (pb-ld 2 (pb-cat (pb-ld 1 (string/from-bytes 203 0 n 0)) (pb-var 2 24)))))
+    (buffer/push-string body (pb-ld 1 entry)))
+  (spit many body)
+  (def many-bucket (get ((geoip-buckets many) :v4) 203))
+  (label-expect (and (string? many-bucket) (= (length many-bucket) (* 32 7))) "ipv4 prefixes stay packed")
+  (label-expect (= (geoip-lookup many "203.0.7.9") "jp") "packed table still matches")
   (os/rm v4-path)
   (os/rm v6-path)
+  (os/rm longer)
+  (os/rm wide)
+  (os/rm skip)
+  (os/rm many)
   (print "ok"))

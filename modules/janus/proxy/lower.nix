@@ -443,8 +443,14 @@
 
   inlineUrls = lib.filterAttrs (_: sub: sub.url != null && config.janus.security.allowInlineSecrets) enabledSubscriptions;
 
+  # The helper lives in lib/systemd. bin/ does not have it (T-0049).
   waitClock = pkgs.writeShellScript "janus-wait-clock" ''
-    ${pkgs.coreutils}/bin/timeout 90 ${pkgs.systemd}/bin/systemd-time-wait-sync || true
+    helper=${pkgs.systemd}/lib/systemd/systemd-time-wait-sync
+    if [ ! -x "$helper" ]; then
+      printf '%s\n' "janus-wait-clock: $helper is missing" >&2
+      exit 1
+    fi
+    ${pkgs.coreutils}/bin/timeout 90 "$helper" || true
   '';
 
   helper = pkgs.writeShellApplication {

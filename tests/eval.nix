@@ -1300,6 +1300,13 @@ in {
       jq -e '[.inbounds[] | select(.listen_port == 5353)] | length == 0' ${engine} >/dev/null
       jq -e '[.inbounds[] | select(.type == "tproxy" and .network == "tcp")] | length == 0' ${engine} >/dev/null
       grep -q geodata-missing ${preText}
+      wait=$(head -n 1 ${preText})
+      grep -q 'lib/systemd/systemd-time-wait-sync' "$wait"
+      grep -q 'is missing' "$wait"
+      if grep -q 'bin/systemd-time-wait-sync' "$wait"; then
+        echo "janus-wait-clock looks in bin/" >&2
+        exit 1
+      fi
       grep -q network-online ${preAfter}
       grep -q '0x00004a01' ${markFile}
       grep -q 'dport 53 return' ${markFile}
@@ -4129,6 +4136,33 @@ in {
       janet "$script" render --model model.json --nodes nodes.json --rule-set remote --output engine.json
       jq -e 'any(.outbounds[]; .type == "urltest" and (.tag | startswith("sel-")))' engine.json >/dev/null
       sing-box check -c engine.json
+      printf '%s\n' 'trojan://secret@edge.example:20062?sni=www.example.com&fp=chrome&allowInsecure=1#Argentina' > trojan.txt
+      printf '%s\n' 'trojan://secret@plain.example:443?peer=peer.example#plain' >> trojan.txt
+      printf '%s\n' 'trojan://secret@bare.example:443#bare' >> trojan.txt
+      janet "$script" normalize --format share-links --input trojan.txt --output trojan.json
+      jq -e '.[0].protocol == "trojan" and .[0].tls.enable == true and .[0].tls.serverName == "www.example.com" and .[0].tls.utls == "chrome" and .[0].tls.insecure == true' trojan.json >/dev/null
+      jq -e '.[1].tls.enable == true and .[1].tls.serverName == "peer.example" and .[1].tls.insecure == false' trojan.json >/dev/null
+      jq -e '.[2].tls.enable == true and .[2].tls.serverName == "bare.example"' trojan.json >/dev/null
+      janet "$script" render --model model.json --nodes trojan.json --rule-set remote --output trojan-engine.json
+      jq -e 'any(.outbounds[]; .type == "trojan" and .server == "edge.example" and .tls.enabled == true and .tls.server_name == "www.example.com" and .tls.utls.fingerprint == "chrome" and .tls.insecure == true)' trojan-engine.json >/dev/null
+      jq -e 'any(.outbounds[]; .type == "trojan" and .server == "bare.example" and .tls.enabled == true and .tls.server_name == "bare.example")' trojan-engine.json >/dev/null
+      sing-box check -c trojan-engine.json
+      janet "$script" render --model model.json --nodes trojan.json --engine xray --rule-set remote --output trojan-xray.json
+      jq -e 'any(.outbounds[]; .protocol == "trojan" and .settings.servers[0].address == "bare.example" and .streamSettings.security == "tls" and .streamSettings.tlsSettings.serverName == "bare.example")' trojan-xray.json >/dev/null
+      printf '%s\n' '- {name: clash-trojan, type: trojan, server: clash.example, port: 443, password: secret, fp: chrome, allowInsecure: true}' > clash-trojan.txt
+      janet "$script" normalize --format clash --input clash-trojan.txt --output clash-trojan.json
+      jq -e '.[0].tls.enable == true and .[0].tls.serverName == "clash.example" and .[0].tls.utls == "chrome" and .[0].tls.insecure == true' clash-trojan.json >/dev/null
+      printf '%s\n' '- {name: clash-meta, type: trojan, server: meta.example, port: 443, password: secret, client-fingerprint: chrome, skip-cert-verify: true}' > clash-meta.txt
+      janet "$script" normalize --format clash --input clash-meta.txt --output clash-meta.json
+      jq -e '.[0].tls.enable == true and .[0].tls.serverName == "meta.example" and .[0].tls.utls == "chrome" and .[0].tls.insecure == true' clash-meta.json >/dev/null
+      printf '%s\n' '{"outbounds":[{"type":"trojan","tag":"bare","server":"sb.example","server_port":443,"password":"secret"},{"type":"trojan","tag":"named","server":"sb.example","server_port":443,"password":"secret","tls":{"enabled":true,"server_name":"www.example.com","insecure":true}},{"type":"vless","tag":"open","server":"v.example","server_port":443,"uuid":"b831381d-6324-4d53-ad4f-8cda48b30811"}]}' > sb-trojan.json
+      janet "$script" normalize --format sing-box --input sb-trojan.json --output sb-trojan-nodes.json
+      jq -e '.[0].protocol == "trojan" and .[0].tls.enable == true and .[0].tls.serverName == "sb.example"' sb-trojan-nodes.json >/dev/null
+      jq -e '.[1].tls.enable == true and .[1].tls.serverName == "www.example.com" and .[1].tls.insecure == true' sb-trojan-nodes.json >/dev/null
+      jq -e '.[2].protocol == "vless" and .[2].tls.enable == false' sb-trojan-nodes.json >/dev/null
+      janet "$script" render --model model.json --nodes sb-trojan-nodes.json --rule-set remote --output sb-trojan-engine.json
+      jq -e 'any(.outbounds[]; .type == "trojan" and .server == "sb.example" and .tls.enabled == true and .tls.server_name == "sb.example")' sb-trojan-engine.json >/dev/null
+      sing-box check -c sb-trojan-engine.json
       cat > block.json <<'EOF'
       {"mode":"rule-based","defaultTarget":"block","blockQuic":false,"groups":{},"rules":[],"subscriptionNames":[],"dns":{"domestic":{"resolvers":[],"domains":[]},"remote":{"resolvers":[],"via":"direct"},"fakeIp":{"enable":false,"exclude":[]},"hosts":{},"forwarders":{},"ipv6Answers":"keep"}}
       EOF

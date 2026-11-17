@@ -256,13 +256,22 @@
     (put-in node [:transport :host] (or (get q "host") nil))
     (put-in node [:transport :serviceName] (or (get q "serviceName") nil))))
 
+(defn filled [v]
+  (if (and (string? v) (not= v "")) v nil))
+
+(defn flag-on? [v]
+  (or (true? v) (= v "1")))
+
+# Trojan is TLS. A share link has no security=tls (T-0050).
 (defn apply-tls [node q]
   (def sec (or (get q "security") (get q "tls") ""))
-  (when (or (= sec "tls") (= sec "reality") (= (get q "tls") "tls"))
+  (def trojan? (= (get node :protocol) "trojan"))
+  (when (or trojan? (= sec "tls") (= sec "reality") (= (get q "tls") "tls"))
     (put-in node [:tls :enable] true)
-    (put-in node [:tls :serverName] (or (get q "sni") (get q "peer") nil))
-    (put-in node [:tls :utls] (or (get q "fp") nil))
-    (put-in node [:tls :insecure] (or (= (get q "allowInsecure") "1") (= (get q "insecure") "1")))
+    (def named (or (filled (get q "sni")) (filled (get q "peer"))))
+    (put-in node [:tls :serverName] (or named (if trojan? (get node :server) nil)))
+    (put-in node [:tls :utls] (filled (get q "fp")))
+    (put-in node [:tls :insecure] (or (flag-on? (get q "allowInsecure")) (flag-on? (get q "insecure"))))
     (when (= sec "reality")
       (put-in node [:tls :reality :publicKey] (or (get q "pbk") nil))
       (put-in node [:tls :reality :shortId] (or (get q "sid") nil)))))
@@ -409,9 +418,15 @@
     (do
       (put-in node [:tuic :uuid] (get item "uuid"))
       (put-in node [:tuic :password] (get item "password"))))
-  (when (or (get item "tls") (= (get item "security") "tls"))
+  (when (or (= protocol "trojan") (get item "tls") (= (get item "security") "tls"))
     (put-in node [:tls :enable] true)
-    (put-in node [:tls :serverName] (or (get item "sni") (get item "servername") nil)))
+    (def named (or (filled (get item "sni")) (filled (get item "peer")) (filled (get item "servername"))))
+    (put-in node [:tls :serverName] (or named (if (= protocol "trojan") (get node :server) nil)))
+    (put-in node [:tls :utls] (or (filled (get item "fp")) (filled (get item "client-fingerprint"))))
+    (put-in node [:tls :insecure] (or
+      (flag-on? (get item "allowInsecure"))
+      (flag-on? (get item "insecure"))
+      (flag-on? (get item "skip-cert-verify")))))
   node)))
 
 (defn parse-clash [text]
@@ -455,17 +470,19 @@
           (put-in node [:tuic :uuid] (get item "uuid"))
           (put-in node [:tuic :password] (get item "password"))))
       (def tls (get item "tls"))
-      (when (and tls (get tls "enabled"))
+      (when (or (= typ "trojan") (and tls (get tls "enabled")))
         (put-in node [:tls :enable] true)
-        (put-in node [:tls :serverName] (get tls "server_name"))
-        (put-in node [:tls :insecure] (get tls "insecure"))
-        (def reality (get tls "reality"))
-        (when reality
-          (put-in node [:tls :reality :publicKey] (get reality "public_key"))
-          (put-in node [:tls :reality :shortId] (get reality "short_id")))
-        (def utls (get tls "utls"))
-        (when (and utls (get utls "enabled"))
-          (put-in node [:tls :utls] (get utls "fingerprint"))))
+        (def named (when tls (filled (get tls "server_name"))))
+        (put-in node [:tls :serverName] (or named (if (= typ "trojan") (get node :server) nil)))
+        (when tls
+          (put-in node [:tls :insecure] (get tls "insecure"))
+          (def reality (get tls "reality"))
+          (when reality
+            (put-in node [:tls :reality :publicKey] (get reality "public_key"))
+            (put-in node [:tls :reality :shortId] (get reality "short_id")))
+          (def utls (get tls "utls"))
+          (when (and utls (get utls "enabled"))
+            (put-in node [:tls :utls] (get utls "fingerprint")))))
       (array/push out node)))
   out)
 

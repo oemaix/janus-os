@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-11-16 |
+| Last updated | 2026-11-17 |
 
 ## 1. Scope
 
@@ -90,7 +90,12 @@ janus.proxy.subscriptions.<name> = {
 ```
 
 The Node normalizer (Janet) converts every format into canonical node JSON
-and rejects unknown protocols with a listed reason. Build-time fetch is an
+and rejects unknown protocols with a listed reason. Trojan is TLS. A
+`trojan://` link, a Clash trojan item, and a sing-box trojan outbound
+enable it without `security=tls` or a `tls` field. `sni`, `peer`, `fp`,
+and `allowInsecure` still apply. Clash Meta's `client-fingerprint` and
+`skip-cert-verify` are those same two fields. A missing `sni` is the
+server host. The rendered outbound has `tls.enabled` set. Build-time fetch is an
 impure derivation by default (`--impure` documented) or a fixed-output
 derivation when `snapshot.hash` is set. `allowMissingAtBuild` defaults to
 false. True builds the image when that fetch fails. The router then starts
@@ -711,8 +716,12 @@ rule sets the label.
 
 `geoip` is legal only on type `region`. It takes no `value`. The output
 is the officially assigned alpha-2 code of the node's server address,
-and that code is the label value. A user-assigned code is not a `geoip`
-result. An IP literal is classified directly. A hostname is resolved on
+and that code is the label value. The render reads `geoip.dat` once for
+those node addresses and keeps the longest matching prefix. It does not
+keep every prefix as its own value. A later lookup of one of those
+addresses uses a flat table: 7 bytes for an IPv4 prefix and 19 bytes
+for an IPv6 prefix. A user-assigned code is not a `geoip` result. An IP
+literal is classified directly. A hostname is resolved on
 the router when labels are recomputed, not at image build. The proxy
 script exports `JANUS_DIG` as the absolute path of BIND's `dig` from
 the dnsutils output. The server output has no `dig`. A resolver that
