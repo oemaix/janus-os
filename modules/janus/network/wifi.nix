@@ -196,6 +196,44 @@
     description = "Firmware for RTL8188FU";
     paths = ["rtlwifi/rtl8188fufw.bin"];
   };
+  # The driver picks SMIC or UMC from the package revision. docs/10 §4.4.
+  rtl8710buFirmware = firmwareSlice {
+    pname = "rtl8710bu-firmware";
+    description = "Firmware for RTL8188GU";
+    paths = ["rtlwifi/rtl8710bufw_SMIC.bin" "rtlwifi/rtl8710bufw_UMC.bin"];
+  };
+  rtl8188guSwitch = pkgs.writeText "rtl8188gu-modeswitch.conf" ''
+    DefaultVendor=0x0bda
+    DefaultProduct=0x1a2b
+    TargetVendor=0x0bda
+    TargetProduct=0xb711
+    StandardEject=1
+  '';
+  # 0bda:1a2b is the CD-ROM id. The radio is 0bda:b711. docs/10 §4.4, T-0054.
+  # Exit 1 while that id is still present so the unit restarts (T-0055).
+  rtl8188guEject = pkgs.writeShellScript "rtl8188gu-eject" ''
+    set -eu
+    install -d -m 0755 /run/janus
+    exec 9>/run/janus/rtl8188gu-switch.lock
+    ${pkgs.util-linux}/bin/flock 9
+    cdrom() {
+      for dev in /sys/bus/usb/devices/[0-9]*-[0-9]*; do
+        [ -f "$dev/idVendor" ] || continue
+        if [ "$(cat "$dev/idVendor")" = 0bda ] && [ "$(cat "$dev/idProduct")" = 1a2b ]; then
+          return 0
+        fi
+      done
+      return 1
+    }
+    if ! cdrom; then
+      exit 0
+    fi
+    ${pkgs.usb-modeswitch}/bin/usb_modeswitch -c ${rtl8188guSwitch} -s 8 || true
+    if cdrom; then
+      echo "janus: RTL8188GU is still 0bda:1a2b" >&2
+      exit 1
+    fi
+  '';
   # The 43436s chip asks for its own CLM name. The Raspberry Pi package
   # ships that blob only as brcmfmac43436-sdio.clm_blob. docs/10 §4.7.
   zero2wClm = janusBuildPkgs.runCommand "brcmfmac43436s-clm" {
@@ -213,8 +251,8 @@
   '';
 
   hasUsb = id: lib.elem id declaredUsbIds;
-  # 8176, 8179, 818b, and f179. docs/10 §4.4.
-  realtekUsb = lib.any hasUsb ["0bda:8176" "0bda:8179" "0bda:818b" "0bda:f179"];
+  # 8176, 8179, 818b, f179, and b711. docs/10 §4.4, D-0074.
+  realtekUsb = lib.any hasUsb ["0bda:8176" "0bda:8179" "0bda:818b" "0bda:f179" "0bda:b711"];
   piBoards = ["rpi-zero-2w" "rpi3" "rpi4"];
   piRadio = lib.elem config.janus.hardware.board piBoards;
   # Pi 4 enables this host for the SD card in the board profile. docs/10 §4.12.
@@ -289,11 +327,33 @@ in {
         (lib.mkIf (hasUsb "0bda:8179") [rtl8188eusFirmware])
         (lib.mkIf (hasUsb "0bda:818b") [rtl8192euFirmware])
         (lib.mkIf (hasUsb "0bda:f179") [rtl8188fuFirmware])
+        (lib.mkIf (hasUsb "0bda:b711") [rtl8710buFirmware])
       ];
       # One driver. rtl8192cu still lists 0bda:8176, so that id keeps it
       # from autoloading. Do not blacklist rtl8xxxu. Do not rebind (T-0040).
       boot.kernelModules = lib.mkIf realtekUsb ["rtl8xxxu"];
       boot.blacklistedKernelModules = lib.mkIf (hasUsb "0bda:8176") ["rtl8192cu"];
+      # The cold plug is 0bda:1a2b. Eject it when the radio is declared.
+      # Not ordered before networkd: a hang must not hold every other link (T-0055).
+      systemd.services = lib.mkIf (hasUsb "0bda:b711") {
+        janus-wifi-switch-rtl8188gu = {
+          description = "Eject RTL8188GU CD-ROM mode";
+          wantedBy = ["network-pre.target"];
+          after = ["systemd-udevd.service"];
+          startLimitBurst = 5;
+          startLimitIntervalSec = 120;
+          serviceConfig = {
+            Type = "oneshot";
+            ExecStart = rtl8188guEject;
+            TimeoutStartSec = "15s";
+            Restart = "on-failure";
+            RestartSec = "2s";
+          };
+        };
+      };
+      services.udev.extraRules = lib.mkIf (hasUsb "0bda:b711") ''
+        ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="0bda", ATTR{idProduct}=="1a2b", TAG+="systemd", ENV{SYSTEMD_WANTS}="janus-wifi-switch-rtl8188gu.service"
+      '';
     }
     (lib.mkIf (apNames != []) {
       boot.kernelModules = lib.mkMerge [

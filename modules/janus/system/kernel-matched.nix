@@ -56,8 +56,8 @@
   wantSpi = hmiPi && (hasClass "hmi") && (hmiDrivers == [] || lib.any (d: lib.elem d ["sh1106" "st7789" "waveshare-epd-2in13"]) hmiDrivers);
   wantI2c = (pi && hasClass "power") || (hmiPi && lib.elem "ssd1306" hmiDrivers);
 
-  # 8176, 8179, 818b, and f179 share rtl8xxxu. RTL8192CU stays off. docs/10 §4.4.
-  realtekUsb = lib.any hasUsb ["0bda:8176" "0bda:8179" "0bda:818b" "0bda:f179"];
+  # 8176, 8179, 818b, f179, and b711 share rtl8xxxu. RTL8192CU stays off. docs/10 §4.4.
+  realtekUsb = lib.any hasUsb ["0bda:8176" "0bda:8179" "0bda:818b" "0bda:f179" "0bda:b711"];
   wifiUsb =
     (lib.optional (hasUsb "0e8d:7612") "MT76x2U")
     ++ (lib.optional (hasUsb "0e8d:7961") "MT7921U")

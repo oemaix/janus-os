@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-11-16 |
+| Last updated | 2026-11-19 |
 
 This file is the implementation plan, the progress of the code, and the
 notes for work that is specified but not started. Choices are *18*.
@@ -193,8 +193,10 @@ tree does not mean that behavior exists. Stubs are not finished features.
   `bcm2837-rpi-3-b.dtb` and `bcm2837-rpi-3-b-plus.dtb`.
 * A WPA2 station uplink is `janus.network.wans.<name>.mode = "wifi"`
   (D-0063, FR-NET-018). `0bda:8176` and `0bda:8179` are stations on
-  `rtl8xxxu`. `0bda:818b` and `0bda:f179` are an access point or a
-  station on that driver. The image does not blacklist `rtl8xxxu`.
+  `rtl8xxxu`. `0bda:818b`, `0bda:f179`, and `0bda:b711` are an access
+  point or a station on that driver. `0bda:b711` is RTL8188GU. The
+  image ejects the cold-plug id `0bda:1a2b` (D-0074). The image does
+  not blacklist `rtl8xxxu`.
   `0bda:8176` blacklists `rtl8192cu` (D-0070, T-0040). Two sticks of
   one USB id use `match.usbPath` or `match.mac` (D-0071). `concurrent`
   is both roles on one radio for MT7612U and MT7921AU (D-0066).

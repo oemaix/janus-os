@@ -54,6 +54,8 @@
     # RTL8188CUS station and RTL8192EU access point. docs/10 §4.4.
     # cafe0 = { class = "wifi"; match.usbVendorProduct = "0bda:8176"; };
     # ap0 = { class = "wifi"; match.usbVendorProduct = "0bda:818b"; };
+    # RTL8188GU. A cold plug is 0bda:1a2b. The configuration names b711.
+    # gu0 = { class = "wifi"; match.usbVendorProduct = "0bda:b711"; };
   };
 
   ############################################################################

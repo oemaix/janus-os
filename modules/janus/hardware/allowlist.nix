@@ -20,8 +20,9 @@
       class = "wifi";
       unsupported = true;
     };
-    # One driver, rtl8xxxu. docs/10 §4.4, D-0063, D-0070.
-    # 8176 and 8179 are stations. 818b and f179 are either role.
+    # One driver, rtl8xxxu. docs/10 §4.4, D-0063, D-0070, D-0074.
+    # 8176 and 8179 are stations. 818b, f179, and b711 are either role.
+    # b711 is the radio. 1a2b is the CD-ROM id and is not a match.
     "0bda:8176" = {
       class = "wifi";
       capabilities = ["sta"];
@@ -39,6 +40,14 @@
       channels = [1 2 3 4 5 6 7 8 9 10 11 12 13];
     };
     "0bda:f179" = {
+      class = "wifi";
+      capabilities = ["ap" "sta"];
+      bands = ["2g"];
+      security = ["wpa2"];
+      channels = [1 2 3 4 5 6 7 8 9 10 11 12 13];
+    };
+    # RTL8188GU / RTL8710BU. The cold plug is 0bda:1a2b. docs/10 §4.4, D-0074.
+    "0bda:b711" = {
       class = "wifi";
       capabilities = ["ap" "sta"];
       bands = ["2g"];

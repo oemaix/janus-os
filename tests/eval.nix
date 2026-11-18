@@ -2239,6 +2239,196 @@ in {
       printf '%s\n' ${lib.escapeShellArg os.config.services.udev.extraRules} > rules
       grep -q 'ATTRS{idProduct}=="f179"' rules
       grep -q 'NAME="wifi-room"' rules
+      if ${if os.config.systemd.services ? janus-wifi-switch-rtl8188gu then "true" else "false"}; then
+        echo "RTL8188FU image ejects RTL8188GU" >&2
+        exit 1
+      fi
+      echo ok > "$out"
+    '';
+  eval-wifi-b711-5g = fail "eval-wifi-b711-5g" [
+    base
+    {
+      janus.security.allowInlineSecrets = true;
+      janus.hardware.peripherals.stick = {
+        class = "wifi";
+        match.usbVendorProduct = "0bda:b711";
+      };
+      janus.network.lans.lan = {
+        members = ["lan" "room"];
+        address = "192.168.10.1";
+        prefixLength = 24;
+      };
+      janus.network.wifi.room = {
+        peripheral = "stick";
+        ssid = "janus";
+        passphrase = "secret12";
+        lan = "lan";
+        band = "5g";
+      };
+    }
+  ];
+  eval-wifi-b711 = let
+    os = mk [
+      base
+      {
+        janus.security.allowInlineSecrets = true;
+        janus.hardware.peripherals.stick = {
+          class = "wifi";
+          match.usbVendorProduct = "0bda:b711";
+        };
+        janus.network.lans.lan = {
+          members = ["lan" "room"];
+          address = "192.168.10.1";
+          prefixLength = 24;
+        };
+        janus.network.wifi.room = {
+          peripheral = "stick";
+          ssid = "janus";
+          passphrase = "secret12";
+          lan = "lan";
+        };
+      }
+    ];
+    script = os.config.systemd.services.janus-hostapd-room.serviceConfig.ExecStart;
+    switchSvc = os.config.systemd.services.janus-wifi-switch-rtl8188gu;
+    switch = switchSvc.serviceConfig.ExecStart;
+  in
+    pkgs.runCommand "eval-wifi-b711" {} ''
+      grep -q 'channel=6' ${script}
+      grep -F -q 'ht_capab=[HT20][SHORT-GI-20]' ${script}
+      grep -q 'wpa_key_mgmt=WPA-PSK' ${script}
+      printf '%s\n' ${lib.escapeShellArg os.config.services.udev.extraRules} > rules
+      grep -q 'ATTRS{idProduct}=="b711"' rules
+      grep -q 'NAME="wifi-room"' rules
+      grep -q 'ATTR{idProduct}=="1a2b"' rules
+      grep -q 'janus-wifi-switch-rtl8188gu.service' rules
+      if grep -q 'ATTRS{idProduct}=="1a2b"' rules; then
+        echo "RTL8188GU rename matches the CD-ROM id" >&2
+        exit 1
+      fi
+      echo ${lib.escapeShellArg (lib.concatStringsSep " " os.config.boot.kernelModules)} | grep -q rtl8xxxu
+      if echo ${lib.escapeShellArg (lib.concatStringsSep " " os.config.boot.blacklistedKernelModules)} | grep -q rtl8xxxu; then
+        echo "RTL8188GU image blacklists rtl8xxxu" >&2
+        exit 1
+      fi
+      test ${lib.escapeShellArg switchSvc.serviceConfig.Restart} = on-failure
+      test ${lib.escapeShellArg switchSvc.serviceConfig.RestartSec} = 2s
+      test ${lib.escapeShellArg switchSvc.serviceConfig.TimeoutStartSec} = 15s
+      test ${toString switchSvc.startLimitBurst} = 5
+      test ${toString switchSvc.startLimitIntervalSec} = 120
+      test ${if lib.elem "systemd-networkd.service" switchSvc.before then "yes" else "no"} = no
+      grep -q usb_modeswitch ${switch}
+      grep -q 'idProduct.*= 1a2b' ${switch}
+      grep -q 'still 0bda:1a2b' ${switch}
+      conf=$(grep -o '/nix/store/[^ ]*rtl8188gu-modeswitch.conf' ${switch})
+      grep -q 'DefaultProduct=0x1a2b' "$conf"
+      grep -q 'TargetProduct=0xb711' "$conf"
+      grep -q 'StandardEject=1' "$conf"
+      echo ok > "$out"
+    '';
+  eval-wifi-b711-wpa3 = fail "eval-wifi-b711-wpa3" [
+    base
+    {
+      janus.security.allowInlineSecrets = true;
+      janus.hardware.peripherals.stick = {
+        class = "wifi";
+        match.usbVendorProduct = "0bda:b711";
+      };
+      janus.network.lans.lan = {
+        members = ["lan" "room"];
+        address = "192.168.10.1";
+        prefixLength = 24;
+      };
+      janus.network.wifi.room = {
+        peripheral = "stick";
+        ssid = "janus";
+        passphrase = "secret12";
+        lan = "lan";
+        security = "wpa3";
+      };
+    }
+  ];
+  eval-wifi-b711-channel = fail "eval-wifi-b711-channel" [
+    base
+    {
+      janus.security.allowInlineSecrets = true;
+      janus.hardware.peripherals.stick = {
+        class = "wifi";
+        match.usbVendorProduct = "0bda:b711";
+      };
+      janus.network.lans.lan = {
+        members = ["lan" "room"];
+        address = "192.168.10.1";
+        prefixLength = 24;
+      };
+      janus.network.wifi.room = {
+        peripheral = "stick";
+        ssid = "janus";
+        passphrase = "secret12";
+        lan = "lan";
+        channel = 36;
+      };
+    }
+  ];
+  eval-wifi-1a2b = fail "eval-wifi-1a2b" [
+    base
+    {
+      janus.hardware.peripherals.stick = {
+        class = "wifi";
+        match.usbVendorProduct = "0bda:1a2b";
+      };
+    }
+  ];
+  eval-wifi-b711-sta = let
+    os = mk [
+      base
+      {
+        janus.security.allowInlineSecrets = true;
+        janus.hardware.peripherals.cafe0 = {
+          class = "wifi";
+          match.usbVendorProduct = "0bda:b711";
+        };
+        janus.network.lans.lan = {
+          members = ["lan"];
+          address = "192.168.10.1";
+          prefixLength = 24;
+        };
+        janus.network.wans.cafe = {
+          uplink = "cafe0";
+          mode = "wifi";
+          role = "backup";
+          wifi.networks = [
+            {
+              ssid = "Cafeteria";
+              passphrase = "secret12";
+              priority = 10;
+            }
+          ];
+        };
+      }
+    ];
+    switchSvc = os.config.systemd.services.janus-wifi-switch-rtl8188gu;
+    switch = switchSvc.serviceConfig.ExecStart;
+    wpa = os.config.systemd.services.janus-wpa-cafe.serviceConfig.ExecStart;
+    hostapd = lib.filter (n: lib.hasPrefix "janus-hostapd-" n) (lib.attrNames os.config.systemd.services);
+  in
+    pkgs.runCommand "eval-wifi-b711-sta" {} ''
+      test ${if hostapd == [] then "yes" else "no"} = yes
+      grep -q 'key_mgmt=WPA-PSK' ${wpa}
+      printf '%s\n' ${lib.escapeShellArg os.config.services.udev.extraRules} > rules
+      grep -q 'ATTRS{idProduct}=="b711"' rules
+      grep -q 'NAME="wifi-cafe0"' rules
+      grep -q 'ATTR{idProduct}=="1a2b"' rules
+      if grep -q 'ATTRS{idProduct}=="1a2b"' rules; then
+        echo "RTL8188GU station rename matches the CD-ROM id" >&2
+        exit 1
+      fi
+      echo ${lib.escapeShellArg (lib.concatStringsSep " " os.config.boot.kernelModules)} | grep -q rtl8xxxu
+      test ${lib.escapeShellArg switchSvc.serviceConfig.Restart} = on-failure
+      test ${lib.escapeShellArg switchSvc.serviceConfig.TimeoutStartSec} = 15s
+      test ${toString switchSvc.startLimitBurst} = 5
+      test ${if lib.elem "systemd-networkd.service" switchSvc.before then "yes" else "no"} = no
+      grep -q 'still 0bda:1a2b' ${switch}
       echo ok > "$out"
     '';
   eval-wifi-potato-pair = let
@@ -2551,6 +2741,7 @@ in {
     eus = declared "0bda:8179";
     eu = declared "0bda:818b";
     fu = declared "0bda:f179";
+    gu = declared "0bda:b711";
   in
     pkgs.runCommand "eval-wifi-mt76" {} ''
       set -eu
@@ -2606,6 +2797,18 @@ in {
       test "$n" = 1
       n=$(find -L "$fw/lib/firmware" -type f | wc -l)
       test "$n" = 1
+      echo ${lib.escapeShellArg (names gu)} | grep -q rtl8710bu-firmware
+      if echo ${lib.escapeShellArg (names gu)} | grep -q rtl8188fu-firmware; then
+        echo "RTL8188GU config installed RTL8188FU firmware" >&2
+        exit 1
+      fi
+      fw=${gu.config.hardware.firmware}
+      for f in rtl8710bufw_SMIC.bin rtl8710bufw_UMC.bin; do
+        n=$(find -L "$fw/lib/firmware" -type f -name "$f*" | wc -l)
+        test "$n" = 1
+      done
+      n=$(find -L "$fw/lib/firmware" -type f | wc -l)
+      test "$n" = 2
       echo ok > "$out"
     '';
   eval-wifi-sops = let

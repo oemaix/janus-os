@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-11-16 |
+| Last updated | 2026-11-19 |
 
 ## 1. Terminology
 
@@ -299,6 +299,7 @@ are not part of the profile. QMI and MBIM are not how this unit attaches.
 | Realtek RTL8188EUS | `0bda:8179` | wifi (STA, 2.4 GHz HT20) | supported via in-tree `rtl8xxxu` (§4.4) |
 | Realtek RTL8192EU | `0bda:818b` | wifi (AP or STA, 2.4 GHz HT20) | supported via in-tree `rtl8xxxu` (§4.4) |
 | Realtek RTL8188FU | `0bda:f179` | wifi (AP or STA, 2.4 GHz HT20) | supported via in-tree `rtl8xxxu` (§4.4) |
+| Realtek RTL8188GU (RTL8710BU, FAST FW150US 免驱版 2.0) | `0bda:b711` (cold plug `0bda:1a2b`) | wifi (AP or STA, 2.4 GHz HT20) | supported via in-tree `rtl8xxxu` after StandardEject (§4.4, D-0074) |
 | Raspberry Pi Zero 2 W onboard CYW43430 | board radio, `match.onboard` | wifi (AP, 2.4 GHz HT20, WPA2) | supported via in-tree `brcmfmac` (§4.7) |
 | ROCK Pi 4C onboard AP6256 | board radio, `match.onboard` | wifi (AP, 2.4/5 GHz HT20, WPA2) | supported via in-tree `brcmfmac` (§4.10) |
 | Raspberry Pi 3 / 3+ onboard CYW43430 / CYW43455 | board radio, `match.onboard` | wifi (AP, 2.4 GHz HT20, WPA2) | supported via in-tree `brcmfmac` (§4.12) |
@@ -322,7 +323,7 @@ users may add `hardware.firmware`/kernel modules via raw NixOS options.
 
 ### 4.4 Realtek USB on `rtl8xxxu`
 
-These four ids share one in-tree driver, `rtl8xxxu`. Declaring any of
+These ids share one in-tree driver, `rtl8xxxu`. Declaring any of
 them loads that module. The image does not load `rtl8192cu` and does
 not blacklist `rtl8xxxu`. `rtl8192cu` still lists `0bda:8176`, so that
 id blacklists `rtl8192cu` and the image does not rebind the stick
@@ -331,9 +332,10 @@ puts `0bda:8176` in this driver's table. `standard` keeps that cache.
 `matched` keeps `RTL8XXXU` and turns `RTL8192CU` off.
 
 The driver has no 40 MHz channels. `hostapd` sets
-`ht_capab=[HT20][SHORT-GI-20]`. An access point on `0bda:818b` or
-`0bda:f179` fails evaluation for `band = "5g"`, for `security` other
-than `wpa2`, and for a channel outside 1–13. `channel = "auto"` is 6.
+`ht_capab=[HT20][SHORT-GI-20]`. An access point on `0bda:818b`,
+`0bda:f179`, or `0bda:b711` fails evaluation for `band = "5g"`, for
+`security` other than `wpa2`, and for a channel outside 1–13.
+`channel = "auto"` is 6.
 The access point keeps that channel. It does not follow the station.
 An out-of-tree Realtek driver is forbidden (FR-HW-006).
 
@@ -343,6 +345,7 @@ An out-of-tree Realtek driver is forbidden (FR-HW-006).
 | `0bda:8179` | RTL8188EUS | `sta` | `rtlwifi/rtl8188eufw.bin` |
 | `0bda:818b` | RTL8192EU | `ap` or `sta` | `rtlwifi/rtl8192eu_nic.bin` |
 | `0bda:f179` | RTL8188FU | `ap` or `sta` | `rtlwifi/rtl8188fufw.bin` |
+| `0bda:b711` | RTL8188GU (RTL8710BU) | `ap` or `sta` | `rtlwifi/rtl8710bufw_SMIC.bin`, `rtl8710bufw_UMC.bin` |
 
 Mainline binds `0bda:f179` as RTL8188FU. RTL8192FU is a separate
 chip on `rtl8192fu`, with firmware `rtlwifi/rtl8192fufw.bin`. The
@@ -353,6 +356,24 @@ RTL8192EU advertises an access point since `8c34b621` (2023-07-10).
 The author tested that path only briefly and expected it to work as
 well as RTL8188FU, which already set `supports_ap`. Both are 2.4 GHz.
 Neither profile lists `concurrent`, so one stick has one role (D-0066).
+
+RTL8188GU is the kernel's RTL8710BU. The measured unit is a FAST
+FW150US marked 免驱版 2.0. A cold plug is `0bda:1a2b`, product `DISK`,
+one mass-storage interface, and `usb-storage` logs `device ignored`.
+`rtl8xxxu` does not list that id. `usb_modeswitch` StandardEject makes
+the stick reappear as `0bda:b711`, product `802.11n WLAN Adapter`, and
+that id binds `rtl8xxxu`. The configuration names `0bda:b711`. Naming
+`0bda:1a2b` fails evaluation: the netdev's USB id is `b711`, so a
+rename rule for `1a2b` never matches (D-0074, T-0054). Declaring
+`0bda:b711` runs that eject at boot and again when `1a2b` is added.
+The unit restarts when the stick is still `1a2b`. It is not ordered
+before networkd, so a failed eject does not hold the other links
+(T-0055). The driver
+picks `rtl8710bufw_SMIC.bin` or `rtl8710bufw_UMC.bin` from the package
+revision, so the image ships both. `rtl8710bu_fops` sets `supports_ap`
+and does not set `supports_concurrent`. The profile is an access point
+or a station, 2.4 GHz. On the measured station the interface came up
+HT20. The access point was not exercised on that unit.
 
 RTL8188CUS is a station. The same driver sets `supports_ap` for that
 family, and the measured access-point rate was about 4 Mbit/s. Janus
@@ -556,8 +577,10 @@ udev renames the kernel's `wlan*` device. The rule matches the USB id
 and, when set, `match.usbPath` or `match.mac` (§4.4).
 
 RTL8188CUS (`0bda:8176`) and RTL8188EUS (`0bda:8179`) are stations.
-RTL8192EU (`0bda:818b`) and RTL8188FU (`0bda:f179`) are an access
-point or a station (§4.4). The lab Le Potato uses RTL8188CUS as
+RTL8192EU (`0bda:818b`), RTL8188FU (`0bda:f179`), and RTL8188GU
+(`0bda:b711`) are an access point or a station (§4.4). The RTL8188GU
+configuration names `b711`. The image ejects the cold-plug id
+`0bda:1a2b` (D-0074). The lab Le Potato uses RTL8188CUS as
 `role = "backup"` and RTL8192EU as the LAN access point. Both radios
 are 2.4 GHz HT20. The access point keeps its configured channel.
 Unset, that is 6. The expected load is a few clients. With a lease

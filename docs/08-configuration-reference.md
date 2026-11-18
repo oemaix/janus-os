@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-11-16 |
+| Last updated | 2026-11-19 |
 
 This document defines the **shape and semantics** of the `janus.*` option
 tree. The final, exhaustive reference (every option with type, default,
@@ -540,7 +540,7 @@ export`. `janus-build fleet pull` writes leases into
 * `janus.audio.enable` defaults to false. Playback and recording are read only then. `embedded` and `usb` need a non-blank node and `kernelProfile` `standard` or `matched`. `compact` rejects them. `recording.input = bluetooth` fails while HFP and HSP stay off. `matched` includes the selected embedded or USB driver only when `enable` is true.
 * `janus.soloist.enable` needs `janus.audio.enable`, a playback device, the API-key secret and its sops file, at least one zone other than `wan`, and a board architecture of `x86_64`, `aarch64`, or `armv7l`. A false setting skips these checks and does not install the secret. BlueZ starts from `janus.audio` bluetooth, without Soloist (D-0061).
 * `janus.edge.api.enable` defaults to false. True needs exactly one of `tokenSecret` and `tokenFile`, a non-empty zone list, and no `wan`. `janus.edge.speech.asr.enable` and `janus.edge.speech.tts.enable` fail while it is false. Recognition fails on the Zero 2 W, the Pi 2, the Pi 3, Le Potato, and the VisionFive 2. Synthesis fails on the Zero 2 W and the VisionFive 2. `tts.voice` is a locked Piper id. `asr.language` is unset or a language id of the locked `base` model (D-0062).
-* A Wi-Fi role outside the peripheral profile fails evaluation (D-0063). Without `concurrent`, one peripheral is an access point or a station WAN. With `concurrent`, it may be both (D-0066). A `mode = "wifi"` WAN names a profile that lists `sta`, and each network has one WPA2 passphrase. `0bda:8176` and `0bda:8179` are stations on `rtl8xxxu`. `0bda:818b` and `0bda:f179` are an access point or a station, 2.4 GHz WPA2 HT20. `channel = "auto"` is 6. The image loads `rtl8xxxu`. `0bda:8176` blacklists `rtl8192cu` (D-0070).
+* A Wi-Fi role outside the peripheral profile fails evaluation (D-0063). Without `concurrent`, one peripheral is an access point or a station WAN. With `concurrent`, it may be both (D-0066). A `mode = "wifi"` WAN names a profile that lists `sta`, and each network has one WPA2 passphrase. `0bda:8176` and `0bda:8179` are stations on `rtl8xxxu`. `0bda:818b`, `0bda:f179`, and `0bda:b711` are an access point or a station, 2.4 GHz WPA2 HT20. `channel = "auto"` is 6. The image loads `rtl8xxxu`. `0bda:8176` blacklists `rtl8192cu` (D-0070). `0bda:b711` is RTL8188GU. The configuration names that id. A cold plug is `0bda:1a2b`. Naming `1a2b` fails evaluation. Declaring `b711` ejects it and retries a failed eject without holding networkd (D-0074, T-0055).
 * `janus.debug` warns when a switch is on. A `kernelLogLevel` outside 0–7 fails the type. None of them fails evaluation for being on.
 
 ## 13. `janus.debug`

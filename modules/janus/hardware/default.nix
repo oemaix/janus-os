@@ -257,6 +257,16 @@ in {
               '';
             }
           ]
+          ++ lib.optionals (match.usbVendorProduct == "0bda:1a2b") [
+            {
+              assertion = false;
+              message = ''
+                janus.hardware.peripherals.${name}: 0bda:1a2b is the RTL8188GU CD-ROM id.
+                Match 0bda:b711. The image ejects 1a2b.
+                See docs/10 §4.4.
+              '';
+            }
+          ]
           ++ lib.optionals (match.usbPath != null) [
             {
               assertion = builtins.match "[0-9]+-[0-9]+(\\.[0-9]+)*" match.usbPath != null;

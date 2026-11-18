@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-11-16 |
+| Last updated | 2026-11-19 |
 
 ## 1. Substrate
 
@@ -292,9 +292,11 @@ advertises that pair on one radio (D-0066). `ap` and `sta` without
 `concurrent` mean either role, and that peripheral has one role.
 `concurrent` lets the same peripheral be the access point and the
 station. MT7612U and MT7921AU list it. RTL8188CUS (`0bda:8176`) and
-RTL8188EUS (`0bda:8179`) list `sta` only. RTL8192EU (`0bda:818b`) and
-RTL8188FU (`0bda:f179`) list `ap` and `sta`, so each of those sticks
-has one role. Those two access points are 2.4 GHz WPA2 HT20.
+RTL8188EUS (`0bda:8179`) list `sta` only. RTL8192EU (`0bda:818b`),
+RTL8188FU (`0bda:f179`), and RTL8188GU (`0bda:b711`) list `ap` and
+`sta`, so each of those sticks has one role. Those access points are
+2.4 GHz WPA2 HT20. RTL8188GU is configured as `0bda:b711`. A cold plug
+shows `0bda:1a2b`. Naming that id fails evaluation. The image ejects it when the configuration names `b711` (D-0074, *10* §4.4).
 Evaluation fails for `5g`, for a channel outside 1–13, and for
 `security` other than `wpa2`. `channel = "auto"` is 6, and the access
 point keeps it (*10* §4.4). The ids in the example differ, so the
