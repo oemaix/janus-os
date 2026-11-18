@@ -96,9 +96,10 @@ xray_pin_balancers() {
 }
 
 tun_up() {
-  # networkd can flush the fwmark rule between intercept-up and here.
-  # DNS tproxy needs it for sing-box and for xray, including a LAN that
-  # is not intercepted. xray returns below, so this has to run first.
+  # networkd can flush fwmark rules between intercept-up and here, and
+  # again while tun0 is down for an engine restart. DNS tproxy needs
+  # 0x4a02 for sing-box and for xray, including a LAN that is not
+  # intercepted. xray returns below, so that restore has to run first.
   if [ "${JANUS_DNS_TPROXY}" = 1 ]; then
     tproxy_route
   fi
@@ -112,9 +113,11 @@ tun_up() {
     return 0
   fi
   [ "${JANUS_INTERCEPT}" = 1 ] || return 0
-  if [ "${JANUS_FAIL_MODE}" = open ]; then
-    rule_add
-  fi
+  # closed still looks up mark 0x4a01 in table 2022 while the process is
+  # down, so the blackhole applies. networkd drops that rule with the
+  # others. Put it back for both fail modes, then point the table at
+  # tun0 (D-0030, T-0053).
+  rule_add
   i=0
   while [ ! -d /sys/class/net/tun0 ] && [ "$i" -lt 50 ]; do
     sleep 0.1

@@ -8558,4 +8558,125 @@ exit 0
     base
     {janus.debug.firewallTrace = true;}
   ];
+  # T-0053. networkd can drop the 0x4a01 lookup before tun-up. closed
+  # must put that rule back, then point table 2022 at tun0. open still
+  # removes it on the way down. xray never installs it.
+  eval-tun-fwmark =
+    pkgs.runCommand "eval-tun-fwmark" {
+      nativeBuildInputs = [pkgs.bash pkgs.coreutils pkgs.gnused pkgs.gawk pkgs.gnugrep];
+    } ''
+      set -eu
+      set -o pipefail
+      root=$TMPDIR/tun
+      mkdir -p "$root/bin" "$root/sys/class/net/tun0"
+      cat > "$root/bin/ip" << 'EOF'
+      #!/bin/sh
+      printf '%s\n' "$*" >> "$IP_LOG"
+      exit 0
+      EOF
+      chmod +x "$root/bin/ip"
+      export PATH="$root/bin:$PATH"
+      export IP_LOG=$root/ip.log
+      sed -e "s|/sys/class/net/tun0|$root/sys/class/net/tun0|g" ${../pkgs/janus-engine.sh} > "$root/janus-engine.sh"
+      run() {
+        : > "$IP_LOG"
+        bash -eu -o pipefail "$root/janus-engine.sh" "$1"
+      }
+      line_before() {
+        awk -v early="$1" -v late="$2" '
+          $0 == early { if (!e) e = NR }
+          $0 == late { if (!l) l = NR }
+          END { if (!e || !l || e > l) exit 1 }
+        ' "$IP_LOG"
+      }
+      absent() {
+        if grep -q -F -e "$1" "$IP_LOG"; then
+          echo "unexpected: $1" >&2
+          cat "$IP_LOG" >&2
+          exit 1
+        fi
+      }
+      present() {
+        if ! grep -qx -F -e "$1" "$IP_LOG"; then
+          echo "missing: $1" >&2
+          cat "$IP_LOG" >&2
+          exit 1
+        fi
+      }
+      export JANUS_SCRIPT=unused JANUS_CLOSED_LOG=0 JANUS_EGRESS_TABLE=
+      export JANUS_ENGINE=sing-box JANUS_FAIL_MODE=closed JANUS_INTERCEPT=1 JANUS_DNS_TPROXY=1
+      run tun-up
+      present 'rule add fwmark 0x4a02 lookup 2023 priority 109'
+      present '-6 rule add fwmark 0x4a02 lookup 2023 priority 109'
+      present 'rule add fwmark 0x4a01 lookup 2022 priority 110'
+      present '-6 rule add fwmark 0x4a01 lookup 2022 priority 110'
+      present 'route replace default dev tun0 table 2022'
+      present '-6 route replace default dev tun0 table 2022'
+      line_before 'rule add fwmark 0x4a01 lookup 2022 priority 110' 'route replace default dev tun0 table 2022'
+      line_before '-6 rule add fwmark 0x4a01 lookup 2022 priority 110' '-6 route replace default dev tun0 table 2022'
+      absent blackhole
+      export JANUS_EGRESS_TABLE=2024
+      run tun-up
+      present 'rule add fwmark 0x4a lookup 2024 priority 100'
+      line_before 'rule add fwmark 0x4a lookup 2024 priority 100' 'route replace default dev tun0 table 2022'
+      export JANUS_EGRESS_TABLE=
+      export JANUS_DNS_TPROXY=0
+      run tun-up
+      present 'rule add fwmark 0x4a01 lookup 2022 priority 110'
+      present '-6 rule add fwmark 0x4a01 lookup 2022 priority 110'
+      absent 'fwmark 0x4a02'
+      export JANUS_FAIL_MODE=open JANUS_DNS_TPROXY=1
+      run tun-up
+      present 'rule add fwmark 0x4a01 lookup 2022 priority 110'
+      present 'route replace default dev tun0 table 2022'
+      absent blackhole
+      run tun-down
+      present 'rule del fwmark 0x4a01 lookup 2022 priority 110'
+      present '-6 rule del fwmark 0x4a01 lookup 2022 priority 110'
+      present 'route del default table 2022'
+      present '-6 route del default table 2022'
+      absent blackhole
+      if grep -qx -F -e 'rule add fwmark 0x4a01 lookup 2022 priority 110' "$IP_LOG"; then
+        echo "open tun-down installed the lookup rule" >&2
+        exit 1
+      fi
+      export JANUS_FAIL_MODE=closed
+      run tun-down
+      present 'route replace blackhole default table 2022'
+      present '-6 route replace blackhole default table 2022'
+      absent '0x4a01'
+      absent 'dev tun0'
+      run intercept-up
+      present 'rule add fwmark 0x4a01 lookup 2022 priority 110'
+      present '-6 rule add fwmark 0x4a01 lookup 2022 priority 110'
+      present 'route replace blackhole default table 2022'
+      line_before 'rule add fwmark 0x4a01 lookup 2022 priority 110' 'route replace blackhole default table 2022'
+      absent 'dev tun0'
+      export JANUS_FAIL_MODE=open
+      run intercept-up
+      present 'rule add fwmark 0x4a01 lookup 2022 priority 110'
+      absent blackhole
+      export JANUS_INTERCEPT=0 JANUS_FAIL_MODE=closed
+      run tun-up
+      absent '0x4a01'
+      present 'rule add fwmark 0x4a02 lookup 2023 priority 109'
+      run tun-down
+      if [ -s "$IP_LOG" ]; then
+        echo "tun-down changed routes with intercept off" >&2
+        cat "$IP_LOG" >&2
+        exit 1
+      fi
+      export JANUS_ENGINE=xray JANUS_INTERCEPT=1 JANUS_FAIL_MODE=closed
+      run tun-up
+      absent '0x4a01'
+      absent 'table 2022'
+      present 'rule add fwmark 0x4a02 lookup 2023 priority 109'
+      export JANUS_FAIL_MODE=open
+      run tun-up
+      absent '0x4a01'
+      run tun-down
+      absent '0x4a01'
+      absent blackhole
+      echo ok > "$out"
+    '';
 }

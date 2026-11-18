@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-11-17 |
+| Last updated | 2026-11-18 |
 
 A tarpit is a failure that looks like progress until a later build or
 boot. The binding choice stays in the cited document. This list is the
@@ -65,3 +65,4 @@ does not undo it.
 | T-0050 | kept | Trojan is TLS. A share link has no `security=tls`, a Clash item often omits `tls`, and a sing-box outbound may omit `tls.enabled`. Requiring that flag drops `sni`, `peer`, `fp`, and `allowInsecure`, and the outbound is `tls: null`. sing-box then writes the trojan header in cleartext and the server answers `decode_error`. Enable TLS for every trojan node from share links, Clash, and sing-box JSON. A missing SNI is the server host. Clash Meta writes the fingerprint as `client-fingerprint` and the insecure flag as `skip-cert-verify`. Read those names too. See *07* §3.2. |
 | T-0051 | kept | NixOS `environment.defaultPackages` includes `strace`. `janus.debug.tools` is the only switch that installs it. Leaving the NixOS package on the image puts `strace` on a production router, and `eval-debug` then sees it while the switch is off. Keep `perl` and `rsync`. Drop `strace` from `defaultPackages`. See D-0068. |
 | T-0052 | kept | `janet/janus.janet` loads `labels.janet` from its own directory. A Nix string of the file alone is `/nix/store/<hash>-janus.janet`, so the loader asks for `/nix/store/labels.janet` and render stops. Copy `janus.janet` and `labels.janet` into one directory, then run that copy. A path of the `janet` directory plus `/janus.janet` already keeps them together. |
+| T-0053 | kept | `systemd-networkd` can flush fwmark rules between `intercept-up` and `tun-up`, and again while `tun0` is down for an engine restart. `tun-up` always puts mark `0x4a02` back. It used to call `rule_add` only when `failMode` is `open`, so mark `0x4a01` was missing in the default `closed` mode. nftables still marked LAN traffic `0x4a01`. The forward hook accepts that mark only out `tun0`, the lookup was gone, and the packets followed the main table and were dropped. `tun-up` calls `rule_add` for both fail modes, then installs `default dev tun0` in table 2022. `tun-down` in `closed` mode keeps the rule and blackholes the table. xray does not use mark `0x4a01` (D-0031) and returns before `rule_add`. See D-0030. |
