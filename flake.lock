@@ -189,11 +189,11 @@
     "sing-geosite": {
       "flake": false,
       "locked": {
-        "lastModified": 1794807579,
-        "narHash": "sha256-rzh/NA6boGTenqv9/CvpzTJZ2c7Yc6/laPr9OSpYnxc=",
+        "lastModified": 1795070515,
+        "narHash": "sha256-aEYqbop9sOoWRr1697b8T0cdQ7nyZ9dndX42ohpOLM4=",
         "owner": "SagerNet",
         "repo": "sing-geosite",
-        "rev": "f845ad54a708500aa9c76be84cfaa04cc7141edd",
+        "rev": "d5d86605baca4b3941a4a4b3403aca36df2f4adf",
         "type": "github"
       },
       "original": {
@@ -207,7 +207,7 @@
       "flake": false,
       "locked": {
         "lastModified": 946684800,
-        "narHash": "sha256-wEOq9BMNRvCY97S54SOllQGMAxk+gTO/W8tv5bDpQAA=",
+        "narHash": "sha256-L9R1xs/EHml6RK8OV4u20vRXwIQQ8zAGpGh3TKhbQ/U=",
         "type": "tarball",
         "url": "https://soloist-builds.spotifycdn.com/soloist_release_arm64.tar.gz"
       },
@@ -220,7 +220,7 @@
       "flake": false,
       "locked": {
         "lastModified": 946684800,
-        "narHash": "sha256-PYDE8iUx8LnWZu3H5+SJSA74UV/QLJQmKUdVw1jtdhk=",
+        "narHash": "sha256-jl3Je7BYxRhO59jzeeu03LFPaMpyC2OJnNBZiAJKJXY=",
         "type": "tarball",
         "url": "https://soloist-builds.spotifycdn.com/soloist_release_arm32.tar.gz"
       },
@@ -233,7 +233,7 @@
       "flake": false,
       "locked": {
         "lastModified": 946684800,
-        "narHash": "sha256-K1d30MwGr3xERI//DRL8Mq0u+OA85cScUKYGeHk2BMo=",
+        "narHash": "sha256-s16zxb/p7ZTdbfi4SQmr5+VJVasrAnPv7vpWh+2SoZU=",
         "type": "tarball",
         "url": "https://soloist-builds.spotifycdn.com/soloist_release_x86_64.tar.gz"
       },
