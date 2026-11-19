@@ -128,14 +128,12 @@
     })
     cfg.vlans);
 
-  onboardMember = member: let
-    ap = cfg.wifi.${member} or null;
-    periph =
-      if ap == null
-      then null
-      else config.janus.hardware.peripherals.${ap.peripheral} or null;
-  in
-    periph != null && periph.match.onboard;
+  # hostapd joins the bridge after the radio is in AP mode. A port or a
+  # VLAN of the same name stays a networkd bridge port. docs/10 §4.4, §4.7.
+  apMember = member:
+    (cfg.wifi ? ${member})
+    && !(cfg.ports ? ${member})
+    && ((vlanByRef member) == null);
 
   memberFile = lanName: member: let
     vlans =
@@ -144,9 +142,10 @@
       else [];
     file = "30-member-${lanName}-${builtins.replaceStrings ["."] ["-"] member}";
   in
-    # hostapd joins this radio to the bridge. networkd must not enslave
-    # it first: brcmfmac rejects AP mode on a bridge port. docs/10 §4.7.
-    if onboardMember member
+    # networkd must not enslave the radio first. brcmfmac rejects AP mode
+    # on a bridge port. rtl8xxxu returns EOPNOTSUPP, networkd enters
+    # failed, and it will not reconfigure the port (T-0056).
+    if apMember member
     then {
       ${file} = {
         matchConfig.Name = resolve member;

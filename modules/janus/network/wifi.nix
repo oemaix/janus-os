@@ -75,7 +75,9 @@
     onboard = onboardAp ap;
     # rtl8xxxu has no 40 MHz channels. Pin HT20 the way the onboard radios do.
     ht20 = onboard || limitedUsb ap;
-    isolate = onboard && builtins.hasAttr ap.lan cfg.lans && cfg.lans.${ap.lan}.isolation;
+    # networkd does not enslave an access point, so bridgeConfig.Isolated
+    # never applies. The start script marks the port after hostapd joins.
+    isolate = builtins.hasAttr ap.lan cfg.lans && cfg.lans.${ap.lan}.isolation;
     launch =
       if isolate
       then ''
@@ -141,8 +143,10 @@
         ${lib.optionalString (ap.security != "wpa2") ''printf '%s\n' "ieee80211w=1"''}
         ${lib.optionalString ap.hidden ''printf '%s\n' "ignore_broadcast_ssid=1"''}
       } > /run/janus/wifi/${name}.conf
+      # A reload can leave the port enslaved. rtl8xxxu then returns
+      # EOPNOTSUPP before AP mode. Clear that master on every radio (T-0056).
+      ${pkgs.iproute2}/bin/ip link set dev ${dev} nomaster || true
       ${lib.optionalString onboard ''
-        ${pkgs.iproute2}/bin/ip link set dev ${dev} nomaster || true
         ${pkgs.iproute2}/bin/ip link set dev ${dev} down
         ${pkgs.iw}/bin/iw dev ${dev} set type __ap
       ''}
@@ -460,8 +464,8 @@ in {
               wantedBy = ["multi-user.target"];
               enable = true;
               # networkd creates br-* after its own start. dnsmasq waits for
-              # the same device. Onboard ports are unmanaged, so nothing else
-              # joins the bridge if hostapd runs too early. docs/10 §4.7.
+              # the same device. Access-point ports are unmanaged, so nothing
+              # else joins the bridge if hostapd runs too early. docs/10 §4.4, §4.7.
               after =
                 ["systemd-networkd.service" (deviceUnit name) (bridgeUnit cfg.wifi.${name}.lan)]
                 ++ lib.optional (cfg.wifi.${name}.passphraseSecret != null) "janus-wifi-secret-${name}.service"

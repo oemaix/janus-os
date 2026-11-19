@@ -391,6 +391,17 @@ matches the id alone (D-0071).
 Any board may declare these ids. Declaring one copies only the
 firmware that id requests. `hostapd` uses `nl80211`.
 
+An access point on one of these sticks is a LAN member. networkd leaves
+`wifi-<ap>` unmanaged. `rtl8xxxu` returns `Operation not supported` if
+the interface is enslaved before it is in AP mode. networkd then enters
+`failed` and refuses to reconfigure that port. The start script runs
+`ip link set nomaster` before `hostapd`, so a master left from an earlier
+enslavement is cleared. `hostapd` sets `bridge=br-<lan>` and joins the
+bridge after `AP-ENABLED`. With `isolation = true`, the start script
+marks that bridge port isolated. `ip link set down` and the `brcmfmac`
+step that sets the interface type to `__ap` stay on the onboard radio
+(§4.7). An RTL8192EU access point uses this same networkd file (T-0056).
+
 ### 4.5 Battery shutdown
 
 A `power` peripheral is `class = "power"` and `match.i2cAddress` (*08* §2).
@@ -474,7 +485,9 @@ janus.network.wifi.<ap> = { peripheral = "<name>"; ssid; passphrase…; lan; };
 `janus.network.lans.<lan>.members` names `<ap>`. `hostapd` joins `br-<lan>`
 and waits for that bridge device, the same wait `dnsmasq` uses.
 networkd leaves the radio unmanaged, because `brcmfmac` will not enter
-AP mode after the interface is already a bridge port. With
+AP mode after the interface is already a bridge port. The start script
+clears a leftover master with `ip link set nomaster`, then sets the
+interface down and to `__ap`. With
 `isolation = true`, the start script marks that bridge port isolated. If
 the port never joins, or the isolated flag does not stick, the script
 exits and systemd restarts the access point.

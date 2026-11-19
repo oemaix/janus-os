@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-11-17 |
+| Last updated | 2026-11-19 |
 
 ## 1. Scope
 
@@ -215,6 +215,12 @@ themselves when `via = "direct"`).
   (ADR-0025), and Janus-managed `ip rule`/`ip route` to the TUN for
   marked traffic; or TPROXY on Xray).
   With Xray, that TPROXY target is port 12345 and mark `0x4a02` (D-0031).
+  Replies written to `tun0` are forwarded to the LAN bridge.
+  `established,related` covers a reply conntrack associated. A UDP
+  datagram can still be `ct state new`. The forward chain accepts that
+  state from `tun0` to the proxied bridges after `ct state invalid drop`.
+  Other packets from `tun0`, including `invalid`, stay dropped (T-0057).
+  Private destinations are still returned before the mark.
 * Engine egress is marked `0x4a` and routed via the WAN tables, never back
   into interception. The engine binds to no specific WAN by default;
   `janus.proxy.egressWan = "<wan>"` pins it.

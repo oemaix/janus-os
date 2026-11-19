@@ -882,9 +882,14 @@ in {
 
     janus.firewall.hooks = {
       # Marked LAN traffic is routed to tun0, which is not a zone.
-      # The forward policy is drop. Xray uses TPROXY and has no tun0.
+      # The forward policy is drop. established,related already accepts a
+      # reply conntrack associated. A UDP datagram the gVisor stack writes
+      # back can still be ct state new. Accept only that, after invalid
+      # drop. TCP completes a handshake, so it stays on established.
+      # Xray uses TPROXY and has no tun0 (T-0057).
       forwardExtra = lib.optionalString (intercept && cfg.engine != "xray") ''
         iifname { ${bridgeSet} } meta mark 0x00004a01 oifname "tun0" accept
+        iifname "tun0" oifname { ${bridgeSet} } meta l4proto udp ct state new accept
       '';
       preroutingRaw = lib.optionalString (dns.interceptPlaintext && dnsBridges != []) ''
         iifname { ${dnsBridgeSet} } meta l4proto tcp th dport 53 redirect to :${toString dnsCatcherPort}

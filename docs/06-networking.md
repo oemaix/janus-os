@@ -131,7 +131,9 @@ local DNS (FR-NET-012).
 inherit the router values. A set rule list replaces them. `dns` inherits
 `janus.dns` the same way. `dns.recursive = false` answers hosts and leases
 only. `isolation` is bridge port isolation inside one LAN. It is not the
-firewall rule between zones (D-0039, D-0042). `bypass` is not intercepted.
+firewall rule between zones (D-0039, D-0042). A Wi-Fi access point is
+not enslaved by networkd, so isolation on that port is the access-point
+start script (*10* §4.4, §4.7). `bypass` is not intercepted.
 `rule-based` and `proxy-all` are.
 
 ## 6. DHCP server and RA

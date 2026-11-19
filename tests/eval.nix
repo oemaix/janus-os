@@ -1340,6 +1340,17 @@ in {
       grep -q 'fib daddr type local return' ${dnsFile}
       grep -q '0x00004a02' ${dnsFile}
       grep -q 'meta mark 0x00004a01 oifname "tun0" accept' ${natFile}
+      grep -q 'iifname "tun0" oifname { "br-lan" } meta l4proto udp ct state new accept' ${natFile}
+      if grep -q 'iifname "tun0" oifname { "br-lan" } accept' ${natFile}; then
+        echo "tun0 return accepts every packet" >&2
+        exit 1
+      fi
+      awk '
+        /chain forward/ { forward = 1 }
+        forward && /ct state invalid drop/ && !invalid { invalid = NR }
+        forward && /iifname "tun0" oifname \{ "br-lan" \} meta l4proto udp ct state new accept/ { back = NR }
+        END { exit !(invalid && back && invalid < back) }
+      ' ${natFile}
       printf '%s\n' ${lib.escapeShellArg (lib.concatStringsSep "\n" os.config.systemd.tmpfiles.rules)} | grep -q 'd /var/lib/janus/engine 3770 root janus-engine'
       grep -q 'meta l4proto tcp th dport 53 redirect to :15353' ${natFile}
       grep -q 'tcp dport 15353 accept' ${natFile}
@@ -1965,16 +1976,76 @@ in {
         };
       }
     ];
+    iso = mk [
+      base
+      {
+        janus.security.allowInlineSecrets = true;
+        janus.hardware.peripherals.stick = {
+          class = "wifi";
+          match.usbVendorProduct = "0bda:b711";
+        };
+        janus.network.lans.lan = {
+          members = ["lan" "home"];
+          address = "192.168.10.1";
+          prefixLength = 24;
+          isolation = true;
+        };
+        janus.network.wifi.home = {
+          peripheral = "stick";
+          ssid = "janus";
+          passphrase = "secret-pass";
+          lan = "lan";
+        };
+      }
+    ];
     script = os.config.systemd.services.janus-hostapd-home.serviceConfig.ExecStart;
+    isoScript = iso.config.systemd.services.janus-hostapd-home.serviceConfig.ExecStart;
   in
     pkgs.runCommand "eval-wifi" {} ''
-      test ${lib.escapeShellArg os.config.systemd.network.networks."30-member-lan-home".networkConfig.Bridge} = br-lan
+      test ${lib.escapeShellArg os.config.systemd.network.networks."30-member-lan-lan".networkConfig.Bridge} = br-lan
+      test ${
+        if os.config.systemd.network.networks."30-member-lan-home".linkConfig.Unmanaged or false
+        then "yes"
+        else "no"
+      } = yes
+      test ${
+        if os.config.systemd.network.networks."30-member-lan-home".networkConfig ? Bridge
+        then "yes"
+        else "no"
+      } = no
       test ${lib.escapeShellArg os.config.systemd.network.networks."30-member-lan-home".matchConfig.Name} = wifi-home
       grep -q 'wpa_passphrase=%s' ${script}
       grep -q 'country_code=CN' ${script}
       grep -q 'ieee80211d=1' ${script}
       grep -q 'channel=6' ${script}
+      grep -q 'ip link set dev wifi-home nomaster' ${script}
+      grep -q 'bridge=br-lan' ${script}
       grep -F -q 'ht_capab=[HT20][SHORT-GI-20]' ${script}
+      if grep -q 'set type __ap' ${script}; then
+        echo "USB access point forces the onboard AP type" >&2
+        exit 1
+      fi
+      if grep -q 'isolated on' ${script}; then
+        echo "isolation path is in the default USB AP" >&2
+        exit 1
+      fi
+      test ${
+        if iso.config.systemd.network.networks."30-member-lan-home".linkConfig.Unmanaged or false
+        then "yes"
+        else "no"
+      } = yes
+      test ${
+        if iso.config.systemd.network.networks."30-member-lan-home".networkConfig ? Bridge
+        then "yes"
+        else "no"
+      } = no
+      grep -q 'ip link set dev wifi-home nomaster' ${isoScript}
+      grep -q 'bridge link set dev wifi-home isolated on' ${isoScript}
+      grep -q 'did not join br-lan' ${isoScript}
+      if grep -q 'set type __ap' ${isoScript}; then
+        echo "isolated USB access point forces the onboard AP type" >&2
+        exit 1
+      fi
       grep -q ${lib.escapeShellArg "ssid='ja\$nus'"} ${script}
       if grep -q '<<' ${script}; then
         echo "hostapd config is still a shell heredoc" >&2

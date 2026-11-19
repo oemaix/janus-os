@@ -535,6 +535,72 @@
     (put dead 0 true))
   dead)
 
+(defn push-key-lines [pending chunk inbox]
+  (buffer/push pending chunk)
+  (while (def nl (string/find "\n" pending))
+    (array/push inbox (string/trim (string/slice pending 0 nl)))
+    (def rest (string/slice pending (+ nl 1)))
+    (buffer/clear pending)
+    (buffer/push pending rest)))
+
+(defn wait-until [pred]
+  (var i 0)
+  (while (and (< i 40) (not (pred)))
+    (ev/sleep 0.05)
+    (++ i))
+  (pred))
+
+(defn watch-keys [proc inbox dead generation]
+  # The function passed to ev/go is called. ev/spawn of a function literal
+  # returns that function and never reads. ev/read takes a byte count and
+  # returns when the stream already has some bytes. The panel keeps stdout
+  # open, so a full-buffer wait would leave the glass asleep.
+  (ev/go (fn []
+    (def pending @"")
+    (def stream (proc :out))
+    (while true
+      (def chunk
+        (try
+          (ev/read stream 4096)
+          ([_] :fail)))
+      (if (or (= chunk :fail) (nil? chunk) (empty? chunk))
+        (do
+          (mark-panel-dead dead generation)
+          (break))
+        (push-key-lines pending chunk inbox))))))
+
+# A closure over a local at the end of check reads nil. Keep this test in
+# its own function (T-0059).
+(defn check-keys []
+  (def key-inbox @[])
+  (def key-dead @[false 1])
+  (def key-proc
+    (os/spawn
+      [(dyn :executable) "-e" "(prin \"left press\\n\") (flush) (os/sleep 1) (prin \"right release\\n\") (flush)"]
+      :p {:out :pipe :err stderr}))
+  (watch-keys key-proc key-inbox key-dead 1)
+  (expect "key-open" (wait-until (fn [] (deep= key-inbox @["left press"]))))
+  (expect "key-open-alive" (not (get key-dead 0)))
+  (os/proc-wait key-proc)
+  (expect "key-lines" (wait-until (fn [] (deep= key-inbox @["left press" "right release"]))))
+  (expect "key-dead" (wait-until (fn [] (get key-dead 0))))
+  (def stale-inbox @[])
+  (def stale-dead @[false 2])
+  (def stale-proc
+    (os/spawn
+      [(dyn :executable) "-e" "(prin \"up press\\n\") (flush) (os/sleep 1) (prin \"up release\\n\") (flush)"]
+      :p {:out :pipe :err stderr}))
+  (watch-keys stale-proc stale-inbox stale-dead 1)
+  (expect "key-stale-ran" (wait-until (fn [] (deep= stale-inbox @["up press"]))))
+  (expect "key-stale-open" (not (get stale-dead 0)))
+  (os/proc-wait stale-proc)
+  (expect "key-stale-line" (wait-until (fn [] (deep= stale-inbox @["up press" "up release"]))))
+  (var stale-i 0)
+  (while (< stale-i 40)
+    (ev/sleep 0.05)
+    (++ stale-i))
+  (expect "key-stale" (not (get stale-dead 0))))
+
 (defn check []
   (expect "compact" (= (size-class 128 64) :compact))
   (expect "narrow" (= (size-class 100 80) :compact))
@@ -722,6 +788,16 @@
   (mark-panel-dead panel-dead 1)
   (expect "panel-stale" (not (get panel-dead 0)))
 
+  (def pending @"")
+  (def split @[])
+  (push-key-lines pending "le" split)
+  (expect "key-partial" (empty? split))
+  (push-key-lines pending "ft press\nright rel" split)
+  (expect "key-one" (deep= split @["left press"]))
+  (push-key-lines pending "ease\n" split)
+  (expect "key-two" (deep= split @["left press" "right release"]))
+  (check-keys)
+
   (if (> failed 0) (os/exit 1))
   (print "ok"))
 
@@ -768,17 +844,6 @@
     (try
       (os/spawn args :p {:in :pipe :out :pipe :err stderr})
       ([_] nil))))
-
-(defn watch-keys [proc inbox dead generation]
-  (ev/spawn
-    (fn []
-      (while true
-        (def line (ev/read (proc :out) :line))
-        (if (nil? line)
-          (do
-            (mark-panel-dead dead generation)
-            (break))
-          (array/push inbox (string/trim line)))))))
 
 (defn run-action [conf action refresh-bad]
   (def argv (action-argv (conf :bin-janus) action))
