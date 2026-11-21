@@ -2,8 +2,10 @@
 # StarFive VisionFive 2. docs/10 §3. Tier 3. JH7110, riscv64, two 1 GbE ports.
 # U-Boot 2026.04 loads from QSPI (D-0047). One disk image serves the SD card,
 # eMMC, and NVMe. This U-Boot tries eMMC, then the SD card, then NVMe.
-# extlinux.conf does not name a DTB. U-Boot supplies the one for the board
-# revision. The profile does not choose a WAN jack.
+# extlinux.conf names no DTB unless the header heartbeat is on. U-Boot
+# then supplies the tree for the board revision. With the heartbeat on,
+# FDTDIR / loads $fdtfile from starfive/ (T-0061, D-0075). The profile
+# does not choose a WAN jack.
 {
   config,
   lib,
@@ -12,6 +14,9 @@
 }: let
   uboot = pkgs.ubootVisionFive2;
   dtbDir = "${config.boot.kernelPackages.kernel}/dtbs/starfive";
+  # $fdtfile is starfive/<revision>.dtb. The FAT-root copies are not that
+  # path. Overlay those $fdtfile paths only while the switch is on (T-0061).
+  heartbeatDtbo = config.system.build.janusHeartbeatDtbo or null;
 in {
   config = lib.mkIf (config.janus.hardware.board == "visionfive2") {
     janus.storage.firmwareOffsetMiB = lib.mkDefault 0;
@@ -68,6 +73,19 @@ in {
         fi
         cp ${dtbDir}/jh7110-starfive-visionfive-2-v1.2a.dtb .
         cp ${dtbDir}/jh7110-starfive-visionfive-2-v1.3b.dtb .
+        ${lib.optionalString (heartbeatDtbo != null) ''
+          mkdir -p starfive
+          ${pkgs.buildPackages.dtc}/bin/fdtoverlay \
+            -i jh7110-starfive-visionfive-2-v1.2a.dtb \
+            -o starfive/jh7110-starfive-visionfive-2-v1.2a.dtb \
+            ${heartbeatDtbo}
+          ${pkgs.buildPackages.dtc}/bin/fdtoverlay \
+            -i jh7110-starfive-visionfive-2-v1.3b.dtb \
+            -o starfive/jh7110-starfive-visionfive-2-v1.3b.dtb \
+            ${heartbeatDtbo}
+          printf '  FDTDIR /\n' >> extlinux.conf
+          printf '  FDTDIR /\n' >> extlinux/extlinux.conf
+        ''}
         cp "$spl" u-boot-spl.bin.normal.out
         cp "$itb" u-boot.itb
       '';

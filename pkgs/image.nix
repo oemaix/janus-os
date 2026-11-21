@@ -36,6 +36,9 @@
   firmwareInstall ? "",
   dtbName ? null,
   dtbSource ? null,
+  # Applied to dtbSource when this board boots that file. docs/10 §3.8.
+  dtbOverlay ? null,
+  dtc ? null,
   # Legacy BIOS via Limine. Needs the boot partition to start at 2 MiB
   # or later so partition 5 can hold Limine stage 2. docs/10 §3.1.
   limineBios ? false,
@@ -196,7 +199,11 @@ in
       cp bootfiles/extlinux.conf bootfiles/extlinux/extlinux.conf
       printf '%s\n' "$params" > bootfiles/cmdline.txt
       ${lib.optionalString (dtbName != null) ''
-        cp ${dtbSource} bootfiles/${dtbName}
+        ${
+          if dtbOverlay == null
+          then "cp ${dtbSource} bootfiles/${dtbName}"
+          else "${dtc}/bin/fdtoverlay -i ${dtbSource} -o bootfiles/${dtbName} ${dtbOverlay}"
+        }
         printf '  FDT /%s\n' ${lib.escapeShellArg dtbName} >> bootfiles/extlinux.conf
         printf '  FDT /%s\n' ${lib.escapeShellArg dtbName} >> bootfiles/extlinux/extlinux.conf
       ''}
@@ -214,14 +221,18 @@ in
         printf '%s\n' "$params_a" > bootfiles/cmdline-a.txt
         printf '%s\n' "$params_b" > bootfiles/cmdline-b.txt
         printf 'a\n' > bootfiles/slot
+        # FDTDIR does not match "FDT ". Dropping it boots U-Boot's own tree (T-0061).
         fdt_line=$(sed -n '/FDT /{p;q;}' bootfiles/extlinux.conf || true)
+        fdtdir_line=$(sed -n '/FDTDIR /{p;q;}' bootfiles/extlinux.conf || true)
         {
           printf '%s\n' "DEFAULT slot-a" "LABEL slot-a" "  LINUX /vmlinuz" "  INITRD /initrd"
           printf '  APPEND %s\n' "$params_a"
           if [ -n "$fdt_line" ]; then printf '%s\n' "$fdt_line"; fi
+          if [ -n "$fdtdir_line" ]; then printf '%s\n' "$fdtdir_line"; fi
           printf '%s\n' "LABEL slot-b" "  LINUX /vmlinuz-b" "  INITRD /initrd-b"
           printf '  APPEND %s\n' "$params_b"
           if [ -n "$fdt_line" ]; then printf '%s\n' "$fdt_line"; fi
+          if [ -n "$fdtdir_line" ]; then printf '%s\n' "$fdtdir_line"; fi
         } > bootfiles/extlinux.conf
         cp bootfiles/extlinux.conf bootfiles/extlinux/extlinux.conf
         if [ -f bootfiles/limine.conf ]; then

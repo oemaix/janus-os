@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-11-16 |
+| Last updated | 2026-11-22 |
 
 This document explains how `janus.system.kernelProfile` is built.
 The principles of the `matched` cut are §2.
@@ -17,7 +17,9 @@ decision wins.
 ## 1. The three values
 
 `standard` is the NixOS kernel. Janus adds no kernel patch, so aarch64
-and x86_64 keep the binary cache.
+and x86_64 keep the binary cache. `janus.hardware.heartbeat.enable`
+is outside that rule. True adds the patch `janus-heartbeat-led`, and
+that image rebuilds the kernel (D-0075).
 
 `compact` is one config for every board. It drops a subsystem only when
 no household router board, current or later, has a use for it. The
@@ -40,7 +42,8 @@ one of them is a change of those decisions, not a local cleanup.
 1. **Stay on the NixOS kernel.** The cut is a patch on the NixOS
    config. It does not switch the tree to a downstream defconfig.
    `standard` adds no patch, so aarch64 and x86_64 keep the binary
-   cache.
+   cache. `janus.hardware.heartbeat.enable` adds `janus-heartbeat-led`
+   and rebuilds that kernel (D-0075).
 
 2. **Share the subsystem cut. Match the board.** `compact` is one
    kernel for every board. `matched` includes that cut, then applies

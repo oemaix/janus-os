@@ -48,6 +48,9 @@ write_extlinux() {
     if [ -n "$fdt" ]; then
       printf '  FDT %s\n' "$fdt"
     fi
+    if [ -n "$fdtdir" ]; then
+      printf '  FDTDIR %s\n' "$fdtdir"
+    fi
   } > "$dest"
 }
 
@@ -66,12 +69,15 @@ install_closure() {
   params="${params} init=${closure}/init"
   printf '%s\n' "$params" > "${boot}/cmdline.txt"
   fdt=""
+  fdtdir=""
   src_ext=""
   if [ -f "${prev}/extlinux.conf" ]; then
     src_ext=${prev}/extlinux.conf
   fi
   if [ -n "$src_ext" ]; then
-    fdt=$(sed -n 's/^[[:space:]]*FDT[[:space:]]*//p' "$src_ext" | head -n 1)
+    # Require whitespace after FDT. FDTDIR must not become "FDT DIR" (T-0061).
+    fdt=$(sed -n 's/^[[:space:]]*FDT[[:space:]][[:space:]]*//p' "$src_ext" | head -n 1)
+    fdtdir=$(sed -n 's/^[[:space:]]*FDTDIR[[:space:]][[:space:]]*//p' "$src_ext" | head -n 1)
     write_extlinux "${boot}/extlinux.conf"
     if [ -f "${prev}/extlinux/extlinux.conf" ] || [ -d "${boot}/extlinux" ]; then
       mkdir -p "${boot}/extlinux"

@@ -141,6 +141,8 @@
     };
   });
 in {
+  imports = [./heartbeat.nix];
+
   options.janus.hardware = {
     board = mkOption {
       type = types.enum (builtins.attrNames (import ../../../lib/boards.nix));

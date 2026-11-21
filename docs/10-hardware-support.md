@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-11-19 |
+| Last updated | 2026-11-22 |
 
 ## 1. Terminology
 
@@ -133,6 +133,8 @@ starts at 16 MiB. nixpkgs `ubootRockPi4` is the 4A/4B defconfig
 installs `u-boot-rockchip.bin`, the same way the R4S profile does for
 `ubootRockPro64`. The kernel is the NixOS kernel. This profile adds no
 kernel patch, so aarch64 keeps the binary cache.
+`janus.hardware.heartbeat.enable` is the exception: that switch adds
+`janus-heartbeat-led` and rebuilds the kernel (§3.8).
 
 SPI NOR is fitted. The boot ROM tries it before eMMC and SD. The image
 does not program SPI, and it does not install `u-boot-rockchip-spi.bin`.
@@ -224,6 +226,54 @@ the gadget FIFO sizes out. `dwc2` reads those sizes only for peripheral
 or OTG mode. The Zero 2 W image uses the host include (D-0072). The
 initrd still lists `dwc2`. This kernel has no `dwc_otg`. The image
 uses that port as a host.
+
+### 3.8 Header heartbeat
+
+`janus.hardware.heartbeat.enable` defaults to false (D-0075). False
+installs no overlay and leaves the kernel config alone. True blinks one
+LED from the kernel `heartbeat` trigger, on a GPIO of the 40-pin header.
+Pin 1 is 3.3 V, pins 2 and 4 are 5 V, and pins 6 and 9 are ground. The
+pin number is that header position. `heartbeat.pin` is `7` unless set
+to `11`, `12`, `13`, `15`, or `16`. Any other value fails the type.
+With the switch on, a pin this board does not wire as a GPIO fails
+evaluation.
+
+The header boards are `rockpi-4c`, `rpi2`, `rpi3`, `rpi4`,
+`rpi-zero-2w`, `le-potato`, and `visionfive2`. `nanopi-r4s`,
+`yanyu-stx-r19f`, and `x86_64-test` have no such header. Enabling the
+switch on one of those fails evaluation.
+
+| Board | 7 | 11 | 12 | 13 | 15 | 16 |
+|-------|---|----|----|----|----|----|
+| `rpi2`, `rpi3`, `rpi4`, `rpi-zero-2w` | BCM 4 | BCM 17 | BCM 18 | BCM 27 | BCM 22 | BCM 23 |
+| `rockpi-4c` | GPIO2_B3 | GPIO4_C2 | GPIO4_A3 | GPIO4_C6 | GPIO4_C5 | GPIO4_D2 |
+| `le-potato` | GPIOCLK_0 | — | GPIOAO_6 | GPIOAO_9 | GPIO_TEST_N | GPIOX_14 |
+| `visionfive2` | GPIO55 | GPIO42 | GPIO38 | GPIO43 | GPIO47 | GPIO54 |
+
+Le Potato pin 11 is GPIOAO_8. Switch 9J3 ties that pad to HDMI CEC or
+to the header, and the boot tree enables CEC. The pin is not in the
+table. ROCK Pi 4C pin 7 is also routed to the MIPI CSI connector. The
+header pin remains a GPIO while that connector is empty. The ROCK Pi
+4C blue LED and the Le Potato blue LED already use `heartbeat` on
+other pads. This option adds the header LED beside those.
+
+On a Raspberry Pi the image installs `overlays/janus-heartbeat.dtbo`
+and `config.txt` names it. On the ROCK Pi 4C and Le Potato the image
+applies that overlay to the FDT `extlinux.conf` names. On the
+VisionFive 2 the default `extlinux.conf` still names no DTB, and
+U-Boot passes its own tree. With the switch on, both `extlinux.conf`
+copies gain `FDTDIR /`. U-Boot loads `$fdtfile`, which is
+`starfive/jh7110-starfive-visionfive-2-v1.2a.dtb` or the v1.3b name.
+Those two files are the kernel DTBs with the overlay applied. The
+copies at the FAT root stay the stock trees (T-0061). The A/B rewrite
+and `janus-boot-install` keep that `FDTDIR` line. True rebuilds the
+kernel, so the aarch64 and x86_64 binary cache does not apply.
+
+The Zero 2 W and the Pi 2 v1.1 select `alt0` on BCM 4, which is header
+pin 7. The Pi 2 also selects I2S on BCM 18, which is header pin 12.
+The overlay drops that group from the GPIO controller before the LED
+claims the pin (T-0060). The Pi 3 and Pi 4 define `alt0` and do not
+select it. The trigger is built in only when the switch is on.
 
 ## 4. Peripherals
 

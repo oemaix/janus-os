@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-11-19 |
+| Last updated | 2026-11-22 |
 
 This file is the implementation plan, the progress of the code, and the
 notes for work that is specified but not started. Choices are *18*.
@@ -75,7 +75,6 @@ power-cut. Tier 3 ships the profile. The Future list stays after 1.0.
 * WAN VLAN, the `iptv` role, and IGMP proxy (*06*, FR-NET-003, FR-NET-020).
 * Optional local configuration wizard, a front end for the build-host commands in *16*. No hosted build service.
 * A check that a destination refuses the exit because the address is in Iran, China, or Russia, for example Gemini. A country guessed from the node name, and a connect check (ping, TCP, or a handshake), do not show that refusal.
-* One GPIO LED with the `heartbeat` trigger on `rpi2`, `rpi3`, `rpi4`, `rpi-zero-2w`, `rockpi-4c`, and `le-potato`. A dark LED then means the kernel timer has stopped. The GPIO is not chosen. The ROCK Pi 4C blue status LED already uses that trigger in the device tree (*10* §3.5). The Le Potato blue LED does the same in the mainline tree and is not yet recorded in *10*. The Raspberry Pi profiles do not set one.
 * The maintenance page (*20*) is in the image. The retro console in *20* §7 is the design: no radius, no shadow, no gradient. The column is centered, fields are framed, and a short list is a choice of segments. Later work keeps that console. `janus --json status` is still the flat counter object, so the rich status rows appear when that payload has them.
 * Spotify Soloist as a playback device (*02* UC-23, FR-SVC-001). `janus.soloist.enable` defaults to false. False adds no unit, secret, or package, and the checks are not evaluated. True needs `janus.audio.enable`, a playback device, the API key as a sops secret for that router (FR-SEC-012), and a board architecture of `x86_64`, `aarch64`, or `armv7l`. Playback is `janus.audio` (D-0061). The image installs the locked official build and starts Soloist with system-wide PipeWire when playback needs a local device. UDP 5353 is accepted on `janus.soloist.zones` (default `lan`) and dropped elsewhere. The WebSocket stays off. Pairing is `janus bluetooth` and the maintenance page (D-0059). The archives are flake inputs (D-0058, T-0010). A 1.0 image leaves the switch false.
 * Shared audio (`janus.audio`, D-0061). `enable` defaults to false. Playback and recording are read only when it is true. `embedded` and `usb` need a non-blank PipeWire node and `kernelProfile` `standard` or `matched`. `compact` still rejects them (D-0057). `matched` includes that device's driver only when `enable` is true, and leaves `SOUND` off otherwise. `recording.input = bluetooth` fails while HFP and HSP stay off. PipeWire starts for Soloist, for speech on a local device, and for bluetooth playback or recording. BlueZ starts when playback or recording is `bluetooth`, without Soloist.
@@ -94,6 +93,7 @@ tree does not mean that behavior exists. Stubs are not finished features.
 
 ### Done
 
+* One header LED with the kernel `heartbeat` trigger (D-0075, *10* §3.8). `janus.hardware.heartbeat.enable` defaults to false. `pin` defaults to header pin 7 and may be 11, 12, 13, 15, or 16 when that board wires the pin as a GPIO. Le Potato pin 11 fails evaluation when the switch is on. A board without this header fails the same way. On the VisionFive 2 the default boot still uses U-Boot's tree. The switch adds `FDTDIR /` and the overlaid files under `starfive/` (T-0061). True rebuilds the kernel.
 * Operator-facing node labels (ADR-0027, ADR-0028, *07* §11, FR-PRX-029). A key has a type. `region` is opt-in. `empty` is the key written again. `vendor`, `protocol`, and `latency` are on every node. A routing rule uses one selector, `direct`, `block`, or an ordered `failover`. `janus.proxy.groups` and `janus.proxy.groupsAuto` are not options. The configuration, the maintenance page, the panel, and the CLI do not present a group.
 * `janus.system.kernelProfile` is `standard` (default, the NixOS kernel),
   `compact`, or `matched` (D-0051, D-0052). `compact` is one config for

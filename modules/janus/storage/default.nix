@@ -1080,6 +1080,8 @@ in {
         firmwareInstall = boardImage.firmwareInstall or "";
         dtbName = boardImage.dtbName or null;
         dtbSource = boardImage.dtbSource or null;
+        dtbOverlay = config.system.build.janusHeartbeatDtbo or null;
+        dtc = pkgs.buildPackages.dtc;
         limineBios = boardImage.limineBios or false;
         hybridFatMbr = boardImage.hybridFatMbr or false;
         amlogicSd = boardImage.amlogicSd or false;

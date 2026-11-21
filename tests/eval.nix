@@ -2310,7 +2310,11 @@ in {
       printf '%s\n' ${lib.escapeShellArg os.config.services.udev.extraRules} > rules
       grep -q 'ATTRS{idProduct}=="f179"' rules
       grep -q 'NAME="wifi-room"' rules
-      if ${if os.config.systemd.services ? janus-wifi-switch-rtl8188gu then "true" else "false"}; then
+      if ${
+        if os.config.systemd.services ? janus-wifi-switch-rtl8188gu
+        then "true"
+        else "false"
+      }; then
         echo "RTL8188FU image ejects RTL8188GU" >&2
         exit 1
       fi
@@ -2387,7 +2391,11 @@ in {
       test ${lib.escapeShellArg switchSvc.serviceConfig.TimeoutStartSec} = 15s
       test ${toString switchSvc.startLimitBurst} = 5
       test ${toString switchSvc.startLimitIntervalSec} = 120
-      test ${if lib.elem "systemd-networkd.service" switchSvc.before then "yes" else "no"} = no
+      test ${
+        if lib.elem "systemd-networkd.service" switchSvc.before
+        then "yes"
+        else "no"
+      } = no
       grep -q usb_modeswitch ${switch}
       grep -q 'idProduct.*= 1a2b' ${switch}
       grep -q 'still 0bda:1a2b' ${switch}
@@ -2484,7 +2492,11 @@ in {
     hostapd = lib.filter (n: lib.hasPrefix "janus-hostapd-" n) (lib.attrNames os.config.systemd.services);
   in
     pkgs.runCommand "eval-wifi-b711-sta" {} ''
-      test ${if hostapd == [] then "yes" else "no"} = yes
+      test ${
+        if hostapd == []
+        then "yes"
+        else "no"
+      } = yes
       grep -q 'key_mgmt=WPA-PSK' ${wpa}
       printf '%s\n' ${lib.escapeShellArg os.config.services.udev.extraRules} > rules
       grep -q 'ATTRS{idProduct}=="b711"' rules
@@ -2498,7 +2510,11 @@ in {
       test ${lib.escapeShellArg switchSvc.serviceConfig.Restart} = on-failure
       test ${lib.escapeShellArg switchSvc.serviceConfig.TimeoutStartSec} = 15s
       test ${toString switchSvc.startLimitBurst} = 5
-      test ${if lib.elem "systemd-networkd.service" switchSvc.before then "yes" else "no"} = no
+      test ${
+        if lib.elem "systemd-networkd.service" switchSvc.before
+        then "yes"
+        else "no"
+      } = no
       grep -q 'still 0bda:1a2b' ${switch}
       echo ok > "$out"
     '';
@@ -3345,21 +3361,23 @@ in {
     zero = (mk [(radio "rpi-zero-2w")]).config.boot.kernelPackages.kernel;
     rpi3 = (mk [(radio "rpi3")]).config.boot.kernelPackages.kernel;
     # No access point: the NixOS answer is m, and the profile pins n.
-    rpi3Bare = (mk [
-      {
-        janus.hardware.board = "rpi3";
-        janus.access.ssh.authorizedKeys = [key];
-        janus.build.strategy = "cross";
-      }
-    ]).config.boot.kernelPackages.kernel;
+    rpi3Bare =
+      (mk [
+        {
+          janus.hardware.board = "rpi3";
+          janus.access.ssh.authorizedKeys = [key];
+          janus.build.strategy = "cross";
+        }
+      ]).config.boot.kernelPackages.kernel;
     # No access point: the Pi 4 pins the SD host built in on every image.
-    rpi4 = (mk [
-      {
-        janus.hardware.board = "rpi4";
-        janus.access.ssh.authorizedKeys = [key];
-        janus.build.strategy = "cross";
-      }
-    ]).config.boot.kernelPackages.kernel;
+    rpi4 =
+      (mk [
+        {
+          janus.hardware.board = "rpi4";
+          janus.access.ssh.authorizedKeys = [key];
+          janus.build.strategy = "cross";
+        }
+      ]).config.boot.kernelPackages.kernel;
   in
     pkgs.runCommand "eval-wifi-onboard-kernel" {} ''
       grep -q '^CONFIG_MMC_SDHCI_IPROC=m$' ${zero.configfile}
@@ -3539,7 +3557,7 @@ in {
     boardScript = board: let
       row = allow.onboard.${board};
       band = lib.last row.bands;
-      os = mk [ (radioModule board band) ];
+      os = mk [(radioModule board band)];
       # The script derivation is aarch64. Interpolating it builds hostapd
       # on the runner. T-0025, T-0026.
       script = hostapdText "hostapd-${board}" os.config.systemd.services.janus-hostapd-home.serviceConfig.ExecStart;
@@ -3548,8 +3566,14 @@ in {
       patch = lib.findFirst (p: p.name == "janus-rpi-onboard-wifi") null os.config.boot.kernelPatches;
       sdPatch = lib.findFirst (p: p.name == "janus-rpi4-sdhci") null os.config.boot.kernelPatches;
       fw = firmwarePkgs os;
-      hwMode = if band == "5g" then "a" else "g";
-      channel = if band == "5g" then "36" else "6";
+      hwMode =
+        if band == "5g"
+        then "a"
+        else "g";
+      channel =
+        if band == "5g"
+        then "36"
+        else "6";
     in ''
       echo ${lib.escapeShellArg "onboard ${board}"}
       test ${toString (lib.length fw)} -ge 1
@@ -3630,7 +3654,7 @@ in {
     '';
     rejectScript = board: ''
       if [ "${
-        if (bad [ (radioModule board "2g") ]).success
+        if (bad [(radioModule board "2g")]).success
         then "yes"
         else "no"
       }" = yes ]; then
@@ -4532,12 +4556,13 @@ in {
       printf 'old-kernel\n' > "$TMPDIR/boot/vmlinuz"
       printf 'old-initrd\n' > "$TMPDIR/boot/initrd"
       printf 'old cmdline\n' > "$TMPDIR/boot/cmdline.txt"
-      printf '%s\n' 'DEFAULT janus' 'LABEL janus' '  LINUX /vmlinuz' '  INITRD /initrd' '  APPEND old' '  FDT /board.dtb' > "$TMPDIR/boot/extlinux.conf"
+      printf '%s\n' 'DEFAULT janus' 'LABEL janus' '  LINUX /vmlinuz' '  INITRD /initrd' '  APPEND old' '  FDT /board.dtb' '  FDTDIR /' > "$TMPDIR/boot/extlinux.conf"
       printf '%s\n' 'timeout: 0' '    cmdline: old' > "$TMPDIR/boot/limine.conf"
       JANUS_BOOT_DIR=$TMPDIR/boot JANUS_STATE_DIR=$TMPDIR/state bash ${self.packages.${pkgs.stdenv.hostPlatform.system}.bootInstall} install "$closure"
       grep -q "init=$closure/init" "$TMPDIR/boot/cmdline.txt"
       grep -q new-kernel "$TMPDIR/boot/vmlinuz"
       grep -q 'FDT /board.dtb' "$TMPDIR/boot/extlinux.conf"
+      grep -q 'FDTDIR /' "$TMPDIR/boot/extlinux.conf"
       grep -q "cmdline: console=ttyS0 init=$closure/init" "$TMPDIR/boot/limine.conf"
       grep -q old-kernel "$TMPDIR/state/boot-previous/vmlinuz"
       JANUS_BOOT_DIR=$TMPDIR/boot JANUS_STATE_DIR=$TMPDIR/state bash ${self.packages.${pkgs.stdenv.hostPlatform.system}.bootInstall} restore
@@ -8491,46 +8516,46 @@ in {
     pkgs.runCommand "speech-cli" {
       nativeBuildInputs = [pkgs.jq pkgs.bash pkgs.coreutils];
     } ''
-      set -eu
-      dir=$TMPDIR/cli
-      mkdir -p "$dir"
-      printf '%s\n' '#!/bin/sh' 'printf "%s\n" "$*" > "$JANUS_SPEECH_ARGS"; exit 4' > "$dir/fail"
-      chmod +x "$dir/fail"
-      printf '%s\n' '#!/bin/sh
-args=$*
-printf "%s\n" "$args" > "$JANUS_SPEECH_ARGS"
-out=
-while [ $# -gt 0 ]; do
-  case "$1" in
-    --out) out=$2; shift 2 ;;
-    *) shift ;;
-  esac
-done
-printf hi > "$out"
-exit 0
-' > "$dir/ok"
-      chmod +x "$dir/ok"
-      jq -n '{asr:true,tts:true,playback:{output:null}}' > "$dir/speech.json"
-      export JANUS_SPEECH_JSON=$dir/speech.json
-      export JANUS_SPEECH_ARGS=$dir/args
-      cli=${../pkgs/janus-speech.sh}
-      export JANUS_SPEECH_RUN=$dir/fail
-      rc=0
-      printf 'RIFFxxxx' | bash "$cli" asr || rc=$?
-      test "$rc" = 4
-      rc=0
-      bash "$cli" tts hello || rc=$?
-      test "$rc" = 4
-      export JANUS_SPEECH_RUN=$dir/ok
-      got=$(printf 'RIFFxxxx' | bash "$cli" asr)
-      test "$got" = hi
-      grep -q audio/wav "$dir/args"
-      got=$(printf 'xxxx' | bash "$cli" asr)
-      test "$got" = hi
-      grep -q audio/raw "$dir/args"
-      grep -q -- '--rate 16000' "$dir/args"
-      grep -q -- '--channels 1' "$dir/args"
-      echo ok > "$out"
+            set -eu
+            dir=$TMPDIR/cli
+            mkdir -p "$dir"
+            printf '%s\n' '#!/bin/sh' 'printf "%s\n" "$*" > "$JANUS_SPEECH_ARGS"; exit 4' > "$dir/fail"
+            chmod +x "$dir/fail"
+            printf '%s\n' '#!/bin/sh
+      args=$*
+      printf "%s\n" "$args" > "$JANUS_SPEECH_ARGS"
+      out=
+      while [ $# -gt 0 ]; do
+        case "$1" in
+          --out) out=$2; shift 2 ;;
+          *) shift ;;
+        esac
+      done
+      printf hi > "$out"
+      exit 0
+      ' > "$dir/ok"
+            chmod +x "$dir/ok"
+            jq -n '{asr:true,tts:true,playback:{output:null}}' > "$dir/speech.json"
+            export JANUS_SPEECH_JSON=$dir/speech.json
+            export JANUS_SPEECH_ARGS=$dir/args
+            cli=${../pkgs/janus-speech.sh}
+            export JANUS_SPEECH_RUN=$dir/fail
+            rc=0
+            printf 'RIFFxxxx' | bash "$cli" asr || rc=$?
+            test "$rc" = 4
+            rc=0
+            bash "$cli" tts hello || rc=$?
+            test "$rc" = 4
+            export JANUS_SPEECH_RUN=$dir/ok
+            got=$(printf 'RIFFxxxx' | bash "$cli" asr)
+            test "$got" = hi
+            grep -q audio/wav "$dir/args"
+            got=$(printf 'xxxx' | bash "$cli" asr)
+            test "$got" = hi
+            grep -q audio/raw "$dir/args"
+            grep -q -- '--rate 16000' "$dir/args"
+            grep -q -- '--channels 1' "$dir/args"
+            echo ok > "$out"
     '';
   speech-bins = let
     os = mk [
@@ -8951,6 +8976,269 @@ exit 0
       run tun-down
       absent '0x4a01'
       absent blackhole
+      echo ok > "$out"
+    '';
+
+  eval-heartbeat-yanyu = fail "eval-heartbeat-yanyu" [
+    {
+      janus.hardware.board = "yanyu-stx-r19f";
+      janus.access.ssh.authorizedKeys = [key];
+      janus.hardware.heartbeat.enable = true;
+    }
+  ];
+  eval-heartbeat-nanopi = fail "eval-heartbeat-nanopi" [
+    {
+      janus.hardware.board = "nanopi-r4s";
+      janus.access.ssh.authorizedKeys = [key];
+      janus.hardware.heartbeat.enable = true;
+    }
+  ];
+  eval-heartbeat-vm = fail "eval-heartbeat-vm" [
+    {
+      janus.hardware.board = "x86_64-test";
+      janus.access.ssh.authorizedKeys = [key];
+      janus.hardware.heartbeat.enable = true;
+    }
+  ];
+  eval-heartbeat-pin = fail "eval-heartbeat-pin" [
+    {
+      janus.hardware.board = "rpi4";
+      janus.access.ssh.authorizedKeys = [key];
+      janus.hardware.heartbeat.enable = true;
+      janus.hardware.heartbeat.pin = 8;
+    }
+  ];
+  eval-heartbeat-potato-cec = fail "eval-heartbeat-potato-cec" [
+    {
+      janus.hardware.board = "le-potato";
+      janus.access.ssh.authorizedKeys = [key];
+      janus.hardware.heartbeat.enable = true;
+      janus.hardware.heartbeat.pin = 11;
+    }
+  ];
+  eval-heartbeat = let
+    rpi4 = mk [
+      {
+        janus.hardware.board = "rpi4";
+        janus.access.ssh.authorizedKeys = [key];
+        janus.hardware.heartbeat.enable = true;
+      }
+    ];
+    rpi4off = mk [
+      {
+        janus.hardware.board = "rpi4";
+        janus.access.ssh.authorizedKeys = [key];
+      }
+    ];
+    zero = mk [
+      {
+        janus.hardware.board = "rpi-zero-2w";
+        janus.access.ssh.authorizedKeys = [key];
+        janus.hardware.heartbeat.enable = true;
+        janus.hardware.peripherals.panel = {
+          class = "hmi";
+          hmi.profile = "waveshare-1.3-oled-hat";
+        };
+      }
+    ];
+    rpi2 = mk [
+      {
+        janus.hardware.board = "rpi2";
+        janus.access.ssh.authorizedKeys = [key];
+        janus.hardware.heartbeat.enable = true;
+        janus.hardware.heartbeat.pin = 12;
+      }
+    ];
+    rpi2pin7 = mk [
+      {
+        janus.hardware.board = "rpi2";
+        janus.access.ssh.authorizedKeys = [key];
+        janus.hardware.heartbeat.enable = true;
+      }
+    ];
+    rock = mk [
+      {
+        janus.hardware.board = "rockpi-4c";
+        janus.access.ssh.authorizedKeys = [key];
+        janus.hardware.heartbeat.enable = true;
+      }
+    ];
+    potato = mk [
+      {
+        janus.hardware.board = "le-potato";
+        janus.access.ssh.authorizedKeys = [key];
+        janus.hardware.heartbeat.enable = true;
+        janus.hardware.heartbeat.pin = 16;
+      }
+    ];
+    potatoOff = mk [
+      {
+        janus.hardware.board = "le-potato";
+        janus.access.ssh.authorizedKeys = [key];
+        janus.hardware.heartbeat.pin = 11;
+      }
+    ];
+    vf2 = mk [
+      {
+        janus.hardware.board = "visionfive2";
+        janus.access.ssh.authorizedKeys = [key];
+        janus.hardware.heartbeat.enable = true;
+        janus.hardware.heartbeat.pin = 12;
+      }
+    ];
+    vf2off = mk [
+      {
+        janus.hardware.board = "visionfive2";
+        janus.access.ssh.authorizedKeys = [key];
+      }
+    ];
+    plain = value: builtins.unsafeDiscardStringContext value;
+    ledPatch = os:
+      lib.findFirst (p: p.name == "janus-heartbeat-led") (throw "missing heartbeat patch") os.config.boot.kernelPatches;
+  in
+    pkgs.runCommand "eval-heartbeat" {
+      nativeBuildInputs = [pkgs.dtc];
+    } ''
+      test ${toString rpi4.config.janus.hardware.heartbeat.pin} = 7
+      test ${toString potatoOff.config.janus.hardware.heartbeat.pin} = 11
+      test ${
+        if potatoOff.config.janus.hardware.heartbeat.enable
+        then "yes"
+        else "no"
+      } = no
+      test ${
+        if (lib.findFirst (p: p.name == "janus-heartbeat-led") null rpi4off.config.boot.kernelPatches) == null
+        then "yes"
+        else "no"
+      } = yes
+      test ${(ledPatch rpi4).structuredExtraConfig.LEDS_TRIGGER_HEARTBEAT.tristate} = y
+      test ${(ledPatch rpi4).structuredExtraConfig.LEDS_GPIO.tristate} = y
+
+      write_boot() {
+        printf '%s\n' "$1" > "$2"
+      }
+      write_boot ${lib.escapeShellArg (plain rpi4.config.system.build.janusBoardImage.bootExtra)} rpi4.boot
+      write_boot ${lib.escapeShellArg (plain rpi4off.config.system.build.janusBoardImage.bootExtra)} rpi4-off.boot
+      write_boot ${lib.escapeShellArg (plain vf2.config.system.build.janusBoardImage.bootExtra)} vf2.boot
+      write_boot ${lib.escapeShellArg (plain vf2off.config.system.build.janusBoardImage.bootExtra)} vf2-off.boot
+      grep -q 'dtoverlay=janus-heartbeat' rpi4.boot
+      grep -q 'overlays/janus-heartbeat.dtbo' rpi4.boot
+      if grep -q 'janus-heartbeat' rpi4-off.boot; then
+        echo "heartbeat overlay is installed while the switch is off" >&2
+        exit 1
+      fi
+      grep -q -- '-o starfive/jh7110-starfive-visionfive-2-v1.2a.dtb' vf2.boot
+      grep -q -- '-o starfive/jh7110-starfive-visionfive-2-v1.3b.dtb' vf2.boot
+      grep -q 'FDTDIR /' vf2.boot
+      if grep -q 'mv v1.2a.dtb' vf2.boot; then
+        echo "heartbeat overlay replaces the FAT-root DTB U-Boot does not boot" >&2
+        exit 1
+      fi
+      if grep -q 'FDTDIR /' vf2-off.boot || grep -q fdtoverlay vf2-off.boot; then
+        echo "VisionFive 2 names a DTB while the heartbeat switch is off" >&2
+        exit 1
+      fi
+
+      printf '%s\n' ${lib.escapeShellArg (plain rpi4.config.system.build.janusHeartbeatDts)} > rpi4.dts
+      printf '%s\n' ${lib.escapeShellArg (plain zero.config.system.build.janusHeartbeatDts)} > zero.dts
+      printf '%s\n' ${lib.escapeShellArg (plain zero.config.system.build.janusSpiDts)} > spi.dts
+      printf '%s\n' ${lib.escapeShellArg (plain rpi2.config.system.build.janusHeartbeatDts)} > rpi2.dts
+      printf '%s\n' ${lib.escapeShellArg (plain rpi2pin7.config.system.build.janusHeartbeatDts)} > rpi2-pin7.dts
+      printf '%s\n' ${lib.escapeShellArg (plain rock.config.system.build.janusHeartbeatDts)} > rock.dts
+      printf '%s\n' ${lib.escapeShellArg (plain potato.config.system.build.janusHeartbeatDts)} > potato.dts
+      printf '%s\n' ${lib.escapeShellArg (plain vf2.config.system.build.janusHeartbeatDts)} > vf2.dts
+
+      grep -q 'gpios = <&gpio 4 0>;' rpi4.dts
+      if grep -q 'pinctrl-0' rpi4.dts; then
+        echo "Pi 4 heartbeat overlay rewrites the GPIO controller pinctrl" >&2
+        exit 1
+      fi
+      grep -q 'pinctrl-0 = <&gpioout>;' zero.dts
+      grep -q 'gpios = <&gpio 4 0>;' zero.dts
+      grep -q 'pinctrl-0 = <&gpioout &alt0>;' rpi2.dts
+      grep -q 'gpios = <&gpio 18 0>;' rpi2.dts
+      grep -q 'pinctrl-0 = <&gpioout &i2s_alt0>;' rpi2-pin7.dts
+      grep -q 'gpios = <&gpio 4 0>;' rpi2-pin7.dts
+      grep -q 'gpios = <&gpio2 11 0>;' rock.dts
+      grep -q 'gpios = <&gpio 93 0>;' potato.dts
+      grep -q 'gpios = <&sysgpio 38 0>;' vf2.dts
+      grep -q 'linux,default-trigger = "heartbeat"' rock.dts
+
+      dtc -@ -I dts -O dtb -o zero.dtbo zero.dts
+      dtc -@ -I dts -O dtb -o spi.dtbo spi.dts
+      cat > base.dts << 'ENDDTS'
+      /dts-v1/;
+      / {
+          compatible = "raspberrypi,model-zero-2-w", "brcm,bcm2837";
+          soc {
+              gpio: gpio@7e200000 {
+                  #gpio-cells = <2>;
+                  gpio-controller;
+                  pinctrl-names = "default";
+                  pinctrl-0 = <&gpioout &alt0>;
+                  gpioout: gpioout {
+                      brcm,pins = <6>;
+                      brcm,function = <1>;
+                  };
+                  alt0: alt0 {
+                      brcm,pins = <4 5 7 8 9 10 11>;
+                      brcm,function = <4>;
+                  };
+                  spi0_gpio7: spi0-gpio7 {
+                      brcm,pins = <7 8 9 10 11>;
+                      brcm,function = <4>;
+                  };
+              };
+              spi: spi@7e204000 {
+                  status = "disabled";
+              };
+          };
+          aliases {
+          };
+      };
+      ENDDTS
+      dtc -@ -I dts -O dtb -o base.dtb base.dts
+      fdtoverlay -i base.dtb -o with-spi.dtb spi.dtbo
+      fdtoverlay -i with-spi.dtb -o merged.dtb zero.dtbo
+      dtc -I dtb -O dts -o merged.dts merged.dtb
+      node_of() {
+        awk -v node="$1" '
+          index($0, node " {") || index($0, node "{") {
+            grab = 1
+            depth = 0
+          }
+          grab {
+            print
+            line = $0
+            opens = gsub(/\{/, "{", line)
+            closes = gsub(/\}/, "}", line)
+            depth += opens - closes
+            if (depth <= 0) grab = 0
+          }
+        ' merged.dts
+      }
+      node_of "gpio@7e200000" > gpio.dts
+      pinctrl=$(sed -n 's/.*pinctrl-0 = <\(.*\)>;/\1/p' gpio.dts | head -n 1)
+      cells=$(printf '%s\n' "$pinctrl" | wc -w)
+      test "$cells" = 1
+      grep -q 'linux,default-trigger = "heartbeat"' merged.dts
+      grep -q 'status = "okay"' merged.dts
+
+      dtc -@ -I dts -O dtb -o rock.dtbo rock.dts
+      cat > rock-base.dts << 'ENDDTS'
+      /dts-v1/;
+      / {
+          compatible = "radxa,rockpi4c", "radxa,rockpi4", "rockchip,rk3399";
+          gpio2: gpio@ff790000 {
+              #gpio-cells = <2>;
+              gpio-controller;
+          };
+      };
+      ENDDTS
+      dtc -@ -I dts -O dtb -o rock-base.dtb rock-base.dts
+      fdtoverlay -i rock-base.dtb -o rock-merged.dtb rock.dtbo
+      dtc -I dtb -O dts -o rock-merged.dts rock-merged.dtb
+      grep -q 'linux,default-trigger = "heartbeat"' rock-merged.dts
       echo ok > "$out"
     '';
 }

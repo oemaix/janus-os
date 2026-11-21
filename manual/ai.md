@@ -174,6 +174,11 @@ Read this file before answering a question about using Janus OS.
   or a Raspberry Pi 4 is a status panel. It runs `janus proxy refresh`, `janus proxy select`,
   `janus reboot`, and `janus reset --state --yes`. It does not edit
   configuration, hot overrides, or secrets.
+- `janus.hardware.heartbeat.enable` defaults to false (D-0075, docs/10 §3.8).
+  True blinks one LED with the kernel `heartbeat` trigger. `pin` defaults
+  to header pin 7 and is one of 7, 11, 12, 13, 15, 16. Le Potato pin 11
+  fails evaluation when the switch is on. A board without this 40-pin
+  header fails evaluation when the switch is on. True rebuilds the kernel.
 - `janus.monitoring.flows.export.collector` exports IPFIX (default, port
   4739) or NetFlow v9. Null leaves export off. The ring is 8192 flows
   in memory.

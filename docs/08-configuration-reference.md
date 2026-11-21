@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-11-19 |
+| Last updated | 2026-11-22 |
 
 This document defines the **shape and semantics** of the `janus.*` option
 tree. The final, exhaustive reference (every option with type, default,
@@ -243,6 +243,8 @@ role (FR-SVC-002, FR-SVC-003, D-0060). The vendor choice stays under
 | `peripherals.<name>.power.shutdown.warnVolts` | float | `3.60` | Must be ≥ the shutdown voltage. |
 | `peripherals.<name>.power.shutdown.volts` | float | `3.50` | Sustained 60 s. MUST NOT be set below 3.50. |
 | `peripherals.<name>.power.shutdown.criticalVolts` | float | `3.30` | Sustained 10 s. MUST NOT be set below 3.30. |
+| `heartbeat.enable` | bool | `false` | Kernel `heartbeat` trigger on one 40-pin header GPIO (*10* §3.8, D-0075). Off builds no overlay and leaves the kernel cache. True rebuilds the kernel so the trigger is built in. |
+| `heartbeat.pin` | enum | `7` | Header pin `7`, `11`, `12`, `13`, `15`, or `16`. Pin 1 is 3.3 V. A pin outside that list fails the type. A listed pin this board does not wire as a GPIO fails evaluation when `enable` is true. |
 
 ## 3. `janus.storage`
 
@@ -536,6 +538,7 @@ export`. `janus-build fleet pull` writes leases into
 * IPv6 `delegated` with traffic mode `rule-based` or `proxy-all` → warning
   unless IPv6 interception is enabled. `bypass` does not warn.
 * `janus.hardware.board` is set and supports every declared peripheral class.
+* `janus.hardware.heartbeat.enable` defaults to false. True fails on a board without this 40-pin header (`nanopi-r4s`, `yanyu-stx-r19f`, `x86_64-test`). `pin` is `7`, `11`, `12`, `13`, `15`, or `16`. Any other value fails the type. With `enable` true, a pin that board does not wire as a GPIO fails evaluation. Le Potato pin 11 is that case (*10* §3.8, D-0075).
 * A `wwan` peripheral whose USB ID is not on the allowlist fails evaluation.
 * `janus.audio.enable` defaults to false. Playback and recording are read only then. `embedded` and `usb` need a non-blank node and `kernelProfile` `standard` or `matched`. `compact` rejects them. `recording.input = bluetooth` fails while HFP and HSP stay off. `matched` includes the selected embedded or USB driver only when `enable` is true.
 * `janus.soloist.enable` needs `janus.audio.enable`, a playback device, the API-key secret and its sops file, at least one zone other than `wan`, and a board architecture of `x86_64`, `aarch64`, or `armv7l`. A false setting skips these checks and does not install the secret. BlueZ starts from `janus.audio` bluetooth, without Soloist (D-0061).

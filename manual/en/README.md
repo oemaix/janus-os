@@ -412,6 +412,24 @@ partition and reboots. The panel does not change the configuration, hot
 overrides, or secrets. After a minute with no input the screen sleeps;
 the next press wakes the same page.
 
+## Header heartbeat
+
+The LED is off unless the host file sets
+`janus.hardware.heartbeat.enable = true`. The kernel then blinks it.
+The default pin is 7 on the 40-pin header. Pin 1 on that header is
+3.3 V. The other pins are 11, 12, 13, 15, and 16, and only when that
+board wires the pin as a GPIO. Le Potato pin 11 is rejected when
+the switch is on. The NanoPi R4S, the Yanyu, and the test VM have
+no such header, and turning the switch on there is rejected.
+
+```
+janus.hardware.heartbeat.enable = true;
+janus.hardware.heartbeat.pin = 7;
+```
+
+The boards are the ROCK Pi 4C, the Raspberry Pi 2, 3, and 4, the
+Raspberry Pi Zero 2 W, Le Potato, and the VisionFive 2.
+
 ## Battery
 
 A mcuzone Pi Zero UPS at I²C `0x40` shows the cell in `janus status`.
