@@ -3,11 +3,11 @@
     "iran-sing-box-rules": {
       "flake": false,
       "locked": {
-        "lastModified": 1795008582,
-        "narHash": "sha256-JsnJp6D4kFRyS4BXyM/e3VShFa4YsO2A3h2F2WEKfHY=",
+        "lastModified": 1795266224,
+        "narHash": "sha256-QovaOapB0RTvtyj8aOQL5kZCSZloHZwR96CXsxvHrDg=",
         "owner": "Chocolate4U",
         "repo": "Iran-sing-box-rules",
-        "rev": "9bf2af5b402341a438cd4ed407ab8965f48004bd",
+        "rev": "f7b39921f3e158e0f3c2f7b675c5754ed8eccc8d",
         "type": "github"
       },
       "original": {
@@ -207,7 +207,7 @@
       "flake": false,
       "locked": {
         "lastModified": 946684800,
-        "narHash": "sha256-L9R1xs/EHml6RK8OV4u20vRXwIQQ8zAGpGh3TKhbQ/U=",
+        "narHash": "sha256-cONAqIZ+mEwCyL0QwPmG/NfxQB5HzrWowvr1EUzVmAY=",
         "type": "tarball",
         "url": "https://soloist-builds.spotifycdn.com/soloist_release_arm64.tar.gz"
       },
@@ -220,7 +220,7 @@
       "flake": false,
       "locked": {
         "lastModified": 946684800,
-        "narHash": "sha256-jl3Je7BYxRhO59jzeeu03LFPaMpyC2OJnNBZiAJKJXY=",
+        "narHash": "sha256-0G5BrLo5jLpK1f2nzC5ueVkQcbzNX0Tab2Zr1cnQJ+Y=",
         "type": "tarball",
         "url": "https://soloist-builds.spotifycdn.com/soloist_release_arm32.tar.gz"
       },
@@ -233,7 +233,7 @@
       "flake": false,
       "locked": {
         "lastModified": 946684800,
-        "narHash": "sha256-s16zxb/p7ZTdbfi4SQmr5+VJVasrAnPv7vpWh+2SoZU=",
+        "narHash": "sha256-MMS23nwyW4NJoiF2QC7JvVMIzFwtFfTWK5OMx8Nut7I=",
         "type": "tarball",
         "url": "https://soloist-builds.spotifycdn.com/soloist_release_x86_64.tar.gz"
       },
