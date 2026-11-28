@@ -3,11 +3,11 @@
     "iran-sing-box-rules": {
       "flake": false,
       "locked": {
-        "lastModified": 1795266224,
-        "narHash": "sha256-QovaOapB0RTvtyj8aOQL5kZCSZloHZwR96CXsxvHrDg=",
+        "lastModified": 1795873271,
+        "narHash": "sha256-ZM2ojUX6hLky+E1hixktdmRx8ymzAwsAqaFZQFsAvU8=",
         "owner": "Chocolate4U",
         "repo": "Iran-sing-box-rules",
-        "rev": "f7b39921f3e158e0f3c2f7b675c5754ed8eccc8d",
+        "rev": "2cc0db37bb3c10e2ac98af7001fa66f5404fc55a",
         "type": "github"
       },
       "original": {
@@ -189,11 +189,11 @@
     "sing-geosite": {
       "flake": false,
       "locked": {
-        "lastModified": 1795070515,
-        "narHash": "sha256-aEYqbop9sOoWRr1697b8T0cdQ7nyZ9dndX42ohpOLM4=",
+        "lastModified": 1795849245,
+        "narHash": "sha256-nReM9UfCVwqm5ghkLu0FBG9LWezENiQ944Ig9vO8/6k=",
         "owner": "SagerNet",
         "repo": "sing-geosite",
-        "rev": "d5d86605baca4b3941a4a4b3403aca36df2f4adf",
+        "rev": "6befceb67b19adb8bb27812072a6d6f26ca1e2a3",
         "type": "github"
       },
       "original": {
@@ -207,7 +207,7 @@
       "flake": false,
       "locked": {
         "lastModified": 946684800,
-        "narHash": "sha256-cONAqIZ+mEwCyL0QwPmG/NfxQB5HzrWowvr1EUzVmAY=",
+        "narHash": "sha256-js9bJJ7/A6qgo4YjaxMl7Gjfi7N/Cji/yA6y6jpwFb4=",
         "type": "tarball",
         "url": "https://soloist-builds.spotifycdn.com/soloist_release_arm64.tar.gz"
       },
@@ -220,7 +220,7 @@
       "flake": false,
       "locked": {
         "lastModified": 946684800,
-        "narHash": "sha256-0G5BrLo5jLpK1f2nzC5ueVkQcbzNX0Tab2Zr1cnQJ+Y=",
+        "narHash": "sha256-CVIuuo+bel/sytg2piepcrGa2gDao3nrX00vdn6OGC8=",
         "type": "tarball",
         "url": "https://soloist-builds.spotifycdn.com/soloist_release_arm32.tar.gz"
       },
@@ -233,7 +233,7 @@
       "flake": false,
       "locked": {
         "lastModified": 946684800,
-        "narHash": "sha256-MMS23nwyW4NJoiF2QC7JvVMIzFwtFfTWK5OMx8Nut7I=",
+        "narHash": "sha256-T0MwXuaijkFVzEdmaagkJwVzORI01J8SWNGC+a7dX1g=",
         "type": "tarball",
         "url": "https://soloist-builds.spotifycdn.com/soloist_release_x86_64.tar.gz"
       },
