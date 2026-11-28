@@ -297,9 +297,9 @@ plane (AT over USB serial, QMI, MBIM) is optional and used for status only
 
 | Mode | Data plane | Appears as | Control plane |
 |------|------------|------------|---------------|
-| `ecm` / `ncm` / `rndis` | dongle does NAT/DHCP internally or bridges | Ethernet NIC → treated by networkd as a DHCP client link | AT port (`/dev/ttyUSB<n>`), if exposed after mode switch |
-| `qmi` | raw-IP via `qmi_wwan` | `wwan0` | `qmicli` for connect/status |
-| `mbim` | `cdc_mbim` | `wwan0` | `mbimcli` |
+| `ecm` / `ncm` / `rndis` | dongle does NAT/DHCP internally or bridges | Ethernet NIC, named `wwan-<peripheral>` | AT port (`/dev/ttyUSB<n>`), if exposed after mode switch |
+| `qmi` | raw-IP via `qmi_wwan` | `wwan-<peripheral>` | `qmicli` for connect/status |
+| `mbim` | `cdc_mbim` | `wwan-<peripheral>` | `mbimcli` |
 
 `wwan.mode = "auto"` uses the mode the allowlist records for that USB ID.
 Evaluation fails when the ID is absent or the row records no mode. An
@@ -315,7 +315,9 @@ and health reporting into `/run/janus/wwan/<name>`. The allowlist has no
 A non-empty set is written as a usb_modeswitch config and run before the
 link comes up. A WAN with `mode = "wwan"` references the
 peripheral; internally it becomes a `dhcp` WAN (Ethernet modes) or a
-QMI/MBIM-managed link.
+QMI/MBIM-managed link. The netdev is `wwan-<peripheral>`. networkd
+matches that name, and nftables forward and masquerade use it. The
+peripheral name is not an interface (T-0065).
 
 Support is an allowlist (FR-HW-007). Many dongles implement several USB
 compositions and only one of them is reliable; some need vendor tools or

@@ -42,11 +42,14 @@
     else if vlanByRef name != null
     then vlanNetdev net.vlans.${vlanByRef name}
     else name;
+  # mode = "wwan" is the netdev wwan-<peripheral>, not the peripheral name (T-0065).
   wanIface = name: let
     wan = net.wans.${name};
   in
     if wan.mode == "pppoe"
     then "ppp-${name}"
+    else if wan.mode == "wwan"
+    then "wwan-${wan.wwan.peripheral}"
     else if wan.mode == "wifi"
     then "wifi-${wan.uplink}"
     else resolve wan.uplink;

@@ -338,7 +338,11 @@ on every interface outside `zones`. Defaults implement FR-FW-002.
 | `engineSettings` | attrs | `{}` | Raw engine config merged last (escape hatch; unsupported) |
 
 `vendor`, `protocol`, and `latency` are present on every node. The
-operator does not declare `vendor` or `protocol`. `latency` accepts only
+operator does not declare `vendor` or `protocol`. `protocol` is `vless`,
+`vmess`, `trojan`, `shadowsocks`, `hysteria2`, `tuic`, or `anytls`
+(ADR-0029). `anytls` is not a manual protocol. An xray render omits
+`anytls`, `hysteria2`, and `tuic` subscription nodes. The render fails
+when that omission would send a selector `direct` that still had members. `latency` accepts only
 `timeout` and `interval`. An unset `defaultTarget` is `{}`, so every node
 is eligible. sing-box renders one `urltest` per distinct selector. xray
 renders one `leastPing` balancer. The tag stays inside the renderer.

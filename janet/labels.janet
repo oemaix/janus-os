@@ -2,7 +2,7 @@
 # Label assignment and selector matching. docs/07 §11.
 # Loaded from janus.janet after the matchers exist.
 
-(def label-protocols @["vless" "vmess" "trojan" "shadowsocks" "hysteria2" "tuic"])
+(def label-protocols @["vless" "vmess" "trojan" "shadowsocks" "hysteria2" "tuic" "anytls"])
 
 (defn label-key-ok? [k]
   (and

@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-11-16 |
+| Last updated | 2026-11-28 |
 
 ## 1. Architectural drivers
 
@@ -56,7 +56,7 @@
 | **Subscription snapshotter** | Fixed-output or impure derivation that fetches configured subscription URLs at build time, normalizes them to Janus node JSON, and embeds the snapshot. Pinning by hash is optional (FR-BLD-006). |
 | **Geo data fetcher** | Fetches GeoIP/GeoSite in the engine's native format (`.srs` for sing-box, `.dat` for Xray) plus a Janus-normalized domain list for DNS. |
 | **Node normalizer** | Janet program that parses share links / Clash YAML / sing-box JSON into a canonical node schema; also evaluates matchers (regex, glob, PEG) to compute group membership at build time and to validate PEG syntax. |
-| **Engine renderer** | Nix functions producing the engine configuration from the canonical model. Two backends; unsupported features raise assertions. |
+| **Engine renderer** | Janet renders the engine configuration from the canonical model. Two backends. A setting the engine cannot express raises an assertion. A subscription protocol it cannot speak is ADR-0029. |
 | **Image builder** | Creates the partition table and file systems (mkfs.f2fs + sload.f2fs, mkfs.vfat + mcopy), installs board firmware/U-Boot at required offsets, writes the image. |
 | **Checks** | Evaluation tests, renderer golden tests, VM boot tests for x86_64 test target, board build tests. |
 
@@ -117,8 +117,12 @@ LanPolicy   { mode: bypass|rule-based|proxy-all,
 
 Each LAN has a `LanPolicy`. Unset fields inherit the router policy
 (D-0042). `bootstrap` is IP literals, not a build-time lookup (D-0040).
-Renderers consume this model. Anything the target engine cannot express is
-an evaluation-time assertion, not a silent drop. sing-box renders D-0037
+Renderers consume this model. A setting or a manual node the target
+engine cannot express is an evaluation-time assertion, not a silent drop.
+A subscription node whose protocol that engine cannot speak is omitted
+from that render and from the labels written with it. The render fails
+when that omission would send a selector `direct` that still had members
+in the full list (ADR-0029). sing-box renders D-0037
 through D-0042 per LAN, plus ECS and the DNS cache. xray 26 has one DNS
 module, so LANs that do not share a DNS policy fail evaluation. Which
 engine to keep is *07* §2.1.

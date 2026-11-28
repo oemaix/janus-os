@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | Accepted |
+| Status | Accepted; subscription protocols the engine cannot speak are refined by ADR-0029 |
 | Date | 2026-09-15 |
 | Affects | 03 FR-PRX-001/002, 07 §2 |
 

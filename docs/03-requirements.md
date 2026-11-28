@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-11-14 |
+| Last updated | 2026-11-28 |
 
 Key words MUST / SHOULD / MAY follow RFC 2119. Priority: **P1** required for
 1.0, **P2** planned, **P3** desirable.
@@ -92,7 +92,7 @@ Key words MUST / SHOULD / MAY follow RFC 2119. Priority: **P1** required for
 | ID | Requirement | Prio |
 |----|-------------|------|
 | FR-PRX-001 | Supported outbound protocols MUST include: VLESS (with XTLS-RPRX-Vision and REALITY), VMess, Trojan, Shadowsocks (AEAD; with `simple-obfs` and `v2ray-plugin` where the engine supports them). | P1 |
-| FR-PRX-002 | The engine MUST be selectable: `sing-box` (default) or `xray`. Features unsupported by the chosen engine MUST fail at evaluation with a message. | P1 |
+| FR-PRX-002 | The engine MUST be selectable: `sing-box` (default) or `xray`. A setting or a manual node the chosen engine cannot express MUST fail evaluation with a message. A subscription node whose protocol that engine cannot speak is omitted from that render and from the labels written with it (ADR-0029). When the omitted nodes were the only members of a selector that model uses, the render MUST fail and the previous engine file MUST stay. A selector that is already empty on the full node list still warns and uses `direct`. An `ss://` link is Shadowsocks. | P1 |
 | FR-PRX-003 | Subscriptions MUST be declared with name, URL, refresh schedule (interval in minutes/hours or cron expression) and optional user-agent/headers. | P1 |
 | FR-PRX-004 | Supported subscription formats MUST include base64 share-link lists (`ss://`, `vless://`, `vmess://`, `trojan://`), Clash/Clash.Meta YAML and sing-box JSON. | P1 |
 | FR-PRX-005 | The build MUST fetch each subscription on the build host and embed the snapshot in the image so the router is functional at first boot. | P1 |

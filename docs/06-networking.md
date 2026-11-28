@@ -50,7 +50,7 @@ implementation (FR-NET-005, FR-NET-020).
 
 ```
 janus.network.wans.<name> = {
-  uplink   = "wan" | "wan.35" | "wwan0" | "cafe0";  # port, vlan, wwan or wifi peripheral
+  uplink   = "wan" | "wan.35" | "lte" | "cafe0";  # port, vlan, wwan or wifi peripheral
   mode     = "dhcp" | "static" | "pppoe" | "wwan" | "wifi";
   role     = "default" | "iptv" | "backup" | "custom";
   metric   = 100;
@@ -155,7 +155,9 @@ itself is assigned at runtime, and an IPv4 literal is not an RDNSS address.
 
 * Masquerade: for every `(lan, wan)` pair where `lan.nat.enable` and wan is
   `default|backup|custom`, `oifname <wan> ip saddr <lan-subnet> masquerade`.
-  IPTV WANs masquerade only if `iptv.nat = true`.
+  `<wan>` is the link. A WAN with `mode = "wwan"` is `wwan-<peripheral>`,
+  the name networkd matches, not the peripheral name (T-0065). IPTV WANs
+  masquerade only if `iptv.nat = true`.
 * Port forwards:
 
 ```

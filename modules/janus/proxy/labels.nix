@@ -16,7 +16,7 @@
     value = true;
   })
   user);
-  protocols = ["vless" "vmess" "trojan" "shadowsocks" "hysteria2" "tuic"];
+  protocols = ["vless" "vmess" "trojan" "shadowsocks" "hysteria2" "tuic" "anytls"];
   combinators = ["any" "all" "not"];
 
   keyError = key:

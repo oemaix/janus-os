@@ -246,7 +246,8 @@
     :trojan @{:password nil}
     :shadowsocks @{:method nil :password nil :plugin @{:name nil :options nil}}
     :hysteria2 @{:password nil :up nil :down nil :obfs nil}
-    :tuic @{:uuid nil :password nil :congestion nil}})
+    :tuic @{:uuid nil :password nil :congestion nil}
+    :anytls @{:password nil}})
 
 (defn apply-transport [node q]
   (def typ (or (get q "type") (get q "net")))
@@ -262,14 +263,20 @@
 (defn flag-on? [v]
   (or (true? v) (= v "1")))
 
-# Trojan is TLS. A share link has no security=tls (T-0050).
+# Trojan, anytls, hysteria2, and tuic are TLS. A share link has no
+# security=tls. Call this after the scheme arm, so hy2 is already hysteria2 (T-0050, T-0066).
+(def tls-protocols ["trojan" "anytls" "hysteria2" "tuic"])
+
+(defn tls-protocol? [protocol]
+  (find |(= protocol $) tls-protocols))
+
 (defn apply-tls [node q]
   (def sec (or (get q "security") (get q "tls") ""))
-  (def trojan? (= (get node :protocol) "trojan"))
-  (when (or trojan? (= sec "tls") (= sec "reality") (= (get q "tls") "tls"))
+  (def forced? (tls-protocol? (get node :protocol)))
+  (when (or forced? (= sec "tls") (= sec "reality") (= (get q "tls") "tls"))
     (put-in node [:tls :enable] true)
     (def named (or (filled (get q "sni")) (filled (get q "peer"))))
-    (put-in node [:tls :serverName] (or named (if trojan? (get node :server) nil)))
+    (put-in node [:tls :serverName] (or named (if forced? (get node :server) nil)))
     (put-in node [:tls :utls] (filled (get q "fp")))
     (put-in node [:tls :insecure] (or (flag-on? (get q "allowInsecure")) (flag-on? (get q "insecure"))))
     (when (= sec "reality")
@@ -300,10 +307,10 @@
   (put node :server host)
   (put node :port port)
   (apply-transport node q)
-  (apply-tls node q)
   (case scheme
     "vless" (do (put-in node [:vless :uuid] user) (put-in node [:vless :flow] (or (get q "flow") nil)))
     "trojan" (put-in node [:trojan :password] user)
+    "anytls" (put-in node [:anytls :password] user)
     "hy2" (do (put node :protocol "hysteria2") (put-in node [:hysteria2 :password] user))
     "hysteria2" (put-in node [:hysteria2 :password] user)
     "tuic"
@@ -314,10 +321,12 @@
     "ss"
     (let [decoded (if (string/find "@" user) user (b64-decode user))
           pair (string/split ":" decoded)]
+      (put node :protocol "shadowsocks")
       (put-in node [:shadowsocks :method] (get pair 0))
       (put-in node [:shadowsocks :password] (get pair 1))
       (put-in node [:shadowsocks :plugin :name] (or (get q "plugin") nil)))
     nil)
+  (apply-tls node q)
   node)))
 
 (defn parse-vmess [line]
@@ -392,7 +401,7 @@
       "ss" "shadowsocks"
       "hysteria2" "hysteria2"
       typ))
-  (if (not (find |(= protocol $) ["vmess" "vless" "trojan" "shadowsocks" "hysteria2" "tuic"]))
+  (if (not (find |(= protocol $) ["vmess" "vless" "trojan" "shadowsocks" "hysteria2" "tuic" "anytls"]))
     nil
     (do
   (def node (blank-node (string (or (get item "name") "node")) protocol))
@@ -417,11 +426,12 @@
     "tuic"
     (do
       (put-in node [:tuic :uuid] (get item "uuid"))
-      (put-in node [:tuic :password] (get item "password"))))
-  (when (or (= protocol "trojan") (get item "tls") (= (get item "security") "tls"))
+      (put-in node [:tuic :password] (get item "password")))
+    "anytls" (put-in node [:anytls :password] (get item "password")))
+  (when (or (tls-protocol? protocol) (get item "tls") (= (get item "security") "tls"))
     (put-in node [:tls :enable] true)
     (def named (or (filled (get item "sni")) (filled (get item "peer")) (filled (get item "servername"))))
-    (put-in node [:tls :serverName] (or named (if (= protocol "trojan") (get node :server) nil)))
+    (put-in node [:tls :serverName] (or named (if (tls-protocol? protocol) (get node :server) nil)))
     (put-in node [:tls :utls] (or (filled (get item "fp")) (filled (get item "client-fingerprint"))))
     (put-in node [:tls :insecure] (or
       (flag-on? (get item "allowInsecure"))
@@ -445,7 +455,7 @@
   (def out @[])
   (each item list
     (def typ (get item "type"))
-    (when (find |(= typ $) ["vmess" "vless" "trojan" "shadowsocks" "hysteria2" "tuic"])
+    (when (find |(= typ $) ["vmess" "vless" "trojan" "shadowsocks" "hysteria2" "tuic" "anytls"])
       (def node (blank-node (or (get item "tag") typ) typ))
       (put node :server (or (get item "server") ""))
       (put node :port (or (get item "server_port") 0))
@@ -468,12 +478,13 @@
         "tuic"
         (do
           (put-in node [:tuic :uuid] (get item "uuid"))
-          (put-in node [:tuic :password] (get item "password"))))
+          (put-in node [:tuic :password] (get item "password")))
+        "anytls" (put-in node [:anytls :password] (get item "password")))
       (def tls (get item "tls"))
-      (when (or (= typ "trojan") (and tls (get tls "enabled")))
+      (when (or (tls-protocol? typ) (and tls (get tls "enabled")))
         (put-in node [:tls :enable] true)
         (def named (when tls (filled (get tls "server_name"))))
-        (put-in node [:tls :serverName] (or named (if (= typ "trojan") (get node :server) nil)))
+        (put-in node [:tls :serverName] (or named (if (tls-protocol? typ) (get node :server) nil)))
         (when tls
           (put-in node [:tls :insecure] (get tls "insecure"))
           (def reality (get tls "reality"))
@@ -674,7 +685,8 @@
     "tuic"
     (do
       (put base :uuid (at-in node [:tuic :uuid]))
-      (put base :password (at-in node [:tuic :password]))))
+      (put base :password (at-in node [:tuic :password])))
+    "anytls" (put base :password (at-in node [:anytls :password])))
   base)
 
 (defn one-address [kind urls]
@@ -1536,6 +1548,68 @@
   (when (find |(= $ "--resolve") args)
     (setdyn :label-resolve true)))
 
+# xray has no anytls, hysteria2, or tuic outbound. One of them fails the
+# whole file. Omit them from that render and from its labels (T-0066).
+(def xray-protocols ["vless" "vmess" "trojan" "shadowsocks"])
+
+(defn xray-speaks? [node]
+  (find |(= (at node :protocol) $) xray-protocols))
+
+(defn engine-nodes [engine nodes]
+  (if (= engine "xray")
+    (filter xray-speaks? nodes)
+    nodes))
+
+# An empty selector becomes direct. That is a leak when the full list had
+# members and only the omission emptied it (T-0067, ADR-0029).
+(defn selector-members-of [ctx sel]
+  (selector-members sel (ctx :labeled) (ctx :defs) (ctx :official)))
+
+(defn selector-dropped? [full kept sel]
+  (and
+    (not (empty? (selector-members-of full sel)))
+    (empty? (selector-members-of kept sel))))
+
+(defn target-dropped? [full kept target]
+  (cond
+    (or (nil? target) (and (dictionary? target) (empty? (keys target))))
+    (selector-dropped? full kept @{})
+    (dictionary? target) (selector-dropped? full kept target)
+    false))
+
+(defn failover-dropped? [full kept entries]
+  (var saw-full false)
+  (var saw-kept false)
+  (var explicit false)
+  (each entry entries
+    (cond
+      (or (= entry "direct") (= entry "block")) (set explicit true)
+      (dictionary? entry)
+      (do
+        (when (not (empty? (selector-members-of full entry))) (set saw-full true))
+        (when (not (empty? (selector-members-of kept entry))) (set saw-kept true)))))
+  (and saw-full (not saw-kept) (not explicit)))
+
+(defn rule-dropped? [full kept rule]
+  (cond
+    (dictionary? (get rule "labels")) (selector-dropped? full kept (get rule "labels"))
+    (indexed? (get rule "failover")) (failover-dropped? full kept (get rule "failover"))
+    false))
+
+(defn refuse-xray-omission [model nodes spoken]
+  (when (< (length spoken) (length nodes))
+    (def full (label-context model nodes))
+    (def kept (label-context model spoken))
+    (each view (policy-views model)
+      (def name (or (get view "name") "router"))
+      (when (target-dropped? full kept (get view "defaultTarget"))
+        (die (string "janus: xray cannot speak the nodes for defaultTarget " name "; refusing direct")))
+      (var i 0)
+      (each rule (or (get view "rules") @[])
+        (when (rule-dropped? full kept rule)
+          (die (string "janus: xray cannot speak the nodes for " name " rule " (string i) "; refusing direct")))
+        (++ i)))))
+
 (defn main [&]
   (def args (dyn :args))
   (def cmd
@@ -1568,14 +1642,16 @@
           engine (or (arg-value args "--engine") "sing-box")
           dst (or (arg-value args "--output") "-")]
       (use-label-args args)
-      (let [rendered (if (= engine "xray") (render-xray model nodes) (render model nodes mode))
+      (let [spoken (engine-nodes engine nodes)]
+        (when (= engine "xray") (refuse-xray-omission model nodes spoken))
+        (let [rendered (if (= engine "xray") (render-xray model spoken) (render model spoken mode))
             raw (or (get model "engineSettings") @{})
             merged (if (empty? raw) rendered (merge-raw rendered raw))
             labels-path (arg-value args "--labels")]
         (when labels-path
-          (def ctx (label-context model nodes))
+          (def ctx (label-context model spoken))
           (write-out labels-path (json-encode (label-document ctx))))
-        (write-out dst (json-encode merged))))
+        (write-out dst (json-encode merged)))))
     "labels"
     (let [model (json-decode (read-all (or (arg-value args "--model") "-")))
           nodes (json-decode (read-all (or (arg-value args "--nodes") (die "--nodes is required"))))]
@@ -1587,7 +1663,7 @@
           engine (or (arg-value args "--engine") "sing-box")
           latency (or (arg-value args "--latency") "/var/lib/janus/engine/latency.json")
           probes (or (arg-value args "--probes") "/var/lib/janus/engine/probes.json")]
-      (run-probes model nodes engine latency probes)
+      (run-probes model (engine-nodes engine nodes) engine latency probes)
       (print "ok"))
     "label-check"
     (label-self-check)

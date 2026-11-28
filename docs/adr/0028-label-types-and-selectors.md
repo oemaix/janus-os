@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | Accepted |
+| Status | Accepted; the protocol label values are refined by ADR-0029 |
 | Date | 2026-11-12 |
 | Affects | 03 FR-PRX-029; 07 §11; refines ADR-0027 |
 

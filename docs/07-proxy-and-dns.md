@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-11-19 |
+| Last updated | 2026-11-28 |
 
 ## 1. Scope
 
@@ -26,7 +26,8 @@ for one engine:
 | Shadowsocks AEAD (incl. 2022) | yes | yes (2022 partial) | assertion on unsupported cipher |
 | Shadowsocks + `simple-obfs` | yes (built-in `obfs-local` plugin) | via external plugin process | Xray: evaluation fails. No sidecar (ADR-0006). |
 | Shadowsocks + `v2ray-plugin` | yes (built-in) | external process | as above |
-| Hysteria2 / TUIC | yes | no | assertion when engine = xray |
+| Hysteria2 / TUIC | yes | no | a manual node fails evaluation when the engine is xray; a subscription node is omitted from that render (ADR-0029) |
+| anytls | yes | no | TLS required; omitted from an xray render (ADR-0029) |
 | Transparent inbound | TUN, TPROXY, redirect | TPROXY, redirect, (TUN via external) | default: sing-box TUN, auto-route off, gvisor stack (ADR-0025; Janus owns routing); Xray TPROXY |
 | Rule sets | binary `.srs` (remote/local) | `geosite.dat`/`geoip.dat` | fetched per engine format at build; refreshable |
 | DNS server | built-in with fake-IP, per-LAN rules | one DNS module, per-domain servers | sing-box keeps a DNS policy per LAN. xray 26 has one policy for every LAN (§2.1) |
@@ -41,12 +42,18 @@ its XTLS implementation or have Xray-only nodes (ADR-0006).
 
 Leave `janus.proxy.engine` at `sing-box` unless a row below names xray.
 A setting the selected engine cannot express fails evaluation. It is not
-dropped.
+dropped. A subscription node whose protocol that engine cannot speak is
+omitted from that render and from the labels written with it. The other
+nodes stay. A manual node of that protocol still fails evaluation.
+When the omitted nodes were the only members of a selector that model
+uses, the render fails and the refresh keeps the previous engine file.
+A selector that is already empty on the full node list still warns and
+uses `direct` (ADR-0029).
 
 | Requirement | Keep |
 |-------------|------|
 | LANs that do not share one DNS policy: mode, resolvers, `recursive`, fake-IP, `ipv6Answers`, forwarders, name rules, or the same host name with two addresses | sing-box. xray 26 has one DNS module and matches names, not the LAN a query came from. A guest LAN on `bypass` beside a home LAN on `rule-based` fails evaluation. |
-| Hysteria2, TUIC, `tls.insecure`, or a Shadowsocks plugin | sing-box |
+| Hysteria2, TUIC, anytls, `tls.insecure`, or a Shadowsocks plugin | sing-box |
 | A DNS cache size other than 4096, or a written TTL other than 60 | sing-box. xray 26 has neither knob. Another value fails evaluation. The defaults are accepted and left to xray's own cache. |
 | A blocked name answered by a DNS reject | sing-box. xray 26 has no reject code. The lookup is sent to a closed port on the router, and the client receives the failure. |
 | Nodes written for xray, with every LAN on one DNS policy | xray |
@@ -90,12 +97,19 @@ janus.proxy.subscriptions.<name> = {
 ```
 
 The Node normalizer (Janet) converts every format into canonical node JSON
-and rejects unknown protocols with a listed reason. Trojan is TLS. A
-`trojan://` link, a Clash trojan item, and a sing-box trojan outbound
-enable it without `security=tls` or a `tls` field. `sni`, `peer`, `fp`,
-and `allowInsecure` still apply. Clash Meta's `client-fingerprint` and
-`skip-cert-verify` are those same two fields. A missing `sni` is the
-server host. The rendered outbound has `tls.enabled` set. Build-time fetch is an
+and rejects unknown protocols with a listed reason. Trojan, anytls,
+Hysteria2, and TUIC are TLS. A share link, a Clash item, and a sing-box
+outbound enable it without `security=tls`, a Clash `tls` field, or
+`tls.enabled`. `sni`, `peer`, `fp`, and `allowInsecure` still apply.
+Clash Meta's `client-fingerprint` and `skip-cert-verify` are those same
+two fields. A missing `sni` is the server host. The rendered outbound
+has `tls.enabled` set. The password is kept. An `ss://` link is
+protocol `shadowsocks`. xray has no anytls, Hysteria2, or TUIC outbound,
+so those subscription nodes are omitted from an xray render and from the
+labels written with it. The render fails when that omission would send a
+selector `direct` that still had members in the full list (ADR-0029).
+
+Build-time fetch is an
 impure derivation by default (`--impure` documented) or a fixed-output
 derivation when `snapshot.hash` is set. `allowMissingAtBuild` defaults to
 false. True builds the image when that fetch fails. The router then starts
@@ -601,11 +615,14 @@ test this string with an exact token or with `regex`, `glob`, or `peg`
 
 `protocol` is `enum` and is always present. The `values` list is the
 union of the outbound protocols either engine supports: `vless`,
-`vmess`, `trojan`, `shadowsocks`, `hysteria2`, `tuic`. Hysteria2 and
-TUIC are sing-box only (§2). The label still carries those tokens. The
-value comes from the normalized subscription node, or from
-`nodes.<name>.protocol` on a manual node. `labels.protocol` fails
-evaluation. `protocol` has no rules.
+`vmess`, `trojan`, `shadowsocks`, `hysteria2`, `tuic`, `anytls`.
+Hysteria2, TUIC, and anytls are sing-box only (§2). A sing-box label
+still carries those tokens. An xray render omits those nodes, and the
+label file written with that render omits them too. The render fails
+when that omission empties a selector that had members (ADR-0029). The value
+comes from the normalized subscription node, or from
+`nodes.<name>.protocol` on a manual node. `anytls` is not a manual
+protocol. `labels.protocol` fails evaluation. `protocol` has no rules.
 
 `latency` is `number` and is always present. The probe is a TCP connect
 to the node's server and port. A successful sample stores the handshake

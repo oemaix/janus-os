@@ -191,7 +191,9 @@ definition binds to one uplink.
 **WWAN** — Wireless wide area network uplink via a 4G/5G Peripheral. A WWAN
 peripheral may present itself as an Ethernet NIC (ECM/RNDIS/NCM mode) or as a
 QMI/MBIM modem; in both cases it is modeled as a Peripheral of class `wwan`
-with an optional AT control channel.
+with an optional AT control channel. udev names the netdev
+`wwan-<peripheral>`. That is the name networkd matches and nftables uses
+(T-0065).
 
 **Zone** — A firewall zone grouping interfaces with identical trust level
 (`wan`, `lan`, `guest`, `iot`, `mgmt`). Rules are written between zones.

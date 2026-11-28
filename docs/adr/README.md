@@ -11,7 +11,7 @@ An accepted ADR is the record. It is not copied into *18*.
 | [0003](0003-one-partition-per-filesystem-f2fs.md) | One partition per file system, f2fs, read-only root and store | Accepted |
 | [0004](0004-networkd-nftables-not-networkmanager.md) | systemd-networkd + nftables instead of NetworkManager | Accepted |
 | [0005](0005-janus-option-namespace.md) | Router-style `janus.*` option layer lowering to NixOS | Accepted |
-| [0006](0006-engine-abstraction-sing-box-default.md) | Engine-neutral proxy model; sing-box default, Xray optional | Accepted |
+| [0006](0006-engine-abstraction-sing-box-default.md) | Engine-neutral proxy model; sing-box default, Xray optional | Accepted; subscription protocols the engine cannot speak are refined by 0029 |
 | [0007](0007-ssh-key-only-management.md) | SSH public-key-only management, `janus` CLI, no GUI in 1.0 | Accepted |
 | [0008](0008-janet-for-matchers-and-tooling.md) | Janet for PEG matchers, node normalization and runtime rendering | Accepted |
 | [0009](0009-dnsmasq-dhcp.md) | dnsmasq for DHCP | Accepted |
@@ -33,4 +33,5 @@ An accepted ADR is the record. It is not copied into *18*.
 | [0025](0025-tun-gvisor-stack.md) | tun runs the gvisor stack | Accepted; refines 0011 |
 | [0026](0026-explicit-groups.md) | Explicit groups omit the implicit Auto and subscription groups | Accepted; refines 0006 |
 | [0027](0027-node-labels.md) | The operator configures labels; the engine still receives a group | Accepted; future work; refines 0006 when it lands; value kinds and failover refined by 0028 |
-| [0028](0028-label-types-and-selectors.md) | Label types, selectors, and region codes | Accepted; future work; refines 0027 |
+| [0028](0028-label-types-and-selectors.md) | Label types, selectors, and region codes | Accepted; future work; refines 0027; protocol label values refined by 0029 |
+| [0029](0029-subscription-protocols-the-engine-cannot-speak.md) | Subscription protocols the engine cannot speak | Accepted; refines 0006 and 0028 |

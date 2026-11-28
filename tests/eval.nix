@@ -3766,8 +3766,14 @@ in {
           wwan.peripheral = "lte";
           wwan.apn = "in'ternet";
         };
+        janus.network.lans.lan = {
+          members = ["lan"];
+          address = "172.31.255.1";
+          prefixLength = 24;
+        };
       }
     ];
+    rules = os.config.networking.nftables.tables.janus.content;
     connect = os.config.systemd.services.janus-wwan-cell.serviceConfig.ExecStart;
     health = os.config.systemd.services.janus-wwan-health-cell.serviceConfig.ExecStart;
     switch = os.config.systemd.services.janus-wwan-switch-cell.serviceConfig.ExecStart;
@@ -3789,6 +3795,15 @@ in {
       conf=$(printf '%s\n' ${lib.escapeShellArg switch} | awk '{print $NF}')
       grep -q 'DefaultVendor=0x2c7c' "$conf"
       echo ${lib.escapeShellArg (lib.concatStringsSep " " os.config.boot.kernelModules)} | grep -q qmi_wwan
+      cat > rules.nft <<'EOF'
+      ${rules}
+      EOF
+      grep -q 'oifname "wwan-lte"' rules.nft
+      grep -q 'oifname { "wwan-lte" }' rules.nft
+      if grep -q 'oifname "lte"' rules.nft || grep -q 'oifname { "lte" }' rules.nft; then
+        echo "wwan firewall uses the peripheral name" >&2
+        exit 1
+      fi
       echo ok > "$out"
     '';
   eval-wwan-huawei-ncm = let
@@ -4536,6 +4551,63 @@ in {
       janet "$script" render --model model.json --nodes sb-trojan-nodes.json --rule-set remote --output sb-trojan-engine.json
       jq -e 'any(.outbounds[]; .type == "trojan" and .server == "sb.example" and .tls.enabled == true and .tls.server_name == "sb.example")' sb-trojan-engine.json >/dev/null
       sing-box check -c sb-trojan-engine.json
+      printf '%s\n' 'anytls://secret@any.example:443?sni=www.example.com&fp=chrome&allowInsecure=1#any' > any.txt
+      printf '%s\n' 'anytls://secret@bare-any.example:443#bare-any' >> any.txt
+      printf '%s\n' 'hysteria2://secret@hy.example:443#hy' >> any.txt
+      printf '%s\n' 'hy2://secret@hy2.example:443#hy2' >> any.txt
+      printf '%s\n' 'tuic://b831381d-6324-4d53-ad4f-8cda48b30811:secret@tuic.example:443#tuic' >> any.txt
+      printf '%s\n' 'vless://b831381d-6324-4d53-ad4f-8cda48b30811@keep.example:443?security=tls&sni=keep.example#keep' >> any.txt
+      janet "$script" normalize --format share-links --input any.txt --output any.json
+      jq -e '.[0].protocol == "anytls" and .[0].anytls.password == "secret" and .[0].tls.enable == true and .[0].tls.serverName == "www.example.com" and .[0].tls.utls == "chrome" and .[0].tls.insecure == true' any.json >/dev/null
+      jq -e '.[1].protocol == "anytls" and .[1].tls.enable == true and .[1].tls.serverName == "bare-any.example"' any.json >/dev/null
+      jq -e '.[2].protocol == "hysteria2" and .[2].hysteria2.password == "secret" and .[2].tls.enable == true and .[2].tls.serverName == "hy.example"' any.json >/dev/null
+      jq -e '.[3].protocol == "hysteria2" and .[3].tls.enable == true and .[3].tls.serverName == "hy2.example"' any.json >/dev/null
+      jq -e '.[4].protocol == "tuic" and .[4].tuic.password == "secret" and .[4].tls.enable == true and .[4].tls.serverName == "tuic.example"' any.json >/dev/null
+      janet "$script" render --model model.json --nodes any.json --rule-set remote --labels any-labels.json --output any-engine.json
+      jq -e 'any(.outbounds[]; .type == "anytls" and .server == "bare-any.example" and .password == "secret" and .tls.enabled == true and .tls.server_name == "bare-any.example")' any-engine.json >/dev/null
+      jq -e 'any(.outbounds[]; .type == "hysteria2" and .tls.enabled == true and .tls.server_name == "hy2.example")' any-engine.json >/dev/null
+      jq -e 'any(.outbounds[]; .type == "tuic" and .tls.enabled == true)' any-engine.json >/dev/null
+      jq -e '.any.protocol == "anytls" and .hy2.protocol == "hysteria2" and .keep.protocol == "vless"' any-labels.json >/dev/null
+      sing-box check -c any-engine.json
+      janet "$script" render --model model.json --nodes any.json --engine xray --rule-set remote --labels any-xray-labels.json --output any-xray.json
+      jq -e 'any(.outbounds[]; .protocol == "vless" and .settings.vnext[0].address == "keep.example")' any-xray.json >/dev/null
+      jq -e 'all(.outbounds[]; .protocol != "anytls" and .protocol != "hysteria2" and .protocol != "tuic")' any-xray.json >/dev/null
+      jq -e 'has("keep") and (has("any") | not) and (has("hy") | not) and (has("hy2") | not) and (has("tuic") | not) and (has("bare-any") | not)' any-xray-labels.json >/dev/null
+      jq '.defaultTarget = {"protocol": ["hysteria2"]}' model.json > hy-target.json
+      if janet "$script" render --model hy-target.json --nodes any.json --engine xray --rule-set remote --output hy-target-xray.json >hy-target.out 2>hy-target.err; then
+        echo "hysteria2 defaultTarget became direct on xray" >&2
+        exit 1
+      fi
+      grep -q 'refusing direct' hy-target.err
+      printf '%s\n' 'anytls://secret@only.example:443#only' > only-any.txt
+      janet "$script" normalize --format share-links --input only-any.txt --output only-any.json
+      if janet "$script" render --model model.json --nodes only-any.json --engine xray --rule-set remote --output only-xray.json >only-xray.out 2>only-xray.err; then
+        echo "xray render of only anytls installed direct" >&2
+        exit 1
+      fi
+      grep -q 'refusing direct' only-xray.err
+      ss_user=$(printf '%s' 'aes-256-gcm:secret' | base64 -w0)
+      printf '%s\n' "ss://''${ss_user}@ss.example:8388#shadow" > ss.txt
+      janet "$script" normalize --format share-links --input ss.txt --output ss.json
+      jq -e '.[0].protocol == "shadowsocks" and .[0].shadowsocks.method == "aes-256-gcm" and .[0].shadowsocks.password == "secret"' ss.json >/dev/null
+      janet "$script" render --model model.json --nodes ss.json --rule-set remote --output ss-engine.json
+      jq -e 'any(.outbounds[]; .type == "shadowsocks" and .method == "aes-256-gcm" and .password == "secret")' ss-engine.json >/dev/null
+      sing-box check -c ss-engine.json
+      janet "$script" render --model model.json --nodes ss.json --engine xray --rule-set remote --labels ss-xray-labels.json --output ss-xray.json
+      jq -e 'any(.outbounds[]; .protocol == "shadowsocks" and .settings.servers[0].method == "aes-256-gcm")' ss-xray.json >/dev/null
+      jq -e '.shadow.protocol == "shadowsocks"' ss-xray-labels.json >/dev/null
+      printf '%s\n' '- {name: clash-any, type: anytls, server: clash-any.example, port: 443, password: secret}' > clash-any.txt
+      printf '%s\n' '- {name: clash-hy, type: hysteria2, server: clash-hy.example, port: 443, password: secret}' >> clash-any.txt
+      janet "$script" normalize --format clash --input clash-any.txt --output clash-any.json
+      jq -e '.[0].protocol == "anytls" and .[0].anytls.password == "secret" and .[0].tls.enable == true and .[0].tls.serverName == "clash-any.example"' clash-any.json >/dev/null
+      jq -e '.[1].protocol == "hysteria2" and .[1].tls.enable == true and .[1].tls.serverName == "clash-hy.example"' clash-any.json >/dev/null
+      printf '%s\n' '{"outbounds":[{"type":"anytls","tag":"sb-any","server":"sb-any.example","server_port":443,"password":"secret"},{"type":"hysteria2","tag":"sb-hy","server":"sb-hy.example","server_port":443,"password":"secret"},{"type":"tuic","tag":"sb-tuic","server":"sb-tuic.example","server_port":443,"uuid":"b831381d-6324-4d53-ad4f-8cda48b30811","password":"secret"},{"type":"vless","tag":"sb-keep","server":"keep.example","server_port":443,"uuid":"b831381d-6324-4d53-ad4f-8cda48b30811"}]}' > sb-any.json
+      janet "$script" normalize --format sing-box --input sb-any.json --output sb-any-nodes.json
+      jq -e '.[0].protocol == "anytls" and .[0].anytls.password == "secret" and .[0].tls.enable == true and .[0].tls.serverName == "sb-any.example"' sb-any-nodes.json >/dev/null
+      jq -e '.[1].tls.enable == true and .[1].tls.serverName == "sb-hy.example" and .[2].tls.enable == true and .[2].tls.serverName == "sb-tuic.example" and .[3].protocol == "vless" and .[3].tls.enable == false' sb-any-nodes.json >/dev/null
+      janet "$script" render --model model.json --nodes sb-any-nodes.json --rule-set remote --output sb-any-engine.json
+      jq -e 'any(.outbounds[]; .type == "anytls" and .password == "secret" and .tls.enabled == true and .tls.server_name == "sb-any.example")' sb-any-engine.json >/dev/null
+      sing-box check -c sb-any-engine.json
       cat > block.json <<'EOF'
       {"mode":"rule-based","defaultTarget":"block","blockQuic":false,"groups":{},"rules":[],"subscriptionNames":[],"dns":{"domestic":{"resolvers":[],"domains":[]},"remote":{"resolvers":[],"via":"direct"},"fakeIp":{"enable":false,"exclude":[]},"hosts":{},"forwarders":{},"ipv6Answers":"keep"}}
       EOF
