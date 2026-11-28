@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-11-22 |
+| Last updated | 2026-11-28 |
 
 This document defines the **shape and semantics** of the `janus.*` option
 tree. The final, exhaustive reference (every option with type, default,
@@ -295,6 +295,9 @@ Defaults: `role = "default"`, `metric = 100 + index` (`1100 + index` when
 See *06* §5. Mandatory: `members`, `address`, `prefixLength`. Defaults:
 `dhcp.enable = true`, range = `.100`–`.199`, `zone = <name>`,
 `ipv6.mode` follows that LAN's traffic mode (*06* §9), `nat.enable = true`.
+`nat.hairpin` defaults to true and is NAT reflection (*06* §7).
+`isolation` defaults to false. Off, two stations on one access point
+meet through bridge-port hairpin (D-0076). That flag is not `nat.hairpin`.
 `proxy.mode`, `proxy.rules`, `proxy.defaultTarget`, and `proxy.exceptions`
 inherit `janus.proxy` when unset (*07* §5, D-0042). `dns` inherits
 `janus.dns`. `dns.recursive` defaults to `true`.

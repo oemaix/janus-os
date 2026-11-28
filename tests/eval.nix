@@ -2020,6 +2020,33 @@ in {
       grep -q 'channel=6' ${script}
       grep -q 'ip link set dev wifi-home nomaster' ${script}
       grep -q 'bridge=br-lan' ${script}
+      grep -q 'ap_isolate=1' ${script}
+      grep -q 'bridge -d link show dev wifi-home' ${script}
+      grep -q 'master br-lan ' ${script}
+      grep -q 'bridge link set dev wifi-home hairpin on' ${script}
+      grep -q 'has no hairpin' ${script}
+      if grep -q 'link show dev wifi-home >/dev/null' ${script}; then
+        echo "USB join check uses the bridge link exit status" >&2
+        exit 1
+      fi
+      joined_of() {
+        case "$1" in
+          *"master br-lan "*) echo yes ;;
+          *) echo no ;;
+        esac
+      }
+      test "$(joined_of "")" = no
+      test "$(joined_of "3: wifi-home: <UP> mtu 1500 state forwarding")" = no
+      test "$(joined_of "3: wifi-home: <UP> mtu 1500 master br-lan state forwarding
+    hairpin off isolated off")" = yes
+      hairpin_of() {
+        case "$1" in
+          *"hairpin on"*) echo on ;;
+          *) echo off ;;
+        esac
+      }
+      test "$(hairpin_of "hairpin off isolated off")" = off
+      test "$(hairpin_of "hairpin on isolated off")" = on
       grep -F -q 'ht_capab=[HT20][SHORT-GI-20]' ${script}
       if grep -q 'set type __ap' ${script}; then
         echo "USB access point forces the onboard AP type" >&2
@@ -2040,8 +2067,32 @@ in {
         else "no"
       } = no
       grep -q 'ip link set dev wifi-home nomaster' ${isoScript}
+      grep -q 'ap_isolate=1' ${isoScript}
+      grep -q 'bridge -d link show dev wifi-home' ${isoScript}
+      grep -q 'master br-lan ' ${isoScript}
       grep -q 'bridge link set dev wifi-home isolated on' ${isoScript}
       grep -q 'did not join br-lan' ${isoScript}
+      if grep -q 'link show dev wifi-home >/dev/null' ${isoScript}; then
+        echo "isolated USB join check uses the bridge link exit status" >&2
+        exit 1
+      fi
+      if grep -q 'grep -q isolated' ${isoScript}; then
+        echo "isolated USB check matches isolated off" >&2
+        exit 1
+      fi
+      iso_of() {
+        case "$1" in
+          *"isolated on"*) echo on ;;
+          *) echo off ;;
+        esac
+      }
+      test "$(iso_of "isolated off")" = off
+      test "$(iso_of "hairpin off isolated off")" = off
+      test "$(iso_of "isolated on")" = on
+      if grep -q 'hairpin on' ${isoScript}; then
+        echo "isolated USB access point enables hairpin" >&2
+        exit 1
+      fi
       if grep -q 'set type __ap' ${isoScript}; then
         echo "isolated USB access point forces the onboard AP type" >&2
         exit 1
@@ -3037,12 +3088,21 @@ in {
       grep -q wmm_enabled=1 ${script}
       grep -q 'set type __ap' ${script}
       grep -q 'interface=wifi-home' ${script}
+      grep -q 'ap_isolate=1' ${script}
+      grep -q 'bridge -d link show dev wifi-home' ${script}
+      grep -q 'master br-lan ' ${script}
+      grep -q 'bridge link set dev wifi-home hairpin on' ${script}
+      grep -q 'has no hairpin' ${script}
+      if grep -q 'link show dev wifi-home >/dev/null' ${script}; then
+        echo "onboard join check uses the bridge link exit status" >&2
+        exit 1
+      fi
       echo ${lib.escapeShellArg (lib.concatStringsSep " " os.config.systemd.services.janus-hostapd-home.after)} | grep -q 'wifi\\x2dhome'
       echo ${lib.escapeShellArg (lib.concatStringsSep " " os.config.systemd.services.janus-hostapd-home.after)} | grep -q 'br\\x2dlan'
       echo ${lib.escapeShellArg (lib.concatStringsSep " " os.config.systemd.services.janus-hostapd-home.wants)} | grep -q 'br\\x2dlan'
       echo ${lib.escapeShellArg (lib.concatStringsSep " " os.config.systemd.services.janus-hostapd-home.bindsTo)} | grep -q 'wifi\\x2dhome[.]device'
-      if grep -q 'did not join' ${script}; then
-        echo "isolation failure path is in the default AP" >&2
+      if grep -q 'isolated on' ${script}; then
+        echo "isolation path is in the default AP" >&2
         exit 1
       fi
       echo ok > "$out"
@@ -3137,10 +3197,25 @@ in {
     script = hostapdText "eval-wifi-onboard-isolate-script" os.config.systemd.services.janus-hostapd-home.serviceConfig.ExecStart;
   in
     pkgs.runCommand "eval-wifi-onboard-isolate" {} ''
+      grep -q 'ap_isolate=1' ${script}
+      grep -q 'bridge -d link show dev wifi-home' ${script}
+      grep -q 'master br-lan ' ${script}
       grep -q 'bridge link set dev wifi-home isolated on' ${script}
       grep -q 'did not join br-lan' ${script}
       grep -q 'bridge port is not isolated' ${script}
       grep -q 'exit 1' ${script}
+      if grep -q 'link show dev wifi-home >/dev/null' ${script}; then
+        echo "isolated onboard join check uses the bridge link exit status" >&2
+        exit 1
+      fi
+      if grep -q 'grep -q isolated' ${script}; then
+        echo "isolated onboard check matches isolated off" >&2
+        exit 1
+      fi
+      if grep -q 'hairpin on' ${script}; then
+        echo "isolated onboard access point enables hairpin" >&2
+        exit 1
+      fi
       echo ok > "$out"
     '';
   eval-wifi-onboard-5g = fail "eval-wifi-onboard-5g" [

@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-11-19 |
+| Last updated | 2026-11-28 |
 
 ## 1. Substrate
 
@@ -133,7 +133,11 @@ inherit the router values. A set rule list replaces them. `dns` inherits
 only. `isolation` is bridge port isolation inside one LAN. It is not the
 firewall rule between zones (D-0039, D-0042). A Wi-Fi access point is
 not enslaved by networkd, so isolation on that port is the access-point
-start script (*10* §4.4, §4.7). `bypass` is not intercepted.
+start script (*10* §4.4, §4.7). With isolation off, that script sets
+the bridge-port flag `hairpin on` after `hostapd` has set `ap_isolate=1`
+and the port line shows `master br-<lan>` (D-0076, T-0064). That flag
+is not `nat.hairpin`. Two stations on the same access point then reach
+each other through the bridge. `bypass` is not intercepted.
 `rule-based` and `proxy-all` are.
 
 ## 6. DHCP server and RA

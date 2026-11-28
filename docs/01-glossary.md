@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-11-12 |
+| Last updated | 2026-11-28 |
 
 Terms are listed alphabetically. Where an informal word is easy to confuse
 with the canonical one, the informal word is marked *avoid*.
@@ -73,6 +73,12 @@ the operator to name a group (ADR-0027, *07* §11). Until that work in
 router may run HailoRT GenAI so another device can use an edge LLM of
 0.5B to 3B parameters (D-0056, D-0060). Vision models are not in that
 plan. Not a peripheral class in 1.0. *Avoid:* "Hailo-8", "Hailo-8L".
+
+**Hairpin** — Two switches. `nat.hairpin` is NAT reflection for a port
+forward (FR-NET-016, *06* §7). Bridge-port hairpin (`hairpin on`) sends
+a frame back out the access-point port it arrived on, so two stations
+on that access point reach each other when `isolation` is off (D-0076,
+*06* §5). *Avoid:* treating one as the other.
 
 **Hot override** — A value from a fixed allowlist (proxy subscription URL,
 static DHCP lease, Wi-Fi passphrase) changed on the board, stored as

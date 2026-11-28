@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-11-12 |
+| Last updated | 2026-11-28 |
 
 The panel is a status and maintenance surface. It does not edit
 `configuration.nix`, hot overrides, or secrets. Anything it can change is
@@ -125,6 +125,11 @@ This is the profile `waveshare-1.3-oled-hat`. Pins are in *10* §4.6.
 
 Left at the top level moves to the previous page. Left inside the node
 list is back, because this profile has no `back` control.
+
+The panel writes one line per edge: the control name, a space, then
+`press` or `release`. The daemon applies that control. A line that
+arrives while the glass is asleep wakes the same page and does not also
+run the control.
 
 ## 7. Out of scope
 

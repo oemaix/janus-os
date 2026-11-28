@@ -601,6 +601,14 @@
     (++ stale-i))
   (expect "key-stale" (not (get stale-dead 0))))
 
+(defn take-lines [inbox]
+  # array/remove returns the array, not the removed line. Copying the
+  # return value drops the text, and string/split then kills the daemon
+  # on the first key (T-0062).
+  (def out (array/slice inbox))
+  (array/clear inbox)
+  out)
+
 (defn check []
   (expect "compact" (= (size-class 128 64) :compact))
   (expect "narrow" (= (size-class 100 80) :compact))
@@ -796,6 +804,13 @@
   (expect "key-one" (deep= split @["left press"]))
   (push-key-lines pending "ease\n" split)
   (expect "key-two" (deep= split @["left press" "right release"]))
+  (def drain @["left press" "right release"])
+  (def taken (take-lines drain))
+  (expect "drain-lines" (deep= taken @["left press" "right release"]))
+  (expect "drain-empty" (empty? drain))
+  (def parts (string/split " " (get taken 0)))
+  (expect "drain-name" (= (get parts 0) "left"))
+  (expect "drain-edge" (= (get parts 1) "press"))
   (check-keys)
 
   (if (> failed 0) (os/exit 1))
@@ -818,12 +833,6 @@
     (buffer/push buf line "\n"))
   (buffer/push buf "END\n")
   (ev/write (proc :in) buf))
-
-(defn take-lines [inbox]
-  (def out @[])
-  (while (not (empty? inbox))
-    (array/push out (array/remove inbox 0)))
-  out)
 
 (defn gpio-arg [controls]
   (def parts @[])

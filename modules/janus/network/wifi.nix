@@ -76,46 +76,69 @@
     # rtl8xxxu has no 40 MHz channels. Pin HT20 the way the onboard radios do.
     ht20 = onboard || limitedUsb ap;
     # networkd does not enslave an access point, so bridgeConfig.Isolated
-    # never applies. The start script marks the port after hostapd joins.
+    # never applies. hostapd sets ap_isolate=1 and joins after AP-ENABLED.
+    # The start script then marks the port. Isolation keeps the port
+    # isolated. Otherwise the port hairpins, so two stations on this AP
+    # can reach each other through the bridge (T-0063, T-0064).
     isolate = builtins.hasAttr ap.lan cfg.lans && cfg.lans.${ap.lan}.isolation;
-    launch =
-      if isolate
-      then ''
-        ${pkgs.hostapd}/bin/hostapd /run/janus/wifi/${name}.conf &
-        pid=$!
-        i=0
-        joined=0
-        while [ "$i" -lt 50 ]; do
-          if ${pkgs.iproute2}/bin/bridge link show dev ${dev} >/dev/null 2>&1; then
-            ${pkgs.iproute2}/bin/bridge link set dev ${dev} isolated on
-            joined=1
-            break
-          fi
-          if ! kill -0 "$pid" 2>/dev/null; then
-            wait "$pid" || exit $?
-            echo "janus: Wi-Fi ${name} exited before joining br-${ap.lan}" >&2
-            exit 1
-          fi
-          i=$((i + 1))
-          sleep 0.2
-        done
-        if [ "$joined" != 1 ]; then
-          echo "janus: Wi-Fi ${name} did not join br-${ap.lan}" >&2
-          kill "$pid" 2>/dev/null || true
-          wait "$pid" 2>/dev/null || true
+    # bridge link show exits 0 while the netdev exists and is not a port.
+    # Hairpin and isolated are printed only with -d. A grep -q pipeline
+    # under pipefail can fail when grep exits early (T-0064).
+    launch = ''
+      ${pkgs.hostapd}/bin/hostapd /run/janus/wifi/${name}.conf &
+      pid=$!
+      i=0
+      joined=0
+      while [ "$i" -lt 50 ]; do
+        show=$(${pkgs.iproute2}/bin/bridge -d link show dev ${dev} 2>/dev/null || true)
+        case "$show" in
+          *"master br-${ap.lan} "*) joined=1; break ;;
+        esac
+        if ! kill -0 "$pid" 2>/dev/null; then
+          wait "$pid" || exit $?
+          echo "janus: Wi-Fi ${name} exited before joining br-${ap.lan}" >&2
           exit 1
         fi
-        if ! ${pkgs.iproute2}/bin/bridge link show dev ${dev} | grep -q isolated; then
-          echo "janus: Wi-Fi ${name} bridge port is not isolated" >&2
-          kill "$pid" 2>/dev/null || true
-          wait "$pid" 2>/dev/null || true
-          exit 1
-        fi
-        wait "$pid"
-      ''
-      else ''
-        exec ${pkgs.hostapd}/bin/hostapd /run/janus/wifi/${name}.conf
-      '';
+        i=$((i + 1))
+        sleep 0.2
+      done
+      if [ "$joined" != 1 ]; then
+        echo "janus: Wi-Fi ${name} did not join br-${ap.lan}" >&2
+        kill "$pid" 2>/dev/null || true
+        wait "$pid" 2>/dev/null || true
+        exit 1
+      fi
+      ${
+        if isolate
+        then ''
+          ${pkgs.iproute2}/bin/bridge link set dev ${dev} isolated on
+          show=$(${pkgs.iproute2}/bin/bridge -d link show dev ${dev} 2>/dev/null || true)
+          case "$show" in
+            *"isolated on"*) ;;
+            *)
+              echo "janus: Wi-Fi ${name} bridge port is not isolated" >&2
+              kill "$pid" 2>/dev/null || true
+              wait "$pid" 2>/dev/null || true
+              exit 1
+              ;;
+          esac
+        ''
+        else ''
+          ${pkgs.iproute2}/bin/bridge link set dev ${dev} hairpin on
+          show=$(${pkgs.iproute2}/bin/bridge -d link show dev ${dev} 2>/dev/null || true)
+          case "$show" in
+            *"hairpin on"*) ;;
+            *)
+              echo "janus: Wi-Fi ${name} bridge port has no hairpin" >&2
+              kill "$pid" 2>/dev/null || true
+              wait "$pid" 2>/dev/null || true
+              exit 1
+              ;;
+          esac
+        ''
+      }
+      wait "$pid"
+    '';
   in
     pkgs.writeShellScript "hostapd-${name}" ''
       set -euo pipefail
@@ -135,7 +158,7 @@
       pass=$(tr -d '\n' < "$src")
       ssid=${lib.escapeShellArg ap.ssid}
       {
-        printf '%s\n' "interface=${dev}" "bridge=br-${ap.lan}" "driver=nl80211"
+        printf '%s\n' "interface=${dev}" "bridge=br-${ap.lan}" "driver=nl80211" "ap_isolate=1"
         printf 'ssid=%s\n' "$ssid"
         printf '%s\n' "wpa=2" "wpa_key_mgmt=${keyMgmt ap}" "rsn_pairwise=CCMP" "hw_mode=${bandMode ap}" "channel=${channel ap}" "ieee80211n=1" "country_code=${cfg.wifiCountry}" "ieee80211d=1"
         printf 'wpa_passphrase=%s\n' "$pass"

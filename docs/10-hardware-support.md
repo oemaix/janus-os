@@ -4,7 +4,7 @@
 |-------|-------|
 | Status | Draft |
 | Version | 0.1.0 |
-| Last updated | 2026-11-22 |
+| Last updated | 2026-11-28 |
 
 ## 1. Terminology
 
@@ -447,10 +447,20 @@ the interface is enslaved before it is in AP mode. networkd then enters
 `failed` and refuses to reconfigure that port. The start script runs
 `ip link set nomaster` before `hostapd`, so a master left from an earlier
 enslavement is cleared. `hostapd` sets `bridge=br-<lan>` and joins the
-bridge after `AP-ENABLED`. With `isolation = true`, the start script
-marks that bridge port isolated. `ip link set down` and the `brcmfmac`
-step that sets the interface type to `__ap` stay on the onboard radio
-(§4.7). An RTL8192EU access point uses this same networkd file (T-0056).
+bridge after `AP-ENABLED`. It also sets `ap_isolate=1`, so station frames
+are delivered to the bridge instead of being bridged inside the radio.
+With `isolation = true`, the start script marks that bridge port isolated
+and does not enable bridge-port hairpin. With isolation off, the script
+sets bridge-port hairpin on after the port joins, so two stations on
+this access point can reach each other (D-0076). The port has joined
+when `bridge -d link show` prints `master br-<lan> `. A zero exit is not
+membership. Hairpin and isolated are on that detailed show; a show
+without `-d` omits both (T-0064). If the port never joins, or that flag
+does not stick, the script exits and systemd restarts the access point
+(T-0063). `ip link set
+down` and the `brcmfmac` step that sets the interface type to `__ap` stay
+on the onboard radio (§4.7). An RTL8192EU access point uses this same
+networkd file (T-0056).
 
 ### 4.5 Battery shutdown
 
@@ -537,10 +547,12 @@ and waits for that bridge device, the same wait `dnsmasq` uses.
 networkd leaves the radio unmanaged, because `brcmfmac` will not enter
 AP mode after the interface is already a bridge port. The start script
 clears a leftover master with `ip link set nomaster`, then sets the
-interface down and to `__ap`. With
-`isolation = true`, the start script marks that bridge port isolated. If
-the port never joins, or the isolated flag does not stick, the script
-exits and systemd restarts the access point.
+interface down and to `__ap`. `hostapd` sets `ap_isolate=1`. With
+`isolation = true`, the start script marks that bridge port isolated and
+leaves bridge-port hairpin off. With isolation off, it sets bridge-port
+hairpin on after `bridge -d link show` prints `master br-<lan> `
+(D-0076, T-0064). If the port never joins, or that flag does not stick,
+the script exits and systemd restarts the access point (T-0063).
 
 The chip is a CYW43430 (firmware names `43430` and `43436`). The NVRAM
 file is 2.4 GHz, 20 MHz, `ccode=ALL`. Evaluation fails for `band = "5g"`,
